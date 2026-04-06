@@ -1,0 +1,26 @@
+{
+  "name": "direct-port",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pm2 start ecosystem.config.js",
+    "dev:stop": "pm2 delete all",
+    "dev:logs": "pm2 logs",
+    "dev:status": "pm2 status",
+    "infra": "docker compose up -d",
+    "infra:stop": "docker compose down",
+    "infra:logs": "docker compose logs -f",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "sharp"
+    ]
+  }
+}
