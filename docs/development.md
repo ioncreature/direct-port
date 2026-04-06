@@ -16,6 +16,9 @@ pnpm install
 # Поднять инфраструктуру (Postgres, Redis)
 pnpm infra
 
+# Скопировать переменные окружения
+cp .env.example apps/api/.env
+
 # Запустить миграции и seed
 cd apps/api && pnpm migration:run && pnpm seed && cd ../..
 
@@ -40,13 +43,13 @@ pnpm infra:logs     # логи
 
 ## Приложения
 
-PM2 управляет dev-процессами:
+PM2 управляет dev-процессами (ecosystem.config.js):
 
-| Приложение | Порт | Путь           |
-|------------|------|----------------|
-| API        | 3001 | apps/api       |
-| Admin Web  | 3000 | apps/admin-web |
-| TG Bot     | 3002 | apps/tg-bot    |
+| Приложение | Порт | Путь           | Стек             |
+|------------|------|----------------|------------------|
+| API        | 3001 | apps/api       | NestJS + TypeORM |
+| Admin Web  | 3000 | apps/admin-web | Next.js          |
+| TG Bot     | 3002 | apps/tg-bot    | NestJS + grammY  |
 
 ```bash
 pnpm dev            # запуск через PM2
@@ -56,6 +59,22 @@ pnpm dev:status     # статус процессов
 ```
 
 ## API
+
+### Модули
+
+- **Auth** — JWT-авторизация (access + refresh tokens), стратегия jwt, глобальные guards (JwtAuthGuard, RolesGuard), декораторы (@Public, @Roles, @CurrentUser)
+- **Users** — CRUD пользователей, роли admin/customs
+- **TN VED** — справочник кодов ТН ВЭД
+- **Database** — TypeORM, entities, миграции, seed
+
+### Entities
+
+- `User` — пользователи с ролями
+- `TnVedCode` — коды ТН ВЭД
+- `RefreshToken` — refresh-токены
+- `CalculationLog` — логи расчётов пошлин
+
+### Миграции и seed
 
 ```bash
 cd apps/api
@@ -67,23 +86,60 @@ pnpm seed                                               # seed admin + ТН ВЭ
 
 Seed создаёт: `admin@directport.ru` / `admin123`
 
+## Admin Web
+
+- Страница логина (`/login`)
+- Dashboard с управлением пользователями (`/(dashboard)/users`)
+- AuthProvider + хуки `useAuth`, `useUsers`
+- API-клиент (`src/lib/api.ts`)
+
+## Telegram-бот
+
+- Команды: `/start`, `/help`
+- Обработка Excel-документов с товарами
+- Классификатор товаров → коды ТН ВЭД
+- Калькулятор пошлин и налогов
+- API-клиент для связи с backend (заголовок `X-Internal-Key`)
+
 ## Переменные окружения
 
-Скопировать `.env.example` в `.env` (или создать `.env` в `apps/api`):
+Скопировать `.env.example` в `apps/api/.env`:
 
-```bash
-cp .env.example apps/api/.env
-```
+| Переменная            | Описание                          | По умолчанию                    |
+|-----------------------|-----------------------------------|---------------------------------|
+| PORT                  | Порт API                          | 3001                            |
+| DATABASE_URL          | PostgreSQL connection string      | postgresql://...localhost:5434   |
+| REDIS_URL             | Redis connection string           | redis://localhost:6379           |
+| JWT_SECRET            | Секрет для JWT                    | change-me-to-a-random-secret    |
+| JWT_ACCESS_EXPIRATION | Время жизни access token          | 15m                             |
+| API_INTERNAL_KEY      | Ключ для service-to-service (бот) | change-me-to-a-random-key       |
+| TELEGRAM_BOT_TOKEN    | Токен Telegram-бота               | —                               |
 
 ## Структура проекта
 
 ```
 direct-port/
 ├── apps/
-│   ├── api/          # NestJS backend (порт 3001)
-│   ├── admin-web/    # Next.js админка (порт 3000)
-│   └── tg-bot/       # Telegram бот (порт 3002)
-├── docs/             # документация
-├── docker-compose.yml
-└── ecosystem.config.js
+│   ├── api/              # NestJS backend (порт 3001)
+│   │   └── src/
+│   │       ├── auth/     # JWT, guards, strategies, decorators
+│   │       ├── users/    # CRUD пользователей
+│   │       ├── tn-ved/   # справочник ТН ВЭД
+│   │       └── database/ # TypeORM, entities, migrations, seeds
+│   ├── admin-web/        # Next.js админка (порт 3000)
+│   │   └── src/
+│   │       ├── app/      # pages (login, dashboard, users)
+│   │       ├── components/
+│   │       ├── hooks/    # useAuth, useUsers
+│   │       └── lib/      # api client, types
+│   └── tg-bot/           # Telegram бот (порт 3002)
+│       └── src/
+│           ├── bot/      # grammY, handlers (start, help, document)
+│           ├── excel/    # парсинг Excel
+│           ├── classifier/ # классификация товаров
+│           ├── calculator/ # расчёт пошлин
+│           └── api-client/ # HTTP-клиент к API
+├── docs/                 # документация
+├── docker-compose.yml    # Postgres + Redis
+└── ecosystem.config.js   # PM2 конфигурация
 ```
