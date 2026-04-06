@@ -41,8 +41,8 @@ PM2 управляет dev-процессами:
 
 | Приложение | Порт | Путь       |
 |------------|------|------------|
-| API        | 3001 | apps/api   |
-| Web        | 3000 | apps/web   |
+| API        | 3001 | apps/api       |
+| Admin Web  | 3000 | apps/admin-web |
 
 ```bash
 pnpm dev            # запуск через PM2
@@ -65,7 +65,7 @@ cp .env.example .env
 direct-port/
 ├── apps/
 │   ├── api/          # NestJS backend (порт 3001)
-│   └── web/          # Next.js frontend (порт 3000)
+│   └── admin-web/    # Next.js админка (порт 3000)
 ├── docs/             # документация
 ├── docker-compose.yml
 └── ecosystem.config.js

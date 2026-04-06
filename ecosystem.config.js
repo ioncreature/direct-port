@@ -8,8 +8,8 @@ module.exports = {
       watch: false,
     },
     {
-      name: 'web',
-      cwd: './apps/web',
+      name: 'admin-web',
+      cwd: './apps/admin-web',
       script: 'pnpm',
       args: 'dev',
       watch: false,

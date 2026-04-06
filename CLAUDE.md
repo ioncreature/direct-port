@@ -6,7 +6,7 @@
 
 - Монорепозиторий: pnpm workspaces
 - Backend: NestJS (apps/api, порт 3001)
-- Frontend: Next.js (apps/web, порт 3000)
+- Админка: Next.js (apps/admin-web, порт 3000)
 - БД: PostgreSQL 17
 - Кэш: Redis 7
 - Node.js 24+
