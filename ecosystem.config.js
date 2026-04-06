@@ -14,5 +14,12 @@ module.exports = {
       args: 'dev',
       watch: false,
     },
+    {
+      name: 'tg-bot',
+      cwd: './apps/tg-bot',
+      script: 'pnpm',
+      args: 'dev',
+      watch: false,
+    },
   ],
 };

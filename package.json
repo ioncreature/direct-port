@@ -20,6 +20,8 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "@nestjs/core",
+      "bcrypt",
+      "esbuild",
       "sharp"
     ]
   }

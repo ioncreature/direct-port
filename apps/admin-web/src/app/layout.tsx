@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { AuthProvider } from '@/components/auth-provider';
 
 export const metadata: Metadata = {
   title: 'DirectPort',
@@ -12,7 +13,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ru">
-      <body>{children}</body>
+      <body style={{ margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }
