@@ -23,6 +23,27 @@ export class ApiClientService {
   async logCalculation(payload: CalculationLogPayload) {
     await this.client.post('/calculation-logs', payload).catch(() => {});
   }
+
+  async registerTelegramUser(payload: {
+    telegramId: number;
+    username?: string;
+    firstName?: string;
+    lastName?: string;
+  }): Promise<{ id: string; telegramId: string }> {
+    const { data } = await this.client.post('/telegram-users/register', payload);
+    return data;
+  }
+
+  async createDocument(payload: {
+    telegramUserId: string;
+    originalFileName: string;
+    columnMapping: Record<string, number>;
+    parsedData: Record<string, unknown>[];
+    rowCount: number;
+  }): Promise<{ id: string; status: string }> {
+    const { data } = await this.client.post('/documents', payload);
+    return data;
+  }
 }
 
 export interface TnVedResult {

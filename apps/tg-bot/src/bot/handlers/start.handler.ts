@@ -1,16 +1,55 @@
-import { Injectable } from '@nestjs/common';
-import { Context } from 'grammy';
+import { Injectable, Logger } from '@nestjs/common';
+import { Context, Keyboard } from 'grammy';
+import { ApiClientService } from '../../api-client/api-client.service';
+import { ConversationStateService } from '../state/conversation-state.service';
 
 @Injectable()
 export class StartHandler {
+  private logger = new Logger(StartHandler.name);
+
+  constructor(
+    private apiClient: ApiClientService,
+    private stateService: ConversationStateService,
+  ) {}
+
   async handle(ctx: Context) {
+    const from = ctx.from;
+    if (!from) return;
+
+    try {
+      const tgUser = await this.apiClient.registerTelegramUser({
+        telegramId: from.id,
+        username: from.username,
+        firstName: from.first_name,
+        lastName: from.last_name,
+      });
+
+      await this.stateService.setState(ctx.chat!.id, {
+        step: 'idle',
+        fileBuffer: '',
+        fileName: '',
+        fileType: 'xlsx',
+        headers: [],
+        columnMapping: {},
+        telegramUserId: tgUser.id,
+      });
+    } catch (err) {
+      this.logger.error('Failed to register telegram user', err);
+    }
+
+    const keyboard = new Keyboard()
+      .text('📁 Загрузить файл')
+      .row()
+      .text('❓ Помощь')
+      .resized();
+
     await ctx.reply(
       'Добро пожаловать в DirectPort Bot!\n\n' +
-      'Отправьте мне Excel-файл (.xlsx) с товарами, и я:\n' +
-      '• Сопоставлю описания с кодами ТН ВЭД\n' +
-      '• Рассчитаю таможенные пошлины и НДС\n' +
-      '• Подсчитаю логистическую комиссию\n\n' +
-      'Используйте /help для подробной информации.',
+        '• Загрузите файл с товарами (.xlsx или .csv)\n' +
+        '• Выберите нужные столбцы\n' +
+        '• Получите результат обработки\n\n' +
+        'Выберите действие:',
+      { reply_markup: keyboard },
     );
   }
 }
