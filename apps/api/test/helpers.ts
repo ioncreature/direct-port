@@ -2,28 +2,77 @@ import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BullModule } from '@nestjs/bullmq';
 import * as request from 'supertest';
+import Anthropic from '@anthropic-ai/sdk';
+import { TksApiClient } from '@direct-port/tks-api';
+import { APP_GUARD } from '@nestjs/core';
+import { DataSource } from 'typeorm';
+
+// Modules
 import { AuthModule } from '../src/auth/auth.module';
 import { UsersModule } from '../src/users/users.module';
 import { TnVedModule } from '../src/tn-ved/tn-ved.module';
-import { AppController } from '../src/app.controller';
+import { TelegramUsersModule } from '../src/telegram-users/telegram-users.module';
+import { DocumentsModule } from '../src/documents/documents.module';
+import { CalculationConfigModule } from '../src/calculation-config/calculation-config.module';
+
+// Guards
 import { JwtAuthGuard } from '../src/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../src/auth/guards/roles.guard';
-import { APP_GUARD } from '@nestjs/core';
-import { User } from '../src/database/entities/user.entity';
+
+// Entities
+import { User, UserRole } from '../src/database/entities/user.entity';
 import { RefreshToken } from '../src/database/entities/refresh-token.entity';
 import { TnVedCode } from '../src/database/entities/tn-ved-code.entity';
 import { CalculationLog } from '../src/database/entities/calculation-log.entity';
-import { DataSource } from 'typeorm';
+import { TelegramUser } from '../src/database/entities/telegram-user.entity';
+import { Document } from '../src/database/entities/document.entity';
+import { CalculationConfig } from '../src/database/entities/calculation-config.entity';
+
+// Controllers
+import { AppController } from '../src/app.controller';
 
 const TEST_DB_URL =
   process.env.TEST_DATABASE_URL ||
   'postgresql://directport:directport@localhost:5434/directport_test';
 
-// JwtAuthGuard reads process.env directly for internal key
 process.env.API_INTERNAL_KEY = 'test-internal-key';
 
+// --- Mock TKS API ---
+
+export function createMockTksApi(): Partial<TksApiClient> {
+  return {
+    searchGoodsGrouped: jest.fn().mockResolvedValue({
+      data: [
+        { CODE: '0201100001', KR_NAIM: 'Мясо КРС', CNT: 50 },
+        { CODE: '0201200001', KR_NAIM: 'Прочее мясо', CNT: 10 },
+      ],
+      hm: 60,
+      page: 1,
+      per_page: 20,
+    }),
+    getTnvedCode: jest.fn().mockResolvedValue({
+      CODE: '0201100001',
+      KR_NAIM: 'Туши и полутуши',
+      TNVED: {
+        IMP: 15,
+        NDS: 20,
+        AKC: 0,
+        IMPSIGN: null,
+        IMP2: null,
+        IMPEDI2: null,
+      },
+    }),
+    searchGoods: jest.fn().mockResolvedValue({ data: [], hm: 0, page: 1, per_page: 20 }),
+  };
+}
+
+// --- App factory ---
+
 export async function createTestApp(): Promise<INestApplication> {
+  const mockTksApi = createMockTksApi();
+
   const moduleRef = await Test.createTestingModule({
     imports: [
       ConfigModule.forRoot({
@@ -34,6 +83,7 @@ export async function createTestApp(): Promise<INestApplication> {
             JWT_SECRET: 'test-jwt-secret',
             JWT_ACCESS_EXPIRATION: '15m',
             API_INTERNAL_KEY: 'test-internal-key',
+            TKS_API_KEY: 'test-key',
           }),
         ],
         ignoreEnvFile: true,
@@ -41,20 +91,29 @@ export async function createTestApp(): Promise<INestApplication> {
       TypeOrmModule.forRoot({
         type: 'postgres',
         url: TEST_DB_URL,
-        entities: [User, RefreshToken, TnVedCode, CalculationLog],
+        entities: [User, RefreshToken, TnVedCode, CalculationLog, TelegramUser, Document, CalculationConfig],
         synchronize: true,
         dropSchema: true,
       }),
+      BullModule.forRoot({ connection: { host: 'localhost', port: 6379 } }),
       AuthModule,
       UsersModule,
       TnVedModule,
+      TelegramUsersModule,
+      DocumentsModule,
+      CalculationConfigModule,
     ],
     controllers: [AppController],
     providers: [
       { provide: APP_GUARD, useClass: JwtAuthGuard },
       { provide: APP_GUARD, useClass: RolesGuard },
     ],
-  }).compile();
+  })
+    .overrideProvider(TksApiClient)
+    .useValue(mockTksApi)
+    .overrideProvider(Anthropic)
+    .useValue(null)
+    .compile();
 
   const app = moduleRef.createNestApplication();
   app.setGlobalPrefix('api');
@@ -64,17 +123,19 @@ export async function createTestApp(): Promise<INestApplication> {
   return app;
 }
 
+// --- Seeders ---
+
 export async function seedAdmin(app: INestApplication) {
   const ds = app.get(DataSource);
   const repo = ds.getRepository(User);
 
   const bcrypt = await import('bcrypt');
-  const passwordHash = await bcrypt.hash('admin123', 10);
+  const passwordHash = await bcrypt.hash('admin123', 1);
 
   const admin = repo.create({
     email: 'admin@directport.ru',
     passwordHash,
-    role: 'admin' as any,
+    role: UserRole.ADMIN,
     isActive: true,
   });
   return repo.save(admin);
@@ -93,6 +154,29 @@ export async function seedTnVed(app: INestApplication) {
   return repo.save(codes.map((c) => repo.create(c)));
 }
 
+export async function seedTelegramUser(app: INestApplication) {
+  const ds = app.get(DataSource);
+  const repo = ds.getRepository(TelegramUser);
+  return repo.save(repo.create({
+    telegramId: '123456789',
+    username: 'testuser',
+    firstName: 'Test',
+    lastName: 'User',
+  }));
+}
+
+export async function seedCalculationConfig(app: INestApplication) {
+  const ds = app.get(DataSource);
+  const repo = ds.getRepository(CalculationConfig);
+  return repo.save(repo.create({
+    pricePercent: 5,
+    weightRate: 2,
+    fixedFee: 10,
+  }));
+}
+
+// --- Auth helpers ---
+
 export async function loginAsAdmin(
   app: INestApplication,
 ): Promise<{ accessToken: string; refreshToken: string }> {
@@ -107,3 +191,5 @@ export async function loginAsAdmin(
     refreshToken: res.body.refreshToken,
   };
 }
+
+export const INTERNAL_KEY_HEADER = { 'x-internal-key': 'test-internal-key' };

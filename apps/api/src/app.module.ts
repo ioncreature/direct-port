@@ -8,6 +8,7 @@ import { UsersModule } from './users/users.module';
 import { TnVedModule } from './tn-ved/tn-ved.module';
 import { TelegramUsersModule } from './telegram-users/telegram-users.module';
 import { DocumentsModule } from './documents/documents.module';
+import { CalculationConfigModule } from './calculation-config/calculation-config.module';
 import { AppController } from './app.controller';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
@@ -29,6 +30,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
     TnVedModule,
     TelegramUsersModule,
     DocumentsModule,
+    CalculationConfigModule,
   ],
   controllers: [AppController],
   providers: [

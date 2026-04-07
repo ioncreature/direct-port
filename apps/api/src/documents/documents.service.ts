@@ -19,7 +19,7 @@ export class DocumentsService {
       originalFileName: dto.originalFileName,
       columnMapping: dto.columnMapping,
       parsedData: dto.parsedData,
-      rowCount: dto.rowCount,
+      rowCount: dto.parsedData.length,
       status: DocumentStatus.PENDING,
     });
     const saved = await this.repo.save(doc);
@@ -29,6 +29,10 @@ export class DocumentsService {
 
   async findAll(): Promise<Document[]> {
     return this.repo.find({
+      select: [
+        'id', 'telegramUserId', 'originalFileName', 'status',
+        'rowCount', 'errorMessage', 'createdAt', 'updatedAt',
+      ],
       relations: ['telegramUser'],
       order: { createdAt: 'DESC' },
     });

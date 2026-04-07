@@ -8,6 +8,7 @@ import Link from 'next/link';
 const navItems = [
   { href: '/users', label: 'Пользователи' },
   { href: '/documents', label: 'Документы' },
+  { href: '/settings', label: 'Настройки' },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

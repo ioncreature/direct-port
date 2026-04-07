@@ -7,12 +7,13 @@ import { TnVedCode } from './entities/tn-ved-code.entity';
 import { CalculationLog } from './entities/calculation-log.entity';
 import { TelegramUser } from './entities/telegram-user.entity';
 import { Document } from './entities/document.entity';
+import { CalculationConfig } from './entities/calculation-config.entity';
 
 config();
 
 export default new DataSource({
   type: 'postgres',
   url: process.env.DATABASE_URL || 'postgresql://directport:directport@localhost:5434/directport',
-  entities: [User, RefreshToken, TnVedCode, CalculationLog, TelegramUser, Document],
+  entities: [User, RefreshToken, TnVedCode, CalculationLog, TelegramUser, Document, CalculationConfig],
   migrations: ['src/database/migrations/*{.ts,.js}'],
 });

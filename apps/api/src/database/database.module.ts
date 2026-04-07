@@ -7,8 +7,10 @@ import { TnVedCode } from './entities/tn-ved-code.entity';
 import { CalculationLog } from './entities/calculation-log.entity';
 import { TelegramUser } from './entities/telegram-user.entity';
 import { Document } from './entities/document.entity';
+import { CalculationConfig } from './entities/calculation-config.entity';
 import { Init1775502921706 } from './migrations/1775502921706-Init';
 import { AddTelegramUsersAndDocuments1775509193348 } from './migrations/1775509193348-AddTelegramUsersAndDocuments';
+import { AddCalculationConfig1775600000000 } from './migrations/1775600000000-AddCalculationConfig';
 
 @Module({
   imports: [
@@ -17,9 +19,9 @@ import { AddTelegramUsersAndDocuments1775509193348 } from './migrations/17755091
       useFactory: (config: ConfigService) => ({
         type: 'postgres' as const,
         url: config.getOrThrow<string>('DATABASE_URL'),
-        entities: [User, RefreshToken, TnVedCode, CalculationLog, TelegramUser, Document],
+        entities: [User, RefreshToken, TnVedCode, CalculationLog, TelegramUser, Document, CalculationConfig],
         synchronize: false,
-        migrations: [Init1775502921706, AddTelegramUsersAndDocuments1775509193348],
+        migrations: [Init1775502921706, AddTelegramUsersAndDocuments1775509193348, AddCalculationConfig1775600000000],
         migrationsRun: true,
       }),
     }),

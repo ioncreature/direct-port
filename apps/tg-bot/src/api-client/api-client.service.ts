@@ -39,10 +39,16 @@ export class ApiClientService {
     originalFileName: string;
     columnMapping: Record<string, number>;
     parsedData: Record<string, unknown>[];
-    rowCount: number;
   }): Promise<{ id: string; status: string }> {
     const { data } = await this.client.post('/documents', payload);
     return data;
+  }
+
+  async downloadDocument(documentId: string): Promise<Buffer> {
+    const { data } = await this.client.get(`/documents/${documentId}/download-internal`, {
+      responseType: 'arraybuffer',
+    });
+    return Buffer.from(data);
   }
 }
 

@@ -36,7 +36,6 @@ export class CallbackQueryHandler {
       return;
     }
 
-    // Parse: col_description_2 -> field=description, index=2
     const parts = data.split('_');
     const field = parts[1] as keyof ColumnMapping;
     const index = parseInt(parts[2], 10);
@@ -57,7 +56,6 @@ export class CallbackQueryHandler {
         ),
       );
 
-      const nextStep = COLUMN_STEPS.find((s) => s.field !== field && s.label === currentStep.label);
       const nextField = COLUMN_STEPS[COLUMN_STEPS.findIndex((s) => s.field === field) + 1];
 
       const kb = new InlineKeyboard();
@@ -97,7 +95,6 @@ export class CallbackQueryHandler {
           originalFileName: state.fileName,
           columnMapping: { ...mapping },
           parsedData: products.map((p) => ({ ...p })),
-          rowCount: products.length,
         });
 
         await ctx.reply(

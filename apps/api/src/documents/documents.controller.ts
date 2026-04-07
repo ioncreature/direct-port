@@ -1,14 +1,17 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Res } from '@nestjs/common';
 import { Response } from 'express';
-import * as ExcelJS from 'exceljs';
 import { DocumentsService } from './documents.service';
+import { ExcelExportService } from './excel-export.service';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../database/entities/user.entity';
 
 @Controller('documents')
 export class DocumentsController {
-  constructor(private service: DocumentsService) {}
+  constructor(
+    private service: DocumentsService,
+    private excelExport: ExcelExportService,
+  ) {}
 
   @Post()
   create(@Body() dto: CreateDocumentDto) {
@@ -33,19 +36,21 @@ export class DocumentsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Res() res: Response,
   ) {
+    await this.sendExcel(id, res);
+  }
+
+  /** Внутренний endpoint для бота (auth через X-Internal-Key, без @Roles) */
+  @Get(':id/download-internal')
+  async downloadInternal(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res() res: Response,
+  ) {
+    await this.sendExcel(id, res);
+  }
+
+  private async sendExcel(id: string, res: Response) {
     const doc = await this.service.findOne(id);
-    const data = doc.resultData ?? doc.parsedData ?? [];
-
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('Данные');
-
-    if (data.length > 0) {
-      const headers = Object.keys(data[0]);
-      sheet.addRow(headers);
-      for (const row of data) {
-        sheet.addRow(headers.map((h) => row[h]));
-      }
-    }
+    const buffer = await this.excelExport.generate(doc);
 
     const fileName = encodeURIComponent(doc.originalFileName || 'document.xlsx');
     res.set({
@@ -53,7 +58,6 @@ export class DocumentsController {
       'Content-Disposition': `attachment; filename="${fileName}"`,
     });
 
-    await workbook.xlsx.write(res);
-    res.end();
+    res.send(buffer);
   }
 }

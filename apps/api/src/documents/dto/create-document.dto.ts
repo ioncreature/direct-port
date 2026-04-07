@@ -1,4 +1,4 @@
-import { IsArray, IsNumber, IsObject, IsString, IsUUID } from 'class-validator';
+import { IsArray, IsObject, IsString, IsUUID } from 'class-validator';
 
 export class CreateDocumentDto {
   @IsUUID()
@@ -12,7 +12,4 @@ export class CreateDocumentDto {
 
   @IsArray()
   parsedData: Record<string, unknown>[];
-
-  @IsNumber()
-  rowCount: number;
 }

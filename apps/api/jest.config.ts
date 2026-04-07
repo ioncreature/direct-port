@@ -8,6 +8,7 @@ const config: Config = {
     '^.+\\.ts$': 'ts-jest',
   },
   testTimeout: 30000,
+  forceExit: true,
 };
 
 export default config;

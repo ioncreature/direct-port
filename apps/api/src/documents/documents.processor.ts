@@ -1,9 +1,21 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { InjectQueue } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Job } from 'bullmq';
+import { Job, Queue } from 'bullmq';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
+import { ClassifierService } from '../classifier/classifier.service';
+import { CalculatorService } from '../calculator/calculator.service';
+import { CalculationConfigService } from '../calculation-config/calculation-config.service';
+import { VerificationService } from '../verification/verification.service';
+
+export interface DocumentNotification {
+  documentId: string;
+  telegramUserId: string;
+  status: 'processed' | 'failed';
+  errorMessage?: string;
+}
 
 @Processor('document-processing')
 export class DocumentsProcessor extends WorkerHost {
@@ -11,6 +23,11 @@ export class DocumentsProcessor extends WorkerHost {
 
   constructor(
     @InjectRepository(Document) private repo: Repository<Document>,
+    @InjectQueue('document-notifications') private notificationQueue: Queue,
+    private classifier: ClassifierService,
+    private calculator: CalculatorService,
+    private configService: CalculationConfigService,
+    private verification: VerificationService,
   ) {
     super();
   }
@@ -19,7 +36,10 @@ export class DocumentsProcessor extends WorkerHost {
     const { documentId } = job.data;
     this.logger.log(`Processing document ${documentId}`);
 
-    const doc = await this.repo.findOne({ where: { id: documentId } });
+    const doc = await this.repo.findOne({
+      where: { id: documentId },
+      relations: ['telegramUser'],
+    });
     if (!doc) {
       this.logger.warn(`Document ${documentId} not found`);
       return;
@@ -28,13 +48,75 @@ export class DocumentsProcessor extends WorkerHost {
     doc.status = DocumentStatus.PROCESSING;
     await this.repo.save(doc);
 
-    // Stub: wait 5 seconds
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    try {
+      const rows = (doc.parsedData ?? []).map((row) => ({
+        description: String(row.description ?? ''),
+        quantity: Number(row.quantity) || 1,
+        price: Number(row.price) || 0,
+        weight: Number(row.weight) || 0,
+      }));
 
-    doc.status = DocumentStatus.PROCESSED;
-    doc.resultData = doc.parsedData;
-    await this.repo.save(doc);
+      const { pricePercent, weightRate, fixedFee } = await this.configService.get();
+      const commission = { pricePercent, weightRate, fixedFee };
 
-    this.logger.log(`Document ${documentId} processed`);
+      const classified = await this.classifier.classify(rows);
+      const verified = await this.verification.verify(classified);
+      const summary = this.calculator.calculate(verified, commission);
+
+      doc.resultData = summary.items.map((item, i) => ({
+        description: item.description,
+        quantity: item.quantity,
+        price: item.price,
+        weight: item.weight,
+        tnVedCode: item.tnVedCode,
+        tnVedDescription: item.tnVedDescription,
+        dutyRate: item.dutyRate,
+        vatRate: item.vatRate,
+        exciseRate: item.exciseRate,
+        totalPrice: item.totalPrice,
+        dutyAmount: item.dutyAmount,
+        vatAmount: item.vatAmount,
+        exciseAmount: item.exciseAmount,
+        logisticsCommission: item.logisticsCommission,
+        totalCost: item.totalCost,
+        verificationStatus: item.verificationStatus,
+        matchConfidence: item.matchConfidence,
+        verified: verified[i]?.verified ?? false,
+        verificationComment: verified[i]?.verificationComment ?? null,
+      }));
+      doc.status = DocumentStatus.PROCESSED;
+      await this.repo.save(doc);
+
+      await this.notify(doc, 'processed');
+      this.logger.log(
+        `Document ${documentId} processed: ${rows.length} rows, grandTotal=${summary.grandTotal}`,
+      );
+    } catch (err) {
+      doc.status = DocumentStatus.FAILED;
+      doc.errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      await this.repo.save(doc);
+      await this.notify(doc, 'failed', doc.errorMessage ?? undefined);
+      this.logger.error(`Document ${documentId} failed`, err);
+    }
+  }
+
+  private async notify(
+    doc: Document,
+    status: 'processed' | 'failed',
+    errorMessage?: string,
+  ): Promise<void> {
+    const telegramId = doc.telegramUser?.telegramId;
+    if (!telegramId) return;
+
+    const payload: DocumentNotification = {
+      documentId: doc.id,
+      telegramUserId: telegramId,
+      status,
+      errorMessage,
+    };
+
+    await this.notificationQueue.add('document-ready', payload).catch((err) => {
+      this.logger.warn(`Failed to send notification for ${doc.id}`, err);
+    });
   }
 }
