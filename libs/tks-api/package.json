@@ -1,0 +1,13 @@
+{
+  "name": "@direct-port/tks-api",
+  "version": "0.0.1",
+  "private": true,
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint \"src/**/*.ts\""
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}
