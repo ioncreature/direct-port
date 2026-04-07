@@ -11,8 +11,22 @@
 - Библиотеки: libs/tks-api (клиент API таможенного справочника)
 - БД: PostgreSQL 17
 - Очереди: BullMQ + Redis 7
-- AI: Anthropic Claude (верификация кодов ТН ВЭД)
+- AI: Anthropic Claude (верификация кодов ТН ВЭД, перевод наименований)
 - Node.js 24+
+
+## Быстрый старт
+
+```bash
+pnpm install          # установка зависимостей
+pnpm infra            # postgres (порт 5434) + redis (порт 6380) через docker compose
+pnpm dev              # миграции + seed + запуск всех приложений через PM2
+```
+
+Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образцов кодов ТН ВЭД.
+
+Каждое приложение читает `.env` из своей директории. Шаблоны: `apps/*/.env.example`.
+
+Система работает и без бота — API + админка функционируют самостоятельно.
 
 ## Приложения
 
@@ -58,24 +72,79 @@
 ## Pipeline обработки документа
 
 ```
-Telegram → загрузка файла → выбор колонок → parse
+Загрузка файла (Telegram или админка)
+→ Выбор колонок → парсинг → перевод наименований (если не на русском)
 → POST /documents (parsedData) → BullMQ: document-processing
 → Classifier (TKS API: searchGoodsGrouped → getTnvedCode)
 → Verification (Claude: верификация кодов, опционально)
-→ Calculator (пошлина + НДС + акциз + комиссия)
+→ Calculator (пошлина + НДС + акциз + комиссия, конвертация валют → RUB)
 → resultData → BullMQ: document-notifications
-→ Бот скачивает Excel → отправляет в Telegram
+→ Excel-экспорт → отправка пользователю
 ```
+
+### Форматы данных в pipeline
+
+**Входной файл** (.xlsx или .csv с автодетектом разделителя `,` `;` `\t`):
+- 4 обязательные колонки, выбираемые пользователем: описание, цена, вес, количество
+- Наименования могут быть на любом языке (часто — китайский); переводятся на русский на этапе парсинга
+- Цены могут быть в любой валюте (не только USD) — валюта определяется для всего документа
+- Пример: `examples/in_1.xlsx` (китайские наименования, цены в юанях)
+
+**parsedData** (JSONB в Document, массив `ProductRow[]`):
+```typescript
+interface ProductRow {
+  description: string;   // наименование товара (переведённое на русский)
+  quantity: number;
+  price: number;         // цена в исходной валюте документа
+  weight: number;        // вес в кг
+}
+```
+
+**После классификации** (`ClassifiedProduct`):
+- Добавляются: tnVedCode, tnVedDescription, dutyRate, dutySign, dutyMin, dutyMinUnit, vatRate, exciseRate, matchConfidence, matched
+- Батчи по 5 товаров параллельно
+
+**После верификации** (`VerifiedProduct`, опционально):
+- Добавляются: verified, suggestedCode, verificationComment
+- Батчи по 10, Claude claude-sonnet-4-20250514
+
+**После расчёта** (`CalculatedProduct`):
+- Добавляются: totalPrice, dutyAmount, vatAmount, exciseAmount, logisticsCommission, totalCost, verificationStatus ('exact'|'review')
+- Все суммы рассчитываются в исходной валюте и конвертируются в RUB по актуальному курсу
+
+**resultData** (JSONB в Document): массив `CalculatedProduct[]`
+
+**Выходной Excel** (лист "Результат", 14+ колонок):
+- Исходные данные: наименование, количество, цена, вес
+- Классификация: код ТН ВЭД, описание ТН ВЭД, ставки пошлины/НДС
+- Расчёты: сумма товара, пошлина, НДС, акциз, комиссия доставки, итого
+- Все стоимости указываются как в исходной валюте, так и в рублях
+- Статус проверки: зелёный (точное) / жёлтый (ручная проверка)
+- Стилизация: синий заголовок, автофильтр, заморозка строки заголовка
+
+### Формула расчёта
+
+```
+totalPrice     = price × quantity
+dutyAmount     = totalPrice × (dutyRate / 100)
+                 // для комбинированных ставок (dutySign='>'): max(dutyAmount, dutyMin × weight × quantity)
+exciseAmount   = totalPrice × (exciseRate / 100)
+vatAmount      = (totalPrice + dutyAmount + exciseAmount) × (vatRate / 100)
+logisticsComm  = totalPrice × (pricePercent / 100) + weight × quantity × weightRate + fixedFee
+totalCost      = totalPrice + dutyAmount + vatAmount + exciseAmount + logisticsCommission
+```
+
+verificationStatus = matched AND matchConfidence >= 0.7 ? 'exact' : 'review'
 
 ## Команды
 
 ```bash
 pnpm install        # установка зависимостей
-pnpm dev            # запуск всех приложений через PM2
+pnpm dev            # миграции + seed + запуск всех приложений через PM2
 pnpm dev:stop       # остановка
 pnpm dev:logs       # логи PM2
 pnpm dev:status     # статус процессов
-pnpm infra          # postgres + redis через docker compose
+pnpm infra          # postgres (5434) + redis (6380) через docker compose
 pnpm infra:stop     # остановка инфры
 pnpm infra:logs     # логи инфраструктуры
 pnpm build          # сборка всех приложений
@@ -90,19 +159,38 @@ pnpm seed           # admin@directport.ru / admin123
 
 ## Переменные окружения
 
-В `apps/api/.env`:
-- `DATABASE_URL` — PostgreSQL (по умолчанию порт 5434)
-- `REDIS_URL` — Redis
+Каждое приложение имеет свой `.env` (шаблоны в `.env.example`).
+
+**apps/api/.env:**
+- `PORT` — порт API (по умолчанию 3001)
+- `DATABASE_URL` — PostgreSQL (по умолчанию postgresql://directport:directport@localhost:5434/directport)
+- `REDIS_URL` — Redis (по умолчанию redis://localhost:6380)
 - `JWT_SECRET`, `JWT_ACCESS_EXPIRATION` — JWT-настройки
 - `API_INTERNAL_KEY` — ключ для service-to-service вызовов (бот → API)
 - `TKS_API_KEY` — ключ для api1.tks.ru (таможенный справочник)
 - `ANTHROPIC_API_KEY` — ключ Anthropic для верификации Claude (опционально)
 
-В `apps/tg-bot/.env`:
+**apps/tg-bot/.env:**
 - `TELEGRAM_BOT_TOKEN` — токен Telegram-бота
 - `API_BASE_URL` — URL API (по умолчанию http://localhost:3001/api)
 - `API_INTERNAL_KEY` — ключ для доступа к API
-- `REDIS_URL` — Redis (для состояния диалога и BullMQ)
+- `REDIS_URL` — Redis (по умолчанию redis://localhost:6380)
+
+**apps/admin-web/.env:**
+- `NEXT_PUBLIC_API_URL` — URL API (по умолчанию http://localhost:3001/api)
+
+## Инфраструктура
+
+Docker compose (порты выбраны чтобы не конфликтовать с системными):
+- PostgreSQL: 5434 → 5432 (user: directport, password: directport, db: directport)
+- Redis: 6380 → 6379
+
+## Известные задачи и баги
+
+- [ ] Конвертация валют: нужен сервис получения актуальных курсов, конвертация всех сумм в RUB
+- [ ] Перевод наименований: товары приходят на китайском и других языках — нужен перевод на русский на этапе парсинга
+- [ ] Загрузка документов через админку (сейчас только через Telegram-бот)
+- [ ] Упрощение запуска: `pnpm dev` должен автоматически запускать миграции и seed
 
 ## Правила
 

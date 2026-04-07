@@ -6,6 +6,7 @@ import { ClassifierModule } from '../classifier/classifier.module';
 import { CalculatorModule } from '../calculator/calculator.module';
 import { CalculationConfigModule } from '../calculation-config/calculation-config.module';
 import { VerificationModule } from '../verification/verification.module';
+import { AiParserModule } from '../ai-parser/ai-parser.module';
 import { DocumentsController } from './documents.controller';
 import { DocumentsService } from './documents.service';
 import { DocumentsProcessor } from './documents.processor';
@@ -20,6 +21,7 @@ import { ExcelExportService } from './excel-export.service';
     CalculatorModule,
     CalculationConfigModule,
     VerificationModule,
+    AiParserModule,
   ],
   controllers: [DocumentsController],
   providers: [DocumentsService, DocumentsProcessor, ExcelExportService],

@@ -33,6 +33,9 @@ export class Document {
   @Column({ type: 'jsonb', name: 'column_mapping' })
   columnMapping: Record<string, number>;
 
+  @Column({ type: 'varchar', length: 10, nullable: true })
+  currency: string | null;
+
   @Column({ type: 'jsonb', name: 'parsed_data', nullable: true })
   parsedData: Record<string, unknown>[] | null;
 

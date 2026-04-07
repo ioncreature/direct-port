@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
+import FormData from 'form-data';
 
 @Injectable()
 export class ApiClientService {
@@ -41,6 +42,21 @@ export class ApiClientService {
     parsedData: Record<string, unknown>[];
   }): Promise<{ id: string; status: string }> {
     const { data } = await this.client.post('/documents', payload);
+    return data;
+  }
+
+  async uploadDocument(
+    file: Buffer,
+    fileName: string,
+    telegramUserId: string,
+  ): Promise<{ id: string; status: string }> {
+    const form = new FormData();
+    form.append('file', file, { filename: fileName });
+    form.append('telegramUserId', telegramUserId);
+    const { data } = await this.client.post('/documents/upload', form, {
+      headers: form.getHeaders(),
+      timeout: 60_000,
+    });
     return data;
   }
 
