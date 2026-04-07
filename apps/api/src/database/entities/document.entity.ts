@@ -8,12 +8,14 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { TelegramUser } from './telegram-user.entity';
+import { User } from './user.entity';
 
 export enum DocumentStatus {
   PENDING = 'pending',
   PROCESSING = 'processing',
   PROCESSED = 'processed',
   FAILED = 'failed',
+  REQUIRES_REVIEW = 'requires_review',
 }
 
 @Entity('documents')
@@ -21,8 +23,11 @@ export class Document {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid', name: 'telegram_user_id' })
-  telegramUserId: string;
+  @Column({ type: 'uuid', name: 'telegram_user_id', nullable: true })
+  telegramUserId: string | null;
+
+  @Column({ type: 'uuid', name: 'uploaded_by_user_id', nullable: true })
+  uploadedByUserId: string | null;
 
   @Column({ type: 'varchar', length: 500, name: 'original_file_name' })
   originalFileName: string;
@@ -54,7 +59,11 @@ export class Document {
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 
-  @ManyToOne(() => TelegramUser, (user) => user.documents, { onDelete: 'CASCADE' })
+  @ManyToOne(() => TelegramUser, (user) => user.documents, { nullable: true, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'telegram_user_id' })
-  telegramUser: TelegramUser;
+  telegramUser: TelegramUser | null;
+
+  @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'uploaded_by_user_id' })
+  uploadedBy: User | null;
 }

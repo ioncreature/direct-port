@@ -14,6 +14,14 @@ export interface AiParseResult {
   products: ParsedProduct[];
   currency: string;
   columnMapping: Record<string, number>;
+  confident: boolean;
+}
+
+type RawParseResult = Omit<AiParseResult, 'confident'>;
+
+interface ValidationResult {
+  valid: boolean;
+  issues: string[];
 }
 
 const VALID_CURRENCIES = new Set([
@@ -22,6 +30,8 @@ const VALID_CURRENCIES = new Set([
 ]);
 
 const MAX_ROWS = 200;
+const SAMPLE_ROWS = 5;
+const MAX_ATTEMPTS = 2;
 
 const SYSTEM_PROMPT = `Ты — эксперт по парсингу коммерческих документов для импорта товаров.
 
@@ -40,6 +50,12 @@ const SYSTEM_PROMPT = `Ты — эксперт по парсингу комме�
 10. Если таблица содержит несколько строк заголовков (например, на двух языках) — используй их для понимания структуры, но не включай в результат
 
 Отвечай ТОЛЬКО валидным JSON в указанном формате. Никакого текста до или после JSON.`;
+
+const VALIDATION_SYSTEM_PROMPT = `Ты — валидатор результатов парсинга коммерческих документов.
+
+Тебе предоставлены исходные строки таблицы и результат их парсинга. Проверь корректность.
+
+Отвечай ТОЛЬКО валидным JSON. Никакого текста до или после JSON.`;
 
 @Injectable()
 export class AiParserService {
@@ -63,11 +79,49 @@ export class AiParserService {
     }
 
     const tsv = this.formatAsTsv(data);
-    const userPrompt = this.buildUserPrompt(tsv);
+    let lastResult: RawParseResult | null = null;
+    let lastIssues: string[] = [];
 
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const userPrompt = attempt === 1
+        ? this.buildUserPrompt(tsv)
+        : this.buildRetryPrompt(tsv, lastIssues);
+
+      const result = await this.callClaude(userPrompt);
+      lastResult = result;
+
+      // Deterministic checks
+      const detIssues = this.checkDeterministic(result, data);
+      if (detIssues.length > 0) {
+        this.logger.warn(`Attempt ${attempt}: deterministic issues: ${detIssues.join('; ')}`);
+        lastIssues = detIssues;
+        if (attempt < MAX_ATTEMPTS) continue;
+        return { ...result, confident: false };
+      }
+
+      // AI validation
+      const validation = await this.validateWithAi(data, result);
+      if (validation.valid) {
+        this.logger.log(
+          `Parsed ${result.products.length} products, currency=${result.currency} (attempt ${attempt}, confident)`,
+        );
+        return { ...result, confident: true };
+      }
+
+      this.logger.warn(`Attempt ${attempt}: AI validation issues: ${validation.issues.join('; ')}`);
+      lastIssues = validation.issues;
+    }
+
+    this.logger.warn(
+      `Returning result after ${MAX_ATTEMPTS} attempts with low confidence (${lastIssues.join('; ')})`,
+    );
+    return { ...lastResult!, confident: false };
+  }
+
+  private async callClaude(userPrompt: string): Promise<RawParseResult> {
     let text: string;
     try {
-      const response = await this.anthropic.messages.create(
+      const response = await this.anthropic!.messages.create(
         {
           model: 'claude-sonnet-4-20250514',
           max_tokens: 4096,
@@ -87,12 +141,96 @@ export class AiParserService {
     }
 
     const parsed = this.parseJson(text);
-    const result = this.validate(parsed);
+    return this.validateSchema(parsed);
+  }
 
-    this.logger.log(
-      `Parsed ${result.products.length} products, currency=${result.currency}`,
-    );
-    return result;
+  private checkDeterministic(result: RawParseResult, data: SpreadsheetData): string[] {
+    const issues: string[] = [];
+
+    // All prices should be > 0
+    const zeroPriceCount = result.products.filter((p) => p.price <= 0).length;
+    if (zeroPriceCount > result.products.length * 0.5) {
+      issues.push(`Больше половины товаров (${zeroPriceCount}/${result.products.length}) имеют нулевую цену`);
+    }
+
+    // Row count sanity: parsed products should be within ±50% of non-empty data rows
+    const nonEmptyRows = data.rows.filter((row) =>
+      row.some((cell) => cell.trim().length > 0),
+    ).length;
+    // Subtract ~2 header rows estimate
+    const estimatedDataRows = Math.max(1, nonEmptyRows - 2);
+    if (result.products.length > estimatedDataRows * 2) {
+      issues.push(`Слишком много товаров (${result.products.length}) для ${estimatedDataRows} строк данных`);
+    }
+    if (result.products.length < estimatedDataRows * 0.3 && estimatedDataRows > 5) {
+      issues.push(`Слишком мало товаров (${result.products.length}) для ${estimatedDataRows} строк данных`);
+    }
+
+    return issues;
+  }
+
+  private async validateWithAi(
+    data: SpreadsheetData,
+    result: RawParseResult,
+  ): Promise<ValidationResult> {
+    // Pick sample rows from start of data (skip first row as header)
+    const startIdx = Math.min(1, data.rows.length - 1);
+    const sampleSourceRows = data.rows.slice(startIdx, startIdx + SAMPLE_ROWS);
+    const sampleProducts = result.products.slice(0, SAMPLE_ROWS);
+
+    const sourceTsv = sampleSourceRows
+      .map((row, i) => [String(startIdx + i), ...row].join('\t'))
+      .join('\n');
+
+    const prompt = `Проверь результат парсинга таблицы с товарами.
+
+<source_rows>
+${sourceTsv}
+</source_rows>
+
+<parsed_result>
+${JSON.stringify({ currency: result.currency, products: sampleProducts }, null, 2)}
+</parsed_result>
+
+Проверь:
+1. Правильно ли определена валюта?
+2. Корректен ли перевод наименований (смысловой, не транслитерация)?
+3. Совпадают ли числа (цена за единицу, общее количество, общий вес) с исходными данными?
+4. Нет ли пропущенных или лишних строк?
+
+Ответь JSON:
+{
+  "valid": true или false,
+  "issues": ["описание проблемы 1", "..."]
+}
+
+Если всё корректно — {"valid": true, "issues": []}`;
+
+    try {
+      const response = await this.anthropic!.messages.create(
+        {
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1024,
+          system: VALIDATION_SYSTEM_PROMPT,
+          messages: [{ role: 'user', content: prompt }],
+        },
+        { timeout: 15_000 },
+      );
+
+      const text = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join('');
+
+      const parsed = this.parseJson(text) as Record<string, unknown>;
+      return {
+        valid: parsed.valid === true,
+        issues: Array.isArray(parsed.issues) ? parsed.issues.map(String) : [],
+      };
+    } catch (err) {
+      this.logger.warn('AI validation call failed, treating as unvalidated', err);
+      return { valid: false, issues: ['Сервис валидации недоступен'] };
+    }
   }
 
   private formatAsTsv(data: SpreadsheetData): string {
@@ -131,8 +269,13 @@ ${tsv}
 }`;
   }
 
+  private buildRetryPrompt(tsv: string, issues: string[]): string {
+    const base = this.buildUserPrompt(tsv);
+    const feedback = issues.map((issue, i) => `${i + 1}. ${issue}`).join('\n');
+    return `${base}\n\nВНИМАНИЕ: Предыдущая попытка парсинга содержала ошибки:\n${feedback}\n\nИсправь эти ошибки.`;
+  }
+
   private parseJson(text: string): unknown {
-    // Strip markdown code block if present
     let cleaned = text.trim();
     if (cleaned.startsWith('```')) {
       cleaned = cleaned.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
@@ -144,23 +287,20 @@ ${tsv}
     }
   }
 
-  private validate(raw: unknown): AiParseResult {
+  private validateSchema(raw: unknown): RawParseResult {
     if (!raw || typeof raw !== 'object') {
       throw new BadRequestException('AI вернул невалидный ответ');
     }
 
     const obj = raw as Record<string, unknown>;
 
-    // Currency
     const currency = String(obj.currency ?? '').toUpperCase();
     if (!VALID_CURRENCIES.has(currency)) {
       throw new BadRequestException(`Неизвестная валюта: ${obj.currency}`);
     }
 
-    // Column mapping
     const columnMapping = (obj.columnMapping ?? {}) as Record<string, number>;
 
-    // Products
     if (!Array.isArray(obj.products) || obj.products.length === 0) {
       throw new BadRequestException('AI не нашёл товаров в файле');
     }

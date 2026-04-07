@@ -55,7 +55,7 @@ export class ApiClientService {
     form.append('telegramUserId', telegramUserId);
     const { data } = await this.client.post('/documents/upload', form, {
       headers: form.getHeaders(),
-      timeout: 60_000,
+      timeout: 90_000,
     });
     return data;
   }

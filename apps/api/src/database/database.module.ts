@@ -12,6 +12,8 @@ import { Init1775502921706 } from './migrations/1775502921706-Init';
 import { AddTelegramUsersAndDocuments1775509193348 } from './migrations/1775509193348-AddTelegramUsersAndDocuments';
 import { AddCalculationConfig1775600000000 } from './migrations/1775600000000-AddCalculationConfig';
 import { AddDocumentCurrency1775700000000 } from './migrations/1775700000000-AddDocumentCurrency';
+import { AddAdminDocumentUpload1775800000000 } from './migrations/1775800000000-AddAdminDocumentUpload';
+import { AddRequiresReviewStatus1775900000000 } from './migrations/1775900000000-AddRequiresReviewStatus';
 
 @Module({
   imports: [
@@ -22,7 +24,7 @@ import { AddDocumentCurrency1775700000000 } from './migrations/1775700000000-Add
         url: config.getOrThrow<string>('DATABASE_URL'),
         entities: [User, RefreshToken, TnVedCode, CalculationLog, TelegramUser, Document, CalculationConfig],
         synchronize: false,
-        migrations: [Init1775502921706, AddTelegramUsersAndDocuments1775509193348, AddCalculationConfig1775600000000, AddDocumentCurrency1775700000000],
+        migrations: [Init1775502921706, AddTelegramUsersAndDocuments1775509193348, AddCalculationConfig1775600000000, AddDocumentCurrency1775700000000, AddAdminDocumentUpload1775800000000, AddRequiresReviewStatus1775900000000],
         migrationsRun: true,
       }),
     }),

@@ -56,12 +56,19 @@ export class FileUploadHandler {
         });
       }
 
-      await this.apiClient.uploadDocument(buffer, fileName, telegramUserId!);
+      const result = await this.apiClient.uploadDocument(buffer, fileName, telegramUserId!);
 
-      await ctx.reply(
-        `📄 Файл «${fileName}» принят в обработку.\n` +
-          'Вы получите уведомление по завершении.',
-      );
+      if (result.status === 'requires_review') {
+        await ctx.reply(
+          `⚠️ Файл «${fileName}» загружен, но не удалось уверенно распознать данные.\n` +
+            'Документ передан на ручную проверку оператору.',
+        );
+      } else {
+        await ctx.reply(
+          `📄 Файл «${fileName}» принят в обработку.\n` +
+            'Вы получите уведомление по завершении.',
+        );
+      }
     } catch (err) {
       this.logger.error('File upload error', err);
       await ctx.reply('Ошибка при обработке файла. Попробуйте ещё раз.');
