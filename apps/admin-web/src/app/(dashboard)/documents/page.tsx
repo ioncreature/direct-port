@@ -1,27 +1,9 @@
 'use client';
 
+import Link from 'next/link';
 import { useDocuments } from '@/hooks/use-documents';
-import type { DocumentStatus } from '@/lib/types';
-
-const statusLabels: Record<DocumentStatus, string> = {
-  pending: 'Ожидает',
-  processing: 'Обработка...',
-  processed: 'Обработан',
-  failed: 'Ошибка',
-};
-
-const statusColors: Record<DocumentStatus, string> = {
-  pending: '#888',
-  processing: '#2563eb',
-  processed: '#16a34a',
-  failed: '#dc2626',
-};
-
-function getTelegramName(doc: { telegramUser: { username: string | null; firstName: string | null; lastName: string | null } }) {
-  const u = doc.telegramUser;
-  if (u.username) return `@${u.username}`;
-  return [u.firstName, u.lastName].filter(Boolean).join(' ') || '—';
-}
+import { statusLabels, statusColors } from '@/lib/documents';
+import { getTelegramName } from '@/lib/telegram';
 
 export default function DocumentsPage() {
   const { documents, loading, refetch, downloadDocument } = useDocuments();
@@ -53,8 +35,12 @@ export default function DocumentsPage() {
         <tbody>
           {documents.map((doc) => (
             <tr key={doc.id}>
-              <td style={td}>{getTelegramName(doc)}</td>
-              <td style={td}>{doc.originalFileName}</td>
+              <td style={td}>{getTelegramName(doc.telegramUser)}</td>
+              <td style={td}>
+                <Link href={`/documents/${doc.id}`} style={{ color: '#2563eb', textDecoration: 'none' }}>
+                  {doc.originalFileName}
+                </Link>
+              </td>
               <td style={td}>
                 <span style={{ color: statusColors[doc.status], fontWeight: 500 }}>
                   {statusLabels[doc.status]}

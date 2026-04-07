@@ -24,6 +24,14 @@ export class TelegramUsersService {
     return this.repo.findOneByOrFail({ id: result.identifiers[0].id });
   }
 
+  async findAll(): Promise<(TelegramUser & { documentCount: number })[]> {
+    return this.repo
+      .createQueryBuilder('tu')
+      .loadRelationCountAndMap('tu.documentCount', 'tu.documents')
+      .orderBy('tu.createdAt', 'DESC')
+      .getMany() as Promise<(TelegramUser & { documentCount: number })[]>;
+  }
+
   async findByTelegramId(telegramId: number): Promise<TelegramUser | null> {
     return this.repo.findOne({ where: { telegramId: String(telegramId) } });
   }

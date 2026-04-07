@@ -25,10 +25,15 @@ export function useUsers() {
     await fetch();
   }, [fetch]);
 
+  const updateUser = useCallback(async (id: string, payload: { email?: string; password?: string; role?: string; isActive?: boolean }) => {
+    await api.patch(`/users/${id}`, payload);
+    await fetch();
+  }, [fetch]);
+
   const deleteUser = useCallback(async (id: string) => {
     await api.delete(`/users/${id}`);
     await fetch();
   }, [fetch]);
 
-  return { users, loading, refetch: fetch, createUser, deleteUser };
+  return { users, loading, refetch: fetch, createUser, updateUser, deleteUser };
 }

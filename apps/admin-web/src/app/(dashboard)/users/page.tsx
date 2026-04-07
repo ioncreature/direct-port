@@ -34,6 +34,12 @@ export default function UsersPage() {
               <td style={td}>{user.isActive ? 'Да' : 'Нет'}</td>
               <td style={td}>{new Date(user.createdAt).toLocaleDateString('ru')}</td>
               <td style={td}>
+                <Link
+                  href={`/users/${user.id}/edit`}
+                  style={{ color: '#2563eb', marginRight: 12, textDecoration: 'none' }}
+                >
+                  Изменить
+                </Link>
                 <button
                   onClick={() => { if (confirm('Удалить пользователя?')) deleteUser(user.id); }}
                   style={{ color: 'red', cursor: 'pointer', border: 'none', background: 'none' }}

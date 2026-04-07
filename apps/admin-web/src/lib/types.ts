@@ -20,9 +20,42 @@ export interface TelegramUser {
   firstName: string | null;
   lastName: string | null;
   createdAt: string;
+  documentCount?: number;
+}
+
+export interface TnVedCode {
+  id: number;
+  code: string;
+  description: string;
+  unit: string | null;
+  dutyRate: number;
+  vatRate: number;
+  exciseRate: number;
+  parentCode: string | null;
+  level: number;
 }
 
 export type DocumentStatus = 'pending' | 'processing' | 'processed' | 'failed';
+
+export interface DocumentResultRow {
+  description: string;
+  quantity: number;
+  price: number;
+  weight: number;
+  tnVedCode: string;
+  tnVedDescription: string;
+  dutyRate: number;
+  vatRate: number;
+  exciseRate: number;
+  totalPrice: number;
+  dutyAmount: number;
+  vatAmount: number;
+  exciseAmount: number;
+  logisticsCommission: number;
+  totalCost: number;
+  verificationStatus: 'exact' | 'review';
+  matchConfidence: number;
+}
 
 export interface Document {
   id: string;
@@ -31,6 +64,8 @@ export interface Document {
   status: DocumentStatus;
   rowCount: number;
   columnMapping: Record<string, number>;
+  parsedData: Record<string, unknown>[] | null;
+  resultData: DocumentResultRow[] | null;
   errorMessage: string | null;
   createdAt: string;
   updatedAt: string;
