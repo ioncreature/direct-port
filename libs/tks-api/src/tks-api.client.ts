@@ -9,73 +9,114 @@ import type {
 
 const DEFAULT_BASE_URL = 'https://api1.tks.ru';
 const DEFAULT_TIMEOUT = 15_000;
+const DEFAULT_CACHE_TTL = 60 * 60 * 1000;
+const DEFAULT_CACHE_MAX_SIZE = 1000;
+
+interface CacheEntry<T> {
+  data: Promise<T>;
+  expiresAt: number;
+}
 
 export class TksApiClient {
   private readonly clientKey: string;
   private readonly baseUrl: string;
   private readonly timeout: number;
+  private readonly cacheEnabled: boolean;
+  private readonly cacheTtl: number;
+  private readonly cacheMaxSize: number;
+  private readonly cache = new Map<string, CacheEntry<unknown>>();
 
   constructor(options: TksApiOptions) {
     this.clientKey = options.clientKey;
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
     this.timeout = options.timeout ?? DEFAULT_TIMEOUT;
+    this.cacheEnabled = options.cache !== false;
+    this.cacheTtl = options.cacheTtl ?? DEFAULT_CACHE_TTL;
+    this.cacheMaxSize = options.cacheMaxSize ?? DEFAULT_CACHE_MAX_SIZE;
   }
 
   // --- TNVED API ---
 
-  /** Текущая версия справочника ТН ВЭД */
   async getTnvedVersion(): Promise<TnvedVersion> {
-    return this.fetch<TnvedVersion>(
+    return this.fetchCached<TnvedVersion>(
       `/tnved.json/json/${this.clientKey}/ver.json`,
     );
   }
 
-  /** Список всех кодов ТН ВЭД */
   async getTnvedCodeList(): Promise<string[]> {
-    return this.fetch<string[]>(
+    return this.fetchCached<string[]>(
       `/tnved.json/json/${this.clientKey}/`,
     );
   }
 
-  /** Справка по товару по 10-значному коду ТН ВЭД */
+  /** Справка по 10-значному коду ТН ВЭД */
   async getTnvedCode(code: string): Promise<TnvedCode> {
-    this.validateTnvedCode(code);
-    return this.fetch<TnvedCode>(
+    validateTnvedCode(code);
+    return this.fetchCached<TnvedCode>(
       `/tnved.json/json/${this.clientKey}/${code}.json`,
     );
   }
 
-  /** URL для скачивания ZIP-архива всех кодов */
   getTnvedArchiveUrl(): string {
     return `${this.baseUrl}/tnved.json/json/${this.clientKey}/archive.zip`;
   }
 
   // --- GOODS API ---
 
-  /** Поиск товаров по текстовому запросу */
   async searchGoods(
     query: string,
     options?: { page?: number },
   ): Promise<GoodsSearchResponse> {
-    const params = new URLSearchParams({ searchstr: query });
-    if (options?.page) {
-      params.set('page', String(options.page));
-    }
-    return this.fetch<GoodsSearchResponse>(
-      `/goods.json/json/${this.clientKey}/?${params}`,
-    );
+    return this.searchGoodsInternal(query, undefined, options);
   }
 
-  /** Поиск товаров с группировкой по коду ТН ВЭД */
   async searchGoodsGrouped(
     query: string,
     options?: { page?: number },
   ): Promise<GoodsSearchResponse> {
-    const params = new URLSearchParams({
-      searchstr: query,
-      group: 'code',
-    });
-    if (options?.page) {
+    return this.searchGoodsInternal(query, { group: 'code' }, options);
+  }
+
+  async searchGoodsByCode(
+    query: string,
+    code: string,
+    options?: { page?: number },
+  ): Promise<GoodsSearchResponse> {
+    validateTnvedCode(code);
+    return this.searchGoodsInternal(query, { code }, options);
+  }
+
+  // --- Справочники ---
+
+  async getCountries(): Promise<OksmtCountry[]> {
+    return this.fetchCached<OksmtCountry[]>(
+      `/tnved.json/json/${this.clientKey}/oksmt.json`,
+    );
+  }
+
+  async getEconomicAreas(): Promise<EkArArea[]> {
+    return this.fetchCached<EkArArea[]>(
+      `/tnved.json/json/${this.clientKey}/ek_ar.json`,
+    );
+  }
+
+  clearCache(code?: string): void {
+    if (code) {
+      this.cache.delete(`/tnved.json/json/${this.clientKey}/${code}.json`);
+    } else {
+      this.cache.clear();
+    }
+  }
+
+  // --- Internal ---
+
+  private async searchGoodsInternal(
+    query: string,
+    extra?: Record<string, string>,
+    options?: { page?: number },
+  ): Promise<GoodsSearchResponse> {
+    const params = new URLSearchParams({ searchstr: query, ...extra });
+    if (options?.page != null) {
       params.set('page', String(options.page));
     }
     return this.fetch<GoodsSearchResponse>(
@@ -83,23 +124,38 @@ export class TksApiClient {
     );
   }
 
-  // --- Справочники ---
+  private fetchCached<T>(path: string): Promise<T> {
+    if (this.cacheEnabled) {
+      const cached = this.cache.get(path);
+      if (cached && cached.expiresAt > Date.now()) {
+        return cached.data as Promise<T>;
+      }
+    }
 
-  /** Справочник стран (ОКСМТ) */
-  async getCountries(): Promise<OksmtCountry[]> {
-    return this.fetch<OksmtCountry[]>(
-      `/tnved.json/json/${this.clientKey}/oksmt.json`,
-    );
+    const promise = this.fetch<T>(path);
+
+    if (this.cacheEnabled) {
+      this.evictIfNeeded();
+      this.cache.set(path, { data: promise, expiresAt: Date.now() + this.cacheTtl });
+      promise.catch(() => this.cache.delete(path));
+    }
+
+    return promise;
   }
 
-  /** Справочник экономических зон */
-  async getEconomicAreas(): Promise<EkArArea[]> {
-    return this.fetch<EkArArea[]>(
-      `/tnved.json/json/${this.clientKey}/ek_ar.json`,
-    );
+  private evictIfNeeded(): void {
+    if (this.cache.size < this.cacheMaxSize) return;
+    // Удаляем просроченные записи
+    const now = Date.now();
+    for (const [key, entry] of this.cache) {
+      if (entry.expiresAt <= now) this.cache.delete(key);
+    }
+    // Если всё ещё полон — удаляем самую старую запись (первый ключ в Map = oldest insertion)
+    if (this.cache.size >= this.cacheMaxSize) {
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey) this.cache.delete(firstKey);
+    }
   }
-
-  // --- Internal ---
 
   private async fetch<T>(path: string): Promise<T> {
     const url = `${this.baseUrl}${path}`;
@@ -118,12 +174,6 @@ export class TksApiClient {
 
     return response.json() as Promise<T>;
   }
-
-  private validateTnvedCode(code: string): void {
-    if (!/^\d{10}$/.test(code)) {
-      throw new Error(`Invalid TN VED code: expected 10 digits, got "${code}"`);
-    }
-  }
 }
 
 export class TksApiError extends Error {
@@ -134,5 +184,11 @@ export class TksApiError extends Error {
   ) {
     super(message);
     this.name = 'TksApiError';
+  }
+}
+
+export function validateTnvedCode(code: string): void {
+  if (!/^\d{10}$/.test(code)) {
+    throw new Error(`Invalid TN VED code: expected 10 digits, got "${code}"`);
   }
 }

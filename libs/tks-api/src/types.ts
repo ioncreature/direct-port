@@ -230,4 +230,51 @@ export interface TksApiOptions {
   clientKey: string;
   baseUrl?: string;
   timeout?: number;
+  /** Включить in-memory кэш для TNVED-запросов (по умолчанию true) */
+  cache?: boolean;
+  /** TTL кэша в миллисекундах (по умолчанию 1 час) */
+  cacheTtl?: number;
+  /** Максимальное количество записей в кэше (по умолчанию 1000) */
+  cacheMaxSize?: number;
 }
+
+// --- Характеристики (priznak) ---
+
+export enum Priznak {
+  ExportDuty = 0,
+  ImportDuty = 1,
+  Excise = 2,
+  Vat = 3,
+  Deposit = 4,
+  PrefDeveloping = 5,
+  LicenseExport = 6,
+  LicenseImport = 7,
+  QuotaExport = 8,
+  QuotaImport = 9,
+  Certification = 11,
+  StrategicGoods = 12,
+  DualUseImport = 13,
+  PermitImport = 14,
+  OtherFeatures = 15,
+  TempSpecialDuty = 16,
+  AdditionalImportDuty = 17,
+  AntidumpingDuty = 19,
+  CompensatoryDuty = 20,
+  DualUseExport = 21,
+  ExportFees = 22,
+  ImportFees = 23,
+  EaeuImportDuty = 24,
+  EaeuExcise = 25,
+  EaeuVat = 26,
+  PermitExport = 27,
+  Marking = 28,
+  Utilization = 29,
+  CountryImportDuty = 30,
+  EaeuExportDuty = 31,
+  PrefLeastDeveloped = 32,
+  Traceability = 33,
+  CountryExportBan = 34,
+  CountryImportBan = 35,
+}
+
+export type OperationType = 'import' | 'export' | 'deposit';

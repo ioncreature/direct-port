@@ -1,4 +1,13 @@
-export { TksApiClient, TksApiError } from './tks-api.client';
+export { TksApiClient, TksApiError, validateTnvedCode } from './tks-api.client';
+export {
+  formatTnvedCode,
+  isCodeActive,
+  calcProbability,
+  formatProbability,
+  decodeSign,
+  getPriznaksByOperation,
+} from './utils';
+export { Priznak } from './types';
 export type {
   TksApiOptions,
   TnvedCode,
@@ -10,4 +19,5 @@ export type {
   GoodsSearchResponse,
   OksmtCountry,
   EkArArea,
+  OperationType,
 } from './types';
