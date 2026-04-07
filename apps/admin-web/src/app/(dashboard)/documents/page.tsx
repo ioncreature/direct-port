@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useDocuments } from '@/hooks/use-documents';
 import { statusLabels, statusColors } from '@/lib/documents';
-import { getTelegramName } from '@/lib/telegram';
+import { getDocumentUploaderName } from '@/lib/telegram';
 
 export default function DocumentsPage() {
   const { documents, loading, refetch, downloadDocument } = useDocuments();
@@ -14,12 +14,20 @@ export default function DocumentsPage() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <h1>Документы</h1>
-        <button
-          onClick={refetch}
-          style={{ padding: '8px 16px', cursor: 'pointer', borderRadius: 4, border: '1px solid #ddd' }}
-        >
-          Обновить
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Link
+            href="/documents/upload"
+            style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', borderRadius: 4, textDecoration: 'none', fontSize: 14 }}
+          >
+            Загрузить
+          </Link>
+          <button
+            onClick={refetch}
+            style={{ padding: '8px 16px', cursor: 'pointer', borderRadius: 4, border: '1px solid #ddd' }}
+          >
+            Обновить
+          </button>
+        </div>
       </div>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
@@ -35,7 +43,7 @@ export default function DocumentsPage() {
         <tbody>
           {documents.map((doc) => (
             <tr key={doc.id}>
-              <td style={td}>{getTelegramName(doc.telegramUser)}</td>
+              <td style={td}>{getDocumentUploaderName(doc)}</td>
               <td style={td}>
                 <Link href={`/documents/${doc.id}`} style={{ color: '#2563eb', textDecoration: 'none' }}>
                   {doc.originalFileName}

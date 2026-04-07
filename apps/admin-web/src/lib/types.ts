@@ -35,7 +35,7 @@ export interface TnVedCode {
   level: number;
 }
 
-export type DocumentStatus = 'pending' | 'processing' | 'processed' | 'failed';
+export type DocumentStatus = 'pending' | 'processing' | 'processed' | 'failed' | 'requires_review';
 
 export interface DocumentResultRow {
   description: string;
@@ -59,7 +59,8 @@ export interface DocumentResultRow {
 
 export interface Document {
   id: string;
-  telegramUser: TelegramUser;
+  telegramUser: TelegramUser | null;
+  uploadedBy: { id: string; email: string } | null;
   originalFileName: string;
   status: DocumentStatus;
   rowCount: number;

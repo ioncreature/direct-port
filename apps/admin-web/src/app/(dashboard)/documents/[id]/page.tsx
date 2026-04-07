@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useDocument } from '@/hooks/use-document';
 import { statusLabels, statusColors, downloadDocument } from '@/lib/documents';
-import { getTelegramName } from '@/lib/telegram';
+import { getDocumentUploaderName } from '@/lib/telegram';
 import type { DocumentResultRow } from '@/lib/types';
 
 const columnMappingLabels: Record<string, string> = {
@@ -63,7 +63,7 @@ export default function DocumentDetailPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 24 }}>
         <InfoCard label="Статус" value={statusLabels[doc.status]} color={statusColors[doc.status]} />
         <InfoCard label="Строк" value={String(doc.rowCount)} />
-        <InfoCard label="Пользователь" value={getTelegramName(doc.telegramUser)} />
+        <InfoCard label="Пользователь" value={getDocumentUploaderName(doc)} />
         <InfoCard label="Создан" value={new Date(doc.createdAt).toLocaleString('ru')} />
         <InfoCard label="Обновлён" value={new Date(doc.updatedAt).toLocaleString('ru')} />
       </div>

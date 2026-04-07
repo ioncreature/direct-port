@@ -11,13 +11,24 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { MulterOptions } from '@nestjs/platform-express/multer/interfaces/multer-options.interface';
 import { Response } from 'express';
 import { DocumentsService } from './documents.service';
 import { ExcelExportService } from './excel-export.service';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { UserRole } from '../database/entities/user.entity';
+
+const SPREADSHEET_UPLOAD: MulterOptions = {
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ext = file.originalname.split('.').pop()?.toLowerCase();
+    if (ext === 'xlsx' || ext === 'csv') cb(null, true);
+    else cb(new BadRequestException('Only .xlsx and .csv files are supported'), false);
+  },
+};
 
 @Controller('documents')
 export class DocumentsController {
@@ -32,22 +43,24 @@ export class DocumentsController {
   }
 
   @Post('upload')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      limits: { fileSize: 10 * 1024 * 1024 },
-      fileFilter: (_req, file, cb) => {
-        const ext = file.originalname.split('.').pop()?.toLowerCase();
-        if (ext === 'xlsx' || ext === 'csv') cb(null, true);
-        else cb(new BadRequestException('Only .xlsx and .csv files are supported'), false);
-      },
-    }),
-  )
+  @UseInterceptors(FileInterceptor('file', SPREADSHEET_UPLOAD))
   async upload(
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadDocumentDto,
   ) {
     if (!file) throw new BadRequestException('File is required');
-    return this.service.createFromFile(file.buffer, file.originalname, dto.telegramUserId);
+    return this.service.createFromFile(file.buffer, file.originalname, { telegramUserId: dto.telegramUserId });
+  }
+
+  @Post('upload-admin')
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(FileInterceptor('file', SPREADSHEET_UPLOAD))
+  async uploadAdmin(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: { id: string },
+  ) {
+    if (!file) throw new BadRequestException('File is required');
+    return this.service.createFromFile(file.buffer, file.originalname, { uploadedByUserId: user.id });
   }
 
   @Get()

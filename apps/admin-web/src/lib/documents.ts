@@ -6,6 +6,7 @@ export const statusLabels: Record<DocumentStatus, string> = {
   processing: 'Обработка...',
   processed: 'Обработан',
   failed: 'Ошибка',
+  requires_review: 'На проверку',
 };
 
 export const statusColors: Record<DocumentStatus, string> = {
@@ -13,6 +14,7 @@ export const statusColors: Record<DocumentStatus, string> = {
   processing: '#2563eb',
   processed: '#16a34a',
   failed: '#dc2626',
+  requires_review: '#ca8a04',
 };
 
 export async function downloadDocument(id: string, fileName: string) {
