@@ -19,7 +19,7 @@ import { NotificationHandler } from './handlers/notification.handler';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         connection: {
-          url: config.get('REDIS_URL', 'redis://localhost:6379'),
+          url: config.get('REDIS_URL', 'redis://localhost:6380'),
         },
       }),
     }),

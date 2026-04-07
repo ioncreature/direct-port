@@ -15,7 +15,7 @@
       "args": [
         "-y",
         "@anthropic-ai/mcp-server-redis",
-        "redis://localhost:6379"
+        "redis://localhost:6380"
       ]
     }
   }

@@ -20,7 +20,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         connection: {
-          url: config.get('REDIS_URL', 'redis://localhost:6379'),
+          url: config.get('REDIS_URL', 'redis://localhost:6380'),
         },
       }),
     }),

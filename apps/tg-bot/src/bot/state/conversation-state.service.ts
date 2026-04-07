@@ -32,7 +32,7 @@ export class ConversationStateService implements OnModuleDestroy {
 
   constructor(private config: ConfigService) {
     this.redis = new Redis(
-      this.config.get<string>('REDIS_URL') ?? 'redis://localhost:6379',
+      this.config.get<string>('REDIS_URL') ?? 'redis://localhost:6380',
     );
   }
 

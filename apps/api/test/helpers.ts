@@ -95,7 +95,7 @@ export async function createTestApp(): Promise<INestApplication> {
         synchronize: true,
         dropSchema: true,
       }),
-      BullModule.forRoot({ connection: { host: 'localhost', port: 6379 } }),
+      BullModule.forRoot({ connection: { host: 'localhost', port: 6380 } }),
       AuthModule,
       UsersModule,
       TnVedModule,

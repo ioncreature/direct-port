@@ -17,7 +17,9 @@ pnpm install
 pnpm infra
 
 # Скопировать переменные окружения
-cp .env.example apps/api/.env
+cp apps/api/.env.example apps/api/.env
+cp apps/tg-bot/.env.example apps/tg-bot/.env
+cp apps/admin-web/.env.example apps/admin-web/.env
 
 # Запустить миграции и seed
 cd apps/api && pnpm migration:run && pnpm seed && cd ../..
@@ -33,7 +35,7 @@ Docker Compose поднимает:
 | Сервис   | Порт | Credentials                |
 |----------|------|----------------------------|
 | Postgres | 5434 | directport / directport    |
-| Redis    | 6379 | —                          |
+| Redis    | 6380 | —                          |
 
 ```bash
 pnpm infra          # запуск
@@ -103,13 +105,13 @@ Seed создаёт: `admin@directport.ru` / `admin123`
 
 ## Переменные окружения
 
-Скопировать `.env.example` в `apps/api/.env`:
+Каждое приложение имеет свой `.env.example` в своей директории:
 
 | Переменная            | Описание                          | По умолчанию                    |
 |-----------------------|-----------------------------------|---------------------------------|
 | PORT                  | Порт API                          | 3001                            |
 | DATABASE_URL          | PostgreSQL connection string      | postgresql://...localhost:5434   |
-| REDIS_URL             | Redis connection string           | redis://localhost:6379           |
+| REDIS_URL             | Redis connection string           | redis://localhost:6380           |
 | JWT_SECRET            | Секрет для JWT                    | change-me-to-a-random-secret    |
 | JWT_ACCESS_EXPIRATION | Время жизни access token          | 15m                             |
 | API_INTERNAL_KEY      | Ключ для service-to-service (бот) | change-me-to-a-random-key       |

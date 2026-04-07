@@ -19,25 +19,28 @@ interface ResultRow {
   logisticsCommission: number;
   totalCost: number;
   verificationStatus: 'exact' | 'review';
-  matchConfidence: number;
 }
 
-const COLUMNS: { header: string; key: keyof ResultRow; width: number; numFmt?: string }[] = [
-  { header: 'Наименование', key: 'description', width: 40 },
-  { header: 'Количество', key: 'quantity', width: 12 },
-  { header: 'Цена (USD)', key: 'price', width: 14, numFmt: '#,##0.00' },
-  { header: 'Вес (кг)', key: 'weight', width: 12, numFmt: '#,##0.00' },
-  { header: 'Код ТН ВЭД', key: 'tnVedCode', width: 16 },
-  { header: 'Описание ТН ВЭД', key: 'tnVedDescription', width: 35 },
-  { header: 'Ставка пошлины (%)', key: 'dutyRate', width: 18, numFmt: '0.00' },
-  { header: 'Ставка НДС (%)', key: 'vatRate', width: 16, numFmt: '0.00' },
-  { header: 'Сумма товара', key: 'totalPrice', width: 16, numFmt: '#,##0.00' },
-  { header: 'Итого пошлина', key: 'dutyAmount', width: 16, numFmt: '#,##0.00' },
-  { header: 'Итого НДС', key: 'vatAmount', width: 14, numFmt: '#,##0.00' },
-  { header: 'Комиссия доставки', key: 'logisticsCommission', width: 18, numFmt: '#,##0.00' },
-  { header: 'Итого стоимость', key: 'totalCost', width: 18, numFmt: '#,##0.00' },
-  { header: 'Статус проверки', key: 'verificationStatus', width: 18 },
-];
+function buildColumns(currency: string) {
+  const columns: { header: string; key: keyof ResultRow; width: number; numFmt?: string }[] = [
+    { header: 'Наименование', key: 'description', width: 40 },
+    { header: 'Количество', key: 'quantity', width: 12 },
+    { header: `Цена (${currency})`, key: 'price', width: 14, numFmt: '#,##0.00' },
+    { header: 'Вес (кг)', key: 'weight', width: 12, numFmt: '#,##0.00' },
+    { header: 'Код ТН ВЭД', key: 'tnVedCode', width: 16 },
+    { header: 'Описание ТН ВЭД', key: 'tnVedDescription', width: 35 },
+    { header: 'Ставка пошлины (%)', key: 'dutyRate', width: 18, numFmt: '0.00' },
+    { header: 'Ставка НДС (%)', key: 'vatRate', width: 16, numFmt: '0.00' },
+    { header: `Сумма товара (${currency})`, key: 'totalPrice', width: 18, numFmt: '#,##0.00' },
+    { header: `Пошлина (${currency})`, key: 'dutyAmount', width: 16, numFmt: '#,##0.00' },
+    { header: `НДС (${currency})`, key: 'vatAmount', width: 14, numFmt: '#,##0.00' },
+    { header: `Акциз (${currency})`, key: 'exciseAmount', width: 14, numFmt: '#,##0.00' },
+    { header: `Комиссия (${currency})`, key: 'logisticsCommission', width: 18, numFmt: '#,##0.00' },
+    { header: `Итого (${currency})`, key: 'totalCost', width: 18, numFmt: '#,##0.00' },
+    { header: 'Статус проверки', key: 'verificationStatus', width: 18 },
+  ];
+  return columns;
+}
 
 const GREEN_FILL: ExcelJS.Fill = {
   type: 'pattern',
@@ -77,6 +80,8 @@ export class ExcelExportService {
       return this.generateRaw(workbook, data as unknown as Record<string, unknown>[]);
     }
 
+    const COLUMNS = buildColumns(doc.currency || 'USD');
+
     // Column definitions
     sheet.columns = COLUMNS.map((col) => ({
       header: col.header,
@@ -112,6 +117,7 @@ export class ExcelExportService {
         totalPrice: row.totalPrice,
         dutyAmount: row.dutyAmount,
         vatAmount: row.vatAmount,
+        exciseAmount: row.exciseAmount,
         logisticsCommission: row.logisticsCommission,
         totalCost: row.totalCost,
         verificationStatus: row.verificationStatus === 'exact' ? 'Точное' : 'Ручная проверка',
