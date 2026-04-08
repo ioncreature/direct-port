@@ -44,7 +44,7 @@ export default function DashboardPage() {
         <div>
           <h3 style={{ marginBottom: 12 }}>Статусы документов</h3>
           <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 16 }}>
-            {(['pending', 'processing', 'processed', 'failed'] as DocumentStatus[]).map((status) => (
+            {(['parsing', 'pending', 'processing', 'processed', 'failed'] as DocumentStatus[]).map((status) => (
               <div key={status} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
                 <span style={{ color: statusColors[status] }}>{statusLabels[status]}</span>
                 <strong>{statusCounts[status] || 0}</strong>

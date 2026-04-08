@@ -25,7 +25,7 @@ export class FileUploadHandler {
     }
 
     try {
-      await ctx.reply('📥 Загружаю файл и анализирую... Это может занять до 30 секунд.');
+      await ctx.reply('📥 Загружаю файл...');
 
       const file = await ctx.getFile();
       const url = `https://api.telegram.org/file/bot${ctx.api.token}/${file.file_path}`;
@@ -56,19 +56,12 @@ export class FileUploadHandler {
         });
       }
 
-      const result = await this.apiClient.uploadDocument(buffer, fileName, telegramUserId!);
+      await this.apiClient.uploadDocument(buffer, fileName, telegramUserId!);
 
-      if (result.status === 'requires_review') {
-        await ctx.reply(
-          `⚠️ Файл «${fileName}» загружен, но не удалось уверенно распознать данные.\n` +
-            'Документ передан на ручную проверку оператору.',
-        );
-      } else {
-        await ctx.reply(
-          `📄 Файл «${fileName}» принят в обработку.\n` +
-            'Вы получите уведомление по завершении.',
-        );
-      }
+      await ctx.reply(
+        `📄 Файл «${fileName}» принят в обработку.\n` +
+          'Вы получите уведомление по завершении.',
+      );
     } catch (err) {
       this.logger.error('File upload error', err);
       await ctx.reply('Ошибка при обработке файла. Попробуйте ещё раз.');

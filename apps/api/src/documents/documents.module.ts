@@ -13,11 +13,13 @@ import { CalculationLogsModule } from '../calculation-logs/calculation-logs.modu
 import { DocumentsController } from './documents.controller';
 import { DocumentsService } from './documents.service';
 import { DocumentsProcessor } from './documents.processor';
+import { DocumentsParsingProcessor } from './documents-parsing.processor';
 import { ExcelExportService } from './excel-export.service';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Document]),
+    BullModule.registerQueue({ name: 'document-parsing' }),
     BullModule.registerQueue({ name: 'document-processing' }),
     BullModule.registerQueue({ name: 'document-notifications' }),
     ClassifierModule,
@@ -30,6 +32,6 @@ import { ExcelExportService } from './excel-export.service';
     CalculationLogsModule,
   ],
   controllers: [DocumentsController],
-  providers: [DocumentsService, DocumentsProcessor, ExcelExportService],
+  providers: [DocumentsService, DocumentsProcessor, DocumentsParsingProcessor, ExcelExportService],
 })
 export class DocumentsModule {}

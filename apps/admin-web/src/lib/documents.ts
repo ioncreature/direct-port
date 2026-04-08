@@ -2,6 +2,7 @@ import type { DocumentStatus } from './types';
 import api from './api';
 
 export const statusLabels: Record<DocumentStatus, string> = {
+  parsing: 'Распознавание...',
   pending: 'Ожидает',
   processing: 'Обработка...',
   processed: 'Обработан',
@@ -10,6 +11,7 @@ export const statusLabels: Record<DocumentStatus, string> = {
 };
 
 export const statusColors: Record<DocumentStatus, string> = {
+  parsing: '#8b5cf6',
   pending: '#888',
   processing: '#2563eb',
   processed: '#16a34a',

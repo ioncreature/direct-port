@@ -11,6 +11,7 @@ import { TelegramUser } from './telegram-user.entity';
 import { User } from './user.entity';
 
 export enum DocumentStatus {
+  PARSING = 'parsing',
   PENDING = 'pending',
   PROCESSING = 'processing',
   PROCESSED = 'processed',
@@ -35,8 +36,11 @@ export class Document {
   @Column({ type: 'enum', enum: DocumentStatus, default: DocumentStatus.PENDING })
   status: DocumentStatus;
 
-  @Column({ type: 'jsonb', name: 'column_mapping' })
-  columnMapping: Record<string, number>;
+  @Column({ type: 'bytea', name: 'file_buffer', nullable: true, select: false })
+  fileBuffer: Buffer | null;
+
+  @Column({ type: 'jsonb', name: 'column_mapping', nullable: true })
+  columnMapping: Record<string, number> | null;
 
   @Column({ type: 'varchar', length: 10, nullable: true })
   currency: string | null;

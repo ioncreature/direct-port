@@ -6,6 +6,7 @@ import { BullModule } from '@nestjs/bullmq';
 import * as request from 'supertest';
 import Anthropic from '@anthropic-ai/sdk';
 import { TksApiClient } from '@direct-port/tks-api';
+import { AiParserService } from '../src/ai-parser/ai-parser.service';
 import { APP_GUARD } from '@nestjs/core';
 import { DataSource } from 'typeorm';
 
@@ -41,6 +42,20 @@ process.env.API_INTERNAL_KEY = 'test-internal-key';
 
 // --- Mock TKS API ---
 
+export function createMockAiParser(): Partial<AiParserService> {
+  return {
+    parse: jest.fn().mockResolvedValue({
+      products: [
+        { description: 'Тестовый товар', quantity: 10, price: 500, weight: 100 },
+        { description: 'Кофе растворимый', quantity: 5, price: 200, weight: 25 },
+      ],
+      currency: 'USD',
+      columnMapping: { description: 0, price: 1, weight: 2, quantity: 3 },
+      confident: true,
+    }),
+  };
+}
+
 export function createMockTksApi(): Partial<TksApiClient> {
   return {
     searchGoodsGrouped: jest.fn().mockResolvedValue({
@@ -72,6 +87,7 @@ export function createMockTksApi(): Partial<TksApiClient> {
 
 export async function createTestApp(): Promise<INestApplication> {
   const mockTksApi = createMockTksApi();
+  const mockAiParser = createMockAiParser();
 
   const moduleRef = await Test.createTestingModule({
     imports: [
@@ -113,6 +129,8 @@ export async function createTestApp(): Promise<INestApplication> {
     .useValue(mockTksApi)
     .overrideProvider(Anthropic)
     .useValue(null)
+    .overrideProvider(AiParserService)
+    .useValue(mockAiParser)
     .compile();
 
   const app = moduleRef.createNestApplication();

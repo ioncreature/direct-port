@@ -49,6 +49,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
   - Currency — курсы валют ЦБ РФ, конвертация в RUB
   - Tks — shared-модуль TksApiClient
 - Common: PaginationQueryDto, PaginatedResponse — shared инфраструктура пагинации
+- Очереди BullMQ: document-parsing (AI-парсинг), document-processing (классификация/расчёт), document-notifications (уведомления в Telegram)
 - Entities: User, TnVedCode, RefreshToken, CalculationLog, TelegramUser, Document, CalculationConfig
 - Миграции и seed через TypeORM CLI (tsx)
 
@@ -56,7 +57,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 - Страница логина, JWT-сессия
 - Дашборд: статистика, последние документы
 - Пользователи: список с пагинацией/фильтром по роли/сортировкой, создание, редактирование, удаление
-- Документы: список с пагинацией/фильтром по статусу/сортировкой, загрузка .xlsx/.csv, детали с таблицей результатов, скачивание Excel, переобработка failed-документов
+- Документы: список с пагинацией/фильтром по статусу/сортировкой, загрузка .xlsx/.csv, детали с таблицей результатов, скачивание Excel, переобработка failed-документов, ручная проверка requires_review (редактирование parsedData, подтверждение/отклонение)
 - Telegram-пользователи: список с пагинацией/сортировкой, детальная страница с документами пользователя
 - Логи расчётов: таблица с пагинацией/сортировкой, ссылки на документы
 - Справочник ТН ВЭД: поиск кодов с debounce
@@ -66,9 +67,8 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 
 ### apps/tg-bot — Telegram-бот
 - grammY, команды /start, /help
-- Загрузка .xlsx/.csv → отправка файла в API для AI-парсинга (POST /documents/upload)
+- Загрузка .xlsx/.csv → отправка файла в API (POST /documents/upload), мгновенный ответ (парсинг асинхронный через BullMQ)
 - Состояние диалога в Redis (ConversationStateService, TTL 1 час)
-- Обработка статуса requires_review (уведомление пользователя о ручной проверке)
 - Получение уведомлений через BullMQ (document-notifications) → отправка Excel в Telegram
 - API-клиент для связи с backend (X-Internal-Key)
 
@@ -82,11 +82,12 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 
 ```
 Загрузка файла (Telegram-бот: POST /documents/upload, Админка: POST /documents/upload-admin)
-→ AiParser (Claude): определение структуры, валюты, перевод наименований, извлечение данных
+→ Сохранение fileBuffer в БД, status=PARSING → BullMQ: document-parsing (ответ за 1-2с)
+→ [Воркер] AiParser (Claude): определение структуры, валюты, перевод, извлечение данных
 → Валидация (детерминистическая + AI), retry до 2 попыток
 → Если confident → status=PENDING → BullMQ: document-processing
-→ Если не confident → status=REQUIRES_REVIEW (можно переобработать из админки)
-→ Classifier (TKS API: searchGoodsGrouped → getTnvedCode)
+→ Если не confident → status=REQUIRES_REVIEW → ручная проверка в админке (PATCH :id/review + POST :id/reprocess или POST :id/reject)
+→ [Воркер] Classifier (TKS API: searchGoodsGrouped → getTnvedCode)
 → Verification (Claude: верификация кодов, опционально)
 → DutyInterpreter (Claude: интерпретация правил расчёта пошлин)
 → Calculator (пошлина + НДС + акциз + комиссия, конвертация валют → RUB)
@@ -94,7 +95,9 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 → Excel-экспорт → отправка пользователю (только для Telegram-загрузок)
 ```
 
-Переобработка: `POST /documents/:id/reprocess` — сбрасывает failed/requires_review → pending, ставит в очередь.
+BullMQ очереди: `document-parsing` → `document-processing` → `document-notifications`
+
+Переобработка: `POST /documents/:id/reprocess` — если есть parsedData → document-processing, если нет (но есть fileBuffer) → document-parsing.
 
 ### Форматы данных в pipeline
 
@@ -209,8 +212,8 @@ Docker compose (порты выбраны чтобы не конфликтова
 - [x] Повторная обработка: POST /documents/:id/reprocess для failed/requires_review
 - [x] Детальная страница Telegram-пользователя: информация + документы пользователя
 - [x] AI-интерпретация пошлин: DutyInterpreterService (Claude) для расчёта комбинированных ставок
-- [ ] Перенос AI-парсинга в BullMQ: сейчас парсинг блокирует HTTP-запрос (до 90с), нужно сделать асинхронным
-- [ ] Интерфейс ручной проверки: оператор в админке должен видеть документы со статусом requires_review, редактировать parsedData и одобрять/отклонять
+- [x] Перенос AI-парсинга в BullMQ: очередь document-parsing, воркер DocumentsParsingProcessor, fileBuffer в BYTEA, статус PARSING
+- [x] Интерфейс ручной проверки: PATCH :id/review (редактирование parsedData), POST :id/reject (отклонение с причиной), inline-таблица на странице деталей документа
 
 ## Три точки применения AI (Claude)
 
