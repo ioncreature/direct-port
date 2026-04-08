@@ -24,5 +24,14 @@ export function useDocument(id: string) {
 
   useEffect(() => { fetch(); }, [fetch]);
 
-  return { document, loading, error, refetch: fetch };
+  const reprocess = useCallback(async () => {
+    try {
+      await api.post(`/documents/${id}/reprocess`);
+      await fetch();
+    } catch {
+      setError('Не удалось переобработать документ');
+    }
+  }, [id, fetch]);
+
+  return { document, loading, error, refetch: fetch, reprocess };
 }

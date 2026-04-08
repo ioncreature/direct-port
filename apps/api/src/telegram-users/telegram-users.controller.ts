@@ -1,4 +1,4 @@
-import { Body, Controller, Get, NotFoundException, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, ParseIntPipe, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { TelegramUsersService } from './telegram-users.service';
 import { RegisterTelegramUserDto } from './dto/register-telegram-user.dto';
 import { FindTelegramUsersQueryDto } from './dto/find-telegram-users-query.dto';
@@ -13,6 +13,12 @@ export class TelegramUsersController {
   @Roles(UserRole.ADMIN)
   findAll(@Query() query: FindTelegramUsersQueryDto) {
     return this.service.findAll(query);
+  }
+
+  @Get('by-id/:id')
+  @Roles(UserRole.ADMIN)
+  findOneById(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.findOneById(id);
   }
 
   @Post('register')

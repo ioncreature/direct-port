@@ -71,6 +71,12 @@ export class DocumentsController {
     return this.service.findAll(query);
   }
 
+  @Post(':id/reprocess')
+  @Roles(UserRole.ADMIN)
+  reprocess(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.reprocess(id);
+  }
+
   @Get(':id')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   findOne(@Param('id', ParseUUIDPipe) id: string) {

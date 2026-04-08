@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
@@ -36,6 +36,16 @@ export class TelegramUsersService {
       .getManyAndCount() as [Array<TelegramUser & { documentCount: number }>, number];
 
     return paginate(data, total, query.page, query.limit);
+  }
+
+  async findOneById(id: string): Promise<TelegramUser & { documentCount: number }> {
+    const [user] = await this.repo
+      .createQueryBuilder('tu')
+      .loadRelationCountAndMap('tu.documentCount', 'tu.documents')
+      .where('tu.id = :id', { id })
+      .getMany() as Array<TelegramUser & { documentCount: number }>;
+    if (!user) throw new NotFoundException('Telegram user not found');
+    return user;
   }
 
   async findByTelegramId(telegramId: number): Promise<TelegramUser | null> {

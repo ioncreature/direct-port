@@ -80,3 +80,23 @@ export interface Document {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface CalculationLogSummary {
+  grandTotal: number;
+  totalDuty: number;
+  totalVat: number;
+  totalExcise: number;
+  totalLogistics: number;
+  currency: string;
+}
+
+export interface CalculationLog {
+  id: string;
+  documentId: string | null;
+  telegramUserId: string | null;
+  telegramUsername: string | null;
+  fileName: string | null;
+  itemsCount: number;
+  resultSummary: CalculationLogSummary | null;
+  createdAt: string;
+}

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { FindOptionsWhere, Repository } from 'typeorm';
@@ -61,6 +61,7 @@ export class DocumentsService {
   async findAll(query: FindDocumentsQueryDto): Promise<PaginatedResponse<Document>> {
     const where: FindOptionsWhere<Document> = {};
     if (query.status) where.status = query.status;
+    if (query.telegramUserId) where.telegramUserId = query.telegramUserId;
 
     const [data, total] = await this.repo.findAndCount({
       select: [
@@ -75,6 +76,19 @@ export class DocumentsService {
     });
 
     return paginate(data, total, query.page, query.limit);
+  }
+
+  async reprocess(id: string): Promise<Document> {
+    const doc = await this.findOne(id);
+    if (doc.status !== DocumentStatus.FAILED && doc.status !== DocumentStatus.REQUIRES_REVIEW) {
+      throw new BadRequestException('Only failed or requires_review documents can be reprocessed');
+    }
+    doc.status = DocumentStatus.PENDING;
+    doc.errorMessage = null;
+    doc.resultData = null;
+    const saved = await this.repo.save(doc);
+    await this.queue.add('process-document', { documentId: saved.id });
+    return saved;
   }
 
   async findOne(id: string): Promise<Document> {

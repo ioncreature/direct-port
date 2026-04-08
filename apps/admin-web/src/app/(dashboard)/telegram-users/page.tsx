@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useTelegramUsers } from '@/hooks/use-telegram-users';
 import { th, td, btnOutline } from '@/lib/table-styles';
 
@@ -46,7 +47,11 @@ export default function TelegramUsersPage() {
             <tbody>
               {telegramUsers.map((u) => (
                 <tr key={u.id}>
-                  <td style={td}>{u.telegramId}</td>
+                  <td style={td}>
+                    <Link href={`/telegram-users/${u.id}`} style={{ color: '#2563eb', textDecoration: 'none' }}>
+                      {u.telegramId}
+                    </Link>
+                  </td>
                   <td style={td}>{u.username ? `@${u.username}` : '—'}</td>
                   <td style={td}>{new Date(u.createdAt).toLocaleDateString('ru')}</td>
                   <td style={td}>{[u.firstName, u.lastName].filter(Boolean).join(' ') || '—'}</td>

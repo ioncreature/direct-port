@@ -1,11 +1,14 @@
 'use client';
 
+import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useDocument } from '@/hooks/use-document';
 import { statusLabels, statusColors, downloadDocument } from '@/lib/documents';
 import { getDocumentUploaderName } from '@/lib/telegram';
 import type { DocumentResultRow } from '@/lib/types';
+import { fmt } from '@/lib/format';
+import { InfoCard } from '@/components/info-card';
 
 const columnMappingLabels: Record<string, string> = {
   description: 'Описание',
@@ -14,13 +17,10 @@ const columnMappingLabels: Record<string, string> = {
   quantity: 'Количество',
 };
 
-function fmt(n: number) {
-  return n.toLocaleString('ru', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 export default function DocumentDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { document: doc, loading, error } = useDocument(id);
+  const { document: doc, loading, error, reprocess } = useDocument(id);
+  const [reprocessing, setReprocessing] = useState(false);
 
   if (loading) return <p>Загрузка...</p>;
   if (error || !doc) return <p style={{ color: '#dc2626' }}>{error || 'Документ не найден'}</p>;
@@ -49,14 +49,28 @@ export default function DocumentDetailPage() {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
         <h1 style={{ margin: 0 }}>{doc.originalFileName}</h1>
-        {doc.status === 'processed' && (
-          <button
-            onClick={() => downloadDocument(doc.id, doc.originalFileName)}
-            style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
-          >
-            Скачать Excel
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: 8 }}>
+          {(doc.status === 'failed' || doc.status === 'requires_review') && (
+            <button
+              onClick={async () => {
+                setReprocessing(true);
+                try { await reprocess(); } finally { setReprocessing(false); }
+              }}
+              disabled={reprocessing}
+              style={{ padding: '8px 16px', background: '#ca8a04', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+            >
+              {reprocessing ? 'Отправка...' : 'Переобработать'}
+            </button>
+          )}
+          {doc.status === 'processed' && (
+            <button
+              onClick={() => downloadDocument(doc.id, doc.originalFileName)}
+              style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+            >
+              Скачать Excel
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Info cards */}
@@ -141,14 +155,6 @@ export default function DocumentDetailPage() {
   );
 }
 
-function InfoCard({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 14 }}>
-      <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 15, fontWeight: 500, color: color || '#000' }}>{value}</div>
-    </div>
-  );
-}
 
 function ResultRow({ row, index }: { row: DocumentResultRow; index: number }) {
   const statusColor = row.verificationStatus === 'exact' ? '#16a34a' : '#ca8a04';

@@ -10,6 +10,7 @@ const navItems = [
   { href: '/users', label: 'Пользователи' },
   { href: '/telegram-users', label: 'Telegram' },
   { href: '/documents', label: 'Документы' },
+  { href: '/calculation-logs', label: 'Логи расчётов' },
   { href: '/tn-ved', label: 'ТН ВЭД' },
   { href: '/settings', label: 'Настройки' },
 ];

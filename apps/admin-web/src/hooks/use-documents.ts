@@ -6,7 +6,7 @@ import type { Document, DocumentStatus, PaginatedResponse, SortOrder } from '@/l
 
 const PAGE_SIZE = 20;
 
-export function useDocuments() {
+export function useDocuments(options?: { telegramUserId?: string }) {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -20,13 +20,14 @@ export function useDocuments() {
     try {
       const params: Record<string, string | number> = { page, limit: PAGE_SIZE, sortBy, sortOrder };
       if (status) params.status = status;
+      if (options?.telegramUserId) params.telegramUserId = options.telegramUserId;
       const { data } = await api.get<PaginatedResponse<Document>>('/documents', { params });
       setDocuments(data.data);
       setTotal(data.total);
     } finally {
       setLoading(false);
     }
-  }, [page, sortBy, sortOrder, status]);
+  }, [page, sortBy, sortOrder, status, options?.telegramUserId]);
 
   useEffect(() => { fetch(); }, [fetch]);
 
