@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Res,
@@ -19,6 +20,8 @@ import { ExcelExportService } from './excel-export.service';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { FindDocumentsQueryDto } from './dto/find-documents-query.dto';
+import { ReviewDocumentDto } from './dto/review-document.dto';
+import { RejectDocumentDto } from './dto/reject-document.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { UserRole } from '../database/entities/user.entity';
@@ -69,6 +72,18 @@ export class DocumentsController {
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   findAll(@Query() query: FindDocumentsQueryDto) {
     return this.service.findAll(query);
+  }
+
+  @Patch(':id/review')
+  @Roles(UserRole.ADMIN)
+  review(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReviewDocumentDto) {
+    return this.service.updateParsedData(id, dto);
+  }
+
+  @Post(':id/reject')
+  @Roles(UserRole.ADMIN)
+  reject(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RejectDocumentDto) {
+    return this.service.reject(id, dto);
   }
 
   @Post(':id/reprocess')

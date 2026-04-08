@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import api from '@/lib/api';
-import type { Document } from '@/lib/types';
+import type { Document, ParsedDataRow } from '@/lib/types';
 
 export function useDocument(id: string) {
   const [document, setDocument] = useState<Document | null>(null);
@@ -33,5 +33,24 @@ export function useDocument(id: string) {
     }
   }, [id, fetch]);
 
-  return { document, loading, error, refetch: fetch, reprocess };
+  const saveParsedData = useCallback(async (parsedData: ParsedDataRow[], currency?: string) => {
+    try {
+      await api.patch(`/documents/${id}/review`, { parsedData, currency });
+      await fetch();
+    } catch {
+      setError('Не удалось сохранить данные');
+      throw new Error('save failed');
+    }
+  }, [id, fetch]);
+
+  const reject = useCallback(async (reason: string) => {
+    try {
+      await api.post(`/documents/${id}/reject`, { reason });
+      await fetch();
+    } catch {
+      setError('Не удалось отклонить документ');
+    }
+  }, [id, fetch]);
+
+  return { document, loading, error, refetch: fetch, reprocess, saveParsedData, reject };
 }

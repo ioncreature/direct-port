@@ -35,7 +35,14 @@ export interface TnVedCode {
   level: number;
 }
 
-export type DocumentStatus = 'pending' | 'processing' | 'processed' | 'failed' | 'requires_review';
+export type DocumentStatus = 'parsing' | 'pending' | 'processing' | 'processed' | 'failed' | 'requires_review';
+
+export interface ParsedDataRow {
+  description: string;
+  quantity: number;
+  price: number;
+  weight: number;
+}
 
 export interface DocumentResultRow {
   description: string;
@@ -73,8 +80,9 @@ export interface Document {
   originalFileName: string;
   status: DocumentStatus;
   rowCount: number;
+  currency: string | null;
   columnMapping: Record<string, number>;
-  parsedData: Record<string, unknown>[] | null;
+  parsedData: ParsedDataRow[] | null;
   resultData: DocumentResultRow[] | null;
   errorMessage: string | null;
   createdAt: string;
