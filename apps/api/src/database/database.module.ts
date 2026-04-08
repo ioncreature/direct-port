@@ -14,6 +14,8 @@ import { AddCalculationConfig1775600000000 } from './migrations/1775600000000-Ad
 import { AddDocumentCurrency1775700000000 } from './migrations/1775700000000-AddDocumentCurrency';
 import { AddAdminDocumentUpload1775800000000 } from './migrations/1775800000000-AddAdminDocumentUpload';
 import { AddRequiresReviewStatus1775900000000 } from './migrations/1775900000000-AddRequiresReviewStatus';
+import { AddDocumentIdToCalculationLog1776000000000 } from './migrations/1776000000000-AddDocumentIdToCalculationLog';
+import { SeedService } from './seeds/seed.service';
 
 @Module({
   imports: [
@@ -24,10 +26,12 @@ import { AddRequiresReviewStatus1775900000000 } from './migrations/1775900000000
         url: config.getOrThrow<string>('DATABASE_URL'),
         entities: [User, RefreshToken, TnVedCode, CalculationLog, TelegramUser, Document, CalculationConfig],
         synchronize: false,
-        migrations: [Init1775502921706, AddTelegramUsersAndDocuments1775509193348, AddCalculationConfig1775600000000, AddDocumentCurrency1775700000000, AddAdminDocumentUpload1775800000000, AddRequiresReviewStatus1775900000000],
+        migrations: [Init1775502921706, AddTelegramUsersAndDocuments1775509193348, AddCalculationConfig1775600000000, AddDocumentCurrency1775700000000, AddAdminDocumentUpload1775800000000, AddRequiresReviewStatus1775900000000, AddDocumentIdToCalculationLog1776000000000],
         migrationsRun: true,
       }),
     }),
+    TypeOrmModule.forFeature([User, TnVedCode]),
   ],
+  providers: [SeedService],
 })
 export class DatabaseModule {}

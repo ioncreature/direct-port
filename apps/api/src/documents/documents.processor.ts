@@ -9,7 +9,9 @@ import { ClassifierService } from '../classifier/classifier.service';
 import { CalculatorService } from '../calculator/calculator.service';
 import { CalculationConfigService } from '../calculation-config/calculation-config.service';
 import { VerificationService } from '../verification/verification.service';
+import { DutyInterpreterService } from '../duty-interpreter/duty-interpreter.service';
 import { CurrencyService } from '../currency/currency.service';
+import { CalculationLogsService } from '../calculation-logs/calculation-logs.service';
 
 export interface DocumentNotification {
   documentId: string;
@@ -29,7 +31,9 @@ export class DocumentsProcessor extends WorkerHost {
     private calculator: CalculatorService,
     private configService: CalculationConfigService,
     private verification: VerificationService,
+    private dutyInterpreter: DutyInterpreterService,
     private currencyService: CurrencyService,
+    private calculationLogs: CalculationLogsService,
   ) {
     super();
   }
@@ -63,9 +67,19 @@ export class DocumentsProcessor extends WorkerHost {
 
       const classified = await this.classifier.classify(rows);
       const verified = await this.verification.verify(classified);
-      const summary = this.calculator.calculate(verified, commission);
+      const interpreted = await this.dutyInterpreter.interpret(verified);
 
+      // EUR→doc rate for specific duty amounts (EUR/kg, EUR/m2, etc.)
       const currency = doc.currency || 'USD';
+      let eurToDoc = 1;
+      if (currency !== 'EUR') {
+        const eurRate = await this.currencyService.getRate('EUR');
+        const docRate = currency === 'RUB' ? 1 : await this.currencyService.getRate(currency);
+        eurToDoc = eurRate / docRate;
+      }
+
+      const summary = this.calculator.calculateInterpreted(interpreted, commission, { eurToDoc });
+
       const needsConversion = currency !== 'RUB';
       let exchangeRate = 1;
       if (needsConversion) {
@@ -111,6 +125,24 @@ export class DocumentsProcessor extends WorkerHost {
       await this.repo.save(doc);
 
       await this.notify(doc, 'processed');
+
+      this.calculationLogs.create({
+        documentId: doc.id,
+        telegramUserId: doc.telegramUser?.telegramId ?? null,
+        telegramUsername: doc.telegramUser?.username ?? null,
+        fileName: doc.originalFileName,
+        itemsCount: rows.length,
+        resultSummary: {
+          grandTotal: summary.grandTotal,
+          totalDuty: summary.totalDuty,
+          totalVat: summary.totalVat,
+          totalExcise: summary.totalExcise,
+          totalLogistics: summary.totalLogistics,
+          currency: currency,
+        },
+      }).catch((err) => {
+        this.logger.warn(`Failed to write calculation log for ${documentId}`, err);
+      });
       this.logger.log(
         `Document ${documentId} processed: ${rows.length} rows, grandTotal=${summary.grandTotal}`,
       );
