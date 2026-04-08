@@ -3,13 +3,16 @@ import {
   TksApiClient,
   calcProbability,
   type GoodsItem,
+  type TnvedCode,
 } from '@direct-port/tks-api';
+import type { Dimension } from '../duty-interpreter/interfaces';
 
 export interface ClassifiedProduct {
   description: string;
   quantity: number;
   price: number;
   weight: number;
+  dimensions?: Dimension[];
   tnVedCode: string;
   tnVedDescription: string;
   dutyRate: number;
@@ -20,6 +23,7 @@ export interface ClassifiedProduct {
   exciseRate: number;
   matchConfidence: number;
   matched: boolean;
+  tnvedRaw?: TnvedCode;
 }
 
 interface ProductRow {
@@ -89,6 +93,7 @@ export class ClassifierService {
       exciseRate: rates.AKC ?? 0,
       matchConfidence: best.confidence,
       matched: true,
+      tnvedRaw: tnved,
     };
   }
 

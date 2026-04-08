@@ -8,6 +8,8 @@ import { CalculationConfigModule } from '../calculation-config/calculation-confi
 import { VerificationModule } from '../verification/verification.module';
 import { AiParserModule } from '../ai-parser/ai-parser.module';
 import { CurrencyModule } from '../currency/currency.module';
+import { DutyInterpreterModule } from '../duty-interpreter/duty-interpreter.module';
+import { CalculationLogsModule } from '../calculation-logs/calculation-logs.module';
 import { DocumentsController } from './documents.controller';
 import { DocumentsService } from './documents.service';
 import { DocumentsProcessor } from './documents.processor';
@@ -24,6 +26,8 @@ import { ExcelExportService } from './excel-export.service';
     VerificationModule,
     AiParserModule,
     CurrencyModule,
+    DutyInterpreterModule,
+    CalculationLogsModule,
   ],
   controllers: [DocumentsController],
   providers: [DocumentsService, DocumentsProcessor, ExcelExportService],

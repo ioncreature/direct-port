@@ -192,6 +192,7 @@ ${JSON.stringify(items, null, 2)}
             verified: true,
             suggestedCode: result.suggestedCode,
             verificationComment: result.comment,
+            tnvedRaw: tnved,
           });
         } else {
           verified.push({
