@@ -6,6 +6,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Res,
   UploadedFile,
   UseInterceptors,
@@ -17,6 +18,7 @@ import { DocumentsService } from './documents.service';
 import { ExcelExportService } from './excel-export.service';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
+import { FindDocumentsQueryDto } from './dto/find-documents-query.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { UserRole } from '../database/entities/user.entity';
@@ -65,8 +67,8 @@ export class DocumentsController {
 
   @Get()
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  findAll() {
-    return this.service.findAll();
+  findAll(@Query() query: FindDocumentsQueryDto) {
+    return this.service.findAll(query);
   }
 
   @Get(':id')

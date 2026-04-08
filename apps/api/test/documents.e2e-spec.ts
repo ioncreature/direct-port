@@ -84,12 +84,16 @@ describe('Documents (e2e)', () => {
         .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
 
-      expect(Array.isArray(res.body)).toBe(true);
-      expect(res.body.length).toBeGreaterThan(0);
-      expect(res.body[0]).toHaveProperty('originalFileName');
-      expect(res.body[0]).toHaveProperty('status');
+      expect(res.body).toHaveProperty('data');
+      expect(res.body).toHaveProperty('total');
+      expect(res.body).toHaveProperty('page', 1);
+      expect(res.body).toHaveProperty('limit', 20);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data.length).toBeGreaterThan(0);
+      expect(res.body.data[0]).toHaveProperty('originalFileName');
+      expect(res.body.data[0]).toHaveProperty('status');
       // findAll не возвращает тяжёлые поля
-      expect(res.body[0]).not.toHaveProperty('parsedData');
+      expect(res.body.data[0]).not.toHaveProperty('parsedData');
     });
 
     it('should reject for unauthenticated', async () => {

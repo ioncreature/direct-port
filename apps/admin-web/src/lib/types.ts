@@ -57,6 +57,15 @@ export interface DocumentResultRow {
   matchConfidence: number;
 }
 
+export type SortOrder = 'ASC' | 'DESC';
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 export interface Document {
   id: string;
   telegramUser: TelegramUser | null;

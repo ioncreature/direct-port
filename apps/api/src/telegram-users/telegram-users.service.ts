@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
 import { RegisterTelegramUserDto } from './dto/register-telegram-user.dto';
+import { FindTelegramUsersQueryDto } from './dto/find-telegram-users-query.dto';
+import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 
 @Injectable()
 export class TelegramUsersService {
@@ -24,12 +26,16 @@ export class TelegramUsersService {
     return this.repo.findOneByOrFail({ id: result.identifiers[0].id });
   }
 
-  async findAll(): Promise<(TelegramUser & { documentCount: number })[]> {
-    return this.repo
+  async findAll(query: FindTelegramUsersQueryDto): Promise<PaginatedResponse<TelegramUser & { documentCount: number }>> {
+    const [data, total] = await this.repo
       .createQueryBuilder('tu')
       .loadRelationCountAndMap('tu.documentCount', 'tu.documents')
-      .orderBy('tu.createdAt', 'DESC')
-      .getMany() as Promise<(TelegramUser & { documentCount: number })[]>;
+      .orderBy(`tu.${query.sortBy}`, query.sortOrder)
+      .skip((query.page - 1) * query.limit)
+      .take(query.limit)
+      .getManyAndCount() as [Array<TelegramUser & { documentCount: number }>, number];
+
+    return paginate(data, total, query.page, query.limit);
   }
 
   async findByTelegramId(telegramId: number): Promise<TelegramUser | null> {

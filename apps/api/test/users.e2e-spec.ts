@@ -25,11 +25,14 @@ describe('Users (e2e)', () => {
         .set(auth())
         .expect(200);
 
-      expect(Array.isArray(res.body)).toBe(true);
-      expect(res.body.length).toBeGreaterThanOrEqual(1);
-      expect(res.body[0]).not.toHaveProperty('passwordHash');
-      expect(res.body[0]).toHaveProperty('email');
-      expect(res.body[0]).toHaveProperty('role');
+      expect(res.body).toHaveProperty('data');
+      expect(res.body).toHaveProperty('total');
+      expect(res.body).toHaveProperty('page', 1);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data.length).toBeGreaterThanOrEqual(1);
+      expect(res.body.data[0]).not.toHaveProperty('passwordHash');
+      expect(res.body.data[0]).toHaveProperty('email');
+      expect(res.body.data[0]).toHaveProperty('role');
     });
 
     it('should reject without auth', async () => {

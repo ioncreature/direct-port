@@ -4,15 +4,37 @@ import Link from 'next/link';
 import { useDocuments } from '@/hooks/use-documents';
 import { statusLabels, statusColors } from '@/lib/documents';
 import { getDocumentUploaderName } from '@/lib/telegram';
+import { th, td, btnOutline } from '@/lib/table-styles';
+import type { DocumentStatus } from '@/lib/types';
+
+const statuses: { value: DocumentStatus | ''; label: string }[] = [
+  { value: '', label: 'Все' },
+  ...Object.entries(statusLabels).map(([value, label]) => ({ value: value as DocumentStatus, label })),
+];
+
+const sortableColumns: { field: string; label: string }[] = [
+  { field: 'originalFileName', label: 'Файл' },
+  { field: 'status', label: 'Статус' },
+  { field: 'rowCount', label: 'Строк' },
+  { field: 'createdAt', label: 'Дата' },
+];
 
 export default function DocumentsPage() {
-  const { documents, loading, refetch, downloadDocument } = useDocuments();
+  const {
+    documents, total, loading, page, limit, sortBy, sortOrder, status,
+    setPage, toggleSort, filterByStatus, refetch, downloadDocument,
+  } = useDocuments();
 
-  if (loading) return <p>Загрузка...</p>;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+
+  function sortIndicator(field: string) {
+    if (sortBy !== field) return '';
+    return sortOrder === 'ASC' ? ' ▲' : ' ▼';
+  }
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h1>Документы</h1>
         <div style={{ display: 'flex', gap: 8 }}>
           <Link
@@ -21,71 +43,92 @@ export default function DocumentsPage() {
           >
             Загрузить
           </Link>
-          <button
-            onClick={refetch}
-            style={{ padding: '8px 16px', cursor: 'pointer', borderRadius: 4, border: '1px solid #ddd' }}
-          >
-            Обновить
-          </button>
+          <button onClick={refetch} style={btnOutline}>Обновить</button>
         </div>
       </div>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr>
-            <th style={th}>Пользователь</th>
-            <th style={th}>Файл</th>
-            <th style={th}>Статус</th>
-            <th style={th}>Строк</th>
-            <th style={th}>Дата</th>
-            <th style={th}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {documents.map((doc) => (
-            <tr key={doc.id}>
-              <td style={td}>{getDocumentUploaderName(doc)}</td>
-              <td style={td}>
-                <Link href={`/documents/${doc.id}`} style={{ color: '#2563eb', textDecoration: 'none' }}>
-                  {doc.originalFileName}
-                </Link>
-              </td>
-              <td style={td}>
-                <span style={{ color: statusColors[doc.status], fontWeight: 500 }}>
-                  {statusLabels[doc.status]}
-                </span>
-              </td>
-              <td style={td}>{doc.rowCount}</td>
-              <td style={td}>{new Date(doc.createdAt).toLocaleDateString('ru')}</td>
-              <td style={td}>
-                <button
-                  onClick={() => downloadDocument(doc.id, doc.originalFileName)}
-                  disabled={doc.status !== 'processed'}
-                  style={{
-                    cursor: doc.status === 'processed' ? 'pointer' : 'not-allowed',
-                    opacity: doc.status === 'processed' ? 1 : 0.4,
-                    border: 'none',
-                    background: 'none',
-                    color: '#2563eb',
-                    textDecoration: 'underline',
-                  }}
-                >
-                  Скачать
-                </button>
-              </td>
-            </tr>
-          ))}
-          {documents.length === 0 && (
-            <tr>
-              <td style={{ ...td, textAlign: 'center', color: '#888' }} colSpan={6}>
-                Документов пока нет
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
+        {statuses.map((s) => (
+          <button
+            key={s.value}
+            onClick={() => filterByStatus(s.value)}
+            style={{
+              padding: '4px 12px', borderRadius: 16, cursor: 'pointer', fontSize: 13,
+              border: '1px solid #ddd',
+              background: status === s.value ? '#2563eb' : '#fff',
+              color: status === s.value ? '#fff' : '#333',
+            }}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? <p>Загрузка...</p> : (
+        <>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={th}>Пользователь</th>
+                {sortableColumns.map((col) => (
+                  <th key={col.field} style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggleSort(col.field)}>
+                    {col.label}{sortIndicator(col.field)}
+                  </th>
+                ))}
+                <th style={th}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {documents.map((doc) => (
+                <tr key={doc.id}>
+                  <td style={td}>{getDocumentUploaderName(doc)}</td>
+                  <td style={td}>
+                    <Link href={`/documents/${doc.id}`} style={{ color: '#2563eb', textDecoration: 'none' }}>
+                      {doc.originalFileName}
+                    </Link>
+                  </td>
+                  <td style={td}>
+                    <span style={{ color: statusColors[doc.status], fontWeight: 500 }}>
+                      {statusLabels[doc.status]}
+                    </span>
+                  </td>
+                  <td style={td}>{doc.rowCount}</td>
+                  <td style={td}>{new Date(doc.createdAt).toLocaleDateString('ru')}</td>
+                  <td style={td}>
+                    <button
+                      onClick={() => downloadDocument(doc.id, doc.originalFileName)}
+                      disabled={doc.status !== 'processed'}
+                      style={{
+                        cursor: doc.status === 'processed' ? 'pointer' : 'not-allowed',
+                        opacity: doc.status === 'processed' ? 1 : 0.4,
+                        border: 'none', background: 'none', color: '#2563eb', textDecoration: 'underline',
+                      }}
+                    >
+                      Скачать
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {documents.length === 0 && (
+                <tr>
+                  <td style={{ ...td, textAlign: 'center', color: '#888' }} colSpan={6}>
+                    Документов не найдено
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, fontSize: 14 }}>
+            <span style={{ color: '#666' }}>Всего: {total}</span>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button onClick={() => setPage(page - 1)} disabled={page <= 1} style={btnOutline}>← Пред</button>
+              <span>{page} из {totalPages}</span>
+              <button onClick={() => setPage(page + 1)} disabled={page >= totalPages} style={btnOutline}>След →</button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
-
-const th: React.CSSProperties = { textAlign: 'left', padding: '8px 12px', borderBottom: '2px solid #ddd' };
-const td: React.CSSProperties = { padding: '8px 12px', borderBottom: '1px solid #eee' };

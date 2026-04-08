@@ -1,11 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
-import { Repository } from 'typeorm';
+import { FindOptionsWhere, Repository } from 'typeorm';
 import { Queue } from 'bullmq';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { CreateDocumentDto } from './dto/create-document.dto';
+import { FindDocumentsQueryDto } from './dto/find-documents-query.dto';
 import { AiParserService } from '../ai-parser/ai-parser.service';
+import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 
 @Injectable()
 export class DocumentsService {
@@ -56,15 +58,23 @@ export class DocumentsService {
     return saved;
   }
 
-  async findAll(): Promise<Document[]> {
-    return this.repo.find({
+  async findAll(query: FindDocumentsQueryDto): Promise<PaginatedResponse<Document>> {
+    const where: FindOptionsWhere<Document> = {};
+    if (query.status) where.status = query.status;
+
+    const [data, total] = await this.repo.findAndCount({
       select: [
         'id', 'telegramUserId', 'uploadedByUserId', 'originalFileName', 'status',
         'rowCount', 'errorMessage', 'createdAt', 'updatedAt',
       ],
+      where,
       relations: ['telegramUser', 'uploadedBy'],
-      order: { createdAt: 'DESC' },
+      order: { [query.sortBy]: query.sortOrder },
+      skip: (query.page - 1) * query.limit,
+      take: query.limit,
     });
+
+    return paginate(data, total, query.page, query.limit);
   }
 
   async findOne(id: string): Promise<Document> {
