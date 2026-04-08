@@ -1,0 +1,17 @@
+node_modules
+.git
+.github
+*.md
+.env
+.env.*
+!.env.example
+dist
+.next
+.turbo
+.DS_Store
+examples
+docs
+helm
+coverage
+*.log
+*.tgz

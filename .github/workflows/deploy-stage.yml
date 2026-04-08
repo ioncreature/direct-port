@@ -1,0 +1,97 @@
+name: Deploy to Stage
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        app:
+          - name: api
+            dockerfile: apps/api/Dockerfile
+          - name: admin-web
+            dockerfile: apps/admin-web/Dockerfile
+          - name: tg-bot
+            dockerfile: apps/tg-bot/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.app.name }}
+          tags: |
+            type=sha,prefix=
+            type=raw,value=stage
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.app.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.app.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app.name }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: stage
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-kubectl@v4
+
+      - uses: azure/setup-helm@v4
+
+      - uses: azure/k8s-set-context@v4
+        with:
+          kubeconfig: ${{ secrets.KUBE_CONFIG_STAGE }}
+
+      - name: Deploy with Helm
+        run: |
+          cat <<EOF > /tmp/helm-secrets.yaml
+          secrets:
+            databaseUrl: "${{ secrets.DATABASE_URL }}"
+            redisUrl: "${{ secrets.REDIS_URL }}"
+            jwtSecret: "${{ secrets.JWT_SECRET }}"
+            apiInternalKey: "${{ secrets.API_INTERNAL_KEY }}"
+            tksApiKey: "${{ secrets.TKS_API_KEY }}"
+            anthropicApiKey: "${{ secrets.ANTHROPIC_API_KEY }}"
+            telegramBotToken: "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+          EOF
+
+          helm upgrade --install directport-stage ./helm/directport \
+            -f ./helm/directport/values-stage.yaml \
+            -f /tmp/helm-secrets.yaml \
+            --namespace directport-stage \
+            --create-namespace \
+            --set api.image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-api \
+            --set api.image.tag=${{ github.sha }} \
+            --set adminWeb.image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-admin-web \
+            --set adminWeb.image.tag=${{ github.sha }} \
+            --set tgBot.image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-tg-bot \
+            --set tgBot.image.tag=${{ github.sha }} \
+            --wait --timeout 5m
+
+          rm -f /tmp/helm-secrets.yaml

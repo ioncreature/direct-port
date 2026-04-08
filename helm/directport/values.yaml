@@ -1,0 +1,93 @@
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+
+api:
+  replicaCount: 1
+  image:
+    repository: directport/api
+    tag: latest
+    pullPolicy: IfNotPresent
+  port: 3001
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  env:
+    CORS_ORIGIN: "*"
+    JWT_ACCESS_EXPIRATION: "15m"
+
+adminWeb:
+  replicaCount: 1
+  image:
+    repository: directport/admin-web
+    tag: latest
+    pullPolicy: IfNotPresent
+  port: 3000
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+tgBot:
+  replicaCount: 1
+  image:
+    repository: directport/tg-bot
+    tag: latest
+    pullPolicy: IfNotPresent
+  port: 3002
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {}
+  hosts:
+    admin:
+      host: admin.directport.local
+      paths:
+        - path: /
+          pathType: Prefix
+    api:
+      host: api.directport.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+postgresql:
+  enabled: true
+  host: ""
+  auth:
+    username: directport
+    password: ""
+    database: directport
+
+redis:
+  enabled: true
+  host: ""
+  port: 6379
+
+secrets:
+  databaseUrl: ""
+  redisUrl: ""
+  jwtSecret: ""
+  apiInternalKey: ""
+  tksApiKey: ""
+  anthropicApiKey: ""
+  telegramBotToken: ""
+
+migration:
+  enabled: true

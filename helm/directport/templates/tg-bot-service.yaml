@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "directport.fullname" . }}-tg-bot
+  labels:
+    {{- include "directport.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tg-bot
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.tgBot.port }}
+      targetPort: {{ .Values.tgBot.port }}
+      protocol: TCP
+  selector:
+    {{- include "directport.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: tg-bot

@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "directport.fullname" . }}-tg-bot
+  labels:
+    {{- include "directport.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tg-bot
+spec:
+  replicas: {{ .Values.tgBot.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "directport.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: tg-bot
+  template:
+    metadata:
+      labels:
+        {{- include "directport.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: tg-bot
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: tg-bot
+          image: "{{ .Values.tgBot.image.repository }}:{{ .Values.tgBot.image.tag }}"
+          imagePullPolicy: {{ .Values.tgBot.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.tgBot.port }}
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: {{ include "directport.fullname" . }}-secrets
+          env:
+            - name: BOT_PORT
+              value: {{ .Values.tgBot.port | quote }}
+            - name: API_BASE_URL
+              value: {{ include "directport.apiUrl" . | quote }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.tgBot.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.tgBot.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.tgBot.resources | nindent 12 }}

@@ -1,0 +1,56 @@
+global:
+  imageRegistry: ghcr.io
+
+api:
+  image:
+    repository: ghcr.io/your-org/directport-api
+    pullPolicy: Always
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  env:
+    CORS_ORIGIN: "https://admin-stage.directport.ru"
+
+adminWeb:
+  image:
+    repository: ghcr.io/your-org/directport-admin-web
+    pullPolicy: Always
+
+tgBot:
+  image:
+    repository: ghcr.io/your-org/directport-tg-bot
+    pullPolicy: Always
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    admin:
+      host: admin-stage.directport.ru
+      paths:
+        - path: /
+          pathType: Prefix
+    api:
+      host: api-stage.directport.ru
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: directport-stage-tls
+      hosts:
+        - admin-stage.directport.ru
+        - api-stage.directport.ru
+
+postgresql:
+  enabled: false
+  host: postgres-stage.internal
+
+redis:
+  enabled: false
+  host: redis-stage.internal

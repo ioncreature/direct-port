@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "directport.fullname" . }}-admin-web
+  labels:
+    {{- include "directport.labels" . | nindent 4 }}
+    app.kubernetes.io/component: admin-web
+spec:
+  replicas: {{ .Values.adminWeb.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "directport.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: admin-web
+  template:
+    metadata:
+      labels:
+        {{- include "directport.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: admin-web
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: admin-web
+          image: "{{ .Values.adminWeb.image.repository }}:{{ .Values.adminWeb.image.tag }}"
+          imagePullPolicy: {{ .Values.adminWeb.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.adminWeb.port }}
+              protocol: TCP
+          env:
+            - name: API_URL
+              value: {{ include "directport.apiUrl" . | quote }}
+            - name: HOSTNAME
+              value: "0.0.0.0"
+            - name: PORT
+              value: {{ .Values.adminWeb.port | quote }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.adminWeb.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.adminWeb.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.adminWeb.resources | nindent 12 }}
