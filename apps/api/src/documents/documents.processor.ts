@@ -9,6 +9,7 @@ import { ClassifierService } from '../classifier/classifier.service';
 import { CalculatorService } from '../calculator/calculator.service';
 import { CalculationConfigService } from '../calculation-config/calculation-config.service';
 import { VerificationService } from '../verification/verification.service';
+import { CurrencyService } from '../currency/currency.service';
 
 export interface DocumentNotification {
   documentId: string;
@@ -28,6 +29,7 @@ export class DocumentsProcessor extends WorkerHost {
     private calculator: CalculatorService,
     private configService: CalculationConfigService,
     private verification: VerificationService,
+    private currencyService: CurrencyService,
   ) {
     super();
   }
@@ -63,27 +65,48 @@ export class DocumentsProcessor extends WorkerHost {
       const verified = await this.verification.verify(classified);
       const summary = this.calculator.calculate(verified, commission);
 
-      doc.resultData = summary.items.map((item, i) => ({
-        description: item.description,
-        quantity: item.quantity,
-        price: item.price,
-        weight: item.weight,
-        tnVedCode: item.tnVedCode,
-        tnVedDescription: item.tnVedDescription,
-        dutyRate: item.dutyRate,
-        vatRate: item.vatRate,
-        exciseRate: item.exciseRate,
-        totalPrice: item.totalPrice,
-        dutyAmount: item.dutyAmount,
-        vatAmount: item.vatAmount,
-        exciseAmount: item.exciseAmount,
-        logisticsCommission: item.logisticsCommission,
-        totalCost: item.totalCost,
-        verificationStatus: item.verificationStatus,
-        matchConfidence: item.matchConfidence,
-        verified: verified[i]?.verified ?? false,
-        verificationComment: verified[i]?.verificationComment ?? null,
-      }));
+      const currency = doc.currency || 'USD';
+      const needsConversion = currency !== 'RUB';
+      let exchangeRate = 1;
+      if (needsConversion) {
+        exchangeRate = await this.currencyService.getRate(currency);
+      }
+      const toRub = (v: number) => this.currencyService.toRubSync(v, exchangeRate);
+
+      doc.resultData = summary.items.map((item, i) => {
+        const base = {
+          description: item.description,
+          quantity: item.quantity,
+          price: item.price,
+          weight: item.weight,
+          tnVedCode: item.tnVedCode,
+          tnVedDescription: item.tnVedDescription,
+          dutyRate: item.dutyRate,
+          vatRate: item.vatRate,
+          exciseRate: item.exciseRate,
+          totalPrice: item.totalPrice,
+          dutyAmount: item.dutyAmount,
+          vatAmount: item.vatAmount,
+          exciseAmount: item.exciseAmount,
+          logisticsCommission: item.logisticsCommission,
+          totalCost: item.totalCost,
+          verificationStatus: item.verificationStatus,
+          matchConfidence: item.matchConfidence,
+          verified: verified[i]?.verified ?? false,
+          verificationComment: verified[i]?.verificationComment ?? null,
+        };
+        if (!needsConversion) return base;
+        return {
+          ...base,
+          totalPriceRub: toRub(item.totalPrice),
+          dutyAmountRub: toRub(item.dutyAmount),
+          vatAmountRub: toRub(item.vatAmount),
+          exciseAmountRub: toRub(item.exciseAmount),
+          logisticsCommissionRub: toRub(item.logisticsCommission),
+          totalCostRub: toRub(item.totalCost),
+          exchangeRate,
+        };
+      });
       doc.status = DocumentStatus.PROCESSED;
       await this.repo.save(doc);
 

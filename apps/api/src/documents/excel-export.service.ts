@@ -18,11 +18,25 @@ interface ResultRow {
   exciseAmount: number;
   logisticsCommission: number;
   totalCost: number;
+  totalPriceRub?: number;
+  dutyAmountRub?: number;
+  vatAmountRub?: number;
+  exciseAmountRub?: number;
+  logisticsCommissionRub?: number;
+  totalCostRub?: number;
+  exchangeRate?: number;
   verificationStatus: 'exact' | 'review';
 }
 
-function buildColumns(currency: string) {
-  const columns: { header: string; key: keyof ResultRow; width: number; numFmt?: string }[] = [
+interface ColumnDef {
+  header: string;
+  key: keyof ResultRow;
+  width: number;
+  numFmt?: string;
+}
+
+function buildColumns(currency: string, hasRub: boolean): ColumnDef[] {
+  const columns: ColumnDef[] = [
     { header: 'Наименование', key: 'description', width: 40 },
     { header: 'Количество', key: 'quantity', width: 12 },
     { header: `Цена (${currency})`, key: 'price', width: 14, numFmt: '#,##0.00' },
@@ -31,14 +45,27 @@ function buildColumns(currency: string) {
     { header: 'Описание ТН ВЭД', key: 'tnVedDescription', width: 35 },
     { header: 'Ставка пошлины (%)', key: 'dutyRate', width: 18, numFmt: '0.00' },
     { header: 'Ставка НДС (%)', key: 'vatRate', width: 16, numFmt: '0.00' },
-    { header: `Сумма товара (${currency})`, key: 'totalPrice', width: 18, numFmt: '#,##0.00' },
+    { header: `Сумма (${currency})`, key: 'totalPrice', width: 16, numFmt: '#,##0.00' },
     { header: `Пошлина (${currency})`, key: 'dutyAmount', width: 16, numFmt: '#,##0.00' },
     { header: `НДС (${currency})`, key: 'vatAmount', width: 14, numFmt: '#,##0.00' },
     { header: `Акциз (${currency})`, key: 'exciseAmount', width: 14, numFmt: '#,##0.00' },
-    { header: `Комиссия (${currency})`, key: 'logisticsCommission', width: 18, numFmt: '#,##0.00' },
-    { header: `Итого (${currency})`, key: 'totalCost', width: 18, numFmt: '#,##0.00' },
-    { header: 'Статус проверки', key: 'verificationStatus', width: 18 },
+    { header: `Комиссия (${currency})`, key: 'logisticsCommission', width: 16, numFmt: '#,##0.00' },
+    { header: `Итого (${currency})`, key: 'totalCost', width: 16, numFmt: '#,##0.00' },
   ];
+
+  if (hasRub) {
+    columns.push(
+      { header: 'Сумма (RUB)', key: 'totalPriceRub', width: 16, numFmt: '#,##0.00' },
+      { header: 'Пошлина (RUB)', key: 'dutyAmountRub', width: 16, numFmt: '#,##0.00' },
+      { header: 'НДС (RUB)', key: 'vatAmountRub', width: 14, numFmt: '#,##0.00' },
+      { header: 'Акциз (RUB)', key: 'exciseAmountRub', width: 14, numFmt: '#,##0.00' },
+      { header: 'Комиссия (RUB)', key: 'logisticsCommissionRub', width: 16, numFmt: '#,##0.00' },
+      { header: 'Итого (RUB)', key: 'totalCostRub', width: 16, numFmt: '#,##0.00' },
+      { header: `Курс ${currency}/RUB`, key: 'exchangeRate', width: 14, numFmt: '0.0000' },
+    );
+  }
+
+  columns.push({ header: 'Статус проверки', key: 'verificationStatus', width: 18 });
   return columns;
 }
 
@@ -80,16 +107,16 @@ export class ExcelExportService {
       return this.generateRaw(workbook, data as unknown as Record<string, unknown>[]);
     }
 
-    const COLUMNS = buildColumns(doc.currency || 'USD');
+    const currency = doc.currency || 'USD';
+    const hasRub = currency !== 'RUB' && data.length > 0 && 'totalCostRub' in data[0];
+    const COLUMNS = buildColumns(currency, hasRub);
 
-    // Column definitions
     sheet.columns = COLUMNS.map((col) => ({
       header: col.header,
       key: col.key,
       width: col.width,
     }));
 
-    // Header style
     const headerRow = sheet.getRow(1);
     headerRow.eachCell((cell) => {
       cell.fill = HEADER_FILL;
@@ -98,14 +125,12 @@ export class ExcelExportService {
     });
     headerRow.height = 30;
 
-    // Precompute columns with number formats
     const numFmtColumns = COLUMNS
       .map((col, i) => ({ index: i + 1, numFmt: col.numFmt }))
       .filter((c) => c.numFmt);
 
-    // Data rows
     for (const row of data) {
-      const excelRow = sheet.addRow({
+      const rowData: Record<string, unknown> = {
         description: row.description,
         quantity: row.quantity,
         price: row.price,
@@ -121,13 +146,24 @@ export class ExcelExportService {
         logisticsCommission: row.logisticsCommission,
         totalCost: row.totalCost,
         verificationStatus: row.verificationStatus === 'exact' ? 'Точное' : 'Ручная проверка',
-      });
+      };
+
+      if (hasRub) {
+        rowData.totalPriceRub = row.totalPriceRub;
+        rowData.dutyAmountRub = row.dutyAmountRub;
+        rowData.vatAmountRub = row.vatAmountRub;
+        rowData.exciseAmountRub = row.exciseAmountRub;
+        rowData.logisticsCommissionRub = row.logisticsCommissionRub;
+        rowData.totalCostRub = row.totalCostRub;
+        rowData.exchangeRate = row.exchangeRate;
+      }
+
+      const excelRow = sheet.addRow(rowData);
 
       for (const col of numFmtColumns) {
         excelRow.getCell(col.index).numFmt = col.numFmt!;
       }
 
-      // Status cell color
       const statusCell = excelRow.getCell(COLUMNS.length);
       statusCell.fill = row.verificationStatus === 'exact' ? GREEN_FILL : YELLOW_FILL;
       statusCell.font = {
@@ -136,13 +172,11 @@ export class ExcelExportService {
       };
     }
 
-    // Autofilter
     sheet.autoFilter = {
       from: { row: 1, column: 1 },
       to: { row: data.length + 1, column: COLUMNS.length },
     };
 
-    // Freeze header
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
 
     return workbook.xlsx.writeBuffer();
