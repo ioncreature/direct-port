@@ -91,8 +91,8 @@ jobs:
             DB_PASSWORD="$EXISTING_DB_PASSWORD"
           fi
           if [ -z "$DB_PASSWORD" ]; then
-            echo "ERROR: PostgreSQL password is empty. Set STAGE_POSTGRES_PASSWORD or ensure directport-stage-postgresql secret exists."
-            exit 1
+            echo "WARN: PostgreSQL password is empty and existing secret was not found. Generating a password for first install."
+            DB_PASSWORD="$(openssl rand -hex 24)"
           fi
 
           cat <<EOF > /tmp/helm-secrets.yaml
