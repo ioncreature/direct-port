@@ -28,7 +28,6 @@ WORKDIR /app
 
 COPY --from=prod-deps /app/node_modules node_modules
 COPY --from=prod-deps /app/apps/api/node_modules apps/api/node_modules
-COPY --from=prod-deps /app/libs/tks-api/node_modules libs/tks-api/node_modules
 COPY --from=build /app/apps/api/dist apps/api/dist
 COPY --from=build /app/libs/tks-api/dist libs/tks-api/dist
 COPY --from=build /app/libs/tks-api/package.json libs/tks-api/package.json
