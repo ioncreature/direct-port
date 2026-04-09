@@ -119,6 +119,6 @@ jobs:
             --set tgBot.image.tag=${{ github.sha }} \
             --set postgresql.auth.password="$DB_PASSWORD" \
             --set global.postgresql.auth.password="$DB_PASSWORD" \
-            --wait --timeout 5m
+            --wait --timeout 7m
 
           rm -f /tmp/helm-secrets.yaml

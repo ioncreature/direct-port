@@ -17,10 +17,19 @@ spec:
         {{- include "directport.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: api
     spec:
+      {{- $pgHost := ternary (printf "%s-postgresql" .Release.Name) .Values.postgresql.host .Values.postgresql.enabled }}
+      {{- $redisHost := ternary (printf "%s-redis-master" .Release.Name) .Values.redis.host .Values.redis.enabled }}
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z {{ $pgHost }} 5432; do echo waiting for postgres; sleep 2; done"]
+        - name: wait-for-redis
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z {{ $redisHost }} {{ .Values.redis.port }}; do echo waiting for redis; sleep 2; done"]
       containers:
         - name: api
           image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
