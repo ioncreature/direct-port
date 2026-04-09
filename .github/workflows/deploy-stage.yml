@@ -85,6 +85,16 @@ jobs:
 
       - name: Deploy with Helm
         run: |
+          DB_PASSWORD="${{ secrets.STAGE_POSTGRES_PASSWORD }}"
+          EXISTING_DB_PASSWORD="$(kubectl -n directport-stage get secret directport-stage-postgresql -o jsonpath='{.data.password}' 2>/dev/null | base64 --decode || true)"
+          if [ -n "$EXISTING_DB_PASSWORD" ]; then
+            DB_PASSWORD="$EXISTING_DB_PASSWORD"
+          fi
+          if [ -z "$DB_PASSWORD" ]; then
+            echo "ERROR: PostgreSQL password is empty. Set STAGE_POSTGRES_PASSWORD or ensure directport-stage-postgresql secret exists."
+            exit 1
+          fi
+
           cat <<EOF > /tmp/helm-secrets.yaml
           secrets:
             jwtSecret: "${{ secrets.JWT_SECRET }}"
@@ -107,8 +117,8 @@ jobs:
             --set adminWeb.image.tag=${{ github.sha }} \
             --set tgBot.image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-tg-bot \
             --set tgBot.image.tag=${{ github.sha }} \
-            --set postgresql.auth.password=${{ secrets.STAGE_POSTGRES_PASSWORD }} \
-            --set global.postgresql.auth.password=${{ secrets.STAGE_POSTGRES_PASSWORD }} \
+            --set postgresql.auth.password="$DB_PASSWORD" \
+            --set global.postgresql.auth.password="$DB_PASSWORD" \
             --wait --timeout 5m
 
           rm -f /tmp/helm-secrets.yaml
