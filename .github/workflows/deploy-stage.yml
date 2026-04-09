@@ -72,17 +72,17 @@ jobs:
         run: |
           cat <<EOF > /tmp/helm-secrets.yaml
           secrets:
-            databaseUrl: "${{ secrets.DATABASE_URL }}"
             redisUrl: "${{ secrets.REDIS_URL }}"
             jwtSecret: "${{ secrets.JWT_SECRET }}"
             apiInternalKey: "${{ secrets.API_INTERNAL_KEY }}"
-            tksApiKey: "${{ secrets.TKS_API_KEY }}"
+            tksTnvedApiKey: "${{ secrets.TKS_TNVED_API_KEY }}"
+            tksGoodsApiKey: "${{ secrets.TKS_GOODS_API_KEY }}"
             anthropicApiKey: "${{ secrets.ANTHROPIC_API_KEY }}"
             telegramBotToken: "${{ secrets.TELEGRAM_BOT_TOKEN }}"
           EOF
 
-          helm upgrade --install directport-stage ./helm/directport \
-            -f ./helm/directport/values-stage.yaml \
+          helm upgrade --install directport-stage ./deploy/helm/directport \
+            -f ./deploy/helm/directport/values-stage.yaml \
             -f /tmp/helm-secrets.yaml \
             --namespace directport-stage \
             --create-namespace \

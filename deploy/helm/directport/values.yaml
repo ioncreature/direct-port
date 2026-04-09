@@ -85,7 +85,8 @@ secrets:
   redisUrl: ""
   jwtSecret: ""
   apiInternalKey: ""
-  tksApiKey: ""
+  tksTnvedApiKey: ""
+  tksGoodsApiKey: ""
   anthropicApiKey: ""
   telegramBotToken: ""
 
