@@ -1,5 +1,7 @@
 # Dev-окружение
 
+> По stage-инфраструктуре и CI/CD см. отдельный документ: [docs/infrastructure.md](./infrastructure.md)
+
 ## Требования
 
 - Node.js 24+
