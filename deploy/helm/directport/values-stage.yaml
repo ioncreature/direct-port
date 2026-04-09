@@ -1,5 +1,7 @@
 global:
   imageRegistry: ghcr.io
+  security:
+    allowInsecureImages: true
   imagePullSecrets:
     - name: ghcr-pull
 
@@ -50,9 +52,16 @@ ingress:
         - api-stage.directport.ru
 
 postgresql:
-  enabled: false
-  host: postgres-stage.internal
+  enabled: true
+  host: ""
+  auth:
+    username: directport
+    password: ""
+    database: directport
 
 redis:
-  enabled: false
-  host: redis-stage.internal
+  enabled: true
+  host: ""
+  port: 6379
+  auth:
+    enabled: false

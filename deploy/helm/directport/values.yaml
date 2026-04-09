@@ -79,6 +79,8 @@ redis:
   enabled: true
   host: ""
   port: 6379
+  auth:
+    enabled: false
 
 secrets:
   databaseUrl: ""

@@ -79,7 +79,6 @@ jobs:
         run: |
           cat <<EOF > /tmp/helm-secrets.yaml
           secrets:
-            redisUrl: "${{ secrets.REDIS_URL }}"
             jwtSecret: "${{ secrets.JWT_SECRET }}"
             apiInternalKey: "${{ secrets.API_INTERNAL_KEY }}"
             tksApiBaseUrl: "${{ secrets.TKS_API_BASE_URL }}"
@@ -100,6 +99,7 @@ jobs:
             --set adminWeb.image.tag=${{ github.sha }} \
             --set tgBot.image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-tg-bot \
             --set tgBot.image.tag=${{ github.sha }} \
+            --set postgresql.auth.password=${{ secrets.STAGE_POSTGRES_PASSWORD }} \
             --wait --timeout 5m
 
           rm -f /tmp/helm-secrets.yaml

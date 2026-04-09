@@ -42,7 +42,7 @@ http://{{ include "directport.fullname" . }}-api:{{ .Values.api.port }}/api
 {{- if .Values.secrets.redisUrl }}
 {{- .Values.secrets.redisUrl }}
 {{- else }}
-{{- $host := ternary (printf "%s-redis" .Release.Name) .Values.redis.host .Values.redis.enabled }}
+{{- $host := ternary (printf "%s-redis-master" .Release.Name) .Values.redis.host .Values.redis.enabled }}
 {{- printf "redis://%s:%d" $host (int .Values.redis.port) }}
 {{- end }}
 {{- end }}
