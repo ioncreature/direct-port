@@ -62,6 +62,9 @@ jobs:
 
       - uses: azure/setup-helm@v4
 
+      - name: Build Helm dependencies
+        run: helm dependency build ./deploy/helm/directport
+
       - uses: azure/k8s-set-context@v4
         with:
           kubeconfig: ${{ secrets.KUBE_CONFIG_STAGE }}
