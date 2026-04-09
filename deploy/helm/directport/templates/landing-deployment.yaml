@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "directport.fullname" . }}-landing
+  labels:
+    {{- include "directport.labels" . | nindent 4 }}
+    app.kubernetes.io/component: landing
+spec:
+  replicas: {{ .Values.landing.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "directport.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: landing
+  template:
+    metadata:
+      labels:
+        {{- include "directport.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: landing
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: landing
+          image: "{{ .Values.landing.image.repository }}:{{ .Values.landing.image.tag }}"
+          imagePullPolicy: {{ .Values.landing.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.landing.port }}
+              protocol: TCP
+          env:
+            - name: HOSTNAME
+              value: "0.0.0.0"
+            - name: PORT
+              value: {{ .Values.landing.port | quote }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.landing.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.landing.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.landing.resources | nindent 12 }}

@@ -42,4 +42,16 @@ spec:
                 port:
                   number: {{ $.Values.api.port }}
           {{- end }}
+    - host: {{ .Values.ingress.hosts.landing.host }}
+      http:
+        paths:
+          {{- range .Values.ingress.hosts.landing.paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "directport.fullname" $ }}-landing
+                port:
+                  number: {{ $.Values.landing.port }}
+          {{- end }}
 {{- end }}

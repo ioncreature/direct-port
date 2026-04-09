@@ -22,6 +22,8 @@ jobs:
             dockerfile: apps/admin-web/Dockerfile
           - name: tg-bot
             dockerfile: apps/tg-bot/Dockerfile
+          - name: landing
+            dockerfile: apps/landing/Dockerfile
     steps:
       - uses: actions/checkout@v4
 
@@ -117,6 +119,8 @@ jobs:
             --set adminWeb.image.tag=${{ github.sha }} \
             --set tgBot.image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-tg-bot \
             --set tgBot.image.tag=${{ github.sha }} \
+            --set landing.image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-landing \
+            --set landing.image.tag=${{ github.sha }} \
             --set postgresql.auth.password="$DB_PASSWORD" \
             --set global.postgresql.auth.password="$DB_PASSWORD" \
             --wait --timeout 7m

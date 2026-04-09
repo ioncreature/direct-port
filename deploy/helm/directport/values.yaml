@@ -35,6 +35,21 @@ adminWeb:
       cpu: 250m
       memory: 256Mi
 
+landing:
+  replicaCount: 1
+  image:
+    repository: directport/landing
+    tag: latest
+    pullPolicy: IfNotPresent
+  port: 3003
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
 tgBot:
   replicaCount: 1
   image:
@@ -62,6 +77,11 @@ ingress:
           pathType: Prefix
     api:
       host: api.directport.local
+      paths:
+        - path: /
+          pathType: Prefix
+    landing:
+      host: directport.local
       paths:
         - path: /
           pathType: Prefix

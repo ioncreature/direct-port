@@ -23,6 +23,11 @@ adminWeb:
     repository: ghcr.io/your-org/directport-admin-web
     pullPolicy: Always
 
+landing:
+  image:
+    repository: ghcr.io/your-org/directport-landing
+    pullPolicy: Always
+
 tgBot:
   image:
     repository: ghcr.io/your-org/directport-tg-bot
@@ -44,11 +49,17 @@ ingress:
       paths:
         - path: /
           pathType: Prefix
+    landing:
+      host: stage.directport.ru
+      paths:
+        - path: /
+          pathType: Prefix
   tls:
     - secretName: directport-stage-tls
       hosts:
         - admin-stage.directport.ru
         - api-stage.directport.ru
+        - stage.directport.ru
 
 postgresql:
   enabled: true
