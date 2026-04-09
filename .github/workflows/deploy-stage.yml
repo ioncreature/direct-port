@@ -1,6 +1,6 @@
 name: Deploy to Stage
 
-}on:
+on:
   workflow_dispatch:
 
 env:
