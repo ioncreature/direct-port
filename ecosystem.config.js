@@ -21,5 +21,12 @@ module.exports = {
       args: 'dev',
       watch: false,
     },
+    {
+      name: 'landing',
+      cwd: './apps/landing',
+      script: 'pnpm',
+      args: 'dev',
+      watch: false,
+    },
   ],
 };
