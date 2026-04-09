@@ -62,6 +62,11 @@ jobs:
 
       - uses: azure/setup-helm@v4
 
+      - name: Add Helm repositories
+        run: |
+          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm repo update
+
       - name: Build Helm dependencies
         run: helm dependency build ./deploy/helm/directport
 
