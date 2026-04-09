@@ -108,6 +108,7 @@ jobs:
             --set tgBot.image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-tg-bot \
             --set tgBot.image.tag=${{ github.sha }} \
             --set postgresql.auth.password=${{ secrets.STAGE_POSTGRES_PASSWORD }} \
+            --set global.postgresql.auth.password=${{ secrets.STAGE_POSTGRES_PASSWORD }} \
             --wait --timeout 5m
 
           rm -f /tmp/helm-secrets.yaml
