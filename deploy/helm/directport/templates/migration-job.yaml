@@ -26,7 +26,7 @@ spec:
       containers:
         - name: migration
           image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
-          command: ["node", "node_modules/typeorm/cli.js", "migration:run", "-d", "apps/api/dist/database/data-source.js"]
+          command: ["node", "apps/api/node_modules/typeorm/cli.js", "migration:run", "-d", "apps/api/dist/database/data-source.js"]
           envFrom:
             - secretRef:
                 name: {{ include "directport.fullname" . }}-secrets
