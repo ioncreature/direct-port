@@ -60,6 +60,7 @@ postgresql:
 
 redis:
   enabled: true
+  architecture: standalone
   host: ""
   port: 6379
   auth:
