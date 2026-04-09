@@ -1,5 +1,4 @@
 global:
-  imageRegistry: ghcr.io
   security:
     allowInsecureImages: true
   imagePullSecrets:

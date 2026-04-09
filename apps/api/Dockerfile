@@ -36,4 +36,4 @@ COPY --from=build /app/apps/api/package.json apps/api/package.json
 USER app
 ENV NODE_ENV=production
 EXPOSE 3001
-CMD ["node", "apps/api/dist/main.js"]
+CMD ["node", "apps/api/dist/src/main.js"]

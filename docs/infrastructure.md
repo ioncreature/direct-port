@@ -144,6 +144,11 @@ node apps/api/node_modules/typeorm/cli.js migration:run -d apps/api/dist/src/dat
   - Proxy target: `https://coreimport-admin.lab42-stg.work/*`
   - `Host` принудительно выставляется в `coreimport-admin.lab42-stg.work`
 
+Дополнительно API-сервис использует внешний TKS endpoint:
+
+- Исходящие запросы из `api` проксируются на `https://api1.tks.ru`
+- Базовый URL задаётся через `TKS_API_BASE_URL` (по умолчанию — `https://api1.tks.ru`)
+
 Пробрасываемые заголовки в обоих `server`-блоках:
 
 - `X-Real-IP: $remote_addr`
