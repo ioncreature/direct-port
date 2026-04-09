@@ -68,6 +68,15 @@ jobs:
         with:
           kubeconfig: ${{ secrets.KUBE_CONFIG_STAGE }}
 
+      - name: Create/Update GHCR pull secret
+        run: |
+          kubectl -n directport-stage create secret docker-registry ghcr-pull \
+            --docker-server=ghcr.io \
+            --docker-username='${{ secrets.GHCR_USERNAME }}' \
+            --docker-password='${{ secrets.GHCR_PULL_TOKEN }}' \
+            --docker-email='devnull@example.com' \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Deploy with Helm
         run: |
           cat <<EOF > /tmp/helm-secrets.yaml
