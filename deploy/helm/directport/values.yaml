@@ -85,6 +85,7 @@ secrets:
   redisUrl: ""
   jwtSecret: ""
   apiInternalKey: ""
+  tksApiBaseUrl: "https://api1.tks.ru"
   tksTnvedApiKey: ""
   tksGoodsApiKey: ""
   anthropicApiKey: ""

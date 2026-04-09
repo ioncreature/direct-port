@@ -7,7 +7,6 @@ import type {
   EkArArea,
 } from './types';
 
-const DEFAULT_BASE_URL = 'https://api1.tks.ru';
 const DEFAULT_TIMEOUT = 15_000;
 const DEFAULT_CACHE_TTL = 60 * 60 * 1000;
 const DEFAULT_CACHE_MAX_SIZE = 1000;
@@ -28,7 +27,7 @@ export class TksApiClient {
   private readonly cache = new Map<string, CacheEntry<unknown>>();
 
   constructor(options: TksApiOptions) {
-    this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
+    this.baseUrl = options.baseUrl.replace(/\/+$/, '');
     this.tnvedBase = `/tnved.json/json/${options.tnvedKey}`;
     this.goodsBase = `/goods.json/json/${options.goodsKey}`;
     this.timeout = options.timeout ?? DEFAULT_TIMEOUT;

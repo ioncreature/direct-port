@@ -184,6 +184,7 @@ pnpm seed           # admin@directport.ru / admin123
 - `REDIS_URL` — Redis (по умолчанию redis://localhost:6380)
 - `JWT_SECRET`, `JWT_ACCESS_EXPIRATION` — JWT-настройки
 - `API_INTERNAL_KEY` — ключ для service-to-service вызовов (бот → API)
+- `TKS_API_BASE_URL` — базовый URL TKS API (по умолчанию https://api1.tks.ru, можно указать прокси)
 - `TKS_TNVED_API_KEY` — ключ для TNVED API на api1.tks.ru (справочник ТН ВЭД)
 - `TKS_GOODS_API_KEY` — ключ для GOODS API на api1.tks.ru (поиск товаров)
 - `ANTHROPIC_API_KEY` — ключ Anthropic для верификации Claude (опционально)

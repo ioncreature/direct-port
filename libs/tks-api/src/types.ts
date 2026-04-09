@@ -231,7 +231,7 @@ export interface TksApiOptions {
   tnvedKey: string;
   /** Ключ для GOODS API (goods.json) */
   goodsKey: string;
-  baseUrl?: string;
+  baseUrl: string;
   timeout?: number;
   /** Включить in-memory кэш для TNVED-запросов (по умолчанию true) */
   cache?: boolean;

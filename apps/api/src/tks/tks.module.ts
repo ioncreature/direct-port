@@ -10,6 +10,7 @@ import { TksApiClient } from '@direct-port/tks-api';
       inject: [ConfigService],
       useFactory: (config: ConfigService) =>
         new TksApiClient({
+          baseUrl: config.getOrThrow<string>('TKS_API_BASE_URL'),
           tnvedKey: config.getOrThrow<string>('TKS_TNVED_API_KEY'),
           goodsKey: config.getOrThrow<string>('TKS_GOODS_API_KEY'),
         }),

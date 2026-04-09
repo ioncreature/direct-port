@@ -99,6 +99,7 @@ export async function createTestApp(): Promise<INestApplication> {
             JWT_SECRET: 'test-jwt-secret',
             JWT_ACCESS_EXPIRATION: '15m',
             API_INTERNAL_KEY: 'test-internal-key',
+            TKS_API_BASE_URL: 'https://api1.tks.ru',
             TKS_TNVED_API_KEY: 'test-tnved-key',
             TKS_GOODS_API_KEY: 'test-goods-key',
           }),

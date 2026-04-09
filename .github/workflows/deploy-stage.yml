@@ -75,6 +75,7 @@ jobs:
             redisUrl: "${{ secrets.REDIS_URL }}"
             jwtSecret: "${{ secrets.JWT_SECRET }}"
             apiInternalKey: "${{ secrets.API_INTERNAL_KEY }}"
+            tksApiBaseUrl: "${{ secrets.TKS_API_BASE_URL }}"
             tksTnvedApiKey: "${{ secrets.TKS_TNVED_API_KEY }}"
             tksGoodsApiKey: "${{ secrets.TKS_GOODS_API_KEY }}"
             anthropicApiKey: "${{ secrets.ANTHROPIC_API_KEY }}"
