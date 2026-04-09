@@ -18,7 +18,8 @@ interface CacheEntry<T> {
 }
 
 export class TksApiClient {
-  private readonly clientKey: string;
+  private readonly tnvedBase: string;
+  private readonly goodsBase: string;
   private readonly baseUrl: string;
   private readonly timeout: number;
   private readonly cacheEnabled: boolean;
@@ -27,8 +28,9 @@ export class TksApiClient {
   private readonly cache = new Map<string, CacheEntry<unknown>>();
 
   constructor(options: TksApiOptions) {
-    this.clientKey = options.clientKey;
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
+    this.tnvedBase = `/tnved.json/json/${options.tnvedKey}`;
+    this.goodsBase = `/goods.json/json/${options.goodsKey}`;
     this.timeout = options.timeout ?? DEFAULT_TIMEOUT;
     this.cacheEnabled = options.cache !== false;
     this.cacheTtl = options.cacheTtl ?? DEFAULT_CACHE_TTL;
@@ -39,13 +41,13 @@ export class TksApiClient {
 
   async getTnvedVersion(): Promise<TnvedVersion> {
     return this.fetchCached<TnvedVersion>(
-      `/tnved.json/json/${this.clientKey}/ver.json`,
+      `${this.tnvedBase}/ver.json`,
     );
   }
 
   async getTnvedCodeList(): Promise<string[]> {
     return this.fetchCached<string[]>(
-      `/tnved.json/json/${this.clientKey}/`,
+      `${this.tnvedBase}/`,
     );
   }
 
@@ -53,12 +55,12 @@ export class TksApiClient {
   async getTnvedCode(code: string): Promise<TnvedCode> {
     validateTnvedCode(code);
     return this.fetchCached<TnvedCode>(
-      `/tnved.json/json/${this.clientKey}/${code}.json`,
+      `${this.tnvedBase}/${code}.json`,
     );
   }
 
   getTnvedArchiveUrl(): string {
-    return `${this.baseUrl}/tnved.json/json/${this.clientKey}/archive.zip`;
+    return `${this.baseUrl}${this.tnvedBase}/archive.zip`;
   }
 
   // --- GOODS API ---
@@ -90,19 +92,19 @@ export class TksApiClient {
 
   async getCountries(): Promise<OksmtCountry[]> {
     return this.fetchCached<OksmtCountry[]>(
-      `/tnved.json/json/${this.clientKey}/oksmt.json`,
+      `${this.tnvedBase}/oksmt.json`,
     );
   }
 
   async getEconomicAreas(): Promise<EkArArea[]> {
     return this.fetchCached<EkArArea[]>(
-      `/tnved.json/json/${this.clientKey}/ek_ar.json`,
+      `${this.tnvedBase}/ek_ar.json`,
     );
   }
 
   clearCache(code?: string): void {
     if (code) {
-      this.cache.delete(`/tnved.json/json/${this.clientKey}/${code}.json`);
+      this.cache.delete(`${this.tnvedBase}/${code}.json`);
     } else {
       this.cache.clear();
     }
@@ -120,7 +122,7 @@ export class TksApiClient {
       params.set('page', String(options.page));
     }
     return this.fetch<GoodsSearchResponse>(
-      `/goods.json/json/${this.clientKey}/?${params}`,
+      `${this.goodsBase}/?${params}`,
     );
   }
 

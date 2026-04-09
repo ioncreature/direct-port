@@ -134,7 +134,8 @@ Seed создаёт: `admin@directport.ru` / `admin123` + 10 образцов к
 | JWT_SECRET            | Секрет для JWT                    | change-me-to-a-random-secret    |
 | JWT_ACCESS_EXPIRATION | Время жизни access token          | 15m                             |
 | API_INTERNAL_KEY      | Ключ для service-to-service (бот) | change-me-to-a-random-key       |
-| TKS_API_KEY           | Ключ для api1.tks.ru              | —                               |
+| TKS_TNVED_API_KEY     | Ключ для TNVED API (api1.tks.ru)  | —                               |
+| TKS_GOODS_API_KEY     | Ключ для GOODS API (api1.tks.ru)  | —                               |
 | ANTHROPIC_API_KEY     | Ключ Anthropic (парсинг, верификация, пошлины) | —                  |
 | TELEGRAM_BOT_TOKEN    | Токен Telegram-бота               | —                               |
 | NEXT_PUBLIC_API_URL   | URL API для админки               | http://localhost:3001/api       |

@@ -227,7 +227,10 @@ export interface EkArArea {
 // --- Client options ---
 
 export interface TksApiOptions {
-  clientKey: string;
+  /** Ключ для TNVED API (tnved.json) */
+  tnvedKey: string;
+  /** Ключ для GOODS API (goods.json) */
+  goodsKey: string;
   baseUrl?: string;
   timeout?: number;
   /** Включить in-memory кэш для TNVED-запросов (по умолчанию true) */
