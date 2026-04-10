@@ -49,13 +49,13 @@ spec:
               value: {{ .Values.api.env.JWT_ACCESS_EXPIRATION | quote }}
           livenessProbe:
             httpGet:
-              path: /
+              path: /api
               port: {{ .Values.api.port }}
             initialDelaySeconds: 15
             periodSeconds: 10
           readinessProbe:
             httpGet:
-              path: /
+              path: /api
               port: {{ .Values.api.port }}
             initialDelaySeconds: 5
             periodSeconds: 5

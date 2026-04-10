@@ -7,6 +7,8 @@ metadata:
     app.kubernetes.io/component: tg-bot
 spec:
   replicas: {{ .Values.tgBot.replicaCount }}
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "directport.selectorLabels" . | nindent 6 }}
@@ -42,14 +44,12 @@ spec:
             - name: API_BASE_URL
               value: {{ include "directport.apiUrl" . | quote }}
           livenessProbe:
-            httpGet:
-              path: /health
+            tcpSocket:
               port: {{ .Values.tgBot.port }}
             initialDelaySeconds: 10
             periodSeconds: 10
           readinessProbe:
-            httpGet:
-              path: /health
+            tcpSocket:
               port: {{ .Values.tgBot.port }}
             initialDelaySeconds: 5
             periodSeconds: 5

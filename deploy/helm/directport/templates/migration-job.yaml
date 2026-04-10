@@ -2,7 +2,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "directport.fullname" . }}-migration-{{ .Release.Revision }}
+  name: {{ include "directport.fullname" . }}-migration
   labels:
     {{- include "directport.labels" . | nindent 4 }}
     app.kubernetes.io/component: migration
