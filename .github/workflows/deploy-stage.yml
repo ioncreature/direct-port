@@ -109,24 +109,22 @@ jobs:
             echo "Release state is '$RELEASE_STATUS' (or release does not exist); no recovery needed"
           fi
 
-      - name: Adopt pre-existing landing resources into Helm release
+      - name: Recreate conflicting pre-existing landing resources for first install
         run: |
           set -euo pipefail
 
           RELEASE_STATUS="$(helm -n directport-stage status directport-stage -o json 2>/dev/null | jq -r '.info.status' || true)"
           if [[ -n "$RELEASE_STATUS" ]]; then
-            echo "Release exists with status '$RELEASE_STATUS'; adoption is not required"
+            echo "Release exists with status '$RELEASE_STATUS'; pre-install recreation is not required"
             exit 0
           fi
 
           for KIND in service deployment; do
             if kubectl -n directport-stage get "$KIND" directport-stage-landing >/dev/null 2>&1; then
-              echo "Adopting existing $KIND/directport-stage-landing into Helm ownership"
-              kubectl -n directport-stage label "$KIND" directport-stage-landing app.kubernetes.io/managed-by=Helm --overwrite
-              kubectl -n directport-stage annotate "$KIND" directport-stage-landing meta.helm.sh/release-name=directport-stage --overwrite
-              kubectl -n directport-stage annotate "$KIND" directport-stage-landing meta.helm.sh/release-namespace=directport-stage --overwrite
+              echo "Deleting pre-existing $KIND/directport-stage-landing to avoid selector/apply conflicts on first Helm install"
+              kubectl -n directport-stage delete "$KIND" directport-stage-landing --wait=true
             else
-              echo "$KIND/directport-stage-landing does not exist; nothing to adopt"
+              echo "$KIND/directport-stage-landing does not exist; nothing to recreate"
             fi
           done
 
