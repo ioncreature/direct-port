@@ -133,29 +133,21 @@ node apps/api/node_modules/typeorm/cli.js migration:run -d apps/api/dist/src/dat
 
 ## Proxy-server: откуда и куда проксируется трафик
 
-Прокси на сервере `85.137.251.181` настроен через `Caddy`.
+На stage внешний `nginx` принимает трафик с публичных доменов и проксирует его в ingress-контроллер Kubernetes.
 
-- Конфиг: `/etc/caddy/Caddyfile`
-- Сервис: `caddy` (`systemd`)
-- Входной протокол: `HTTPS` (`:443`, сертификаты Let’s Encrypt)
+- Конфиг в репозитории: `deploy/coreimport-stage-proxy.conf`
+- На сервере: этот конфиг подключается в `nginx` и после изменения требует `nginx -t && systemctl reload nginx`
 
-Текущие правила reverse-proxy:
+Текущие правила маршрутизации:
 
-- Вход: `https://coreimport.ru/*`
-  - Proxy target: `https://coreimport-landing.lab42-stg.work/*`
-  - `Host` принудительно выставляется в `coreimport-landing.lab42-stg.work`
-- Вход: `https://admin-access.coreimport.ru/*`
-  - Proxy target: `https://coreimport-admin.lab42-stg.work/*`
-  - `Host` принудительно выставляется в `coreimport-admin.lab42-stg.work`
-- Вход: `https://tks-api.coreimport.ru/*`
-  - Proxy target: `https://api1.tks.ru/*`
-  - `Host` принудительно выставляется в `api1.tks.ru`
-  - Для upstream удаляются потенциально деанонимизирующие заголовки:
-    - `X-Forwarded-For`
-    - `X-Forwarded-Proto`
-    - `X-Forwarded-Host`
-    - `X-Real-Ip`
-    - `Forwarded`
+- Вход: `http://coreimport.ru/*`
+  - Внешний `nginx` проксирует в stage ingress (`127.0.0.1:32080`)
+  - Для выбора ingress-правила заголовок `Host` выставляется в `coreimport-landing.lab42-stg.work`
+  - В кластере этот host уходит в сервис `*-landing`
+- Вход: `http://admin-access.coreimport.ru/*`
+  - Внешний `nginx` проксирует в stage ingress (`127.0.0.1:32080`)
+  - Для выбора ingress-правила заголовок `Host` выставляется в `coreimport-admin.lab42-stg.work`
+  - В кластере этот host уходит в сервис `*-admin-web`
 
 Дополнительно API-сервис использует внешний TKS endpoint:
 
