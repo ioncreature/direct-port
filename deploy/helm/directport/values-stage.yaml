@@ -40,7 +40,7 @@ ingress:
     cert-manager.io/cluster-issuer: letsencrypt-prod
   hosts:
     admin:
-      host: admin-stage.directport.ru
+      host: coreimport-admin.lab42-stg.work
       paths:
         - path: /
           pathType: Prefix
@@ -50,16 +50,16 @@ ingress:
         - path: /
           pathType: Prefix
     landing:
-      host: stage.directport.ru
+      host: coreimport-landing.lab42-stg.work
       paths:
         - path: /
           pathType: Prefix
   tls:
     - secretName: directport-stage-tls
       hosts:
-        - admin-stage.directport.ru
+        - coreimport-admin.lab42-stg.work
         - api-stage.directport.ru
-        - stage.directport.ru
+        - coreimport-landing.lab42-stg.work
 
 postgresql:
   enabled: true
