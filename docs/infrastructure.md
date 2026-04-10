@@ -133,32 +133,34 @@ node apps/api/node_modules/typeorm/cli.js migration:run -d apps/api/dist/src/dat
 
 ## Proxy-server: откуда и куда проксируется трафик
 
-Файл конфигурации: `deploy/coreimport-stage-proxy.conf`.
+Прокси на сервере `85.137.251.181` настроен через `Caddy`.
 
-Текущие правила проксирования:
+- Конфиг: `/etc/caddy/Caddyfile`
+- Сервис: `caddy` (`systemd`)
+- Входной протокол: `HTTPS` (`:443`, сертификаты Let’s Encrypt)
 
-- Вход: `http://coreimport.ru/*`
+Текущие правила reverse-proxy:
+
+- Вход: `https://coreimport.ru/*`
   - Proxy target: `https://coreimport-landing.lab42-stg.work/*`
   - `Host` принудительно выставляется в `coreimport-landing.lab42-stg.work`
-- Вход: `http://admin-access.coreimport.ru/*`
+- Вход: `https://admin-access.coreimport.ru/*`
   - Proxy target: `https://coreimport-admin.lab42-stg.work/*`
   - `Host` принудительно выставляется в `coreimport-admin.lab42-stg.work`
+- Вход: `https://tks-api.coreimport.ru/*`
+  - Proxy target: `https://api1.tks.ru/*`
+  - `Host` принудительно выставляется в `api1.tks.ru`
+  - Для upstream удаляются потенциально деанонимизирующие заголовки:
+    - `X-Forwarded-For`
+    - `X-Forwarded-Proto`
+    - `X-Forwarded-Host`
+    - `X-Real-Ip`
+    - `Forwarded`
 
 Дополнительно API-сервис использует внешний TKS endpoint:
 
-- Исходящие запросы из `api` проксируются на `https://api1.tks.ru`
+- Исходящие запросы из `api` идут на `https://api1.tks.ru`
 - Базовый URL задаётся через `TKS_API_BASE_URL` (по умолчанию — `https://api1.tks.ru`)
-
-Пробрасываемые заголовки в обоих `server`-блоках:
-
-- `X-Real-IP: $remote_addr`
-- `X-Forwarded-For: $proxy_add_x_forwarded_for`
-- `X-Forwarded-Proto: $scheme`
-
-Примечания:
-
-- В этом конфиге proxy-server слушает `listen 80` (HTTP).
-- Апстримы указаны как `https://...`, то есть proxy-server ходит к origin по TLS.
 
 ---
 
