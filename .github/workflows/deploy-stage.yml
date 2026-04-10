@@ -109,20 +109,21 @@ jobs:
             echo "Release state is '$RELEASE_STATUS' (or release does not exist); no recovery needed"
           fi
 
-      - name: Recreate conflicting pre-existing landing resources for first install
+      - name: Recreate conflicting pre-existing landing resources when ownership is not Helm
         run: |
           set -euo pipefail
 
-          RELEASE_STATUS="$(helm -n directport-stage status directport-stage -o json 2>/dev/null | jq -r '.info.status' || true)"
-          if [[ -n "$RELEASE_STATUS" ]]; then
-            echo "Release exists with status '$RELEASE_STATUS'; pre-install recreation is not required"
-            exit 0
-          fi
-
           for KIND in service deployment; do
             if kubectl -n directport-stage get "$KIND" directport-stage-landing >/dev/null 2>&1; then
-              echo "Deleting pre-existing $KIND/directport-stage-landing to avoid selector/apply conflicts on first Helm install"
-              kubectl -n directport-stage delete "$KIND" directport-stage-landing --wait=true
+              MANAGED_BY="$(kubectl -n directport-stage get "$KIND" directport-stage-landing -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}' 2>/dev/null || true)"
+              HAS_KUBECTL_MANAGER="$(kubectl -n directport-stage get "$KIND" directport-stage-landing -o json | jq -r 'any(.metadata.managedFields[]?; .manager == "kubectl-client-side-apply")')"
+
+              if [[ "$MANAGED_BY" != "Helm" || "$HAS_KUBECTL_MANAGER" == "true" ]]; then
+                echo "Deleting conflicting $KIND/directport-stage-landing (managed-by='$MANAGED_BY', kubectl-manager='$HAS_KUBECTL_MANAGER')"
+                kubectl -n directport-stage delete "$KIND" directport-stage-landing --wait=true
+              else
+                echo "$KIND/directport-stage-landing is Helm-managed with no kubectl apply ownership; keep as is"
+              fi
             else
               echo "$KIND/directport-stage-landing does not exist; nothing to recreate"
             fi
