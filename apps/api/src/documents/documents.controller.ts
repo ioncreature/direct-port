@@ -57,7 +57,7 @@ export class DocumentsController {
   }
 
   @Post('upload-admin')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   @UseInterceptors(FileInterceptor('file', SPREADSHEET_UPLOAD))
   async uploadAdmin(
     @UploadedFile() file: Express.Multer.File,
@@ -76,19 +76,19 @@ export class DocumentsController {
   }
 
   @Patch(':id/review')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   review(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReviewDocumentDto) {
     return this.service.updateParsedData(id, dto);
   }
 
   @Post(':id/reject')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   reject(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RejectDocumentDto) {
     return this.service.reject(id, dto);
   }
 
   @Post(':id/reprocess')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   reprocess(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.reprocess(id);
   }
