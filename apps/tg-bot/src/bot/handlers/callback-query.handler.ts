@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Context, InlineKeyboard } from 'grammy';
 import { ApiClientService } from '../../api-client/api-client.service';
 import { ColumnMappingInput, ExcelService } from '../../excel/excel.service';
+import { formatUser } from '../format-user';
 import { ColumnMapping, ConversationStateService } from '../state/conversation-state.service';
 
 const COLUMN_STEPS = [
@@ -25,6 +26,8 @@ export class CallbackQueryHandler {
     const data = ctx.callbackQuery?.data;
     if (!data?.startsWith('col_')) return;
 
+    const user = formatUser(ctx);
+
     await ctx.answerCallbackQuery();
 
     const chatId = ctx.chat?.id;
@@ -32,6 +35,7 @@ export class CallbackQueryHandler {
 
     const state = await this.stateService.getState(chatId);
     if (!state) {
+      this.logger.warn(`Session expired for chat=${chatId} (${user}), data="${data}"`);
       await ctx.editMessageText('Сессия истекла. Отправьте файл заново.');
       return;
     }
@@ -39,6 +43,10 @@ export class CallbackQueryHandler {
     const parts = data.split('_');
     const field = parts[1] as keyof ColumnMapping;
     const index = parseInt(parts[2], 10);
+
+    this.logger.log(
+      `Column selected: ${field}="${state.headers[index] ?? '?'}" by ${user}`,
+    );
 
     state.columnMapping[field] = index;
 
@@ -79,24 +87,30 @@ export class CallbackQueryHandler {
         const products = await this.excelService.parseWithMapping(buffer, state.fileType, mapping);
 
         if (products.length === 0) {
+          this.logger.warn(`Empty file "${state.fileName}" from ${user}`);
           await ctx.reply('Файл не содержит данных. Проверьте формат.');
           await this.stateService.clearState(chatId);
           return;
         }
 
-        await this.apiClient.createDocument({
+        const doc = await this.apiClient.createDocument({
           telegramUserId: state.telegramUserId,
           originalFileName: state.fileName,
           columnMapping: { ...mapping },
           parsedData: products.map((p) => ({ ...p })),
         });
+        this.logger.log(
+          `Document created "${state.fileName}" (${products.length} rows) from ${user}: id=${doc.id} status=${doc.status}`,
+        );
 
         await ctx.reply(
           `📄 Файл «${state.fileName}» принят в обработку (${products.length} строк).\n` +
             'Вы получите уведомление по завершении.',
         );
       } catch (err) {
-        this.logger.error('Error processing document', err);
+        this.logger.error(
+          `Error processing document "${state.fileName}" from ${user}: ${(err as Error).message}`,
+        );
         await ctx.reply('Ошибка при отправке документа. Попробуйте ещё раз.');
       }
 

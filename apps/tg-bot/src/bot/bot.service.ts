@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Bot } from 'grammy';
+import { Bot, Context, NextFunction } from 'grammy';
+import { formatUser } from './format-user';
 import { CallbackQueryHandler } from './handlers/callback-query.handler';
 import { FileUploadHandler } from './handlers/file-upload.handler';
 import { HelpHandler } from './handlers/help.handler';
@@ -32,6 +33,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit() {
     if (!this.bot) return;
 
+    this.bot.use((ctx, next) => this.logUpdate(ctx, next));
+
     // Reply keyboard text handlers
     this.bot.hears('📁 Загрузить файл', (ctx) => this.menuHandler.handleUpload(ctx));
     this.bot.hears('❓ Помощь', (ctx) => this.menuHandler.handleHelp(ctx));
@@ -47,11 +50,60 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     this.bot.on('message:document', (ctx) => this.fileUploadHandler.handle(ctx));
 
     this.bot.catch((err) => {
-      this.logger.error('Bot error:', err.message);
+      const ctx = err.ctx;
+      const user = formatUser(ctx);
+      this.logger.error(
+        `Bot error for update ${ctx.update.update_id}${user ? ' from ' + user : ''}: ${err.message}`,
+        err.error instanceof Error ? err.error.stack : undefined,
+      );
     });
 
     this.bot.start();
     this.logger.log('Telegram bot started');
+  }
+
+  private async logUpdate(ctx: Context, next: NextFunction): Promise<void> {
+    const user = formatUser(ctx) || 'unknown';
+    const action = this.describeUpdate(ctx);
+    const startedAt = Date.now();
+    this.logger.log(`→ ${action} | ${user}`);
+    try {
+      await next();
+      this.logger.log(`✓ ${action} | ${user} | ${Date.now() - startedAt}ms`);
+    } catch (err) {
+      this.logger.error(
+        `✗ ${action} | ${user} | ${Date.now() - startedAt}ms | ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+      throw err;
+    }
+  }
+
+  private describeUpdate(ctx: Context): string {
+    if (ctx.hasCommand('start')) return 'command /start';
+    if (ctx.hasCommand('help')) return 'command /help';
+
+    const callbackData = ctx.callbackQuery?.data;
+    if (callbackData) return `callback_query "${callbackData}"`;
+
+    const document = ctx.message?.document;
+    if (document) {
+      const size = document.file_size ? ` ${document.file_size}B` : '';
+      return `document "${document.file_name ?? 'file'}"${size}`;
+    }
+
+    const text = ctx.message?.text;
+    if (text) {
+      const preview = text.length > 50 ? text.slice(0, 50) + '…' : text;
+      return `text "${preview}"`;
+    }
+
+    const photo = ctx.message?.photo;
+    if (photo) return 'photo';
+
+    return `update type=${Object.keys(ctx.update)
+      .filter((k) => k !== 'update_id')
+      .join(',')}`;
   }
 
   async onModuleDestroy() {

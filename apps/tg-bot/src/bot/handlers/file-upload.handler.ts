@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Context } from 'grammy';
 import { ApiClientService } from '../../api-client/api-client.service';
+import { formatUser } from '../format-user';
 import { ConversationStateService } from '../state/conversation-state.service';
 
 @Injectable()
@@ -18,8 +19,10 @@ export class FileUploadHandler {
 
     const fileName = document.file_name || 'file';
     const ext = fileName.split('.').pop()?.toLowerCase();
+    const user = formatUser(ctx);
 
     if (ext !== 'xlsx' && ext !== 'csv') {
+      this.logger.warn(`Rejected unsupported file "${fileName}" (ext=${ext}) from ${user}`);
       await ctx.reply('Поддерживаются только файлы .xlsx и .csv');
       return;
     }
@@ -32,10 +35,7 @@ export class FileUploadHandler {
       const response = await fetch(url);
       const buffer = Buffer.from(await response.arrayBuffer());
 
-      // Ensure user is registered
-      let telegramUserId: string | undefined;
-      const state = await this.stateService.getState(ctx.chat!.id);
-      telegramUserId = state?.telegramUserId;
+      let telegramUserId = (await this.stateService.getState(ctx.chat!.id))?.telegramUserId;
 
       if (!telegramUserId && ctx.from) {
         const tgUser = await this.apiClient.registerTelegramUser({
@@ -56,13 +56,16 @@ export class FileUploadHandler {
         });
       }
 
-      await this.apiClient.uploadDocument(buffer, fileName, telegramUserId!);
+      const uploadResult = await this.apiClient.uploadDocument(buffer, fileName, telegramUserId!);
+      this.logger.log(
+        `Uploaded "${fileName}" (${buffer.length}B) from ${user}: documentId=${uploadResult.id} status=${uploadResult.status}`,
+      );
 
       await ctx.reply(
         `📄 Файл «${fileName}» принят в обработку.\n` + 'Вы получите уведомление по завершении.',
       );
     } catch (err) {
-      this.logger.error('File upload error', err);
+      this.logger.error(`File upload failed for "${fileName}" from ${user}: ${(err as Error).message}`);
       await ctx.reply('Ошибка при обработке файла. Попробуйте ещё раз.');
     }
   }

@@ -14,7 +14,10 @@ export class StartHandler {
 
   async handle(ctx: Context) {
     const from = ctx.from;
-    if (!from) return;
+    if (!from) {
+      this.logger.warn('/start received without "from" field');
+      return;
+    }
 
     try {
       const tgUser = await this.apiClient.registerTelegramUser({
@@ -23,6 +26,7 @@ export class StartHandler {
         firstName: from.first_name,
         lastName: from.last_name,
       });
+      this.logger.log(`Registered telegram user: internalId=${tgUser.id} telegramId=${from.id}`);
 
       await this.stateService.setState(ctx.chat!.id, {
         step: 'idle',
@@ -34,7 +38,9 @@ export class StartHandler {
         telegramUserId: tgUser.id,
       });
     } catch (err) {
-      this.logger.error('Failed to register telegram user', err);
+      this.logger.error(
+        `Failed to register telegram user id=${from.id}: ${(err as Error).message}`,
+      );
     }
 
     const keyboard = new Keyboard().text('📁 Загрузить файл').row().text('❓ Помощь').resized();

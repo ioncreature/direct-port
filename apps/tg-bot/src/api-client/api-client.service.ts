@@ -1,10 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import FormData from 'form-data';
+
+interface TimedRequestConfig extends InternalAxiosRequestConfig {
+  metadata?: { startedAt: number };
+}
 
 @Injectable()
 export class ApiClientService {
+  private logger = new Logger(ApiClientService.name);
   private client: AxiosInstance;
 
   constructor(config: ConfigService) {
@@ -14,6 +19,40 @@ export class ApiClientService {
         'X-Internal-Key': config.get('API_INTERNAL_KEY', ''),
       },
     });
+
+    this.client.interceptors.request.use((req: TimedRequestConfig) => {
+      req.metadata = { startedAt: Date.now() };
+      this.logger.log(
+        `→ ${req.method?.toUpperCase()} ${req.baseURL ?? ''}${req.url ?? ''}`,
+      );
+      return req;
+    });
+
+    this.client.interceptors.response.use(
+      (res) => {
+        const req = res.config as TimedRequestConfig;
+        const ms = req.metadata ? Date.now() - req.metadata.startedAt : 0;
+        this.logger.log(
+          `← ${req.method?.toUpperCase()} ${req.url ?? ''} ${res.status} ${ms}ms`,
+        );
+        return res;
+      },
+      (err: AxiosError) => {
+        const req = err.config as TimedRequestConfig | undefined;
+        const ms = req?.metadata ? Date.now() - req.metadata.startedAt : 0;
+        const status = err.response?.status ?? 'ERR';
+        const method = req?.method?.toUpperCase() ?? 'REQ';
+        const url = req?.url ?? '';
+        const body =
+          err.response?.data && typeof err.response.data === 'object'
+            ? JSON.stringify(err.response.data).slice(0, 300)
+            : String(err.response?.data ?? '');
+        this.logger.error(
+          `← ${method} ${url} ${status} ${ms}ms: ${err.message}${body ? ' | ' + body : ''}`,
+        );
+        return Promise.reject(err);
+      },
+    );
   }
 
   async searchTnVed(query: string) {
