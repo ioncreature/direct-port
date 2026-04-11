@@ -131,7 +131,7 @@ interface ProductRow {
 **После верификации** (`VerifiedProduct`, опционально):
 
 - Добавляются: verified, suggestedCode, verificationComment
-- Батчи по 10, Claude claude-sonnet-4-20250514
+- Батчи по 10, Claude claude-sonnet-4-6
 
 **После расчёта** (`CalculatedProduct`):
 

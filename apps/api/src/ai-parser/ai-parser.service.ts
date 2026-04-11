@@ -139,7 +139,7 @@ export class AiParserService {
     try {
       const response = await this.anthropic!.messages.create(
         {
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 4096,
           system: SYSTEM_PROMPT,
           messages: [{ role: 'user', content: userPrompt }],
@@ -231,7 +231,7 @@ ${JSON.stringify({ currency: result.currency, products: sampleProducts }, null, 
     try {
       const response = await this.anthropic!.messages.create(
         {
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 1024,
           system: VALIDATION_SYSTEM_PROMPT,
           messages: [{ role: 'user', content: prompt }],

@@ -100,7 +100,7 @@ ${JSON.stringify(items, null, 2)}
 
     try {
       const response = await this.anthropic!.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 2048,
         system: SYSTEM_PROMPT,
         messages: [{ role: 'user', content: userPrompt }],
