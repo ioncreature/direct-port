@@ -231,6 +231,17 @@ export interface TksApiLogger {
   error(message: string): void;
 }
 
+/**
+ * Подключаемое хранилище кэша для ответов TKS API.
+ * По умолчанию используется InMemoryTksCacheStore; в prod подключается Redis-реализация.
+ */
+export interface TksCacheStore {
+  get<T>(key: string): Promise<T | undefined>;
+  set<T>(key: string, value: T, ttlMs: number): Promise<void>;
+  delete(key: string): Promise<void>;
+  clear(): Promise<void>;
+}
+
 export interface TksApiOptions {
   /** Ключ для TNVED API (tnved.json) */
   tnvedKey: string;
@@ -238,12 +249,19 @@ export interface TksApiOptions {
   goodsKey: string;
   baseUrl: string;
   timeout?: number;
-  /** Включить in-memory кэш для TNVED-запросов (по умолчанию true) */
+  /** Включить кэш для TNVED-запросов и поиска товаров (по умолчанию true) */
   cache?: boolean;
   /** TTL кэша в миллисекундах (по умолчанию 1 час) */
   cacheTtl?: number;
-  /** Максимальное количество записей в кэше (по умолчанию 1000) */
+  /**
+   * Максимальное количество записей в in-memory кэше (по умолчанию 1000).
+   * Игнорируется, если передан внешний cacheStore.
+   */
   cacheMaxSize?: number;
+  /**
+   * Реализация хранилища кэша. Если не передана — используется InMemoryTksCacheStore.
+   */
+  cacheStore?: TksCacheStore;
   /** Логгер для запросов и ответов TKS API */
   logger?: TksApiLogger;
 }

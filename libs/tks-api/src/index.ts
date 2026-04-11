@@ -1,3 +1,4 @@
+export { InMemoryTksCacheStore } from './in-memory-cache-store';
 export { TksApiClient, TksApiError, validateTnvedCode } from './tks-api.client';
 export { Priznak } from './types';
 export type {
@@ -8,6 +9,7 @@ export type {
   OperationType,
   TksApiLogger,
   TksApiOptions,
+  TksCacheStore,
   TnvedCode,
   TnvedRates,
   TnvedVersion,

@@ -1,9 +1,11 @@
+import { InMemoryTksCacheStore } from './in-memory-cache-store';
 import type {
   EkArArea,
   GoodsSearchResponse,
   OksmtCountry,
   TksApiLogger,
   TksApiOptions,
+  TksCacheStore,
   TnvedCode,
   TnvedVersion,
 } from './types';
@@ -11,11 +13,8 @@ import type {
 const DEFAULT_TIMEOUT = 15_000;
 const DEFAULT_CACHE_TTL = 60 * 60 * 1000;
 const DEFAULT_CACHE_MAX_SIZE = 1000;
-
-interface CacheEntry<T> {
-  data: Promise<T>;
-  expiresAt: number;
-}
+/** Префикс ключей кэша. Увеличить при несовместимых изменениях формата ответа. */
+const CACHE_KEY_PREFIX = 'v1:';
 
 export class TksApiClient {
   private readonly tnvedBase: string;
@@ -24,9 +23,10 @@ export class TksApiClient {
   private readonly timeout: number;
   private readonly cacheEnabled: boolean;
   private readonly cacheTtl: number;
-  private readonly cacheMaxSize: number;
+  private readonly cacheStore: TksCacheStore;
   private readonly logger?: TksApiLogger;
-  private readonly cache = new Map<string, CacheEntry<unknown>>();
+  /** Дедупликация одновременных запросов по одному ключу (thundering herd). */
+  private readonly inFlight = new Map<string, Promise<unknown>>();
 
   constructor(options: TksApiOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
@@ -35,7 +35,8 @@ export class TksApiClient {
     this.timeout = options.timeout ?? DEFAULT_TIMEOUT;
     this.cacheEnabled = options.cache !== false;
     this.cacheTtl = options.cacheTtl ?? DEFAULT_CACHE_TTL;
-    this.cacheMaxSize = options.cacheMaxSize ?? DEFAULT_CACHE_MAX_SIZE;
+    this.cacheStore =
+      options.cacheStore ?? new InMemoryTksCacheStore(options.cacheMaxSize ?? DEFAULT_CACHE_MAX_SIZE);
     this.logger = options.logger;
   }
 
@@ -91,11 +92,13 @@ export class TksApiClient {
     return this.fetchCached<EkArArea[]>(`${this.tnvedBase}/ek_ar.json`);
   }
 
-  clearCache(code?: string): void {
+  async clearCache(code?: string): Promise<void> {
     if (code) {
-      this.cache.delete(`${this.tnvedBase}/${code}.json`);
+      await this.cacheStore.delete(this.cacheKey(`${this.tnvedBase}/${code}.json`));
     } else {
-      this.cache.clear();
+      // Сбрасываем in-flight, иначе текущий fetch запишет в store уже после clear.
+      this.inFlight.clear();
+      await this.cacheStore.clear();
     }
   }
 
@@ -110,39 +113,50 @@ export class TksApiClient {
     if (options?.page != null) {
       params.set('page', String(options.page));
     }
-    return this.fetch<GoodsSearchResponse>(`${this.goodsBase}/?${params}`);
+    return this.fetchCached<GoodsSearchResponse>(`${this.goodsBase}/?${params}`);
   }
 
-  private fetchCached<T>(path: string): Promise<T> {
-    if (this.cacheEnabled) {
-      const cached = this.cache.get(path);
-      if (cached && cached.expiresAt > Date.now()) {
-        return cached.data as Promise<T>;
-      }
-    }
-
-    const promise = this.fetch<T>(path);
-
-    if (this.cacheEnabled) {
-      this.evictIfNeeded();
-      this.cache.set(path, { data: promise, expiresAt: Date.now() + this.cacheTtl });
-      promise.catch(() => this.cache.delete(path));
-    }
-
-    return promise;
+  private cacheKey(path: string): string {
+    return `${CACHE_KEY_PREFIX}${path}`;
   }
 
-  private evictIfNeeded(): void {
-    if (this.cache.size < this.cacheMaxSize) return;
-    // Удаляем просроченные записи
-    const now = Date.now();
-    for (const [key, entry] of this.cache) {
-      if (entry.expiresAt <= now) this.cache.delete(key);
+  private async fetchCached<T>(path: string): Promise<T> {
+    if (!this.cacheEnabled) {
+      return this.fetch<T>(path);
     }
-    // Если всё ещё полон — удаляем самую старую запись (первый ключ в Map = oldest insertion)
-    if (this.cache.size >= this.cacheMaxSize) {
-      const firstKey = this.cache.keys().next().value;
-      if (firstKey) this.cache.delete(firstKey);
+
+    const key = this.cacheKey(path);
+
+    const cached = await this.cacheStore.get<T>(key).catch((err) => {
+      this.logger?.error(
+        `TKS API cache get failed for ${path}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return undefined;
+    });
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const existing = this.inFlight.get(key) as Promise<T> | undefined;
+    if (existing) return existing;
+
+    const promise = (async () => {
+      const data = await this.fetch<T>(path);
+      // Запись в кэш — fire-and-forget: ждущие в inFlight получают ответ сразу,
+      // не блокируясь на Redis-латенси.
+      void this.cacheStore.set(key, data, this.cacheTtl).catch((err) => {
+        this.logger?.error(
+          `TKS API cache set failed for ${path}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+      return data;
+    })();
+
+    this.inFlight.set(key, promise);
+    try {
+      return await promise;
+    } finally {
+      this.inFlight.delete(key);
     }
   }
 
