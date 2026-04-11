@@ -3,10 +3,11 @@
 import { useDocuments } from '@/hooks/use-documents';
 import { statusColors, statusLabels } from '@/lib/documents';
 import { fmtDateTime } from '@/lib/format';
-import { btnOutline, td, th } from '@/lib/table-styles';
+import { btnLink, btnOutline, td, th } from '@/lib/table-styles';
 import { getDocumentUploaderName } from '@/lib/telegram';
 import type { DocumentStatus } from '@/lib/types';
 import Link from 'next/link';
+import { useState } from 'react';
 
 const statuses: { value: DocumentStatus | ''; label: string }[] = [
   { value: '', label: 'Все' },
@@ -38,9 +39,25 @@ export default function DocumentsPage() {
     filterByStatus,
     refetch,
     downloadDocument,
+    reprocessDocument,
   } = useDocuments();
 
+  const [reprocessingIds, setReprocessingIds] = useState<Set<string>>(new Set());
+
   const totalPages = Math.max(1, Math.ceil(total / limit));
+
+  const handleReprocess = async (id: string) => {
+    setReprocessingIds((prev) => new Set(prev).add(id));
+    try {
+      await reprocessDocument(id);
+    } finally {
+      setReprocessingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
 
   function sortIndicator(field: string) {
     if (sortBy !== field) return '';
@@ -139,20 +156,23 @@ export default function DocumentsPage() {
                   <td style={td}>{doc.rowCount}</td>
                   <td style={td}>{fmtDateTime(doc.createdAt)}</td>
                   <td style={td}>
-                    <button
-                      onClick={() => downloadDocument(doc.id, doc.originalFileName)}
-                      disabled={doc.status !== 'processed'}
-                      style={{
-                        cursor: doc.status === 'processed' ? 'pointer' : 'not-allowed',
-                        opacity: doc.status === 'processed' ? 1 : 0.4,
-                        border: 'none',
-                        background: 'none',
-                        color: '#2563eb',
-                        textDecoration: 'underline',
-                      }}
-                    >
-                      Скачать
-                    </button>
+                    {(doc.status === 'failed' || doc.status === 'requires_review') && (
+                      <button
+                        onClick={() => handleReprocess(doc.id)}
+                        disabled={reprocessingIds.has(doc.id)}
+                        style={{ ...btnLink, color: '#ca8a04' }}
+                      >
+                        {reprocessingIds.has(doc.id) ? 'Отправка...' : 'Переобработать'}
+                      </button>
+                    )}
+                    {doc.status === 'processed' && (
+                      <button
+                        onClick={() => downloadDocument(doc.id, doc.originalFileName)}
+                        style={{ ...btnLink, color: '#2563eb' }}
+                      >
+                        Скачать
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

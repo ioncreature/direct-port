@@ -63,6 +63,14 @@ export function useDocuments(options?: { telegramUserId?: string }) {
     window.URL.revokeObjectURL(url);
   }, []);
 
+  const reprocessDocument = useCallback(
+    async (id: string) => {
+      await api.post(`/documents/${id}/reprocess`);
+      await fetch();
+    },
+    [fetch],
+  );
+
   return {
     documents,
     total,
@@ -77,5 +85,6 @@ export function useDocuments(options?: { telegramUserId?: string }) {
     filterByStatus,
     refetch: fetch,
     downloadDocument,
+    reprocessDocument,
   };
 }

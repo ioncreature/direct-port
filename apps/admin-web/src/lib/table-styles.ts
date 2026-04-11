@@ -12,3 +12,11 @@ export const btnOutline: React.CSSProperties = {
   background: '#fff',
   fontSize: 13,
 };
+export const btnLink: React.CSSProperties = {
+  border: 'none',
+  background: 'none',
+  padding: 0,
+  font: 'inherit',
+  textDecoration: 'underline',
+  cursor: 'pointer',
+};
