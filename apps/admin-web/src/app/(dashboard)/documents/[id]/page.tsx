@@ -47,10 +47,7 @@ export default function DocumentDetailPage() {
     }
   }, [doc?.parsedData, doc?.currency]);
 
-  if (loading) return <p>Загрузка...</p>;
-  if (error || !doc) return <p style={{ color: '#dc2626' }}>{error || 'Документ не найден'}</p>;
-
-  const rows = doc.resultData ?? [];
+  const rows = doc?.resultData ?? [];
   const totals = useMemo(
     () =>
       rows.reduce(
@@ -74,6 +71,9 @@ export default function DocumentDetailPage() {
       ),
     [rows],
   );
+
+  if (loading) return <p>Загрузка...</p>;
+  if (error || !doc) return <p style={{ color: '#dc2626' }}>{error || 'Документ не найден'}</p>;
 
   const updateRow = (index: number, field: keyof ParsedDataRow, value: string | number) => {
     setEditableRows((prev) =>
