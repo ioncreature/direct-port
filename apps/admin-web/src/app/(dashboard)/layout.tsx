@@ -1,5 +1,6 @@
 'use client';
 
+import { ForbiddenToast } from '@/components/forbidden-toast';
 import { useAuth } from '@/hooks/use-auth';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -76,6 +77,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
       <main style={{ flex: 1, padding: 24 }}>{children}</main>
+      <ForbiddenToast />
     </div>
   );
 }

@@ -3,6 +3,8 @@
 import axios from 'axios';
 import type { AuthResponse } from './types';
 
+export const API_FORBIDDEN_EVENT = 'api:forbidden';
+
 const api = axios.create({ baseURL: '/api' });
 
 let isRefreshing = false;
@@ -20,6 +22,11 @@ api.interceptors.response.use(
   (res) => res,
   async (error) => {
     const original = error.config;
+
+    if (error.response?.status === 403) {
+      window.dispatchEvent(new Event(API_FORBIDDEN_EVENT));
+    }
+
     if (error.response?.status !== 401 || original._retry) {
       return Promise.reject(error);
     }
