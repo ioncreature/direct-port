@@ -6,6 +6,7 @@ export type {
   GoodsSearchResponse,
   OksmtCountry,
   OperationType,
+  TksApiLogger,
   TksApiOptions,
   TnvedCode,
   TnvedRates,

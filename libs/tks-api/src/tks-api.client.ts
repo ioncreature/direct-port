@@ -2,6 +2,7 @@ import type {
   EkArArea,
   GoodsSearchResponse,
   OksmtCountry,
+  TksApiLogger,
   TksApiOptions,
   TnvedCode,
   TnvedVersion,
@@ -24,6 +25,7 @@ export class TksApiClient {
   private readonly cacheEnabled: boolean;
   private readonly cacheTtl: number;
   private readonly cacheMaxSize: number;
+  private readonly logger?: TksApiLogger;
   private readonly cache = new Map<string, CacheEntry<unknown>>();
 
   constructor(options: TksApiOptions) {
@@ -34,6 +36,7 @@ export class TksApiClient {
     this.cacheEnabled = options.cache !== false;
     this.cacheTtl = options.cacheTtl ?? DEFAULT_CACHE_TTL;
     this.cacheMaxSize = options.cacheMaxSize ?? DEFAULT_CACHE_MAX_SIZE;
+    this.logger = options.logger;
   }
 
   // --- TNVED API ---
@@ -145,12 +148,32 @@ export class TksApiClient {
 
   private async fetch<T>(path: string): Promise<T> {
     const url = `${this.baseUrl}${path}`;
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(this.timeout),
-      headers: { Accept: 'application/json' },
-    });
+    const startedAt = Date.now();
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        signal: AbortSignal.timeout(this.timeout),
+        headers: { Accept: 'application/json' },
+      });
+    } catch (err) {
+      if (this.logger) {
+        const elapsed = Date.now() - startedAt;
+        this.logger.error(
+          `TKS API request failed ${url} (${elapsed}ms): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      throw err;
+    }
+
+    const elapsed = Date.now() - startedAt;
 
     if (!response.ok) {
+      if (this.logger) {
+        const body = await response.text().catch(() => '');
+        this.logger.error(
+          `TKS API ${response.status} ${response.statusText} ${url} (${elapsed}ms): ${body}`,
+        );
+      }
       throw new TksApiError(
         `TKS API error: ${response.status} ${response.statusText}`,
         response.status,
@@ -158,7 +181,11 @@ export class TksApiClient {
       );
     }
 
-    return response.json() as Promise<T>;
+    const data = (await response.json()) as T;
+    if (this.logger) {
+      this.logger.log(`TKS API ${url} (${elapsed}ms): ${JSON.stringify(data)}`);
+    }
+    return data;
   }
 }
 

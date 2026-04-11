@@ -226,6 +226,11 @@ export interface EkArArea {
 
 // --- Client options ---
 
+export interface TksApiLogger {
+  log(message: string): void;
+  error(message: string): void;
+}
+
 export interface TksApiOptions {
   /** Ключ для TNVED API (tnved.json) */
   tnvedKey: string;
@@ -239,6 +244,8 @@ export interface TksApiOptions {
   cacheTtl?: number;
   /** Максимальное количество записей в кэше (по умолчанию 1000) */
   cacheMaxSize?: number;
+  /** Логгер для запросов и ответов TKS API */
+  logger?: TksApiLogger;
 }
 
 // --- Характеристики (priznak) ---
