@@ -5,9 +5,7 @@ import { TnVedCode } from '../database/entities/tn-ved-code.entity';
 
 @Injectable()
 export class TnVedService {
-  constructor(
-    @InjectRepository(TnVedCode) private tnVedRepo: Repository<TnVedCode>,
-  ) {}
+  constructor(@InjectRepository(TnVedCode) private tnVedRepo: Repository<TnVedCode>) {}
 
   async search(query: string) {
     return this.tnVedRepo

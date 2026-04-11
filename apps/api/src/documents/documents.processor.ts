@@ -1,17 +1,16 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { InjectQueue } from '@nestjs/bullmq';
+import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { Job, Queue } from 'bullmq';
-import { Document, DocumentStatus } from '../database/entities/document.entity';
-import { ClassifierService } from '../classifier/classifier.service';
-import { CalculatorService } from '../calculator/calculator.service';
+import { Repository } from 'typeorm';
 import { CalculationConfigService } from '../calculation-config/calculation-config.service';
-import { VerificationService } from '../verification/verification.service';
-import { DutyInterpreterService } from '../duty-interpreter/duty-interpreter.service';
-import { CurrencyService } from '../currency/currency.service';
 import { CalculationLogsService } from '../calculation-logs/calculation-logs.service';
+import { CalculatorService } from '../calculator/calculator.service';
+import { ClassifierService } from '../classifier/classifier.service';
+import { CurrencyService } from '../currency/currency.service';
+import { Document, DocumentStatus } from '../database/entities/document.entity';
+import { DutyInterpreterService } from '../duty-interpreter/duty-interpreter.service';
+import { VerificationService } from '../verification/verification.service';
 
 export interface DocumentNotification {
   documentId: string;
@@ -126,23 +125,25 @@ export class DocumentsProcessor extends WorkerHost {
 
       await this.notify(doc, 'processed');
 
-      this.calculationLogs.create({
-        documentId: doc.id,
-        telegramUserId: doc.telegramUser?.telegramId ?? null,
-        telegramUsername: doc.telegramUser?.username ?? null,
-        fileName: doc.originalFileName,
-        itemsCount: rows.length,
-        resultSummary: {
-          grandTotal: summary.grandTotal,
-          totalDuty: summary.totalDuty,
-          totalVat: summary.totalVat,
-          totalExcise: summary.totalExcise,
-          totalLogistics: summary.totalLogistics,
-          currency: currency,
-        },
-      }).catch((err) => {
-        this.logger.warn(`Failed to write calculation log for ${documentId}`, err);
-      });
+      this.calculationLogs
+        .create({
+          documentId: doc.id,
+          telegramUserId: doc.telegramUser?.telegramId ?? null,
+          telegramUsername: doc.telegramUser?.username ?? null,
+          fileName: doc.originalFileName,
+          itemsCount: rows.length,
+          resultSummary: {
+            grandTotal: summary.grandTotal,
+            totalDuty: summary.totalDuty,
+            totalVat: summary.totalVat,
+            totalExcise: summary.totalExcise,
+            totalLogistics: summary.totalLogistics,
+            currency: currency,
+          },
+        })
+        .catch((err) => {
+          this.logger.warn(`Failed to write calculation log for ${documentId}`, err);
+        });
       this.logger.log(
         `Document ${documentId} processed: ${rows.length} rows, grandTotal=${summary.grandTotal}`,
       );

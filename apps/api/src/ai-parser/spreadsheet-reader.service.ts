@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import * as ExcelJS from 'exceljs';
 import { parse as csvParseSync } from 'csv-parse/sync';
+import * as ExcelJS from 'exceljs';
 
 export interface SpreadsheetData {
   rows: string[][];

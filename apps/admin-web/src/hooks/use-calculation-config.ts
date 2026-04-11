@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
 import api from '@/lib/api';
+import { useCallback, useEffect, useState } from 'react';
 
 export interface CalculationConfig {
   id: number;
@@ -30,20 +30,27 @@ export function useCalculationConfig() {
     }
   }, []);
 
-  const save = useCallback(async (values: Partial<Pick<CalculationConfig, 'pricePercent' | 'weightRate' | 'fixedFee'>>) => {
-    setSaving(true);
-    setError(null);
-    try {
-      const { data } = await api.put<CalculationConfig>('/calculation-config', values);
-      setConfig(data);
-    } catch {
-      setError('Не удалось сохранить конфигурацию');
-    } finally {
-      setSaving(false);
-    }
-  }, []);
+  const save = useCallback(
+    async (
+      values: Partial<Pick<CalculationConfig, 'pricePercent' | 'weightRate' | 'fixedFee'>>,
+    ) => {
+      setSaving(true);
+      setError(null);
+      try {
+        const { data } = await api.put<CalculationConfig>('/calculation-config', values);
+        setConfig(data);
+      } catch {
+        setError('Не удалось сохранить конфигурацию');
+      } finally {
+        setSaving(false);
+      }
+    },
+    [],
+  );
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => {
+    fetch();
+  }, [fetch]);
 
   return { config, loading, saving, error, save, refetch: fetch };
 }

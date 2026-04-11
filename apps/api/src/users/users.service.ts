@@ -1,18 +1,16 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import { FindOptionsWhere, Repository } from 'typeorm';
+import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 import { User } from '../database/entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
 import { FindUsersQueryDto } from './dto/find-users-query.dto';
-import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 @Injectable()
 export class UsersService {
-  constructor(
-    @InjectRepository(User) private usersRepo: Repository<User>,
-  ) {}
+  constructor(@InjectRepository(User) private usersRepo: Repository<User>) {}
 
   async findAll(query: FindUsersQueryDto): Promise<PaginatedResponse<Omit<User, 'passwordHash'>>> {
     const where: FindOptionsWhere<User> = {};
@@ -25,7 +23,12 @@ export class UsersService {
       take: query.limit,
     });
 
-    return paginate(users.map((u) => this.sanitize(u)), total, query.page, query.limit);
+    return paginate(
+      users.map((u) => this.sanitize(u)),
+      total,
+      query.page,
+      query.limit,
+    );
   }
 
   async findOne(id: string) {

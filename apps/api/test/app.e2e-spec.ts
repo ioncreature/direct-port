@@ -15,9 +15,7 @@ describe('App (e2e)', () => {
 
   describe('GET /api', () => {
     it('should return health check without auth (public)', async () => {
-      const res = await request(app.getHttpServer())
-        .get('/api')
-        .expect(200);
+      const res = await request(app.getHttpServer()).get('/api').expect(200);
 
       expect(res.body).toEqual({ status: 'ok' });
     });

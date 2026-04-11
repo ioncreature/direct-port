@@ -1,8 +1,8 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
+import { useRouter } from 'next/navigation';
+import { FormEvent, useState } from 'react';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -32,7 +32,9 @@ export default function LoginPage() {
       <p style={{ color: '#666', marginBottom: 24 }}>Вход в систему</p>
       <form onSubmit={handleSubmit}>
         <div style={{ marginBottom: 16 }}>
-          <label htmlFor="email" style={{ display: 'block', marginBottom: 4 }}>Email</label>
+          <label htmlFor="email" style={{ display: 'block', marginBottom: 4 }}>
+            Email
+          </label>
           <input
             id="email"
             type="email"
@@ -43,7 +45,9 @@ export default function LoginPage() {
           />
         </div>
         <div style={{ marginBottom: 16 }}>
-          <label htmlFor="password" style={{ display: 'block', marginBottom: 4 }}>Пароль</label>
+          <label htmlFor="password" style={{ display: 'block', marginBottom: 4 }}>
+            Пароль
+          </label>
           <input
             id="password"
             type="password"

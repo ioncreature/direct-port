@@ -1,6 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { ClassifiedProduct } from '../classifier/classifier.service';
-import type { InterpretedProduct, DutyChargeRule, ChargeMethod, BaseType, Dimension } from '../duty-interpreter/interfaces';
+import type {
+  BaseType,
+  ChargeMethod,
+  Dimension,
+  DutyChargeRule,
+  InterpretedProduct,
+} from '../duty-interpreter/interfaces';
 
 export interface CalculatedProduct extends ClassifiedProduct {
   totalPrice: number;
@@ -39,7 +45,10 @@ const CONFIDENCE_THRESHOLD = 0.7;
 export class CalculatorService {
   private logger = new Logger(CalculatorService.name);
 
-  calculate(products: ClassifiedProduct[], commission: CommissionConfig = DEFAULT_COMMISSION): CalculationSummary {
+  calculate(
+    products: ClassifiedProduct[],
+    commission: CommissionConfig = DEFAULT_COMMISSION,
+  ): CalculationSummary {
     const items = products.map((p) => this.calculateOne(p, commission));
     return this.summarize(items);
   }
@@ -151,9 +160,12 @@ export class CalculatorService {
 
   private resolveBase(base: BaseType, totalPrice: number, duty: number, excise: number): number {
     switch (base) {
-      case 'customs_value_plus_duty': return totalPrice + duty;
-      case 'customs_value_plus_duty_plus_excise': return totalPrice + duty + excise;
-      case 'customs_value': return totalPrice;
+      case 'customs_value_plus_duty':
+        return totalPrice + duty;
+      case 'customs_value_plus_duty_plus_excise':
+        return totalPrice + duty + excise;
+      case 'customs_value':
+        return totalPrice;
     }
   }
 
@@ -195,13 +207,17 @@ export class CalculatorService {
 
   private resolveQuantity(per: string, product: InterpretedProduct): number {
     switch (per) {
-      case 'kg': return product.weight * product.quantity;
+      case 'kg':
+        return product.weight * product.quantity;
       case 'pcs':
-      case 'unit': return product.quantity;
+      case 'unit':
+        return product.quantity;
       default: {
         const dim = product.dimensions?.find((d: Dimension) => d.unit === per);
         if (!dim) {
-          this.logger.warn(`Missing dimension "${per}" for ${product.tnVedCode}, falling back to weight`);
+          this.logger.warn(
+            `Missing dimension "${per}" for ${product.tnVedCode}, falling back to weight`,
+          );
           return product.weight * product.quantity;
         }
         return dim.value * product.quantity;

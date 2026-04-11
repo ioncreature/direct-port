@@ -1,6 +1,6 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { TksApiClient, TnvedCode } from '@direct-port/tks-api';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { VerifiedProduct } from '../verification/verification.service';
 import { DutyInterpretation, InterpretedProduct } from './interfaces';
 

@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
 import api from '@/lib/api';
 import type { TelegramUser } from '@/lib/types';
+import { useCallback, useEffect, useState } from 'react';
 
 export function useTelegramUser(id: string) {
   const [user, setUser] = useState<TelegramUser | null>(null);
@@ -22,7 +22,9 @@ export function useTelegramUser(id: string) {
     }
   }, [id]);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => {
+    fetch();
+  }, [fetch]);
 
   return { user, loading, error };
 }

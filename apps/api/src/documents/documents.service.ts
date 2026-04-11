@@ -1,14 +1,14 @@
+import { InjectQueue } from '@nestjs/bullmq';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { InjectQueue } from '@nestjs/bullmq';
-import { FindOptionsWhere, Repository } from 'typeorm';
 import { Queue } from 'bullmq';
+import { FindOptionsWhere, Repository } from 'typeorm';
+import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { FindDocumentsQueryDto } from './dto/find-documents-query.dto';
-import { ReviewDocumentDto } from './dto/review-document.dto';
 import { RejectDocumentDto } from './dto/reject-document.dto';
-import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
+import { ReviewDocumentDto } from './dto/review-document.dto';
 
 @Injectable()
 export class DocumentsService {
@@ -59,8 +59,15 @@ export class DocumentsService {
 
     const [data, total] = await this.repo.findAndCount({
       select: [
-        'id', 'telegramUserId', 'uploadedByUserId', 'originalFileName', 'status',
-        'rowCount', 'errorMessage', 'createdAt', 'updatedAt',
+        'id',
+        'telegramUserId',
+        'uploadedByUserId',
+        'originalFileName',
+        'status',
+        'rowCount',
+        'errorMessage',
+        'createdAt',
+        'updatedAt',
       ],
       where,
       relations: ['telegramUser', 'uploadedBy'],

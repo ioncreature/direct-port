@@ -1,15 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
-import Link from 'next/link';
+import { InfoCard } from '@/components/info-card';
 import { useDocument } from '@/hooks/use-document';
-import { statusLabels, statusColors, downloadDocument } from '@/lib/documents';
+import { downloadDocument, statusColors, statusLabels } from '@/lib/documents';
+import { fmt } from '@/lib/format';
+import { btnOutline } from '@/lib/table-styles';
 import { getDocumentUploaderName } from '@/lib/telegram';
 import type { DocumentResultRow, ParsedDataRow } from '@/lib/types';
-import { fmt } from '@/lib/format';
-import { InfoCard } from '@/components/info-card';
-import { btnOutline } from '@/lib/table-styles';
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 
 const columnMappingLabels: Record<string, string> = {
   description: 'Описание',
@@ -35,12 +35,14 @@ export default function DocumentDetailPage() {
 
   useEffect(() => {
     if (doc?.parsedData) {
-      setEditableRows(doc.parsedData.map(r => ({
-        description: String(r.description ?? ''),
-        quantity: Number(r.quantity) || 0,
-        price: Number(r.price) || 0,
-        weight: Number(r.weight) || 0,
-      })));
+      setEditableRows(
+        doc.parsedData.map((r) => ({
+          description: String(r.description ?? ''),
+          quantity: Number(r.quantity) || 0,
+          price: Number(r.price) || 0,
+          weight: Number(r.weight) || 0,
+        })),
+      );
       setEditableCurrency(doc.currency || '');
     }
   }, [doc?.parsedData, doc?.currency]);
@@ -49,31 +51,42 @@ export default function DocumentDetailPage() {
   if (error || !doc) return <p style={{ color: '#dc2626' }}>{error || 'Документ не найден'}</p>;
 
   const rows = doc.resultData ?? [];
-  const totals = useMemo(() => rows.reduce(
-    (acc, r) => {
-      acc.totalPrice += r.totalPrice;
-      acc.dutyAmount += r.dutyAmount;
-      acc.vatAmount += r.vatAmount;
-      acc.exciseAmount += r.exciseAmount;
-      acc.logisticsCommission += r.logisticsCommission;
-      acc.totalCost += r.totalCost;
-      return acc;
-    },
-    { totalPrice: 0, dutyAmount: 0, vatAmount: 0, exciseAmount: 0, logisticsCommission: 0, totalCost: 0 },
-  ), [rows]);
+  const totals = useMemo(
+    () =>
+      rows.reduce(
+        (acc, r) => {
+          acc.totalPrice += r.totalPrice;
+          acc.dutyAmount += r.dutyAmount;
+          acc.vatAmount += r.vatAmount;
+          acc.exciseAmount += r.exciseAmount;
+          acc.logisticsCommission += r.logisticsCommission;
+          acc.totalCost += r.totalCost;
+          return acc;
+        },
+        {
+          totalPrice: 0,
+          dutyAmount: 0,
+          vatAmount: 0,
+          exciseAmount: 0,
+          logisticsCommission: 0,
+          totalCost: 0,
+        },
+      ),
+    [rows],
+  );
 
   const updateRow = (index: number, field: keyof ParsedDataRow, value: string | number) => {
-    setEditableRows(prev => prev.map((row, i) =>
-      i === index ? { ...row, [field]: value } : row,
-    ));
+    setEditableRows((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)),
+    );
   };
 
   const deleteRow = (index: number) => {
-    setEditableRows(prev => prev.filter((_, i) => i !== index));
+    setEditableRows((prev) => prev.filter((_, i) => i !== index));
   };
 
   const addRow = () => {
-    setEditableRows(prev => [...prev, { description: '', quantity: 1, price: 0, weight: 0 }]);
+    setEditableRows((prev) => [...prev, { description: '', quantity: 1, price: 0, weight: 0 }]);
   };
 
   const handleApprove = async () => {
@@ -110,7 +123,14 @@ export default function DocumentDetailPage() {
         </Link>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          marginBottom: 24,
+        }}
+      >
         <h1 style={{ margin: 0 }}>{doc.originalFileName}</h1>
         <div style={{ display: 'flex', gap: 8 }}>
           {isReview && (
@@ -118,14 +138,28 @@ export default function DocumentDetailPage() {
               <button
                 onClick={handleApprove}
                 disabled={approving || editableRows.length === 0}
-                style={{ padding: '8px 16px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+                style={{
+                  padding: '8px 16px',
+                  background: '#16a34a',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                }}
               >
                 {approving ? 'Сохранение...' : 'Подтвердить и обработать'}
               </button>
               <button
                 onClick={() => setShowRejectForm(!showRejectForm)}
                 disabled={rejecting}
-                style={{ padding: '8px 16px', background: '#fff', color: '#dc2626', border: '1px solid #dc2626', borderRadius: 4, cursor: 'pointer' }}
+                style={{
+                  padding: '8px 16px',
+                  background: '#fff',
+                  color: '#dc2626',
+                  border: '1px solid #dc2626',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                }}
               >
                 Отклонить
               </button>
@@ -135,10 +169,21 @@ export default function DocumentDetailPage() {
             <button
               onClick={async () => {
                 setReprocessing(true);
-                try { await reprocess(); } finally { setReprocessing(false); }
+                try {
+                  await reprocess();
+                } finally {
+                  setReprocessing(false);
+                }
               }}
               disabled={reprocessing}
-              style={{ padding: '8px 16px', background: '#ca8a04', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+              style={{
+                padding: '8px 16px',
+                background: '#ca8a04',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 4,
+                cursor: 'pointer',
+              }}
             >
               {reprocessing ? 'Отправка...' : 'Переобработать'}
             </button>
@@ -146,7 +191,14 @@ export default function DocumentDetailPage() {
           {doc.status === 'processed' && (
             <button
               onClick={() => downloadDocument(doc.id, doc.originalFileName)}
-              style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+              style={{
+                padding: '8px 16px',
+                background: '#2563eb',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 4,
+                cursor: 'pointer',
+              }}
             >
               Скачать Excel
             </button>
@@ -156,26 +208,62 @@ export default function DocumentDetailPage() {
 
       {/* Reject form */}
       {showRejectForm && (
-        <div style={{ padding: 16, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, marginBottom: 24, display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div
+          style={{
+            padding: 16,
+            background: '#fef2f2',
+            border: '1px solid #fecaca',
+            borderRadius: 8,
+            marginBottom: 24,
+            display: 'flex',
+            gap: 8,
+            alignItems: 'center',
+          }}
+        >
           <label style={{ fontSize: 14, whiteSpace: 'nowrap' }}>Причина:</label>
           <input
             type="text"
             value={rejectReason}
-            onChange={e => setRejectReason(e.target.value)}
+            onChange={(e) => setRejectReason(e.target.value)}
             placeholder="Укажите причину отклонения"
-            style={{ flex: 1, padding: '6px 10px', border: '1px solid #ddd', borderRadius: 4, fontSize: 14 }}
-            onKeyDown={e => e.key === 'Enter' && handleReject()}
+            style={{
+              flex: 1,
+              padding: '6px 10px',
+              border: '1px solid #ddd',
+              borderRadius: 4,
+              fontSize: 14,
+            }}
+            onKeyDown={(e) => e.key === 'Enter' && handleReject()}
           />
           <button
             onClick={handleReject}
             disabled={rejecting || !rejectReason.trim()}
-            style={{ padding: '6px 14px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap' }}
+            style={{
+              padding: '6px 14px',
+              background: '#dc2626',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 4,
+              cursor: 'pointer',
+              fontSize: 13,
+              whiteSpace: 'nowrap',
+            }}
           >
             {rejecting ? 'Отклонение...' : 'Подтвердить отклонение'}
           </button>
           <button
-            onClick={() => { setShowRejectForm(false); setRejectReason(''); }}
-            style={{ padding: '6px 14px', background: '#fff', border: '1px solid #ddd', borderRadius: 4, cursor: 'pointer', fontSize: 13 }}
+            onClick={() => {
+              setShowRejectForm(false);
+              setRejectReason('');
+            }}
+            style={{
+              padding: '6px 14px',
+              background: '#fff',
+              border: '1px solid #ddd',
+              borderRadius: 4,
+              cursor: 'pointer',
+              fontSize: 13,
+            }}
           >
             Отмена
           </button>
@@ -183,8 +271,19 @@ export default function DocumentDetailPage() {
       )}
 
       {/* Info cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 24 }}>
-        <InfoCard label="Статус" value={statusLabels[doc.status]} color={statusColors[doc.status]} />
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+          gap: 12,
+          marginBottom: 24,
+        }}
+      >
+        <InfoCard
+          label="Статус"
+          value={statusLabels[doc.status]}
+          color={statusColors[doc.status]}
+        />
         <InfoCard label="Строк" value={String(doc.rowCount)} />
         {doc.currency && <InfoCard label="Валюта" value={doc.currency} />}
         <InfoCard label="Пользователь" value={getDocumentUploaderName(doc)} />
@@ -193,7 +292,15 @@ export default function DocumentDetailPage() {
       </div>
 
       {doc.errorMessage && (
-        <div style={{ padding: 16, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, marginBottom: 24 }}>
+        <div
+          style={{
+            padding: 16,
+            background: '#fef2f2',
+            border: '1px solid #fecaca',
+            borderRadius: 8,
+            marginBottom: 24,
+          }}
+        >
           <strong style={{ color: '#dc2626' }}>Ошибка:</strong>{' '}
           <span style={{ color: '#991b1b' }}>{doc.errorMessage}</span>
         </div>
@@ -216,7 +323,14 @@ export default function DocumentDetailPage() {
       {/* Parsed data — editable for requires_review, read-only for others */}
       {isReview && editableRows.length > 0 && (
         <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 12,
+            }}
+          >
             <h3 style={{ margin: 0 }}>Исходные данные (проверка)</h3>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               <label style={{ fontSize: 13, color: '#555' }}>
@@ -224,8 +338,16 @@ export default function DocumentDetailPage() {
                 <input
                   type="text"
                   value={editableCurrency}
-                  onChange={e => setEditableCurrency(e.target.value.toUpperCase())}
-                  style={{ marginLeft: 6, width: 60, padding: '4px 8px', border: '1px solid #ddd', borderRadius: 3, fontSize: 13, textAlign: 'center' }}
+                  onChange={(e) => setEditableCurrency(e.target.value.toUpperCase())}
+                  style={{
+                    marginLeft: 6,
+                    width: 60,
+                    padding: '4px 8px',
+                    border: '1px solid #ddd',
+                    borderRadius: 3,
+                    fontSize: 13,
+                    textAlign: 'center',
+                  }}
                 />
               </label>
               <button onClick={addRow} style={btnOutline}>
@@ -253,7 +375,7 @@ export default function DocumentDetailPage() {
                       <input
                         type="text"
                         value={row.description}
-                        onChange={e => updateRow(i, 'description', e.target.value)}
+                        onChange={(e) => updateRow(i, 'description', e.target.value)}
                         style={inputText}
                       />
                     </td>
@@ -262,7 +384,7 @@ export default function DocumentDetailPage() {
                         type="number"
                         step="any"
                         value={row.quantity}
-                        onChange={e => updateRow(i, 'quantity', parseFloat(e.target.value) || 0)}
+                        onChange={(e) => updateRow(i, 'quantity', parseFloat(e.target.value) || 0)}
                         style={inputNumber}
                       />
                     </td>
@@ -271,7 +393,7 @@ export default function DocumentDetailPage() {
                         type="number"
                         step="any"
                         value={row.price}
-                        onChange={e => updateRow(i, 'price', parseFloat(e.target.value) || 0)}
+                        onChange={(e) => updateRow(i, 'price', parseFloat(e.target.value) || 0)}
                         style={inputNumber}
                       />
                     </td>
@@ -280,7 +402,7 @@ export default function DocumentDetailPage() {
                         type="number"
                         step="any"
                         value={row.weight}
-                        onChange={e => updateRow(i, 'weight', parseFloat(e.target.value) || 0)}
+                        onChange={(e) => updateRow(i, 'weight', parseFloat(e.target.value) || 0)}
                         style={inputNumber}
                       />
                     </td>
@@ -288,7 +410,14 @@ export default function DocumentDetailPage() {
                       <button
                         onClick={() => deleteRow(i)}
                         title="Удалить строку"
-                        style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#dc2626',
+                          cursor: 'pointer',
+                          fontSize: 16,
+                          padding: '0 4px',
+                        }}
                       >
                         &times;
                       </button>
@@ -320,7 +449,16 @@ export default function DocumentDetailPage() {
                 {parsedRows.map((row, i) => (
                   <tr key={i}>
                     <td style={td}>{i + 1}</td>
-                    <td style={{ ...td, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={String(row.description)}>
+                    <td
+                      style={{
+                        ...td,
+                        maxWidth: 300,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={String(row.description)}
+                    >
                       {String(row.description)}
                     </td>
                     <td style={tdR}>{Number(row.quantity)}</td>
@@ -364,7 +502,9 @@ export default function DocumentDetailPage() {
               </tbody>
               <tfoot>
                 <tr style={{ fontWeight: 700 }}>
-                  <td style={td} colSpan={6}>Итого</td>
+                  <td style={td} colSpan={6}>
+                    Итого
+                  </td>
                   <td style={tdR}>{fmt(totals.totalPrice)}</td>
                   <td style={tdR}>{fmt(totals.dutyAmount)}</td>
                   <td style={tdR}>{fmt(totals.vatAmount)}</td>
@@ -386,7 +526,6 @@ export default function DocumentDetailPage() {
   );
 }
 
-
 function ResultRow({ row, index }: { row: DocumentResultRow; index: number }) {
   const statusColor = row.verificationStatus === 'exact' ? '#16a34a' : '#ca8a04';
   const statusLabel = row.verificationStatus === 'exact' ? 'Точный' : 'На проверку';
@@ -394,7 +533,16 @@ function ResultRow({ row, index }: { row: DocumentResultRow; index: number }) {
   return (
     <tr>
       <td style={td}>{index}</td>
-      <td style={{ ...td, maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.description}>
+      <td
+        style={{
+          ...td,
+          maxWidth: 250,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+        title={row.description}
+      >
         {row.description}
       </td>
       <td style={tdR}>{row.quantity}</td>
@@ -416,9 +564,28 @@ function ResultRow({ row, index }: { row: DocumentResultRow; index: number }) {
   );
 }
 
-const th: React.CSSProperties = { textAlign: 'left', padding: '6px 10px', borderBottom: '2px solid #ddd', whiteSpace: 'nowrap' };
+const th: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '6px 10px',
+  borderBottom: '2px solid #ddd',
+  whiteSpace: 'nowrap',
+};
 const thR: React.CSSProperties = { ...th, textAlign: 'right' };
 const td: React.CSSProperties = { padding: '6px 10px', borderBottom: '1px solid #eee' };
 const tdR: React.CSSProperties = { ...td, textAlign: 'right' };
-const inputText: React.CSSProperties = { width: '100%', padding: '4px 8px', border: '1px solid #ddd', borderRadius: 3, fontSize: 13, boxSizing: 'border-box' };
-const inputNumber: React.CSSProperties = { width: 90, padding: '4px 8px', border: '1px solid #ddd', borderRadius: 3, fontSize: 13, textAlign: 'right' };
+const inputText: React.CSSProperties = {
+  width: '100%',
+  padding: '4px 8px',
+  border: '1px solid #ddd',
+  borderRadius: 3,
+  fontSize: 13,
+  boxSizing: 'border-box',
+};
+const inputNumber: React.CSSProperties = {
+  width: 90,
+  padding: '4px 8px',
+  border: '1px solid #ddd',
+  borderRadius: 3,
+  fontSize: 13,
+  textAlign: 'right',
+};

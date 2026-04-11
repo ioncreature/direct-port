@@ -1,15 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 import { CalculationLog } from '../database/entities/calculation-log.entity';
 import { FindCalculationLogsQueryDto } from './dto/find-calculation-logs-query.dto';
-import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 
 @Injectable()
 export class CalculationLogsService {
-  constructor(
-    @InjectRepository(CalculationLog) private repo: Repository<CalculationLog>,
-  ) {}
+  constructor(@InjectRepository(CalculationLog) private repo: Repository<CalculationLog>) {}
 
   async create(data: Partial<CalculationLog>): Promise<CalculationLog> {
     const log = this.repo.create(data);

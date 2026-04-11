@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
 const navItems = [
   { href: '/', label: 'Дашборд' },
@@ -36,9 +36,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <h2 style={{ fontSize: 18, marginBottom: 24 }}>DirectPort</h2>
         <nav>
           {navItems.map((item) => {
-            const active = item.href === '/'
-              ? pathname === '/'
-              : pathname === item.href || pathname.startsWith(item.href + '/');
+            const active =
+              item.href === '/'
+                ? pathname === '/'
+                : pathname === item.href || pathname.startsWith(item.href + '/');
             return (
               <Link
                 key={item.href}
@@ -59,16 +60,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             );
           })}
         </nav>
-        <div style={{ marginTop: 'auto', paddingTop: 24, borderTop: '1px solid #ddd', position: 'absolute', bottom: 16 }}>
+        <div
+          style={{
+            marginTop: 'auto',
+            paddingTop: 24,
+            borderTop: '1px solid #ddd',
+            position: 'absolute',
+            bottom: 16,
+          }}
+        >
           <div style={{ fontSize: 14, color: '#666', marginBottom: 8 }}>{user.email}</div>
           <button onClick={logout} style={{ cursor: 'pointer', padding: '4px 8px' }}>
             Выйти
           </button>
         </div>
       </aside>
-      <main style={{ flex: 1, padding: 24 }}>
-        {children}
-      </main>
+      <main style={{ flex: 1, padding: 24 }}>{children}</main>
     </div>
   );
 }

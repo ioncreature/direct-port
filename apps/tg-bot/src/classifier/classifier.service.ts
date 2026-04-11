@@ -20,7 +20,9 @@ export class ClassifierService {
 
   constructor(private apiClient: ApiClientService) {}
 
-  async classify(products: { description: string; quantity: number; price: number; weight: number }[]): Promise<ClassifiedProduct[]> {
+  async classify(
+    products: { description: string; quantity: number; price: number; weight: number }[],
+  ): Promise<ClassifiedProduct[]> {
     const results: ClassifiedProduct[] = [];
 
     for (const product of products) {
@@ -38,7 +40,9 @@ export class ClassifierService {
       });
     }
 
-    this.logger.log(`Classified ${results.length} products, matched: ${results.filter((r) => r.matched).length}`);
+    this.logger.log(
+      `Classified ${results.length} products, matched: ${results.filter((r) => r.matched).length}`,
+    );
     return results;
   }
 

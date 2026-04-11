@@ -1,5 +1,5 @@
+import type { GoodsItem, OperationType, TnvedCode } from './types';
 import { Priznak } from './types';
-import type { TnvedCode, GoodsItem, OperationType } from './types';
 
 /**
  * Форматирует 10-значный код ТН ВЭД в читаемый вид.
@@ -88,15 +88,16 @@ const EXPORT_PRIZNAKS: Priznak[] = [
   Priznak.CountryExportBan,
 ];
 
-const DEPOSIT_PRIZNAKS: Priznak[] = [
-  Priznak.Deposit,
-];
+const DEPOSIT_PRIZNAKS: Priznak[] = [Priznak.Deposit];
 
 export function getPriznaksByOperation(type: OperationType): Priznak[] {
   switch (type) {
-    case 'import': return IMPORT_PRIZNAKS;
-    case 'export': return EXPORT_PRIZNAKS;
-    case 'deposit': return DEPOSIT_PRIZNAKS;
+    case 'import':
+      return IMPORT_PRIZNAKS;
+    case 'export':
+      return EXPORT_PRIZNAKS;
+    case 'deposit':
+      return DEPOSIT_PRIZNAKS;
   }
 }
 

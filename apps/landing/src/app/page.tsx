@@ -69,9 +69,7 @@ export default function LandingPage() {
 
       <section style={centeredSectionStyle}>
         <div style={containerStyle}>
-          <h2 style={{ fontSize: 32, margin: '0 0 16px', fontWeight: 700 }}>
-            Готовы начать?
-          </h2>
+          <h2 style={{ fontSize: 32, margin: '0 0 16px', fontWeight: 700 }}>Готовы начать?</h2>
           <p style={{ fontSize: 18, color: '#555', margin: '0 0 32px' }}>
             Отправьте первый файл прямо сейчас — это бесплатно.
           </p>

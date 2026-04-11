@@ -1,10 +1,10 @@
 import type {
+  EkArArea,
+  GoodsSearchResponse,
+  OksmtCountry,
   TksApiOptions,
   TnvedCode,
   TnvedVersion,
-  GoodsSearchResponse,
-  OksmtCountry,
-  EkArArea,
 } from './types';
 
 const DEFAULT_TIMEOUT = 15_000;
@@ -39,23 +39,17 @@ export class TksApiClient {
   // --- TNVED API ---
 
   async getTnvedVersion(): Promise<TnvedVersion> {
-    return this.fetchCached<TnvedVersion>(
-      `${this.tnvedBase}/ver.json`,
-    );
+    return this.fetchCached<TnvedVersion>(`${this.tnvedBase}/ver.json`);
   }
 
   async getTnvedCodeList(): Promise<string[]> {
-    return this.fetchCached<string[]>(
-      `${this.tnvedBase}/`,
-    );
+    return this.fetchCached<string[]>(`${this.tnvedBase}/`);
   }
 
   /** Справка по 10-значному коду ТН ВЭД */
   async getTnvedCode(code: string): Promise<TnvedCode> {
     validateTnvedCode(code);
-    return this.fetchCached<TnvedCode>(
-      `${this.tnvedBase}/${code}.json`,
-    );
+    return this.fetchCached<TnvedCode>(`${this.tnvedBase}/${code}.json`);
   }
 
   getTnvedArchiveUrl(): string {
@@ -64,10 +58,7 @@ export class TksApiClient {
 
   // --- GOODS API ---
 
-  async searchGoods(
-    query: string,
-    options?: { page?: number },
-  ): Promise<GoodsSearchResponse> {
+  async searchGoods(query: string, options?: { page?: number }): Promise<GoodsSearchResponse> {
     return this.searchGoodsInternal(query, undefined, options);
   }
 
@@ -90,15 +81,11 @@ export class TksApiClient {
   // --- Справочники ---
 
   async getCountries(): Promise<OksmtCountry[]> {
-    return this.fetchCached<OksmtCountry[]>(
-      `${this.tnvedBase}/oksmt.json`,
-    );
+    return this.fetchCached<OksmtCountry[]>(`${this.tnvedBase}/oksmt.json`);
   }
 
   async getEconomicAreas(): Promise<EkArArea[]> {
-    return this.fetchCached<EkArArea[]>(
-      `${this.tnvedBase}/ek_ar.json`,
-    );
+    return this.fetchCached<EkArArea[]>(`${this.tnvedBase}/ek_ar.json`);
   }
 
   clearCache(code?: string): void {
@@ -120,9 +107,7 @@ export class TksApiClient {
     if (options?.page != null) {
       params.set('page', String(options.page));
     }
-    return this.fetch<GoodsSearchResponse>(
-      `${this.goodsBase}/?${params}`,
-    );
+    return this.fetch<GoodsSearchResponse>(`${this.goodsBase}/?${params}`);
   }
 
   private fetchCached<T>(path: string): Promise<T> {

@@ -1,9 +1,9 @@
 'use client';
 
-import Link from 'next/link';
 import { useCalculationLogs } from '@/hooks/use-calculation-logs';
-import { th, td, btnOutline } from '@/lib/table-styles';
 import { fmt } from '@/lib/format';
+import { btnOutline, td, th } from '@/lib/table-styles';
+import Link from 'next/link';
 
 const sortableColumns: { field: string; label: string }[] = [
   { field: 'createdAt', label: 'Дата' },
@@ -11,10 +11,8 @@ const sortableColumns: { field: string; label: string }[] = [
 ];
 
 export default function CalculationLogsPage() {
-  const {
-    logs, total, loading, page, limit, sortBy, sortOrder,
-    setPage, toggleSort, refetch,
-  } = useCalculationLogs();
+  const { logs, total, loading, page, limit, sortBy, sortOrder, setPage, toggleSort, refetch } =
+    useCalculationLogs();
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
@@ -25,19 +23,35 @@ export default function CalculationLogsPage() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 16,
+        }}
+      >
         <h1>Логи расчётов</h1>
-        <button onClick={refetch} style={btnOutline}>Обновить</button>
+        <button onClick={refetch} style={btnOutline}>
+          Обновить
+        </button>
       </div>
 
-      {loading ? <p>Загрузка...</p> : (
+      {loading ? (
+        <p>Загрузка...</p>
+      ) : (
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
                 {sortableColumns.map((col) => (
-                  <th key={col.field} style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggleSort(col.field)}>
-                    {col.label}{sortIndicator(col.field)}
+                  <th
+                    key={col.field}
+                    style={{ ...th, cursor: 'pointer', userSelect: 'none' }}
+                    onClick={() => toggleSort(col.field)}
+                  >
+                    {col.label}
+                    {sortIndicator(col.field)}
                   </th>
                 ))}
                 <th style={th}>Файл</th>
@@ -54,7 +68,10 @@ export default function CalculationLogsPage() {
                   <td style={td}>{log.itemsCount}</td>
                   <td style={td}>
                     {log.documentId ? (
-                      <Link href={`/documents/${log.documentId}`} style={{ color: '#2563eb', textDecoration: 'none' }}>
+                      <Link
+                        href={`/documents/${log.documentId}`}
+                        style={{ color: '#2563eb', textDecoration: 'none' }}
+                      >
                         {log.fileName || '—'}
                       </Link>
                     ) : (
@@ -85,12 +102,30 @@ export default function CalculationLogsPage() {
             </tbody>
           </table>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, fontSize: 14 }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginTop: 16,
+              fontSize: 14,
+            }}
+          >
             <span style={{ color: '#666' }}>Всего: {total}</span>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <button onClick={() => setPage(page - 1)} disabled={page <= 1} style={btnOutline}>← Пред</button>
-              <span>{page} из {totalPages}</span>
-              <button onClick={() => setPage(page + 1)} disabled={page >= totalPages} style={btnOutline}>След →</button>
+              <button onClick={() => setPage(page - 1)} disabled={page <= 1} style={btnOutline}>
+                ← Пред
+              </button>
+              <span>
+                {page} из {totalPages}
+              </span>
+              <button
+                onClick={() => setPage(page + 1)}
+                disabled={page >= totalPages}
+                style={btnOutline}
+              >
+                След →
+              </button>
             </div>
           </div>
         </>

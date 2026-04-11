@@ -55,7 +55,7 @@ export default function TnVedPage() {
                   <code style={{ fontSize: 13 }}>{item.code}</code>
                 </td>
                 <td style={{ ...td, fontSize: 14 }}>
-                  <span style={{ paddingLeft: Math.max(0, (item.level - 1)) * 12 }}>
+                  <span style={{ paddingLeft: Math.max(0, item.level - 1) * 12 }}>
                     {item.description}
                   </span>
                 </td>
@@ -78,7 +78,11 @@ export default function TnVedPage() {
   );
 }
 
-const th: React.CSSProperties = { textAlign: 'left', padding: '8px 12px', borderBottom: '2px solid #ddd' };
+const th: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '8px 12px',
+  borderBottom: '2px solid #ddd',
+};
 const thRight: React.CSSProperties = { ...th, textAlign: 'right' };
 const td: React.CSSProperties = { padding: '8px 12px', borderBottom: '1px solid #eee' };
 const tdRight: React.CSSProperties = { ...td, textAlign: 'right' };

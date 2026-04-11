@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
-import { createTestApp, seedAdmin, loginAsAdmin, INTERNAL_KEY_HEADER } from './helpers';
+import { createTestApp, INTERNAL_KEY_HEADER, loginAsAdmin, seedAdmin } from './helpers';
 
 describe('CalculationConfig (e2e)', () => {
   let app: INestApplication;
@@ -31,9 +31,7 @@ describe('CalculationConfig (e2e)', () => {
     });
 
     it('should reject without auth', async () => {
-      await request(app.getHttpServer())
-        .get('/api/calculation-config')
-        .expect(401);
+      await request(app.getHttpServer()).get('/api/calculation-config').expect(401);
     });
 
     it('should reject with internal key (requires role)', async () => {

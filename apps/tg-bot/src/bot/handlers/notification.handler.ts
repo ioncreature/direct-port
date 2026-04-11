@@ -1,8 +1,8 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Api, InputFile } from 'grammy';
 import { Job } from 'bullmq';
+import { Api, InputFile } from 'grammy';
 import { ApiClientService } from '../../api-client/api-client.service';
 
 interface DocumentNotification {
@@ -39,26 +39,32 @@ export class NotificationHandler extends WorkerHost {
     const chatId = telegramUserId;
 
     if (status === 'failed') {
-      await this.tgApi.sendMessage(
-        chatId,
-        `❌ Ошибка при обработке документа.\n${errorMessage ? `Причина: ${errorMessage}` : 'Попробуйте загрузить файл заново.'}`,
-      ).catch((err) => this.logger.error(`Failed to send error notification to ${chatId}`, err));
+      await this.tgApi
+        .sendMessage(
+          chatId,
+          `❌ Ошибка при обработке документа.\n${errorMessage ? `Причина: ${errorMessage}` : 'Попробуйте загрузить файл заново.'}`,
+        )
+        .catch((err) => this.logger.error(`Failed to send error notification to ${chatId}`, err));
       return;
     }
 
     try {
       const fileBuffer = await this.apiClient.downloadDocument(documentId);
 
-      await this.tgApi.sendDocument(chatId, new InputFile(fileBuffer, `result_${documentId}.xlsx`), {
-        caption:
-          '✅ Документ обработан!\n\n' +
-          'В файле добавлены столбцы:\n' +
-          '• Код ТН ВЭД\n' +
-          '• Ставки пошлины и НДС\n' +
-          '• Суммы пошлины и НДС\n' +
-          '• Комиссия за доставку\n' +
-          '• Статус проверки (🟢 точное / 🟡 ручная проверка)',
-      });
+      await this.tgApi.sendDocument(
+        chatId,
+        new InputFile(fileBuffer, `result_${documentId}.xlsx`),
+        {
+          caption:
+            '✅ Документ обработан!\n\n' +
+            'В файле добавлены столбцы:\n' +
+            '• Код ТН ВЭД\n' +
+            '• Ставки пошлины и НДС\n' +
+            '• Суммы пошлины и НДС\n' +
+            '• Комиссия за доставку\n' +
+            '• Статус проверки (🟢 точное / 🟡 ручная проверка)',
+        },
+      );
     } catch (err) {
       this.logger.error(`Failed to send result for document ${documentId}`, err);
       await this.tgApi.sendMessage(

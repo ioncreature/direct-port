@@ -1,6 +1,5 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { TnVedService } from './tn-ved.service';
-import { Public } from '../auth/decorators/public.decorator';
 
 @Controller('tn-ved')
 export class TnVedController {

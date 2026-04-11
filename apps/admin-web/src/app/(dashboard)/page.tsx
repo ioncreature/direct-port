@@ -1,11 +1,11 @@
 'use client';
 
-import Link from 'next/link';
-import { useUsers } from '@/hooks/use-users';
 import { useDocuments } from '@/hooks/use-documents';
 import { useTelegramUsers } from '@/hooks/use-telegram-users';
-import { statusLabels, statusColors } from '@/lib/documents';
+import { useUsers } from '@/hooks/use-users';
+import { statusColors, statusLabels } from '@/lib/documents';
 import type { DocumentStatus } from '@/lib/types';
+import Link from 'next/link';
 
 export default function DashboardPage() {
   const { users, loading: usersLoading } = useUsers();
@@ -32,7 +32,14 @@ export default function DashboardPage() {
     <div>
       <h1 style={{ marginBottom: 24 }}>Дашборд</h1>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 32 }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: 16,
+          marginBottom: 32,
+        }}
+      >
         <StatCard label="Пользователи" value={users.length} href="/users" />
         <StatCard label="Telegram" value={telegramUsers.length} href="/telegram-users" />
         <StatCard label="Документы" value={documents.length} href="/documents" />
@@ -44,12 +51,17 @@ export default function DashboardPage() {
         <div>
           <h3 style={{ marginBottom: 12 }}>Статусы документов</h3>
           <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 16 }}>
-            {(['parsing', 'pending', 'processing', 'processed', 'failed'] as DocumentStatus[]).map((status) => (
-              <div key={status} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
-                <span style={{ color: statusColors[status] }}>{statusLabels[status]}</span>
-                <strong>{statusCounts[status] || 0}</strong>
-              </div>
-            ))}
+            {(['parsing', 'pending', 'processing', 'processed', 'failed'] as DocumentStatus[]).map(
+              (status) => (
+                <div
+                  key={status}
+                  style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}
+                >
+                  <span style={{ color: statusColors[status] }}>{statusLabels[status]}</span>
+                  <strong>{statusCounts[status] || 0}</strong>
+                </div>
+              ),
+            )}
           </div>
         </div>
 
@@ -58,8 +70,24 @@ export default function DashboardPage() {
           <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 16 }}>
             {recentDocs.length === 0 && <p style={{ color: '#888' }}>Документов пока нет</p>}
             {recentDocs.map((doc) => (
-              <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f0f0f0' }}>
-                <span style={{ fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>
+              <div
+                key={doc.id}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  padding: '6px 0',
+                  borderBottom: '1px solid #f0f0f0',
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 14,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    maxWidth: 200,
+                  }}
+                >
                   {doc.originalFileName}
                 </span>
                 <span style={{ color: statusColors[doc.status], fontSize: 14 }}>
@@ -74,7 +102,17 @@ export default function DashboardPage() {
   );
 }
 
-function StatCard({ label, value, href, color }: { label: string; value: number; href?: string; color?: string }) {
+function StatCard({
+  label,
+  value,
+  href,
+  color,
+}: {
+  label: string;
+  value: number;
+  href?: string;
+  color?: string;
+}) {
   const content = (
     <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 20, textAlign: 'center' }}>
       <div style={{ fontSize: 32, fontWeight: 700, color: color || '#000' }}>{value}</div>
@@ -83,7 +121,11 @@ function StatCard({ label, value, href, color }: { label: string; value: number;
   );
 
   if (href) {
-    return <Link href={href} style={{ textDecoration: 'none', color: 'inherit' }}>{content}</Link>;
+    return (
+      <Link href={href} style={{ textDecoration: 'none', color: 'inherit' }}>
+        {content}
+      </Link>
+    );
   }
   return content;
 }

@@ -59,8 +59,7 @@ export class FileUploadHandler {
       await this.apiClient.uploadDocument(buffer, fileName, telegramUserId!);
 
       await ctx.reply(
-        `📄 Файл «${fileName}» принят в обработку.\n` +
-          'Вы получите уведомление по завершении.',
+        `📄 Файл «${fileName}» принят в обработку.\n` + 'Вы получите уведомление по завершении.',
       );
     } catch (err) {
       this.logger.error('File upload error', err);

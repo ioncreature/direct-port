@@ -1,9 +1,19 @@
-import { Body, Controller, Get, NotFoundException, Param, ParseIntPipe, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { TelegramUsersService } from './telegram-users.service';
-import { RegisterTelegramUserDto } from './dto/register-telegram-user.dto';
-import { FindTelegramUsersQueryDto } from './dto/find-telegram-users-query.dto';
+import {
+  Body,
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  ParseIntPipe,
+  ParseUUIDPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../database/entities/user.entity';
+import { FindTelegramUsersQueryDto } from './dto/find-telegram-users-query.dto';
+import { RegisterTelegramUserDto } from './dto/register-telegram-user.dto';
+import { TelegramUsersService } from './telegram-users.service';
 
 @Controller('telegram-users')
 export class TelegramUsersController {

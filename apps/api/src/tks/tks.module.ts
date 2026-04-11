@@ -1,6 +1,6 @@
+import { TksApiClient } from '@direct-port/tks-api';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { TksApiClient } from '@direct-port/tks-api';
 
 @Module({
   imports: [ConfigModule],

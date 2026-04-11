@@ -125,9 +125,9 @@ export class ExcelExportService {
     });
     headerRow.height = 30;
 
-    const numFmtColumns = COLUMNS
-      .map((col, i) => ({ index: i + 1, numFmt: col.numFmt }))
-      .filter((c) => c.numFmt);
+    const numFmtColumns = COLUMNS.map((col, i) => ({ index: i + 1, numFmt: col.numFmt })).filter(
+      (c) => c.numFmt,
+    );
 
     for (const row of data) {
       const rowData: Record<string, unknown> = {
@@ -182,7 +182,10 @@ export class ExcelExportService {
     return workbook.xlsx.writeBuffer();
   }
 
-  private async generateRaw(workbook: ExcelJS.Workbook, data: Record<string, unknown>[]): Promise<ExcelJS.Buffer> {
+  private async generateRaw(
+    workbook: ExcelJS.Workbook,
+    data: Record<string, unknown>[],
+  ): Promise<ExcelJS.Buffer> {
     const sheet = workbook.getWorksheet('Результат')!;
     if (data.length > 0) {
       const headers = Object.keys(data[0]);

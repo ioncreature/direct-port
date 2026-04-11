@@ -1,19 +1,19 @@
+import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { BullModule } from '@nestjs/bullmq';
-import { Document } from '../database/entities/document.entity';
-import { ClassifierModule } from '../classifier/classifier.module';
-import { CalculatorModule } from '../calculator/calculator.module';
-import { CalculationConfigModule } from '../calculation-config/calculation-config.module';
-import { VerificationModule } from '../verification/verification.module';
 import { AiParserModule } from '../ai-parser/ai-parser.module';
-import { CurrencyModule } from '../currency/currency.module';
-import { DutyInterpreterModule } from '../duty-interpreter/duty-interpreter.module';
+import { CalculationConfigModule } from '../calculation-config/calculation-config.module';
 import { CalculationLogsModule } from '../calculation-logs/calculation-logs.module';
-import { DocumentsController } from './documents.controller';
-import { DocumentsService } from './documents.service';
-import { DocumentsProcessor } from './documents.processor';
+import { CalculatorModule } from '../calculator/calculator.module';
+import { ClassifierModule } from '../classifier/classifier.module';
+import { CurrencyModule } from '../currency/currency.module';
+import { Document } from '../database/entities/document.entity';
+import { DutyInterpreterModule } from '../duty-interpreter/duty-interpreter.module';
+import { VerificationModule } from '../verification/verification.module';
 import { DocumentsParsingProcessor } from './documents-parsing.processor';
+import { DocumentsController } from './documents.controller';
+import { DocumentsProcessor } from './documents.processor';
+import { DocumentsService } from './documents.service';
 import { ExcelExportService } from './excel-export.service';
 
 @Module({

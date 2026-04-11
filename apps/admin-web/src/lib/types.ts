@@ -35,7 +35,13 @@ export interface TnVedCode {
   level: number;
 }
 
-export type DocumentStatus = 'parsing' | 'pending' | 'processing' | 'processed' | 'failed' | 'requires_review';
+export type DocumentStatus =
+  | 'parsing'
+  | 'pending'
+  | 'processing'
+  | 'processed'
+  | 'failed'
+  | 'requires_review';
 
 export interface ParsedDataRow {
   description: string;

@@ -1,16 +1,16 @@
+import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { BullModule } from '@nestjs/bullmq';
 import { ApiClientModule } from '../api-client/api-client.module';
 import { ExcelModule } from '../excel/excel.module';
-import { ConversationStateModule } from './state/conversation-state.module';
 import { BotService } from './bot.service';
-import { StartHandler } from './handlers/start.handler';
+import { CallbackQueryHandler } from './handlers/callback-query.handler';
+import { FileUploadHandler } from './handlers/file-upload.handler';
 import { HelpHandler } from './handlers/help.handler';
 import { MenuHandler } from './handlers/menu.handler';
-import { FileUploadHandler } from './handlers/file-upload.handler';
-import { CallbackQueryHandler } from './handlers/callback-query.handler';
 import { NotificationHandler } from './handlers/notification.handler';
+import { StartHandler } from './handlers/start.handler';
+import { ConversationStateModule } from './state/conversation-state.module';
 
 @Module({
   imports: [

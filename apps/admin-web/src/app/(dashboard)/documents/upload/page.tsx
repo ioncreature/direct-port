@@ -1,8 +1,8 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useUploadDocument } from '@/hooks/use-upload-document';
+import { useRouter } from 'next/navigation';
+import { FormEvent, useState } from 'react';
 
 export default function UploadDocumentPage() {
   const router = useRouter();

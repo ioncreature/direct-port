@@ -1,5 +1,5 @@
 global:
-  imageRegistry: ""
+  imageRegistry: ''
   imagePullSecrets: []
 
 api:
@@ -17,8 +17,8 @@ api:
       cpu: 500m
       memory: 512Mi
   env:
-    CORS_ORIGIN: "*"
-    JWT_ACCESS_EXPIRATION: "15m"
+    CORS_ORIGIN: '*'
+    JWT_ACCESS_EXPIRATION: '15m'
 
 adminWeb:
   replicaCount: 1
@@ -89,29 +89,29 @@ ingress:
 
 postgresql:
   enabled: true
-  host: ""
+  host: ''
   auth:
     username: directport
-    password: ""
+    password: ''
     database: directport
 
 redis:
   enabled: true
-  host: ""
+  host: ''
   port: 6379
   auth:
     enabled: false
 
 secrets:
-  databaseUrl: ""
-  redisUrl: ""
-  jwtSecret: ""
-  apiInternalKey: ""
-  tksApiBaseUrl: "https://api1.tks.ru"
-  tksTnvedApiKey: ""
-  tksGoodsApiKey: ""
-  anthropicApiKey: ""
-  telegramBotToken: ""
+  databaseUrl: ''
+  redisUrl: ''
+  jwtSecret: ''
+  apiInternalKey: ''
+  tksApiBaseUrl: 'https://api1.tks.ru'
+  tksTnvedApiKey: ''
+  tksGoodsApiKey: ''
+  anthropicApiKey: ''
+  telegramBotToken: ''
 
 migration:
   enabled: true

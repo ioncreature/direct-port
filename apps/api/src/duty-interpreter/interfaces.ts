@@ -1,7 +1,16 @@
 import type { VerifiedProduct } from '../verification/verification.service';
 
-export type ChargeType = 'import_duty' | 'excise' | 'vat' | 'antidumping' | 'compensatory' | 'temp_duty';
-export type BaseType = 'customs_value' | 'customs_value_plus_duty' | 'customs_value_plus_duty_plus_excise';
+export type ChargeType =
+  | 'import_duty'
+  | 'excise'
+  | 'vat'
+  | 'antidumping'
+  | 'compensatory'
+  | 'temp_duty';
+export type BaseType =
+  | 'customs_value'
+  | 'customs_value_plus_duty'
+  | 'customs_value_plus_duty_plus_excise';
 
 export type ChargeMethod =
   | { kind: 'ad_valorem'; rate: number }

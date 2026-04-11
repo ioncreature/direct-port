@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useState } from 'react';
 import api from '@/lib/api';
 import type { Document } from '@/lib/types';
+import { useCallback, useState } from 'react';
 
 export function useUploadDocument() {
   const [uploading, setUploading] = useState(false);
@@ -20,8 +20,7 @@ export function useUploadDocument() {
       });
       return data;
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : 'Ошибка при загрузке файла';
+      const msg = err instanceof Error ? err.message : 'Ошибка при загрузке файла';
       setError(msg);
       throw err;
     } finally {

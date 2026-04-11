@@ -31,9 +31,7 @@ export class ConversationStateService implements OnModuleDestroy {
   private redis: Redis;
 
   constructor(private config: ConfigService) {
-    this.redis = new Redis(
-      this.config.get<string>('REDIS_URL') ?? 'redis://localhost:6380',
-    );
+    this.redis = new Redis(this.config.get<string>('REDIS_URL') ?? 'redis://localhost:6380');
   }
 
   private key(chatId: number): string {

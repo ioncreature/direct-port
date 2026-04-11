@@ -1,11 +1,10 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { InjectQueue } from '@nestjs/bullmq';
+import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { Job, Queue } from 'bullmq';
-import { Document, DocumentStatus } from '../database/entities/document.entity';
+import { Repository } from 'typeorm';
 import { AiParserService } from '../ai-parser/ai-parser.service';
+import { Document, DocumentStatus } from '../database/entities/document.entity';
 
 @Processor('document-parsing')
 export class DocumentsParsingProcessor extends WorkerHost {
@@ -43,8 +42,10 @@ export class DocumentsParsingProcessor extends WorkerHost {
     }
 
     try {
-      const { products, currency, columnMapping, confident } =
-        await this.aiParser.parse(doc.fileBuffer, doc.originalFileName);
+      const { products, currency, columnMapping, confident } = await this.aiParser.parse(
+        doc.fileBuffer,
+        doc.originalFileName,
+      );
 
       doc.parsedData = products;
       doc.currency = currency;
@@ -62,9 +63,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
       } else {
         doc.status = DocumentStatus.REQUIRES_REVIEW;
         await this.repo.save(doc);
-        this.logger.log(
-          `Document ${documentId} parsed but not confident, requires review`,
-        );
+        this.logger.log(`Document ${documentId} parsed but not confident, requires review`);
       }
     } catch (err) {
       doc.status = DocumentStatus.FAILED;

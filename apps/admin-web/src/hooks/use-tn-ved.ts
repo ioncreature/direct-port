@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '@/lib/api';
 import type { TnVedCode } from '@/lib/types';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export function useTnVed() {
   const [query, setQuery] = useState('');
@@ -39,7 +39,9 @@ export function useTnVed() {
   }, [query, search]);
 
   useEffect(() => {
-    return () => { abortRef.current?.abort(); };
+    return () => {
+      abortRef.current?.abort();
+    };
   }, []);
 
   return { query, setQuery, results, loading };

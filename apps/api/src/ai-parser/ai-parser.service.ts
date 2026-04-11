@@ -1,7 +1,7 @@
-import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
-import { SpreadsheetReaderService, SpreadsheetData } from './spreadsheet-reader.service';
+import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Dimension } from '../duty-interpreter/interfaces';
+import { SpreadsheetData, SpreadsheetReaderService } from './spreadsheet-reader.service';
 
 export interface ParsedProduct {
   description: string;
@@ -27,8 +27,24 @@ interface ValidationResult {
 }
 
 const VALID_CURRENCIES = new Set([
-  'CNY', 'USD', 'EUR', 'RUB', 'GBP', 'JPY', 'KRW', 'TRY', 'AED',
-  'THB', 'VND', 'INR', 'BRL', 'KZT', 'BYN', 'UAH', 'UZS', 'GEL',
+  'CNY',
+  'USD',
+  'EUR',
+  'RUB',
+  'GBP',
+  'JPY',
+  'KRW',
+  'TRY',
+  'AED',
+  'THB',
+  'VND',
+  'INR',
+  'BRL',
+  'KZT',
+  'BYN',
+  'UAH',
+  'UZS',
+  'GEL',
 ]);
 
 const MAX_ROWS = 200;
@@ -71,9 +87,7 @@ export class AiParserService {
 
   async parse(buffer: Buffer, fileName: string): Promise<AiParseResult> {
     if (!this.anthropic) {
-      throw new BadRequestException(
-        'AI-парсер недоступен: ANTHROPIC_API_KEY не настроен',
-      );
+      throw new BadRequestException('AI-парсер недоступен: ANTHROPIC_API_KEY не настроен');
     }
 
     const data = await this.spreadsheetReader.read(buffer, fileName);
@@ -86,9 +100,8 @@ export class AiParserService {
     let lastIssues: string[] = [];
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      const userPrompt = attempt === 1
-        ? this.buildUserPrompt(tsv)
-        : this.buildRetryPrompt(tsv, lastIssues);
+      const userPrompt =
+        attempt === 1 ? this.buildUserPrompt(tsv) : this.buildRetryPrompt(tsv, lastIssues);
 
       const result = await this.callClaude(userPrompt);
       lastResult = result;
@@ -153,7 +166,9 @@ export class AiParserService {
     // All prices should be > 0
     const zeroPriceCount = result.products.filter((p) => p.price <= 0).length;
     if (zeroPriceCount > result.products.length * 0.5) {
-      issues.push(`Больше половины товаров (${zeroPriceCount}/${result.products.length}) имеют нулевую цену`);
+      issues.push(
+        `Больше половины товаров (${zeroPriceCount}/${result.products.length}) имеют нулевую цену`,
+      );
     }
 
     // Row count sanity: parsed products should be within ±50% of non-empty data rows
@@ -163,10 +178,14 @@ export class AiParserService {
     // Subtract ~2 header rows estimate
     const estimatedDataRows = Math.max(1, nonEmptyRows - 2);
     if (result.products.length > estimatedDataRows * 2) {
-      issues.push(`Слишком много товаров (${result.products.length}) для ${estimatedDataRows} строк данных`);
+      issues.push(
+        `Слишком много товаров (${result.products.length}) для ${estimatedDataRows} строк данных`,
+      );
     }
     if (result.products.length < estimatedDataRows * 0.3 && estimatedDataRows > 5) {
-      issues.push(`Слишком мало товаров (${result.products.length}) для ${estimatedDataRows} строк данных`);
+      issues.push(
+        `Слишком мало товаров (${result.products.length}) для ${estimatedDataRows} строк данных`,
+      );
     }
 
     return issues;

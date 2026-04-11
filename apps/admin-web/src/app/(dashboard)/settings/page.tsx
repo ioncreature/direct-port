@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { useCalculationConfig } from '@/hooks/use-calculation-config';
+import { useEffect, useState } from 'react';
 
 export default function SettingsPage() {
   const { config, loading, saving, error, save } = useCalculationConfig();

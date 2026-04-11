@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
-import { createTestApp, seedAdmin, seedTnVed, loginAsAdmin } from './helpers';
+import { createTestApp, loginAsAdmin, seedAdmin, seedTnVed } from './helpers';
 
 describe('TN VED (e2e)', () => {
   let app: INestApplication;
@@ -61,9 +61,7 @@ describe('TN VED (e2e)', () => {
     });
 
     it('should require auth', async () => {
-      await request(app.getHttpServer())
-        .get('/api/tn-ved?search=02')
-        .expect(401);
+      await request(app.getHttpServer()).get('/api/tn-ved?search=02').expect(401);
     });
   });
 

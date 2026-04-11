@@ -1,11 +1,11 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Bot } from 'grammy';
-import { StartHandler } from './handlers/start.handler';
+import { CallbackQueryHandler } from './handlers/callback-query.handler';
+import { FileUploadHandler } from './handlers/file-upload.handler';
 import { HelpHandler } from './handlers/help.handler';
 import { MenuHandler } from './handlers/menu.handler';
-import { FileUploadHandler } from './handlers/file-upload.handler';
-import { CallbackQueryHandler } from './handlers/callback-query.handler';
+import { StartHandler } from './handlers/start.handler';
 
 @Injectable()
 export class BotService implements OnModuleInit, OnModuleDestroy {

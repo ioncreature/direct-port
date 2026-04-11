@@ -28,7 +28,11 @@ export class CalculationConfigService {
     return created;
   }
 
-  async update(dto: { pricePercent?: number; weightRate?: number; fixedFee?: number }): Promise<CalculationConfig> {
+  async update(dto: {
+    pricePercent?: number;
+    weightRate?: number;
+    fixedFee?: number;
+  }): Promise<CalculationConfig> {
     const config = await this.get();
     if (dto.pricePercent !== undefined) config.pricePercent = dto.pricePercent;
     if (dto.weightRate !== undefined) config.weightRate = dto.weightRate;

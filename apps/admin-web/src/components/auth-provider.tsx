@@ -1,8 +1,8 @@
 'use client';
 
-import { createContext, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { login as apiLogin, logout as apiLogout, getStoredUser } from '@/lib/auth';
 import type { User } from '@/lib/types';
+import { createContext, useCallback, useEffect, useState, type ReactNode } from 'react';
 
 type AuthUser = Pick<User, 'id' | 'email' | 'role'> | null;
 
@@ -39,9 +39,5 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
-  return (
-    <AuthContext value={{ user, loading, login, logout }}>
-      {children}
-    </AuthContext>
-  );
+  return <AuthContext value={{ user, loading, login, logout }}>{children}</AuthContext>;
 }

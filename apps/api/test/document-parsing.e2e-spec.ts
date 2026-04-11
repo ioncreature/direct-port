@@ -1,17 +1,17 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { DataSource, Repository } from 'typeorm';
+import { AiParserService } from '../src/ai-parser/ai-parser.service';
+import { Document, DocumentStatus } from '../src/database/entities/document.entity';
+import { DocumentsParsingProcessor } from '../src/documents/documents-parsing.processor';
 import {
   createTestApp,
-  seedAdmin,
-  seedTelegramUser,
-  seedCalculationConfig,
-  loginAsAdmin,
   INTERNAL_KEY_HEADER,
+  loginAsAdmin,
+  seedAdmin,
+  seedCalculationConfig,
+  seedTelegramUser,
 } from './helpers';
-import { Document, DocumentStatus } from '../src/database/entities/document.entity';
-import { AiParserService } from '../src/ai-parser/ai-parser.service';
-import { DocumentsParsingProcessor } from '../src/documents/documents-parsing.processor';
 
 describe('Document parsing (e2e)', () => {
   let app: INestApplication;
@@ -160,9 +160,7 @@ describe('Document parsing (e2e)', () => {
     });
 
     it('should transition to FAILED on parse error', async () => {
-      (aiParser.parse as jest.Mock).mockRejectedValueOnce(
-        new Error('AI service unavailable'),
-      );
+      (aiParser.parse as jest.Mock).mockRejectedValueOnce(new Error('AI service unavailable'));
 
       const doc = await createDocumentWithBuffer();
 
@@ -205,9 +203,7 @@ describe('Document parsing (e2e)', () => {
 
     it('should handle missing document gracefully', async () => {
       // Should not throw
-      await processor.process(
-        createFakeJob('00000000-0000-0000-0000-000000000000'),
-      );
+      await processor.process(createFakeJob('00000000-0000-0000-0000-000000000000'));
     });
 
     it('should fail when fileBuffer is missing', async () => {

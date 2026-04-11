@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Context, InlineKeyboard } from 'grammy';
-import { ExcelService, ColumnMappingInput } from '../../excel/excel.service';
 import { ApiClientService } from '../../api-client/api-client.service';
-import { ConversationStateService, ColumnMapping } from '../state/conversation-state.service';
+import { ColumnMappingInput, ExcelService } from '../../excel/excel.service';
+import { ColumnMapping, ConversationStateService } from '../state/conversation-state.service';
 
 const COLUMN_STEPS = [
   { field: 'description', next: 'awaiting_column_price', label: 'стоимостью' },
@@ -51,9 +51,7 @@ export class CallbackQueryHandler {
       await this.stateService.setState(chatId, state);
 
       const selectedIndices = new Set(
-        Object.values(state.columnMapping).filter(
-          (v): v is number => v !== undefined,
-        ),
+        Object.values(state.columnMapping).filter((v): v is number => v !== undefined),
       );
 
       const nextField = COLUMN_STEPS[COLUMN_STEPS.findIndex((s) => s.field === field) + 1];
@@ -78,11 +76,7 @@ export class CallbackQueryHandler {
       try {
         const buffer = Buffer.from(state.fileBuffer, 'base64');
         const mapping = state.columnMapping as ColumnMappingInput;
-        const products = await this.excelService.parseWithMapping(
-          buffer,
-          state.fileType,
-          mapping,
-        );
+        const products = await this.excelService.parseWithMapping(buffer, state.fileType, mapping);
 
         if (products.length === 0) {
           await ctx.reply('Файл не содержит данных. Проверьте формат.');

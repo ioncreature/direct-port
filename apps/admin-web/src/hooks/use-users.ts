@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
 import api from '@/lib/api';
-import type { User, PaginatedResponse, SortOrder } from '@/lib/types';
+import type { PaginatedResponse, SortOrder, User } from '@/lib/types';
+import { useCallback, useEffect, useState } from 'react';
 
 const PAGE_SIZE = 20;
 
@@ -28,41 +28,70 @@ export function useUsers() {
     }
   }, [page, sortBy, sortOrder, role]);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => {
+    fetch();
+  }, [fetch]);
 
-  const toggleSort = useCallback((field: string) => {
-    if (sortBy === field) {
-      setSortOrder((prev) => (prev === 'DESC' ? 'ASC' : 'DESC'));
-    } else {
-      setSortBy(field);
-      setSortOrder('DESC');
-    }
-    setPage(1);
-  }, [sortBy]);
+  const toggleSort = useCallback(
+    (field: string) => {
+      if (sortBy === field) {
+        setSortOrder((prev) => (prev === 'DESC' ? 'ASC' : 'DESC'));
+      } else {
+        setSortBy(field);
+        setSortOrder('DESC');
+      }
+      setPage(1);
+    },
+    [sortBy],
+  );
 
   const filterByRole = useCallback((r: 'admin' | 'customs' | '') => {
     setRole(r);
     setPage(1);
   }, []);
 
-  const createUser = useCallback(async (payload: { email: string; password: string; role: string }) => {
-    await api.post('/users', payload);
-    await fetch();
-  }, [fetch]);
+  const createUser = useCallback(
+    async (payload: { email: string; password: string; role: string }) => {
+      await api.post('/users', payload);
+      await fetch();
+    },
+    [fetch],
+  );
 
-  const updateUser = useCallback(async (id: string, payload: { email?: string; password?: string; role?: string; isActive?: boolean }) => {
-    await api.patch(`/users/${id}`, payload);
-    await fetch();
-  }, [fetch]);
+  const updateUser = useCallback(
+    async (
+      id: string,
+      payload: { email?: string; password?: string; role?: string; isActive?: boolean },
+    ) => {
+      await api.patch(`/users/${id}`, payload);
+      await fetch();
+    },
+    [fetch],
+  );
 
-  const deleteUser = useCallback(async (id: string) => {
-    await api.delete(`/users/${id}`);
-    await fetch();
-  }, [fetch]);
+  const deleteUser = useCallback(
+    async (id: string) => {
+      await api.delete(`/users/${id}`);
+      await fetch();
+    },
+    [fetch],
+  );
 
   return {
-    users, total, loading, page, limit: PAGE_SIZE, sortBy, sortOrder, role,
-    setPage, toggleSort, filterByRole, refetch: fetch,
-    createUser, updateUser, deleteUser,
+    users,
+    total,
+    loading,
+    page,
+    limit: PAGE_SIZE,
+    sortBy,
+    sortOrder,
+    role,
+    setPage,
+    toggleSort,
+    filterByRole,
+    refetch: fetch,
+    createUser,
+    updateUser,
+    deleteUser,
   };
 }

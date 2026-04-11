@@ -37,11 +37,7 @@ export class StartHandler {
       this.logger.error('Failed to register telegram user', err);
     }
 
-    const keyboard = new Keyboard()
-      .text('📁 Загрузить файл')
-      .row()
-      .text('❓ Помощь')
-      .resized();
+    const keyboard = new Keyboard().text('📁 Загрузить файл').row().text('❓ Помощь').resized();
 
     await ctx.reply(
       'Добро пожаловать в DirectPort Bot!\n\n' +

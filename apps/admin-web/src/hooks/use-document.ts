@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
 import api from '@/lib/api';
 import type { Document, ParsedDataRow } from '@/lib/types';
+import { useCallback, useEffect, useState } from 'react';
 
 export function useDocument(id: string) {
   const [document, setDocument] = useState<Document | null>(null);
@@ -22,7 +22,9 @@ export function useDocument(id: string) {
     }
   }, [id]);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => {
+    fetch();
+  }, [fetch]);
 
   const reprocess = useCallback(async () => {
     try {
@@ -33,24 +35,30 @@ export function useDocument(id: string) {
     }
   }, [id, fetch]);
 
-  const saveParsedData = useCallback(async (parsedData: ParsedDataRow[], currency?: string) => {
-    try {
-      await api.patch(`/documents/${id}/review`, { parsedData, currency });
-      await fetch();
-    } catch {
-      setError('Не удалось сохранить данные');
-      throw new Error('save failed');
-    }
-  }, [id, fetch]);
+  const saveParsedData = useCallback(
+    async (parsedData: ParsedDataRow[], currency?: string) => {
+      try {
+        await api.patch(`/documents/${id}/review`, { parsedData, currency });
+        await fetch();
+      } catch {
+        setError('Не удалось сохранить данные');
+        throw new Error('save failed');
+      }
+    },
+    [id, fetch],
+  );
 
-  const reject = useCallback(async (reason: string) => {
-    try {
-      await api.post(`/documents/${id}/reject`, { reason });
-      await fetch();
-    } catch {
-      setError('Не удалось отклонить документ');
-    }
-  }, [id, fetch]);
+  const reject = useCallback(
+    async (reason: string) => {
+      try {
+        await api.post(`/documents/${id}/reject`, { reason });
+        await fetch();
+      } catch {
+        setError('Не удалось отклонить документ');
+      }
+    },
+    [id, fetch],
+  );
 
   return { document, loading, error, refetch: fetch, reprocess, saveParsedData, reject };
 }

@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
 import api from '@/lib/api';
 import type { Document, DocumentStatus, PaginatedResponse, SortOrder } from '@/lib/types';
+import { useCallback, useEffect, useState } from 'react';
 
 const PAGE_SIZE = 20;
 
@@ -29,17 +29,22 @@ export function useDocuments(options?: { telegramUserId?: string }) {
     }
   }, [page, sortBy, sortOrder, status, options?.telegramUserId]);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => {
+    fetch();
+  }, [fetch]);
 
-  const toggleSort = useCallback((field: string) => {
-    if (sortBy === field) {
-      setSortOrder((prev) => (prev === 'DESC' ? 'ASC' : 'DESC'));
-    } else {
-      setSortBy(field);
-      setSortOrder('DESC');
-    }
-    setPage(1);
-  }, [sortBy]);
+  const toggleSort = useCallback(
+    (field: string) => {
+      if (sortBy === field) {
+        setSortOrder((prev) => (prev === 'DESC' ? 'ASC' : 'DESC'));
+      } else {
+        setSortBy(field);
+        setSortOrder('DESC');
+      }
+      setPage(1);
+    },
+    [sortBy],
+  );
 
   const filterByStatus = useCallback((s: DocumentStatus | '') => {
     setStatus(s);
@@ -59,7 +64,18 @@ export function useDocuments(options?: { telegramUserId?: string }) {
   }, []);
 
   return {
-    documents, total, loading, page, limit: PAGE_SIZE, sortBy, sortOrder, status,
-    setPage, toggleSort, filterByStatus, refetch: fetch, downloadDocument,
+    documents,
+    total,
+    loading,
+    page,
+    limit: PAGE_SIZE,
+    sortBy,
+    sortOrder,
+    status,
+    setPage,
+    toggleSort,
+    filterByStatus,
+    refetch: fetch,
+    downloadDocument,
   };
 }

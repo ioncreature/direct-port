@@ -31,10 +31,10 @@ pnpm dev
 
 Docker Compose поднимает:
 
-| Сервис   | Порт | Credentials                |
-|----------|------|----------------------------|
-| Postgres | 5434 | directport / directport    |
-| Redis    | 6380 | —                          |
+| Сервис   | Порт | Credentials             |
+| -------- | ---- | ----------------------- |
+| Postgres | 5434 | directport / directport |
+| Redis    | 6380 | —                       |
 
 ```bash
 pnpm infra          # запуск
@@ -47,7 +47,7 @@ pnpm infra:logs     # логи
 PM2 управляет dev-процессами (ecosystem.config.js):
 
 | Приложение | Порт | Путь           | Стек             |
-|------------|------|----------------|------------------|
+| ---------- | ---- | -------------- | ---------------- |
 | API        | 3001 | apps/api       | NestJS + TypeORM |
 | Admin Web  | 3000 | apps/admin-web | Next.js          |
 | TG Bot     | 3002 | apps/tg-bot    | NestJS + grammY  |
@@ -128,20 +128,20 @@ Seed создаёт: `admin@directport.ru` / `admin123` + 10 образцов к
 
 Каждое приложение имеет свой `.env.example` в своей директории:
 
-| Переменная            | Описание                          | По умолчанию                    |
-|-----------------------|-----------------------------------|---------------------------------|
-| PORT                  | Порт API                          | 3001                            |
-| DATABASE_URL          | PostgreSQL connection string      | postgresql://...localhost:5434   |
-| REDIS_URL             | Redis connection string           | redis://localhost:6380           |
-| JWT_SECRET            | Секрет для JWT                    | change-me-to-a-random-secret    |
-| JWT_ACCESS_EXPIRATION | Время жизни access token          | 15m                             |
-| API_INTERNAL_KEY      | Ключ для service-to-service (бот) | change-me-to-a-random-key       |
-| TKS_API_BASE_URL      | Базовый URL TKS API               | https://api1.tks.ru             |
-| TKS_TNVED_API_KEY     | Ключ для TNVED API (api1.tks.ru)  | —                               |
-| TKS_GOODS_API_KEY     | Ключ для GOODS API (api1.tks.ru)  | —                               |
-| ANTHROPIC_API_KEY     | Ключ Anthropic (парсинг, верификация, пошлины) | —                  |
-| TELEGRAM_BOT_TOKEN    | Токен Telegram-бота               | —                               |
-| NEXT_PUBLIC_API_URL   | URL API для админки               | http://localhost:3001/api       |
+| Переменная            | Описание                                       | По умолчанию                   |
+| --------------------- | ---------------------------------------------- | ------------------------------ |
+| PORT                  | Порт API                                       | 3001                           |
+| DATABASE_URL          | PostgreSQL connection string                   | postgresql://...localhost:5434 |
+| REDIS_URL             | Redis connection string                        | redis://localhost:6380         |
+| JWT_SECRET            | Секрет для JWT                                 | change-me-to-a-random-secret   |
+| JWT_ACCESS_EXPIRATION | Время жизни access token                       | 15m                            |
+| API_INTERNAL_KEY      | Ключ для service-to-service (бот)              | change-me-to-a-random-key      |
+| TKS_API_BASE_URL      | Базовый URL TKS API                            | https://api1.tks.ru            |
+| TKS_TNVED_API_KEY     | Ключ для TNVED API (api1.tks.ru)               | —                              |
+| TKS_GOODS_API_KEY     | Ключ для GOODS API (api1.tks.ru)               | —                              |
+| ANTHROPIC_API_KEY     | Ключ Anthropic (парсинг, верификация, пошлины) | —                              |
+| TELEGRAM_BOT_TOKEN    | Токен Telegram-бота                            | —                              |
+| NEXT_PUBLIC_API_URL   | URL API для админки                            | http://localhost:3001/api      |
 
 ## Структура проекта
 

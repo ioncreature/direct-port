@@ -1,5 +1,5 @@
-import type { DocumentStatus } from './types';
 import api from './api';
+import type { DocumentStatus } from './types';
 
 export const statusLabels: Record<DocumentStatus, string> = {
   parsing: 'Распознавание...',

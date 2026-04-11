@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
-import { createTestApp, seedAdmin, loginAsAdmin } from './helpers';
+import { createTestApp, loginAsAdmin, seedAdmin } from './helpers';
 
 describe('Users (e2e)', () => {
   let app: INestApplication;
@@ -20,10 +20,7 @@ describe('Users (e2e)', () => {
 
   describe('GET /api/users', () => {
     it('should return list of users', async () => {
-      const res = await request(app.getHttpServer())
-        .get('/api/users')
-        .set(auth())
-        .expect(200);
+      const res = await request(app.getHttpServer()).get('/api/users').set(auth()).expect(200);
 
       expect(res.body).toHaveProperty('data');
       expect(res.body).toHaveProperty('total');
@@ -87,11 +84,7 @@ describe('Users (e2e)', () => {
     });
 
     it('should validate dto — missing fields', async () => {
-      await request(app.getHttpServer())
-        .post('/api/users')
-        .set(auth())
-        .send({})
-        .expect(400);
+      await request(app.getHttpServer()).post('/api/users').set(auth()).send({}).expect(400);
     });
   });
 
@@ -120,10 +113,7 @@ describe('Users (e2e)', () => {
     });
 
     it('should return 400 for invalid uuid', async () => {
-      await request(app.getHttpServer())
-        .get('/api/users/not-a-uuid')
-        .set(auth())
-        .expect(400);
+      await request(app.getHttpServer()).get('/api/users/not-a-uuid').set(auth()).expect(400);
     });
   });
 

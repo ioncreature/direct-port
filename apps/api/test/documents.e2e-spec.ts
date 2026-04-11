@@ -1,18 +1,18 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { DataSource } from 'typeorm';
+import { CalculatorService } from '../src/calculator/calculator.service';
+import { ClassifierService } from '../src/classifier/classifier.service';
+import { Document, DocumentStatus } from '../src/database/entities/document.entity';
+import { ExcelExportService } from '../src/documents/excel-export.service';
 import {
   createTestApp,
-  seedAdmin,
-  seedTelegramUser,
-  seedCalculationConfig,
-  loginAsAdmin,
   INTERNAL_KEY_HEADER,
+  loginAsAdmin,
+  seedAdmin,
+  seedCalculationConfig,
+  seedTelegramUser,
 } from './helpers';
-import { Document, DocumentStatus } from '../src/database/entities/document.entity';
-import { ClassifierService } from '../src/classifier/classifier.service';
-import { CalculatorService } from '../src/calculator/calculator.service';
-import { ExcelExportService } from '../src/documents/excel-export.service';
 
 describe('Documents (e2e)', () => {
   let app: INestApplication;
@@ -101,10 +101,7 @@ describe('Documents (e2e)', () => {
     });
 
     it('should reject for internal key (no role)', async () => {
-      await request(app.getHttpServer())
-        .get('/api/documents')
-        .set(INTERNAL_KEY_HEADER)
-        .expect(403);
+      await request(app.getHttpServer()).get('/api/documents').set(INTERNAL_KEY_HEADER).expect(403);
     });
   });
 
@@ -195,12 +192,23 @@ describe('Documents (e2e)', () => {
         parsedData: sampleParsedData,
         resultData: [
           {
-            description: 'Говядина', quantity: 10, price: 500, weight: 100,
-            tnVedCode: '0201100001', tnVedDescription: 'Туши',
-            dutyRate: 15, vatRate: 20, exciseRate: 0,
-            totalPrice: 5000, dutyAmount: 750, vatAmount: 1150,
-            exciseAmount: 0, logisticsCommission: 260, totalCost: 7160,
-            verificationStatus: 'exact', matchConfidence: 0.85,
+            description: 'Говядина',
+            quantity: 10,
+            price: 500,
+            weight: 100,
+            tnVedCode: '0201100001',
+            tnVedDescription: 'Туши',
+            dutyRate: 15,
+            vatRate: 20,
+            exciseRate: 0,
+            totalPrice: 5000,
+            dutyAmount: 750,
+            vatAmount: 1150,
+            exciseAmount: 0,
+            logisticsCommission: 260,
+            totalCost: 7160,
+            verificationStatus: 'exact',
+            matchConfidence: 0.85,
           },
         ],
         rowCount: 1,
@@ -258,20 +266,42 @@ describe('Documents (e2e)', () => {
         parsedData: [],
         resultData: [
           {
-            description: 'Точное', quantity: 1, price: 100, weight: 1,
-            tnVedCode: '0201100001', tnVedDescription: 'Тест',
-            dutyRate: 15, vatRate: 20, exciseRate: 0,
-            totalPrice: 100, dutyAmount: 15, vatAmount: 23,
-            exciseAmount: 0, logisticsCommission: 5, totalCost: 143,
-            verificationStatus: 'exact', matchConfidence: 0.9,
+            description: 'Точное',
+            quantity: 1,
+            price: 100,
+            weight: 1,
+            tnVedCode: '0201100001',
+            tnVedDescription: 'Тест',
+            dutyRate: 15,
+            vatRate: 20,
+            exciseRate: 0,
+            totalPrice: 100,
+            dutyAmount: 15,
+            vatAmount: 23,
+            exciseAmount: 0,
+            logisticsCommission: 5,
+            totalCost: 143,
+            verificationStatus: 'exact',
+            matchConfidence: 0.9,
           },
           {
-            description: 'Ручная проверка', quantity: 1, price: 50, weight: 1,
-            tnVedCode: '', tnVedDescription: 'Не найден',
-            dutyRate: 0, vatRate: 20, exciseRate: 0,
-            totalPrice: 50, dutyAmount: 0, vatAmount: 10,
-            exciseAmount: 0, logisticsCommission: 2.5, totalCost: 62.5,
-            verificationStatus: 'review', matchConfidence: 0,
+            description: 'Ручная проверка',
+            quantity: 1,
+            price: 50,
+            weight: 1,
+            tnVedCode: '',
+            tnVedDescription: 'Не найден',
+            dutyRate: 0,
+            vatRate: 20,
+            exciseRate: 0,
+            totalPrice: 50,
+            dutyAmount: 0,
+            vatAmount: 10,
+            exciseAmount: 0,
+            logisticsCommission: 2.5,
+            totalCost: 62.5,
+            verificationStatus: 'review',
+            matchConfidence: 0,
           },
         ],
         rowCount: 2,

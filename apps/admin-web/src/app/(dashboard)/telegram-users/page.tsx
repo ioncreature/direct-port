@@ -1,8 +1,8 @@
 'use client';
 
-import Link from 'next/link';
 import { useTelegramUsers } from '@/hooks/use-telegram-users';
-import { th, td, btnOutline } from '@/lib/table-styles';
+import { btnOutline, td, th } from '@/lib/table-styles';
+import Link from 'next/link';
 
 const sortableColumns: { field: string; label: string }[] = [
   { field: 'username', label: 'Username' },
@@ -11,8 +11,16 @@ const sortableColumns: { field: string; label: string }[] = [
 
 export default function TelegramUsersPage() {
   const {
-    telegramUsers, total, loading, page, limit, sortBy, sortOrder,
-    setPage, toggleSort, refetch,
+    telegramUsers,
+    total,
+    loading,
+    page,
+    limit,
+    sortBy,
+    sortOrder,
+    setPage,
+    toggleSort,
+    refetch,
   } = useTelegramUsers();
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
@@ -24,20 +32,36 @@ export default function TelegramUsersPage() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 16,
+        }}
+      >
         <h1>Telegram-пользователи</h1>
-        <button onClick={refetch} style={btnOutline}>Обновить</button>
+        <button onClick={refetch} style={btnOutline}>
+          Обновить
+        </button>
       </div>
 
-      {loading ? <p>Загрузка...</p> : (
+      {loading ? (
+        <p>Загрузка...</p>
+      ) : (
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
                 <th style={th}>Telegram ID</th>
                 {sortableColumns.map((col) => (
-                  <th key={col.field} style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggleSort(col.field)}>
-                    {col.label}{sortIndicator(col.field)}
+                  <th
+                    key={col.field}
+                    style={{ ...th, cursor: 'pointer', userSelect: 'none' }}
+                    onClick={() => toggleSort(col.field)}
+                  >
+                    {col.label}
+                    {sortIndicator(col.field)}
                   </th>
                 ))}
                 <th style={th}>Имя</th>
@@ -48,7 +72,10 @@ export default function TelegramUsersPage() {
               {telegramUsers.map((u) => (
                 <tr key={u.id}>
                   <td style={td}>
-                    <Link href={`/telegram-users/${u.id}`} style={{ color: '#2563eb', textDecoration: 'none' }}>
+                    <Link
+                      href={`/telegram-users/${u.id}`}
+                      style={{ color: '#2563eb', textDecoration: 'none' }}
+                    >
                       {u.telegramId}
                     </Link>
                   </td>
@@ -68,12 +95,30 @@ export default function TelegramUsersPage() {
             </tbody>
           </table>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, fontSize: 14 }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginTop: 16,
+              fontSize: 14,
+            }}
+          >
             <span style={{ color: '#666' }}>Всего: {total}</span>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <button onClick={() => setPage(page - 1)} disabled={page <= 1} style={btnOutline}>← Пред</button>
-              <span>{page} из {totalPages}</span>
-              <button onClick={() => setPage(page + 1)} disabled={page >= totalPages} style={btnOutline}>След →</button>
+              <button onClick={() => setPage(page - 1)} disabled={page <= 1} style={btnOutline}>
+                ← Пред
+              </button>
+              <span>
+                {page} из {totalPages}
+              </span>
+              <button
+                onClick={() => setPage(page + 1)}
+                disabled={page >= totalPages}
+                style={btnOutline}
+              >
+                След →
+              </button>
             </div>
           </div>
         </>

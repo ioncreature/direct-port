@@ -50,7 +50,9 @@ export class CurrencyService {
     });
     if (!response.ok) {
       if (this.cache) {
-        this.logger.warn(`CBR API returned ${response.status}, using stale cache from ${this.cache.date}`);
+        this.logger.warn(
+          `CBR API returned ${response.status}, using stale cache from ${this.cache.date}`,
+        );
         return this.cache.rates;
       }
       throw new Error(`Не удалось получить курсы валют ЦБ РФ: ${response.status}`);

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import * as ExcelJS from 'exceljs';
 import { parse as csvParseSync } from 'csv-parse/sync';
+import * as ExcelJS from 'exceljs';
 
 export interface ProductRow {
   description: string;
@@ -37,14 +37,8 @@ export class ExcelService {
     // CSV
     const text = buffer.toString('utf-8');
     const firstLine = text.split(/\r?\n/)[0];
-    const delimiter = firstLine.includes(';')
-      ? ';'
-      : firstLine.includes('\t')
-        ? '\t'
-        : ',';
-    return firstLine
-      .split(delimiter)
-      .map((h) => h.trim().replace(/^"(.*)"$/, '$1'));
+    const delimiter = firstLine.includes(';') ? ';' : firstLine.includes('\t') ? '\t' : ',';
+    return firstLine.split(delimiter).map((h) => h.trim().replace(/^"(.*)"$/, '$1'));
   }
 
   async parseWithMapping(
@@ -61,9 +55,7 @@ export class ExcelService {
       const rows: ProductRow[] = [];
       sheet.eachRow((row, rowNumber) => {
         if (rowNumber === 1) return;
-        const description = String(
-          row.getCell(mapping.description + 1).value || '',
-        ).trim();
+        const description = String(row.getCell(mapping.description + 1).value || '').trim();
         if (!description) return;
         rows.push({
           description,

@@ -1,6 +1,6 @@
+import Anthropic from '@anthropic-ai/sdk';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import Anthropic from '@anthropic-ai/sdk';
 import { TksModule } from '../tks/tks.module';
 import { VerificationService } from './verification.service';
 

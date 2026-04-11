@@ -1,10 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
 import {
   TksApiClient,
   calcProbability,
   type GoodsItem,
   type TnvedCode,
 } from '@direct-port/tks-api';
+import { Injectable, Logger } from '@nestjs/common';
 import type { Dimension } from '../duty-interpreter/interfaces';
 
 export interface ClassifiedProduct {

@@ -13,10 +13,10 @@ api:
       cpu: 200m
       memory: 512Mi
     limits:
-      cpu: "1"
+      cpu: '1'
       memory: 1Gi
   env:
-    CORS_ORIGIN: "https://admin-stage.directport.ru"
+    CORS_ORIGIN: 'https://admin-stage.directport.ru'
 
 adminWeb:
   image:
@@ -63,16 +63,16 @@ ingress:
 
 postgresql:
   enabled: true
-  host: ""
+  host: ''
   auth:
     username: directport
-    password: ""
+    password: ''
     database: directport
 
 redis:
   enabled: true
   architecture: standalone
-  host: ""
+  host: ''
   port: 6379
   auth:
     enabled: false

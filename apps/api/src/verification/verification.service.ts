@@ -1,6 +1,6 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { TksApiClient } from '@direct-port/tks-api';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { ClassifiedProduct } from '../classifier/classifier.service';
 
 export interface VerifiedProduct extends ClassifiedProduct {
@@ -145,7 +145,9 @@ ${JSON.stringify(items, null, 2)}
       [...codesToFetch].map(async (code) => {
         try {
           tnvedCache.set(code, await this.tksApi.getTnvedCode(code));
-        } catch { /* код не найден — пропускаем */ }
+        } catch {
+          /* код не найден — пропускаем */
+        }
       }),
     );
 
@@ -214,5 +216,4 @@ ${JSON.stringify(items, null, 2)}
 
     return verified;
   }
-
 }
