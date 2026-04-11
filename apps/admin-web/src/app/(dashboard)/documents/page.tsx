@@ -2,6 +2,7 @@
 
 import { useDocuments } from '@/hooks/use-documents';
 import { statusColors, statusLabels } from '@/lib/documents';
+import { fmtDateTime } from '@/lib/format';
 import { btnOutline, td, th } from '@/lib/table-styles';
 import { getDocumentUploaderName } from '@/lib/telegram';
 import type { DocumentStatus } from '@/lib/types';
@@ -136,7 +137,7 @@ export default function DocumentsPage() {
                     </span>
                   </td>
                   <td style={td}>{doc.rowCount}</td>
-                  <td style={td}>{new Date(doc.createdAt).toLocaleDateString('ru')}</td>
+                  <td style={td}>{fmtDateTime(doc.createdAt)}</td>
                   <td style={td}>
                     <button
                       onClick={() => downloadDocument(doc.id, doc.originalFileName)}
