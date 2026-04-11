@@ -149,6 +149,9 @@ export class TksApiClient {
   private async fetch<T>(path: string): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const startedAt = Date.now();
+
+    this.logger?.log(`TKS API -> ${url}`);
+
     let response: Response;
     try {
       response = await fetch(url, {
@@ -159,19 +162,28 @@ export class TksApiClient {
       if (this.logger) {
         const elapsed = Date.now() - startedAt;
         this.logger.error(
-          `TKS API request failed ${url} (${elapsed}ms): ${err instanceof Error ? err.message : String(err)}`,
+          `TKS API <- ${url} network error (${elapsed}ms): ${err instanceof Error ? err.message : String(err)}`,
         );
       }
       throw err;
     }
 
-    const elapsed = Date.now() - startedAt;
+    const headersElapsed = Date.now() - startedAt;
+    const contentType = response.headers.get('content-type') ?? '';
+
+    if (this.logger) {
+      const headers = Object.fromEntries(response.headers.entries());
+      this.logger.log(
+        `TKS API <- ${url} status=${response.status} ${response.statusText} (${headersElapsed}ms) headers=${JSON.stringify(headers)}`,
+      );
+    }
 
     if (!response.ok) {
+      const body = await response.text().catch(() => '');
       if (this.logger) {
-        const body = await response.text().catch(() => '');
+        const elapsed = Date.now() - startedAt;
         this.logger.error(
-          `TKS API ${response.status} ${response.statusText} ${url} (${elapsed}ms): ${body}`,
+          `TKS API !! ${url} ${response.status} ${response.statusText} (${elapsed}ms) body=${body}`,
         );
       }
       throw new TksApiError(
@@ -181,11 +193,27 @@ export class TksApiClient {
       );
     }
 
-    const data = (await response.json()) as T;
-    if (this.logger) {
-      this.logger.log(`TKS API ${url} (${elapsed}ms): ${JSON.stringify(data)}`);
+    // Читаем тело как текст, чтобы при невалидном JSON (например, HTML от WAF/Cloudflare)
+    // залогировать сырой ответ и бросить читаемую TksApiError вместо SyntaxError из глубин json().
+    const rawBody = await response.text();
+    const elapsed = Date.now() - startedAt;
+
+    try {
+      const data = JSON.parse(rawBody) as T;
+      this.logger?.log(`TKS API ok ${url} (${elapsed}ms) body=${rawBody}`);
+      return data;
+    } catch (err) {
+      if (this.logger) {
+        this.logger.error(
+          `TKS API !! ${url} invalid JSON (${elapsed}ms) content-type=${contentType} body=${rawBody}`,
+        );
+      }
+      throw new TksApiError(
+        `TKS API returned invalid JSON (content-type: ${contentType}): ${err instanceof Error ? err.message : String(err)}`,
+        response.status,
+        url,
+      );
     }
-    return data;
   }
 }
 

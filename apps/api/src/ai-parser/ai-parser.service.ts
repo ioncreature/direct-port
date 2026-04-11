@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { extractClaudeText, parseClaudeJson } from '../common/claude';
 import type { Dimension } from '../duty-interpreter/interfaces';
 import { SpreadsheetData, SpreadsheetReaderService } from './spreadsheet-reader.service';
 
@@ -147,10 +148,7 @@ export class AiParserService {
         { timeout: 45_000 },
       );
 
-      text = response.content
-        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-        .map((b) => b.text)
-        .join('');
+      text = extractClaudeText(response);
     } catch (err) {
       this.logger.error('Anthropic API error', err);
       throw new BadRequestException('Ошибка AI-сервиса. Попробуйте позже.');
@@ -239,10 +237,7 @@ ${JSON.stringify({ currency: result.currency, products: sampleProducts }, null, 
         { timeout: 15_000 },
       );
 
-      const text = response.content
-        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-        .map((b) => b.text)
-        .join('');
+      const text = extractClaudeText(response);
 
       const parsed = this.parseJson(text) as Record<string, unknown>;
       return {
@@ -301,12 +296,8 @@ ${tsv}
   }
 
   private parseJson(text: string): unknown {
-    let cleaned = text.trim();
-    if (cleaned.startsWith('```')) {
-      cleaned = cleaned.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
-    }
     try {
-      return JSON.parse(cleaned);
+      return parseClaudeJson(text);
     } catch {
       throw new BadRequestException('AI вернул невалидный JSON');
     }

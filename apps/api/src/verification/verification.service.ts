@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { TksApiClient } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { ClassifiedProduct } from '../classifier/classifier.service';
+import { extractClaudeText, parseClaudeJson } from '../common/claude';
 
 export interface VerifiedProduct extends ClassifiedProduct {
   /** Claude подтвердил код */
@@ -98,6 +99,7 @@ ${JSON.stringify(items, null, 2)}
 Если proposedCode пустой (товар не найден) — предложи свой вариант в suggestedCode.
 Отвечай ТОЛЬКО JSON-массивом.`;
 
+    let text: string | undefined;
     try {
       const response = await this.anthropic!.messages.create({
         model: 'claude-sonnet-4-6',
@@ -106,18 +108,17 @@ ${JSON.stringify(items, null, 2)}
         messages: [{ role: 'user', content: userPrompt }],
       });
 
-      const text = response.content
-        .filter((b) => b.type === 'text')
-        .map((b) => b.text)
-        .join('');
+      text = extractClaudeText(response);
 
-      const parsed = JSON.parse(text);
+      const parsed = parseClaudeJson(text);
       if (!Array.isArray(parsed)) {
         throw new Error(`Expected JSON array from Claude, got: ${typeof parsed}`);
       }
       return this.applyResults(products, parsed as VerificationResult[]);
     } catch (err) {
-      this.logger.error('Claude verification failed', err);
+      this.logger.error(
+        `Claude verification failed: ${err instanceof Error ? err.message : String(err)}. Raw response: ${text ?? '(no response received)'}`,
+      );
       return products.map((p) => ({
         ...p,
         verified: false,

@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { TksApiClient, TnvedCode } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { extractClaudeText, parseClaudeJson } from '../common/claude';
 import type { VerifiedProduct } from '../verification/verification.service';
 import { DutyInterpretation, InterpretedProduct } from './interfaces';
 
@@ -158,17 +159,9 @@ ${JSON.stringify(codesData, null, 2)}
       { timeout: 30_000 },
     );
 
-    const text = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('');
+    const text = extractClaudeText(response);
 
-    let cleaned = text.trim();
-    if (cleaned.startsWith('```')) {
-      cleaned = cleaned.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
-    }
-
-    const parsed = JSON.parse(cleaned);
+    const parsed = parseClaudeJson(text);
     if (!Array.isArray(parsed)) {
       throw new Error('Expected JSON array from Claude');
     }
