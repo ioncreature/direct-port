@@ -38,6 +38,7 @@ ingress:
   className: nginx
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: '15m'
   hosts:
     admin:
       host: coreimport-admin.lab42-stg.work

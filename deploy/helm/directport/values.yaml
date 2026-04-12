@@ -68,7 +68,8 @@ tgBot:
 ingress:
   enabled: true
   className: nginx
-  annotations: {}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: '15m'
   hosts:
     admin:
       host: admin.directport.local

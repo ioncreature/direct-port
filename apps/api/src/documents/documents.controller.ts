@@ -27,7 +27,7 @@ import { UploadDocumentDto } from './dto/upload-document.dto';
 import { ExcelExportService } from './excel-export.service';
 
 const SPREADSHEET_UPLOAD: MulterOptions = {
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const ext = file.originalname.split('.').pop()?.toLowerCase();
     if (ext === 'xlsx' || ext === 'csv') cb(null, true);
