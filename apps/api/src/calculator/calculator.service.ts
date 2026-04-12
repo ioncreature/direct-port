@@ -70,7 +70,9 @@ const CONFIDENCE_THRESHOLD = 0.7;
  */
 export function normalizePer(raw: string | null | undefined): string {
   if (!raw) return '';
-  const u = raw.toLowerCase().trim().replace(/[.\s]/g, '');
+  let u = raw.toLowerCase().trim().replace(/[.\s]/g, '');
+  const slash = u.indexOf('/');
+  if (slash >= 0) u = u.substring(slash + 1);
   if (u === 'kg' || u === 'кг') return 'kg';
   if (u === 'g' || u === 'г' || u === 'gram' || u === 'грамм') return 'g';
   if (u === 't' || u === 'т' || u === 'ton' || u === 'тонна') return 't';

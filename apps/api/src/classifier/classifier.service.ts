@@ -8,6 +8,7 @@ import {
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
 import { cachedSystemPrompt, extractClaudeText, parseClaudeJson } from '../common/claude';
+import { normalizeImpediUnit } from '../common/normalize-impedi';
 import { getStaticNoteTranslation } from '../common/note-translations';
 import type { ProductNote } from '../common/product-notes';
 import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, tokenUsageFromResponse } from '../common/token-usage';
@@ -439,7 +440,7 @@ ${commentInstruction}
         dutyRate: rates.IMP ?? 0,
         dutySign: rates.IMPSIGN ?? null,
         dutyMin: rates.IMP2 ?? null,
-        dutyMinUnit: rates.IMPEDI2 ?? null,
+        dutyMinUnit: normalizeImpediUnit(rates.IMPEDI2),
         vatRate: rates.NDS ?? 20,
         exciseRate: rates.AKC ?? 0,
         matchConfidence: confidence,

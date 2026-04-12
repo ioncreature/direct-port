@@ -142,7 +142,7 @@ function CodeDetailCard({ detail }: { detail: TnVedCodeDetail }) {
       }}
     >
       <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 12 }}>
-        <code style={{ fontSize: 18, fontWeight: 600 }}>{formatCode(detail.code)}</code>
+        <code style={{ fontSize: 18, fontWeight: 600, whiteSpace: 'nowrap' }}>{formatCode(detail.code)}</code>
         <CopyButton text={detail.code} />
         <span style={{ fontSize: 15 }}>{detail.description}</span>
       </div>
@@ -335,6 +335,7 @@ function ResultsTable({
                   color: '#2563eb',
                   textDecoration: 'underline',
                   textDecorationColor: '#93c5fd',
+                  whiteSpace: 'nowrap',
                 }}
               >
                 {formatCode(item.code)}

@@ -4,6 +4,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { extractClaudeText } from '../common/claude';
+import { normalizeImpediUnit } from '../common/normalize-impedi';
 import { TnVedCode } from '../database/entities/tn-ved-code.entity';
 
 export interface TnVedRateInfo {
@@ -232,7 +233,7 @@ export class TnVedService {
       dutyRate: rates.IMP ?? 0,
       dutySign: rates.IMPSIGN ?? null,
       dutyMin: rates.IMP2 ?? null,
-      dutyMinUnit: rates.IMPEDI2 ?? null,
+      dutyMinUnit: normalizeImpediUnit(rates.IMPEDI2),
       vatRate: rates.NDS ?? 20,
       exciseRate: rates.AKC ?? 0,
     };
