@@ -1,9 +1,18 @@
 'use client';
 
 import api from '@/lib/api';
-import { calcAiCost, calcAiCostFromMap, fmtCost, fmtDateTime, fmtTokens, modelLabel, totalTokensFromMap } from '@/lib/format';
+import {
+  calcAiCostFromMap,
+  calcAiCostFromStages,
+  fmtCost,
+  fmtDateTime,
+  fmtTokens,
+  modelLabel,
+  stageLabel,
+  totalTokensFromStages,
+} from '@/lib/format';
 import { th, td, btnOutline } from '@/lib/table-styles';
-import type { TokenStats, TokenStatsPeriod } from '@/lib/types';
+import type { TokenStats, TokenStatsPeriod, TokenUsageByStage } from '@/lib/types';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -100,8 +109,10 @@ export default function AiCostsPage() {
                   </tr>
                 )}
                 {stats.byUser.map((user, i) => {
-                  const cost = calcAiCost(user.inputTokens, user.outputTokens);
-                  const totalTokens = user.inputTokens + user.outputTokens;
+                  const cost = calcAiCostFromMap(user.models);
+                  const totalTokens = Object.values(user.models).reduce(
+                    (s, u) => s + u.inputTokens + u.outputTokens, 0,
+                  );
                   return (
                     <tr key={i}>
                       <td style={td}>
@@ -141,36 +152,23 @@ export default function AiCostsPage() {
                   </tr>
                 )}
                 {stats.recentDocuments.map((doc) => {
-                  const cost = calcAiCostFromMap(doc.tokenUsage);
-                  const totalTokens = totalTokensFromMap(doc.tokenUsage);
+                  const cost = calcAiCostFromStages(doc.tokenUsage);
+                  const totalTokens = totalTokensFromStages(doc.tokenUsage);
                   return (
                     <tr key={doc.id}>
                       <td style={td}>
                         <Link href={`/documents/${doc.id}`} style={{ textDecoration: 'none' }}>
-                          <span
-                            style={{
-                              display: 'inline-block',
-                              maxWidth: 180,
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                              verticalAlign: 'bottom',
-                            }}
-                          >
+                          <span style={{ display: 'inline-block', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'bottom' }}>
                             {doc.originalFileName}
                           </span>
                         </Link>
                         {doc.telegramUsername && (
-                          <span style={{ color: '#888', fontSize: 12, marginLeft: 4 }}>
-                            @{doc.telegramUsername}
-                          </span>
+                          <span style={{ color: '#888', fontSize: 12, marginLeft: 4 }}>@{doc.telegramUsername}</span>
                         )}
                       </td>
                       <td style={{ ...td, textAlign: 'right' }}>{fmtTokens(totalTokens)}</td>
                       <td style={{ ...td, textAlign: 'right', fontWeight: 600 }}>{fmtCost(cost)}</td>
-                      <td style={{ ...td, fontSize: 13, color: '#666' }}>
-                        {fmtDateTime(doc.createdAt)}
-                      </td>
+                      <td style={{ ...td, fontSize: 13, color: '#666' }}>{fmtDateTime(doc.createdAt)}</td>
                     </tr>
                   );
                 })}
@@ -195,9 +193,7 @@ function PeriodCard({ label, period }: { label: string; period: TokenStatsPeriod
     <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 20 }}>
       <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 28, fontWeight: 700 }}>{fmtCost(cost)}</div>
-      <div style={{ fontSize: 13, color: '#888', marginTop: 8 }}>
-        {period.documentCount} документов
-      </div>
+      <div style={{ fontSize: 13, color: '#888', marginTop: 8 }}>{period.documentCount} документов</div>
       {models.map(([model, usage]) => (
         <div key={model} style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>
           {modelLabel(model)}: {fmtTokens(usage.inputTokens)} in / {fmtTokens(usage.outputTokens)} out

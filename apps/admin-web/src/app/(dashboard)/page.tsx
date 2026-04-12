@@ -6,7 +6,7 @@ import { useUsers } from '@/hooks/use-users';
 import api from '@/lib/api';
 import { statusColors, statusLabels } from '@/lib/documents';
 import { calcAiCostFromMap, fmtCost } from '@/lib/format';
-import type { DocumentStatus, TokenStats } from '@/lib/types';
+import type { DocumentStatus, TokenStatsPeriod } from '@/lib/types';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
@@ -17,8 +17,8 @@ export default function DashboardPage() {
   const [aiCost, setAiCost] = useState<number | null>(null);
 
   useEffect(() => {
-    api.get<TokenStats>('/documents/token-stats').then(({ data }) => {
-      setAiCost(calcAiCostFromMap(data.month.models));
+    api.get<TokenStatsPeriod>('/documents/token-stats/monthly').then(({ data }) => {
+      setAiCost(calcAiCostFromMap(data.models));
     }).catch(() => {});
   }, []);
 

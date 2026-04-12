@@ -1,5 +1,8 @@
-/** Per-model token usage: { "claude-sonnet-4-6": { inputTokens: 500, outputTokens: 200 }, ... } */
+/** Per-model token counts */
 export type TokenUsageMap = Record<string, { inputTokens: number; outputTokens: number }>;
+
+/** Per-stage, per-model token counts stored on Document */
+export type TokenUsageByStage = Record<string, TokenUsageMap>;
 
 export function emptyTokenUsageMap(): TokenUsageMap {
   return {};
@@ -13,7 +16,7 @@ export function tokenUsageFromResponse(
   return { [model]: { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens } };
 }
 
-/** Merge two maps, summing tokens per model */
+/** Merge two per-model maps, summing tokens per model */
 export function mergeTokenUsage(a: TokenUsageMap, b: TokenUsageMap): TokenUsageMap {
   const result = { ...a };
   for (const [model, usage] of Object.entries(b)) {
@@ -28,4 +31,13 @@ export function mergeTokenUsage(a: TokenUsageMap, b: TokenUsageMap): TokenUsageM
     }
   }
   return result;
+}
+
+/** Add per-model usage to a specific stage in the by-stage map */
+export function addStageUsage(
+  map: TokenUsageByStage,
+  stage: string,
+  usage: TokenUsageMap,
+): TokenUsageByStage {
+  return { ...map, [stage]: mergeTokenUsage(map[stage] ?? {}, usage) };
 }

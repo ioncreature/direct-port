@@ -125,12 +125,13 @@ export interface Document {
   parsedData: ParsedDataRow[] | null;
   resultData: DocumentResultRow[] | null;
   errorMessage: string | null;
-  tokenUsage: TokenUsageMap | null;
+  tokenUsage: TokenUsageByStage | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export type TokenUsageMap = Record<string, { inputTokens: number; outputTokens: number }>;
+export type TokenUsageByStage = Record<string, TokenUsageMap>;
 
 export interface TokenStatsPeriod {
   models: TokenUsageMap;
@@ -141,15 +142,14 @@ export interface TokenStatsUser {
   telegramUserId: string | null;
   username: string | null;
   firstName: string | null;
-  inputTokens: number;
-  outputTokens: number;
+  models: TokenUsageMap;
   documentCount: number;
 }
 
 export interface TokenStatsDocument {
   id: string;
   originalFileName: string;
-  tokenUsage: TokenUsageMap | null;
+  tokenUsage: TokenUsageByStage | null;
   createdAt: string;
   telegramUsername: string | null;
 }

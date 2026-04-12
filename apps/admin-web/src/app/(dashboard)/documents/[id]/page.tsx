@@ -3,7 +3,7 @@
 import { InfoCard } from '@/components/info-card';
 import { useDocument } from '@/hooks/use-document';
 import { downloadDocument, statusColors, statusLabels } from '@/lib/documents';
-import { fmt } from '@/lib/format';
+import { calcAiCostFromMap, calcAiCostFromStages, fmt, fmtCost, fmtTokens, modelLabel, stageLabel } from '@/lib/format';
 import { btnOutline } from '@/lib/table-styles';
 import { getDocumentUploaderName } from '@/lib/telegram';
 import type { DocumentResultRow, ParsedDataRow } from '@/lib/types';
@@ -290,6 +290,32 @@ export default function DocumentDetailPage() {
         <InfoCard label="Создан" value={new Date(doc.createdAt).toLocaleString('ru')} />
         <InfoCard label="Обновлён" value={new Date(doc.updatedAt).toLocaleString('ru')} />
       </div>
+
+      {/* Token usage */}
+      {doc.tokenUsage && Object.keys(doc.tokenUsage).length > 0 && (
+        <div style={{ marginBottom: 24, border: '1px solid #ddd', borderRadius: 8, padding: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h3 style={{ margin: 0 }}>AI-расходы</h3>
+            <span style={{ fontSize: 20, fontWeight: 700 }}>{fmtCost(calcAiCostFromStages(doc.tokenUsage))}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            {Object.entries(doc.tokenUsage).map(([stage, models]) => {
+              const stageCost = calcAiCostFromMap(models);
+              return (
+                <div key={stage} style={{ flex: '1 1 180px', padding: 12, background: '#f9f9f9', borderRadius: 6 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{stageLabel(stage)}</div>
+                  <div style={{ fontSize: 15, fontWeight: 700 }}>{fmtCost(stageCost)}</div>
+                  {Object.entries(models).map(([model, usage]) => (
+                    <div key={model} style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+                      {modelLabel(model)}: {fmtTokens(usage.inputTokens)} in / {fmtTokens(usage.outputTokens)} out
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {doc.errorMessage && (
         <div

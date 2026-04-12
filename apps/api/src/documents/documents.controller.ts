@@ -97,6 +97,12 @@ export class DocumentsController {
     return this.service.getTokenStats(model || undefined);
   }
 
+  @Get('token-stats/monthly')
+  @Roles(UserRole.ADMIN)
+  getMonthlyTotal() {
+    return this.service.getMonthlyTotal();
+  }
+
   @Patch(':id/review')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   review(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReviewDocumentDto) {

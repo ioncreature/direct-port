@@ -1,4 +1,4 @@
-import type { TokenUsageMap } from './types';
+import type { TokenUsageByStage, TokenUsageMap } from './types';
 
 export function fmt(n: number): string {
   return n.toLocaleString('ru', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -11,8 +11,18 @@ export const MODEL_CONFIG: Record<string, { label: string; input: number; output
 };
 const DEFAULT_PRICING = { input: 3, output: 15 };
 
+export const STAGE_LABELS: Record<string, string> = {
+  parser: 'Парсинг',
+  classifier: 'Классификация',
+  interpreter: 'Интерпретация',
+};
+
 export function modelLabel(model: string): string {
   return MODEL_CONFIG[model]?.label ?? model;
+}
+
+export function stageLabel(stage: string): string {
+  return STAGE_LABELS[stage] ?? stage;
 }
 
 /** Calculate cost from a per-model token usage map */
@@ -26,15 +36,26 @@ export function calcAiCostFromMap(map: TokenUsageMap | null | undefined): number
   return cost;
 }
 
-/** Calculate cost from flat input/output tokens (byUser stats) */
-export function calcAiCost(inputTokens: number, outputTokens: number): number {
-  return (inputTokens * DEFAULT_PRICING.input + outputTokens * DEFAULT_PRICING.output) / 1_000_000;
+/** Calculate cost from a by-stage map (sum across all stages) */
+export function calcAiCostFromStages(map: TokenUsageByStage | null | undefined): number {
+  if (!map) return 0;
+  let cost = 0;
+  for (const stageMap of Object.values(map)) {
+    cost += calcAiCostFromMap(stageMap);
+  }
+  return cost;
 }
 
-/** Sum all tokens across models */
-export function totalTokensFromMap(map: TokenUsageMap | null | undefined): number {
+/** Sum all tokens across stages and models */
+export function totalTokensFromStages(map: TokenUsageByStage | null | undefined): number {
   if (!map) return 0;
-  return Object.values(map).reduce((sum, u) => sum + u.inputTokens + u.outputTokens, 0);
+  let total = 0;
+  for (const stageMap of Object.values(map)) {
+    for (const usage of Object.values(stageMap)) {
+      total += usage.inputTokens + usage.outputTokens;
+    }
+  }
+  return total;
 }
 
 export function fmtCost(usd: number): string {

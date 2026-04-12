@@ -7,7 +7,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type { TokenUsageMap } from '../../common/token-usage';
+import type { TokenUsageByStage } from '../../common/token-usage';
 import { TelegramUser } from './telegram-user.entity';
 import { User } from './user.entity';
 
@@ -66,7 +66,7 @@ export class Document {
   rejectionReasons: string[] | null;
 
   @Column({ type: 'jsonb', name: 'token_usage', nullable: true })
-  tokenUsage: TokenUsageMap | null;
+  tokenUsage: TokenUsageByStage | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
