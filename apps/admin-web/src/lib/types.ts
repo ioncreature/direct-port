@@ -35,6 +35,40 @@ export interface TnVedCode {
   level: number;
 }
 
+export interface TnVedRateInfo {
+  dutyRate: number;
+  dutySign: string | null;
+  dutyMin: number | null;
+  dutyMinUnit: string | null;
+  vatRate: number;
+  exciseRate: number;
+}
+
+export interface TnVedSearchResultItem {
+  code: string;
+  description: string;
+  count: number;
+  rates: TnVedRateInfo;
+}
+
+export interface TnVedCodeDetail {
+  code: string;
+  description: string;
+  rates: TnVedRateInfo;
+  dateBegin?: string;
+  dateEnd?: string;
+  notes?: string;
+}
+
+export interface TnVedSearchResponse {
+  mode: 'code_lookup' | 'text_search';
+  query: string;
+  translatedQuery?: string;
+  codeDetail?: TnVedCodeDetail;
+  results: TnVedSearchResultItem[];
+  totalFound: number;
+}
+
 export type DocumentStatus =
   | 'parsing'
   | 'pending'

@@ -7,7 +7,7 @@ export class TnVedController {
 
   @Get()
   search(@Query('search') search: string) {
-    return this.tnVedService.search(search || '');
+    return this.tnVedService.searchTks(search || '');
   }
 
   @Get(':code')

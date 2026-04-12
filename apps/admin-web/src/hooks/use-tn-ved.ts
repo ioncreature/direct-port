@@ -1,19 +1,21 @@
 'use client';
 
 import api from '@/lib/api';
-import type { TnVedCode } from '@/lib/types';
+import type { TnVedSearchResponse } from '@/lib/types';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 export function useTnVed() {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<TnVedCode[]>([]);
+  const [result, setResult] = useState<TnVedSearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [debouncing, setDebouncing] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const search = useCallback(async (q: string) => {
     abortRef.current?.abort();
+    setDebouncing(false);
     if (!q.trim()) {
-      setResults([]);
+      setResult(null);
       setLoading(false);
       return;
     }
@@ -21,20 +23,34 @@ export function useTnVed() {
     abortRef.current = controller;
     setLoading(true);
     try {
-      const { data } = await api.get<TnVedCode[]>('/tn-ved', {
+      const { data } = await api.get<TnVedSearchResponse>('/tn-ved', {
         params: { search: q.trim() },
         signal: controller.signal,
       });
-      setResults(data);
+      setResult(data);
     } catch (err: unknown) {
-      if (err instanceof Error && err.name !== 'CanceledError') setResults([]);
+      if (err instanceof Error && err.name !== 'CanceledError') setResult(null);
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
   }, []);
 
+  const searchImmediate = useCallback(
+    (q: string) => {
+      setQuery(q);
+      search(q);
+    },
+    [search],
+  );
+
   useEffect(() => {
-    const timer = setTimeout(() => search(query), 300);
+    if (!query.trim()) {
+      setDebouncing(false);
+      setResult(null);
+      return;
+    }
+    setDebouncing(true);
+    const timer = setTimeout(() => search(query), 1500);
     return () => clearTimeout(timer);
   }, [query, search]);
 
@@ -44,5 +60,5 @@ export function useTnVed() {
     };
   }, []);
 
-  return { query, setQuery, results, loading };
+  return { query, setQuery, result, loading, debouncing, searchImmediate };
 }
