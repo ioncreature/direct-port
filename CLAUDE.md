@@ -37,7 +37,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 - Глобальные guards: JwtAuthGuard (пропускает X-Internal-Key), RolesGuard
 - Модули:
   - Auth, Users — авторизация и управление пользователями
-  - TnVed — поиск кодов ТН ВЭД в БД
+  - TnVed — справочник ТН ВЭД: поиск по TKS API (searchGoodsGrouped + getTnvedCode), перевод запросов через Claude, обогащение ставками
   - TelegramUsers — регистрация пользователей Telegram, детальный просмотр по UUID, PATCH :telegramId/language
   - Documents — загрузка (Telegram + админка), обработка, переобработка, скачивание
   - AiParser — AI-парсинг таблиц (Claude): определение валюты, перевод, извлечение данных. Retry + валидация
@@ -47,10 +47,10 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
   - CalculationConfig — конфигурируемая формула комиссии (CRUD)
   - CalculationLogs — аудит-лог расчётов (запись после обработки, просмотр в админке)
   - Currency — курсы валют ЦБ РФ, конвертация в RUB
-  - Tks — shared-модуль TksApiClient
+  - Tks — shared-модуль TksApiClient + PgTksCacheStore (PostgreSQL-кэш TKS API)
 - Common: PaginationQueryDto, PaginatedResponse, ErrorCode (коды ошибок для i18n), ProductNote (messageLocalized), note-translations — shared инфраструктура
 - Очереди BullMQ: document-parsing (AI-парсинг), document-processing (классификация/расчёт), document-notifications (уведомления в Telegram)
-- Entities: User, TnVedCode, RefreshToken, CalculationLog, TelegramUser (+ language), Document (+ language), CalculationConfig
+- Entities: User, TnVedCode, RefreshToken, CalculationLog, TelegramUser (+ language), Document (+ language), CalculationConfig, TksCache
 - Миграции и seed через TypeORM CLI (tsx)
 
 ### apps/admin-web — Админ-панель (Next.js)
@@ -61,7 +61,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 - Документы: список с пагинацией/фильтром по статусу/сортировкой, загрузка .xlsx/.csv, детали с таблицей результатов, скачивание Excel, переобработка failed-документов, ручная проверка requires_review (редактирование parsedData, подтверждение/отклонение)
 - Telegram-пользователи: список с пагинацией/сортировкой, детальная страница с документами пользователя
 - Логи расчётов: таблица с пагинацией/сортировкой, ссылки на документы
-- Справочник ТН ВЭД: поиск кодов с debounce
+- Справочник ТН ВЭД: поиск по TKS API (текст/код), перевод запросов (Claude Haiku), кликабельные коды, копирование кода, калькулятор пошлин с учётом единиц измерения (кг/л/м²/м³/шт)
 - Настройки: формула комиссии за доставку (pricePercent, weightRate, fixedFee)
 - Shared: InfoCard, table-styles, format (fmt), хуки с серверной пагинацией
 - API-клиент с автообновлением токенов
@@ -85,7 +85,8 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 - Поиск товаров: searchGoods, searchGoodsGrouped, searchGoodsByCode
 - Справочник ТН ВЭД: getTnvedCode (ставки IMP/NDS/AKC), getTnvedCodeList
 - Справочники: страны (OKSMT), экономические зоны (EK AR)
-- In-memory кэш: TTL 1 час, макс. 1000 записей, дедупликация запросов
+- In-memory кэш (dev) или PostgreSQL кэш (prod): дедупликация запросов, stale fallback при недоступности API
+- TksCacheStore интерфейс: get/set/delete/clear + опциональный getStale (fallback)
 
 ## Pipeline обработки документа
 
@@ -233,11 +234,28 @@ Docker compose (порты выбраны чтобы не конфликтова
 - [x] Перенос AI-парсинга в BullMQ: очередь document-parsing, воркер DocumentsParsingProcessor, fileBuffer в BYTEA, статус PARSING
 - [x] Интерфейс ручной проверки: PATCH :id/review (редактирование parsedData), POST :id/reject (отклонение с причиной), inline-таблица на странице деталей документа
 
-## Три точки применения AI (Claude)
+## Кэширование TKS API
+
+Результаты TKS API кэшируются в PostgreSQL (таблица `tks_cache`, entity `TksCache`). Реализация: `PgTksCacheStore` (apps/api/src/tks/pg-tks-cache.store.ts).
+
+**Категории и TTL** (определяются по паттерну ключа):
+- `goods` — результаты searchGoodsGrouped, TTL 30 дней (`TKS_CACHE_TTL_GOODS_MS`)
+- `tnved` — коды getTnvedCode, TTL 7 дней (`TKS_CACHE_TTL_TNVED_MS`)
+- `reference` — справочники (страны, эк. зоны), TTL 7 дней (`TKS_CACHE_TTL_REFERENCE_MS`)
+- `other` — прочее, TTL 24 часа (`TKS_CACHE_TTL_OTHER_MS`)
+
+**Stale fallback:** При недоступности TKS API клиент вызывает `getStale()` — возвращает данные из БД независимо от возраста. Оптимизация: `get()` сохраняет stale-значение в памяти, `getStale()` использует его без повторного запроса к БД.
+
+**Очистка:** Вероятностная (1% при каждом `set()`), удаляет записи старше 3× максимального TTL (90 дней).
+
+**Свежесть:** Определяется динамически из `fetched_at + categoryTtl`, без колонки `expires_at`. Позволяет менять TTL без обновления строк.
+
+## Четыре точки применения AI (Claude)
 
 1. **Парсинг документов** (AiParserService) — анализ структуры таблицы, определение валюты, перевод наименований, извлечение данных. Детерминистическая + AI валидация, retry до 2 попыток
 2. **Классификация+верификация кодов ТН ВЭД** (ClassifierService) — объединённый classify+verify в одном запросе Claude. При language≠ru промпт запрашивает comment_localized для двуязычных замечаний
 3. **Интерпретация правил расчёта пошлин** (DutyInterpreterService) — анализ текстовых правил из справочника ТН ВЭД: комбинированные ставки, специфические пошлины (EUR/кг, EUR/л), акцизы. При language≠ru промпт запрашивает reasoning_localized
+4. **Перевод поисковых запросов** (TnVedService) — перевод запросов в справочнике ТН ВЭД с английского/китайского на русский для поиска в TKS API. Claude Haiku, max_tokens: 100, timeout: 10с. Graceful degradation: без API-ключа поиск работает без перевода
 
 ## Локализация бота (i18n)
 
