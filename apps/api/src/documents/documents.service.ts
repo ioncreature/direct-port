@@ -174,24 +174,26 @@ export class DocumentsService {
         this.tokenDocCount(startOfMonth, model),
       ]);
 
-    const byUserQb = this.repo.manager
-      .createQueryBuilder()
-      .select('doc.telegram_user_id', 'telegramUserId')
-      .addSelect('tu.username', 'username')
-      .addSelect('tu.first_name', 'firstName')
-      .addSelect('model.key', 'model')
-      .addSelect("COALESCE(SUM((model.value->>'inputTokens')::int), 0)", 'inputTokens')
-      .addSelect("COALESCE(SUM((model.value->>'outputTokens')::int), 0)", 'outputTokens')
-      .addSelect('COUNT(DISTINCT doc.id)', 'documentCount')
-      .from('documents', 'doc')
-      .innerJoin('jsonb_each(doc.token_usage)', 'stage', '1=1')
-      .innerJoin('jsonb_each(stage.value)', 'model', '1=1')
-      .leftJoin('telegram_users', 'tu', 'tu.id = doc.telegram_user_id')
-      .groupBy('doc.telegram_user_id')
-      .addGroupBy('tu.username')
-      .addGroupBy('tu.first_name')
-      .addGroupBy('model.key');
-    if (model) byUserQb.where('model.key = :model', { model });
+    let byUserQuery = `
+      SELECT doc.telegram_user_id AS "telegramUserId",
+        tu.username AS "username",
+        tu.first_name AS "firstName",
+        model.key AS "model",
+        COALESCE(SUM((model.value->>'inputTokens')::int), 0) AS "inputTokens",
+        COALESCE(SUM((model.value->>'outputTokens')::int), 0) AS "outputTokens",
+        COALESCE(SUM((model.value->>'cacheCreationTokens')::int), 0) AS "cacheCreationTokens",
+        COALESCE(SUM((model.value->>'cacheReadTokens')::int), 0) AS "cacheReadTokens",
+        COUNT(DISTINCT doc.id) AS "documentCount"
+      FROM documents doc
+      CROSS JOIN LATERAL jsonb_each(doc.token_usage) stage
+      CROSS JOIN LATERAL jsonb_each(stage.value) model
+      LEFT JOIN telegram_users tu ON tu.id = doc.telegram_user_id`;
+    const byUserParams: unknown[] = [];
+    if (model) {
+      byUserParams.push(model);
+      byUserQuery += ` WHERE model.key = $1`;
+    }
+    byUserQuery += ` GROUP BY doc.telegram_user_id, tu.username, tu.first_name, model.key`;
 
     const recentDocsQb = this.repo
       .createQueryBuilder('doc')
@@ -209,17 +211,17 @@ export class DocumentsService {
     }
 
     const [byUser, recentDocs, availableModels] = await Promise.all([
-      byUserQb.getRawMany(),
+      this.repo.manager.query(byUserQuery, byUserParams),
       recentDocsQb.getMany(),
       model
         ? Promise.resolve([model])
         : this.repo.manager
-            .createQueryBuilder()
-            .select('DISTINCT model.key', 'model')
-            .from('documents', 'doc')
-            .innerJoin('jsonb_each(doc.token_usage)', 'stage', '1=1')
-            .innerJoin('jsonb_each(stage.value)', 'model', '1=1')
-            .getRawMany()
+            .query(`
+              SELECT DISTINCT model.key AS "model"
+              FROM documents doc,
+                jsonb_each(doc.token_usage) stage,
+                jsonb_each(stage.value) model
+            `)
             .then((rows: Array<{ model: string }>) => rows.map((r) => r.model).sort()),
     ]);
 
@@ -267,18 +269,28 @@ export class DocumentsService {
 
   /** Aggregate per-model tokens from two-level JSONB: { stage: { model: { in, out } } } */
   private tokensByModel(since?: Date, model?: string) {
-    const qb = this.repo.manager
-      .createQueryBuilder()
-      .select('model.key', 'model')
-      .addSelect("COALESCE(SUM((model.value->>'inputTokens')::int), 0)", 'inputTokens')
-      .addSelect("COALESCE(SUM((model.value->>'outputTokens')::int), 0)", 'outputTokens')
-      .from('documents', 'doc')
-      .innerJoin('jsonb_each(doc.token_usage)', 'stage', '1=1')
-      .innerJoin('jsonb_each(stage.value)', 'model', '1=1')
-      .groupBy('model.key');
-    if (since) qb.where('doc.created_at >= :since', { since });
-    if (model) qb.andWhere('model.key = :model', { model });
-    return qb.getRawMany();
+    let query = `
+      SELECT model.key AS "model",
+        COALESCE(SUM((model.value->>'inputTokens')::int), 0) AS "inputTokens",
+        COALESCE(SUM((model.value->>'outputTokens')::int), 0) AS "outputTokens",
+        COALESCE(SUM((model.value->>'cacheCreationTokens')::int), 0) AS "cacheCreationTokens",
+        COALESCE(SUM((model.value->>'cacheReadTokens')::int), 0) AS "cacheReadTokens"
+      FROM documents doc,
+        jsonb_each(doc.token_usage) stage,
+        jsonb_each(stage.value) model`;
+    const params: unknown[] = [];
+    const conditions: string[] = [];
+    if (since) {
+      params.push(since);
+      conditions.push(`doc.created_at >= $${params.length}`);
+    }
+    if (model) {
+      params.push(model);
+      conditions.push(`model.key = $${params.length}`);
+    }
+    if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
+    query += ' GROUP BY model.key';
+    return this.repo.manager.query(query, params);
   }
 
   private tokenDocCount(since?: Date, model?: string) {
@@ -296,12 +308,14 @@ export class DocumentsService {
     return qb.getRawOne();
   }
 
-  private toModelsMap(rows: Array<{ model: string; inputTokens: string; outputTokens: string }>) {
-    const map: Record<string, { inputTokens: number; outputTokens: number }> = {};
+  private toModelsMap(rows: Array<{ model: string; inputTokens: string; outputTokens: string; cacheCreationTokens?: string; cacheReadTokens?: string }>) {
+    const map: Record<string, { inputTokens: number; outputTokens: number; cacheCreationTokens: number; cacheReadTokens: number }> = {};
     for (const row of rows) {
       map[row.model] = {
         inputTokens: Number(row.inputTokens) || 0,
         outputTokens: Number(row.outputTokens) || 0,
+        cacheCreationTokens: Number(row.cacheCreationTokens) || 0,
+        cacheReadTokens: Number(row.cacheReadTokens) || 0,
       };
     }
     return map;
@@ -314,7 +328,7 @@ export class DocumentsService {
     telegramUserId: string | null;
     username: string | null;
     firstName: string | null;
-    models: Record<string, { inputTokens: number; outputTokens: number }>;
+    models: Record<string, { inputTokens: number; outputTokens: number; cacheCreationTokens: number; cacheReadTokens: number }>;
     documentCount: number;
   }> {
     const map = new Map<
@@ -323,7 +337,7 @@ export class DocumentsService {
         telegramUserId: string | null;
         username: string | null;
         firstName: string | null;
-        models: Record<string, { inputTokens: number; outputTokens: number }>;
+        models: Record<string, { inputTokens: number; outputTokens: number; cacheCreationTokens: number; cacheReadTokens: number }>;
         documentCount: number;
       }
     >();
@@ -344,6 +358,8 @@ export class DocumentsService {
       entry.models[row.model] = {
         inputTokens: Number(row.inputTokens) || 0,
         outputTokens: Number(row.outputTokens) || 0,
+        cacheCreationTokens: Number(row.cacheCreationTokens) || 0,
+        cacheReadTokens: Number(row.cacheReadTokens) || 0,
       };
     }
 
