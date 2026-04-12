@@ -1,10 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { TksApiClient, TnvedCode } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { AiConfigService } from '../ai-config/ai-config.service';
 import { extractClaudeText, parseClaudeJson } from '../common/claude';
 import { getStaticNoteTranslation } from '../common/note-translations';
 import type { ProductNote } from '../common/product-notes';
-import { type TokenUsage, addTokenUsage, emptyTokenUsage } from '../common/token-usage';
+import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, tokenUsageFromResponse } from '../common/token-usage';
 import type { VerifiedProduct } from '../classifier/classifier.service';
 import { DutyInterpretation, InterpretedProduct } from './interfaces';
 
@@ -38,12 +39,13 @@ export class DutyInterpreterService {
   constructor(
     @Optional() @Inject(Anthropic) private anthropic: Anthropic | null,
     private tksApi: TksApiClient,
+    private aiConfig: AiConfigService,
   ) {}
 
   async interpret(
     products: VerifiedProduct[],
     language?: string,
-  ): Promise<{ products: InterpretedProduct[]; tokenUsage: TokenUsage }> {
+  ): Promise<{ products: InterpretedProduct[]; tokenUsage: TokenUsageMap }> {
     if (!this.anthropic) {
       return { products: products.map((p) => {
         const extraNotes: ProductNote[] = [];
@@ -58,7 +60,7 @@ export class DutyInterpreterService {
           });
         }
         return { ...p, dutyInterpretation: null, notes: [...p.notes, ...extraNotes] };
-      }), tokenUsage: emptyTokenUsage() };
+      }), tokenUsage: emptyTokenUsageMap() };
     }
 
     // Group by unique TNVED code
@@ -102,7 +104,7 @@ export class DutyInterpreterService {
     );
 
     // Batch interpret via Claude
-    let totalUsage = emptyTokenUsage();
+    let totalUsage = emptyTokenUsageMap();
     const validCodes = codesToInterpret.filter((c) => tnvedData.has(c));
     for (let i = 0; i < validCodes.length; i += BATCH_SIZE) {
       const batch = validCodes.slice(i, i + BATCH_SIZE);
@@ -113,7 +115,7 @@ export class DutyInterpreterService {
 
       try {
         const { results, tokenUsage } = await this.interpretBatch(batchData, language);
-        totalUsage = addTokenUsage(totalUsage, tokenUsage);
+        totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
         for (const result of results) {
           interpretations.set(result.tnvedCode, result);
           this.cache.set(result.tnvedCode, {
@@ -190,7 +192,8 @@ export class DutyInterpreterService {
   private async interpretBatch(
     items: Array<{ code: string; tnved: TnvedCode }>,
     language?: string,
-  ): Promise<{ results: DutyInterpretation[]; tokenUsage: TokenUsage }> {
+  ): Promise<{ results: DutyInterpretation[]; tokenUsage: TokenUsageMap }> {
+    const model = await this.aiConfig.getInterpreterModel();
     const codesData = items.map((item) => ({
       code: item.code,
       kr_naim: item.tnved.KR_NAIM,
@@ -226,12 +229,7 @@ ${JSON.stringify(codesData, null, 2)}
 Отвечай ТОЛЬКО JSON-массивом.`;
 
     const response = await this.anthropic!.messages.create(
-      {
-        model: 'claude-sonnet-4-6',
-        max_tokens: 2048,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: userPrompt }],
-      },
+      { model, max_tokens: 2048, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: userPrompt }] },
       { timeout: 30_000 },
     );
 
@@ -244,10 +242,7 @@ ${JSON.stringify(codesData, null, 2)}
 
     return {
       results: parsed as DutyInterpretation[],
-      tokenUsage: {
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens,
-      },
+      tokenUsage: tokenUsageFromResponse(model, response.usage),
     };
   }
 }

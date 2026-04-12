@@ -1,11 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { AiConfigModule } from '../ai-config/ai-config.module';
 import { AiParserService } from './ai-parser.service';
 import { SpreadsheetReaderService } from './spreadsheet-reader.service';
 
 @Module({
-  imports: [ConfigModule],
+  imports: [ConfigModule, AiConfigModule],
   providers: [
     {
       provide: Anthropic,

@@ -7,6 +7,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import type { TokenUsageMap } from '../../common/token-usage';
 import { TelegramUser } from './telegram-user.entity';
 import { User } from './user.entity';
 
@@ -64,11 +65,8 @@ export class Document {
   @Column({ type: 'jsonb', name: 'rejection_reasons', nullable: true })
   rejectionReasons: string[] | null;
 
-  @Column({ type: 'int', name: 'input_tokens', default: 0 })
-  inputTokens: number;
-
-  @Column({ type: 'int', name: 'output_tokens', default: 0 })
-  outputTokens: number;
+  @Column({ type: 'jsonb', name: 'token_usage', nullable: true })
+  tokenUsage: TokenUsageMap | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

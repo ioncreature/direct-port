@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AiConfig } from './entities/ai-config.entity';
 import { CalculationConfig } from './entities/calculation-config.entity';
 import { CalculationLog } from './entities/calculation-log.entity';
 import { Document } from './entities/document.entity';
@@ -17,6 +18,7 @@ import { AddRequiresReviewStatus1775900000000 } from './migrations/1775900000000
 import { AddDocumentIdToCalculationLog1776000000000 } from './migrations/1776000000000-AddDocumentIdToCalculationLog';
 import { AddFileBufferAndParsingStatus1776100000000 } from './migrations/1776100000000-AddFileBufferAndParsingStatus';
 import { AddLanguageFields1776200000000 } from './migrations/1776200000000-AddLanguageFields';
+import { AddAiConfig1776400000000 } from './migrations/1776400000000-AddAiConfig';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -34,6 +36,7 @@ import { SeedService } from './seeds/seed.service';
           TelegramUser,
           Document,
           CalculationConfig,
+          AiConfig,
         ],
         synchronize: false,
         migrations: [
@@ -46,6 +49,7 @@ import { SeedService } from './seeds/seed.service';
           AddDocumentIdToCalculationLog1776000000000,
           AddFileBufferAndParsingStatus1776100000000,
           AddLanguageFields1776200000000,
+          AddAiConfig1776400000000,
         ],
         migrationsRun: true,
       }),

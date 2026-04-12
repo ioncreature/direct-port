@@ -3,14 +3,24 @@
 import { useDocuments } from '@/hooks/use-documents';
 import { useTelegramUsers } from '@/hooks/use-telegram-users';
 import { useUsers } from '@/hooks/use-users';
+import api from '@/lib/api';
 import { statusColors, statusLabels } from '@/lib/documents';
-import type { DocumentStatus } from '@/lib/types';
+import { calcAiCostFromMap, fmtCost } from '@/lib/format';
+import type { DocumentStatus, TokenStats } from '@/lib/types';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 
 export default function DashboardPage() {
   const { users, loading: usersLoading } = useUsers();
   const { documents, loading: docsLoading } = useDocuments();
   const { telegramUsers, loading: tgLoading } = useTelegramUsers();
+  const [aiCost, setAiCost] = useState<number | null>(null);
+
+  useEffect(() => {
+    api.get<TokenStats>('/documents/token-stats').then(({ data }) => {
+      setAiCost(calcAiCostFromMap(data.month.models));
+    }).catch(() => {});
+  }, []);
 
   const loading = usersLoading || docsLoading || tgLoading;
 
@@ -45,6 +55,12 @@ export default function DashboardPage() {
         <StatCard label="Документы" value={documents.length} href="/documents" />
         <StatCard label="Обработано" value={statusCounts['processed'] || 0} color="#16a34a" />
         <StatCard label="Ошибки" value={statusCounts['failed'] || 0} color="#dc2626" />
+        <StatCard
+          label="AI за месяц"
+          value={aiCost != null ? fmtCost(aiCost) : '...'}
+          href="/ai-costs"
+          color="#7c3aed"
+        />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
@@ -109,7 +125,7 @@ function StatCard({
   color,
 }: {
   label: string;
-  value: number;
+  value: number | string;
   href?: string;
   color?: string;
 }) {

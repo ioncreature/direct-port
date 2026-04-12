@@ -2,7 +2,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
-import { FindOptionsWhere, MoreThanOrEqual, Repository } from 'typeorm';
+import { FindOptionsWhere, Repository } from 'typeorm';
 import { ErrorCode } from '../common/error-codes';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
@@ -155,93 +155,121 @@ export class DocumentsService {
     return this.repo.save(doc);
   }
 
-  async getTokenStats(): Promise<{
-    total: { inputTokens: number; outputTokens: number; documentCount: number };
-    today: { inputTokens: number; outputTokens: number; documentCount: number };
-    week: { inputTokens: number; outputTokens: number; documentCount: number };
-    month: { inputTokens: number; outputTokens: number; documentCount: number };
-    byUser: Array<{
-      telegramUserId: string | null;
-      username: string | null;
-      firstName: string | null;
-      inputTokens: number;
-      outputTokens: number;
-      documentCount: number;
-    }>;
-    recentDocuments: Array<{
-      id: string;
-      originalFileName: string;
-      inputTokens: number;
-      outputTokens: number;
-      createdAt: Date;
-      telegramUsername: string | null;
-    }>;
-  }> {
+  async getTokenStats(model?: string) {
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const startOfWeek = new Date(startOfDay);
     startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay() + 1); // Monday
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const periodQuery = (since: Date) =>
-      this.repo
+    // Aggregate per-model tokens from JSONB via jsonb_each
+    const periodQuery = (since?: Date) => {
+      const qb = this.repo.manager
+        .createQueryBuilder()
+        .select('entry.key', 'model')
+        .addSelect("COALESCE(SUM((entry.value->>'inputTokens')::int), 0)", 'inputTokens')
+        .addSelect("COALESCE(SUM((entry.value->>'outputTokens')::int), 0)", 'outputTokens')
+        .from('documents', 'doc')
+        .innerJoin('jsonb_each(doc.token_usage)', 'entry', '1=1')
+        .groupBy('entry.key');
+      if (since) qb.where('doc.created_at >= :since', { since });
+      if (model) qb.andWhere('entry.key = :model', { model });
+      return qb.getRawMany();
+    };
+
+    const docCountQuery = (since?: Date) => {
+      const qb = this.repo
         .createQueryBuilder('doc')
-        .select('COALESCE(SUM(doc.input_tokens), 0)', 'inputTokens')
-        .addSelect('COALESCE(SUM(doc.output_tokens), 0)', 'outputTokens')
-        .addSelect('COUNT(CASE WHEN doc.input_tokens > 0 OR doc.output_tokens > 0 THEN 1 END)', 'documentCount')
-        .where('doc.created_at >= :since', { since })
-        .getRawOne();
+        .select('COUNT(*)', 'count')
+        .where(
+          model
+            ? 'doc.token_usage ? :model'
+            : 'doc.token_usage IS NOT NULL',
+          model ? { model } : {},
+        );
+      if (since) qb.andWhere('doc.created_at >= :since', { since });
+      return qb.getRawOne();
+    };
 
-    const [total, today, week, month] = await Promise.all([
-      this.repo
-        .createQueryBuilder('doc')
-        .select('COALESCE(SUM(doc.input_tokens), 0)', 'inputTokens')
-        .addSelect('COALESCE(SUM(doc.output_tokens), 0)', 'outputTokens')
-        .addSelect('COUNT(CASE WHEN doc.input_tokens > 0 OR doc.output_tokens > 0 THEN 1 END)', 'documentCount')
-        .getRawOne(),
-      periodQuery(startOfDay),
-      periodQuery(startOfWeek),
-      periodQuery(startOfMonth),
-    ]);
+    const [totalModels, todayModels, weekModels, monthModels, totalCount, todayCount, weekCount, monthCount] =
+      await Promise.all([
+        periodQuery(),
+        periodQuery(startOfDay),
+        periodQuery(startOfWeek),
+        periodQuery(startOfMonth),
+        docCountQuery(),
+        docCountQuery(startOfDay),
+        docCountQuery(startOfWeek),
+        docCountQuery(startOfMonth),
+      ]);
 
-    const parseRow = (row: Record<string, string>) => ({
-      inputTokens: Number(row.inputTokens) || 0,
-      outputTokens: Number(row.outputTokens) || 0,
-      documentCount: Number(row.documentCount) || 0,
-    });
+    type ModelRow = { model: string; inputTokens: string; outputTokens: string };
+    const toModelsMap = (rows: ModelRow[]) => {
+      const map: Record<string, { inputTokens: number; outputTokens: number }> = {};
+      for (const row of rows) {
+        map[row.model] = {
+          inputTokens: Number(row.inputTokens) || 0,
+          outputTokens: Number(row.outputTokens) || 0,
+        };
+      }
+      return map;
+    };
 
-    const byUser = await this.repo
-      .createQueryBuilder('doc')
+    const byUserQb = this.repo.manager
+      .createQueryBuilder()
       .select('doc.telegram_user_id', 'telegramUserId')
       .addSelect('tu.username', 'username')
       .addSelect('tu.first_name', 'firstName')
-      .addSelect('COALESCE(SUM(doc.input_tokens), 0)', 'inputTokens')
-      .addSelect('COALESCE(SUM(doc.output_tokens), 0)', 'outputTokens')
-      .addSelect('COUNT(*)', 'documentCount')
-      .leftJoin('doc.telegramUser', 'tu')
-      .where('doc.input_tokens > 0 OR doc.output_tokens > 0')
+      .addSelect("COALESCE(SUM((entry.value->>'inputTokens')::int), 0)", 'inputTokens')
+      .addSelect("COALESCE(SUM((entry.value->>'outputTokens')::int), 0)", 'outputTokens')
+      .addSelect('COUNT(DISTINCT doc.id)', 'documentCount')
+      .from('documents', 'doc')
+      .innerJoin('jsonb_each(doc.token_usage)', 'entry', '1=1')
+      .leftJoin('telegram_users', 'tu', 'tu.id = doc.telegram_user_id')
       .groupBy('doc.telegram_user_id')
       .addGroupBy('tu.username')
       .addGroupBy('tu.first_name')
-      .orderBy('COALESCE(SUM(doc.input_tokens), 0) + COALESCE(SUM(doc.output_tokens), 0)', 'DESC')
-      .limit(20)
-      .getRawMany();
+      .orderBy(
+        "COALESCE(SUM((entry.value->>'inputTokens')::int), 0) + COALESCE(SUM((entry.value->>'outputTokens')::int), 0)",
+        'DESC',
+      )
+      .limit(20);
+    if (model) byUserQb.where('entry.key = :model', { model });
 
-    const recentDocs = await this.repo
+    const recentDocsQb = this.repo
       .createQueryBuilder('doc')
-      .select(['doc.id', 'doc.originalFileName', 'doc.inputTokens', 'doc.outputTokens', 'doc.createdAt'])
+      .select(['doc.id', 'doc.originalFileName', 'doc.tokenUsage', 'doc.createdAt'])
       .leftJoin('doc.telegramUser', 'tu')
       .addSelect('tu.username')
-      .where('doc.input_tokens > 0 OR doc.output_tokens > 0')
       .orderBy('doc.created_at', 'DESC')
-      .limit(10)
-      .getMany();
+      .limit(10);
+    if (model) {
+      recentDocsQb.where('doc.token_usage ? :model', { model });
+    } else {
+      recentDocsQb.where('doc.token_usage IS NOT NULL');
+    }
+
+    // Run remaining queries in parallel; skip availableModels scan when filter is active
+    const [byUser, recentDocs, availableModels] = await Promise.all([
+      byUserQb.getRawMany(),
+      recentDocsQb.getMany(),
+      model
+        ? Promise.resolve([model])
+        : this.repo.manager
+            .createQueryBuilder()
+            .select('DISTINCT entry.key', 'model')
+            .from('documents', 'doc')
+            .innerJoin('jsonb_each(doc.token_usage)', 'entry', '1=1')
+            .getRawMany()
+            .then((rows: Array<{ model: string }>) => rows.map((r) => r.model).sort()),
+    ]);
 
     return {
-      total: parseRow(total),
-      today: parseRow(today),
-      week: parseRow(week),
-      month: parseRow(month),
+      availableModels,
+      total: { models: toModelsMap(totalModels), documentCount: Number(totalCount?.count) || 0 },
+      today: { models: toModelsMap(todayModels), documentCount: Number(todayCount?.count) || 0 },
+      week: { models: toModelsMap(weekModels), documentCount: Number(weekCount?.count) || 0 },
+      month: { models: toModelsMap(monthModels), documentCount: Number(monthCount?.count) || 0 },
       byUser: byUser.map((row: Record<string, string>) => ({
         telegramUserId: row.telegramUserId,
         username: row.username,
@@ -253,8 +281,7 @@ export class DocumentsService {
       recentDocuments: recentDocs.map((doc) => ({
         id: doc.id,
         originalFileName: doc.originalFileName,
-        inputTokens: doc.inputTokens,
-        outputTokens: doc.outputTokens,
+        tokenUsage: doc.tokenUsage,
         createdAt: doc.createdAt,
         telegramUsername: doc.telegramUser?.username ?? null,
       })),

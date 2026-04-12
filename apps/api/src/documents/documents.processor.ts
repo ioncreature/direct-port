@@ -7,7 +7,7 @@ import { CalculationConfigService } from '../calculation-config/calculation-conf
 import { CalculationLogsService } from '../calculation-logs/calculation-logs.service';
 import { CalculatorService } from '../calculator/calculator.service';
 import { ClassifierService, type ProductRow } from '../classifier/classifier.service';
-import { addTokenUsage, emptyTokenUsage } from '../common/token-usage';
+import { mergeTokenUsage } from '../common/token-usage';
 import { CurrencyService } from '../currency/currency.service';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { DutyInterpreterService } from '../duty-interpreter/duty-interpreter.service';
@@ -74,9 +74,8 @@ export class DocumentsProcessor extends WorkerHost {
       const interpretResult = await this.dutyInterpreter.interpret(classified, language);
       const interpreted = interpretResult.products;
 
-      const aiTokenUsage = addTokenUsage(classifyResult.tokenUsage, interpretResult.tokenUsage);
-      doc.inputTokens = (doc.inputTokens || 0) + aiTokenUsage.inputTokens;
-      doc.outputTokens = (doc.outputTokens || 0) + aiTokenUsage.outputTokens;
+      const aiTokenUsage = mergeTokenUsage(classifyResult.tokenUsage, interpretResult.tokenUsage);
+      doc.tokenUsage = mergeTokenUsage(doc.tokenUsage ?? {}, aiTokenUsage);
 
       // EUR→doc rate for specific duty amounts (EUR/kg, EUR/m2, etc.)
       const currency = doc.currency || 'USD';

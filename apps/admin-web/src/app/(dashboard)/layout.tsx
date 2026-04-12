@@ -13,6 +13,7 @@ const navItems = [
   { href: '/documents', label: 'Документы' },
   { href: '/calculation-logs', label: 'Логи расчётов' },
   { href: '/tn-ved', label: 'ТН ВЭД' },
+  { href: '/ai-costs', label: 'AI-расходы' },
   { href: '/settings', label: 'Настройки' },
 ];
 

@@ -91,6 +91,12 @@ export class DocumentsController {
     return this.service.findAll(query);
   }
 
+  @Get('token-stats')
+  @Roles(UserRole.ADMIN)
+  getTokenStats(@Query('model') model?: string) {
+    return this.service.getTokenStats(model || undefined);
+  }
+
   @Patch(':id/review')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   review(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReviewDocumentDto) {

@@ -1,11 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { AiConfigModule } from '../ai-config/ai-config.module';
 import { TksModule } from '../tks/tks.module';
 import { DutyInterpreterService } from './duty-interpreter.service';
 
 @Module({
-  imports: [ConfigModule, TksModule],
+  imports: [ConfigModule, TksModule, AiConfigModule],
   providers: [
     {
       provide: Anthropic,

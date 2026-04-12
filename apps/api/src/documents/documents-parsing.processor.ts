@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Job, Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 import { AiParserService } from '../ai-parser/ai-parser.service';
+import { mergeTokenUsage } from '../common/token-usage';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import type { DocumentNotification } from './documents.processor';
 
@@ -53,8 +54,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
       doc.currency = currency;
       doc.columnMapping = columnMapping;
       doc.rowCount = products.length;
-      doc.inputTokens = (doc.inputTokens || 0) + tokenUsage.inputTokens;
-      doc.outputTokens = (doc.outputTokens || 0) + tokenUsage.outputTokens;
+      doc.tokenUsage = mergeTokenUsage(doc.tokenUsage ?? {}, tokenUsage);
       doc.fileBuffer = null;
 
       if (feasibility === 'rejected') {

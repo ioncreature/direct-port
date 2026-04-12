@@ -125,8 +125,43 @@ export interface Document {
   parsedData: ParsedDataRow[] | null;
   resultData: DocumentResultRow[] | null;
   errorMessage: string | null;
+  tokenUsage: TokenUsageMap | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export type TokenUsageMap = Record<string, { inputTokens: number; outputTokens: number }>;
+
+export interface TokenStatsPeriod {
+  models: TokenUsageMap;
+  documentCount: number;
+}
+
+export interface TokenStatsUser {
+  telegramUserId: string | null;
+  username: string | null;
+  firstName: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  documentCount: number;
+}
+
+export interface TokenStatsDocument {
+  id: string;
+  originalFileName: string;
+  tokenUsage: TokenUsageMap | null;
+  createdAt: string;
+  telegramUsername: string | null;
+}
+
+export interface TokenStats {
+  availableModels: string[];
+  total: TokenStatsPeriod;
+  today: TokenStatsPeriod;
+  week: TokenStatsPeriod;
+  month: TokenStatsPeriod;
+  byUser: TokenStatsUser[];
+  recentDocuments: TokenStatsDocument[];
 }
 
 export interface CalculationLogSummary {

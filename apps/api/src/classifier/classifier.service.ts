@@ -6,10 +6,11 @@ import {
   type TnvedCode,
 } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { AiConfigService } from '../ai-config/ai-config.service';
 import { extractClaudeText, parseClaudeJson } from '../common/claude';
 import { getStaticNoteTranslation } from '../common/note-translations';
 import type { ProductNote } from '../common/product-notes';
-import { type TokenUsage, addTokenUsage, emptyTokenUsage } from '../common/token-usage';
+import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, tokenUsageFromResponse } from '../common/token-usage';
 import type { Dimension } from '../duty-interpreter/interfaces';
 
 /**
@@ -91,18 +92,19 @@ export class ClassifierService {
   constructor(
     private tksApi: TksApiClient,
     @Optional() @Inject(Anthropic) private anthropic: Anthropic | null,
+    private aiConfig: AiConfigService,
   ) {}
 
   async classify(
     products: ProductRow[],
     language?: string,
-  ): Promise<{ products: ClassifiedProduct[]; tokenUsage: TokenUsage }> {
+  ): Promise<{ products: ClassifiedProduct[]; tokenUsage: TokenUsageMap }> {
     // Phase 1: TKS search — top-N candidates for each product
     const candidatesByProduct = await this.searchAll(products);
 
     // Phase 2: Claude classify+verify (or fallback to TKS-only)
     let selections: (ClaudeSelection | null)[];
-    let tokenUsage = emptyTokenUsage();
+    let tokenUsage = emptyTokenUsageMap();
     if (this.anthropic) {
       const result = await this.classifyWithClaude(products, candidatesByProduct, language);
       selections = result.selections;
@@ -178,9 +180,9 @@ export class ClassifierService {
     products: ProductRow[],
     candidatesByProduct: TksCandidate[][],
     language?: string,
-  ): Promise<{ selections: (ClaudeSelection | null)[]; tokenUsage: TokenUsage }> {
+  ): Promise<{ selections: (ClaudeSelection | null)[]; tokenUsage: TokenUsageMap }> {
     const allSelections: (ClaudeSelection | null)[] = new Array(products.length).fill(null);
-    let totalUsage = emptyTokenUsage();
+    let totalUsage = emptyTokenUsageMap();
 
     for (let i = 0; i < products.length; i += CLAUDE_BATCH_SIZE) {
       const batchEnd = Math.min(i + CLAUDE_BATCH_SIZE, products.length);
@@ -195,7 +197,7 @@ export class ClassifierService {
 
       try {
         const { selections, tokenUsage } = await this.callClaude(items, language);
-        totalUsage = addTokenUsage(totalUsage, tokenUsage);
+        totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
         for (const sel of selections) {
           if (sel.index >= 0 && sel.index < products.length) {
             allSelections[sel.index] = sel;
@@ -213,7 +215,8 @@ export class ClassifierService {
   private async callClaude(
     items: Array<{ index: number; description: string; candidates: TksCandidate[] }>,
     language?: string,
-  ): Promise<{ selections: ClaudeSelection[]; tokenUsage: TokenUsage }> {
+  ): Promise<{ selections: ClaudeSelection[]; tokenUsage: TokenUsageMap }> {
+    const model = await this.aiConfig.getClassifierModel();
     const needsLocalized = language && language !== 'ru';
     const commentInstruction = needsLocalized
       ? `    "comment": "краткое пояснение на русском",
@@ -238,12 +241,7 @@ ${commentInstruction}
 Отвечай ТОЛЬКО JSON-массивом.`;
 
     const response = await this.anthropic!.messages.create(
-      {
-        model: 'claude-sonnet-4-6',
-        max_tokens: 2048,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: userPrompt }],
-      },
+      { model, max_tokens: 2048, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: userPrompt }] },
       { timeout: 30_000 },
     );
 
@@ -254,10 +252,7 @@ ${commentInstruction}
     }
     return {
       selections: parsed as ClaudeSelection[],
-      tokenUsage: {
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens,
-      },
+      tokenUsage: tokenUsageFromResponse(model, response.usage),
     };
   }
 
