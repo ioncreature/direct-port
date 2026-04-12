@@ -84,6 +84,19 @@ export interface ParsedDataRow {
   weight: number;
 }
 
+export type ProductNoteStage = 'parse' | 'classify' | 'verify' | 'interpret' | 'calculate';
+export type ProductNoteSeverity = 'info' | 'warning' | 'blocker';
+
+export interface ProductNote {
+  stage: ProductNoteStage;
+  severity: ProductNoteSeverity;
+  message: string;
+  messageLocalized?: string;
+  field?: string;
+}
+
+export type CalculationStatus = 'exact' | 'partial' | 'needs_info' | 'error';
+
 export interface DocumentResultRow {
   description: string;
   quantity: number;
@@ -102,6 +115,10 @@ export interface DocumentResultRow {
   totalCost: number;
   verificationStatus: 'exact' | 'review';
   matchConfidence: number;
+  calculationStatus?: CalculationStatus;
+  dutyAmountIsEstimate?: boolean;
+  dutyFormula?: string | null;
+  notes?: ProductNote[];
 }
 
 export type SortOrder = 'ASC' | 'DESC';
