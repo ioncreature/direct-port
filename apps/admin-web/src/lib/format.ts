@@ -25,13 +25,19 @@ export function stageLabel(stage: string): string {
   return STAGE_LABELS[stage] ?? stage;
 }
 
-/** Calculate cost from a per-model token usage map */
+/** Calculate cost from a per-model token usage map (cache-aware).
+ * Anthropic API: input_tokens = non-cached input, cache_creation/read are separate. */
 export function calcAiCostFromMap(map: TokenUsageMap | null | undefined): number {
   if (!map) return 0;
   let cost = 0;
   for (const [model, usage] of Object.entries(map)) {
     const pricing = MODEL_CONFIG[model] ?? DEFAULT_PRICING;
-    cost += (usage.inputTokens * pricing.input + usage.outputTokens * pricing.output) / 1_000_000;
+    cost += (
+      usage.inputTokens * pricing.input +
+      (usage.cacheCreationTokens ?? 0) * pricing.input * 1.25 +
+      (usage.cacheReadTokens ?? 0) * pricing.input * 0.1 +
+      usage.outputTokens * pricing.output
+    ) / 1_000_000;
   }
   return cost;
 }
@@ -46,13 +52,14 @@ export function calcAiCostFromStages(map: TokenUsageByStage | null | undefined):
   return cost;
 }
 
-/** Sum all tokens across stages and models */
+/** Sum all tokens across stages and models.
+ * inputTokens = non-cached input; cache tokens are counted separately. */
 export function totalTokensFromStages(map: TokenUsageByStage | null | undefined): number {
   if (!map) return 0;
   let total = 0;
   for (const stageMap of Object.values(map)) {
     for (const usage of Object.values(stageMap)) {
-      total += usage.inputTokens + usage.outputTokens;
+      total += usage.inputTokens + (usage.cacheCreationTokens ?? 0) + (usage.cacheReadTokens ?? 0) + usage.outputTokens;
     }
   }
   return total;

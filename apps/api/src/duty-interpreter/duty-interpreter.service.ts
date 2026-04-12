@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { TksApiClient, TnvedCode } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
-import { extractClaudeText, parseClaudeJson } from '../common/claude';
+import { cachedSystemPrompt, extractClaudeText, parseClaudeJson } from '../common/claude';
 import { getStaticNoteTranslation } from '../common/note-translations';
 import type { ProductNote } from '../common/product-notes';
 import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, tokenUsageFromResponse } from '../common/token-usage';
@@ -10,6 +10,7 @@ import type { VerifiedProduct } from '../classifier/classifier.service';
 import { DutyInterpretation, InterpretedProduct } from './interfaces';
 
 const BATCH_SIZE = 5;
+const CONCURRENCY = 2;
 const CACHE_TTL = 3600_000; // 1 hour
 
 const SYSTEM_PROMPT = `Ты — эксперт по таможенному регулированию ЕАЭС. Твоя задача — интерпретировать ставки пошлин, акцизов и НДС из справочника ТН ВЭД и выразить их как формализованные правила расчёта.
@@ -106,25 +107,49 @@ export class DutyInterpreterService {
     // Batch interpret via Claude
     let totalUsage = emptyTokenUsageMap();
     const validCodes = codesToInterpret.filter((c) => tnvedData.has(c));
+    // Pre-build batches
+    const codeBatches: Array<{ code: string; tnved: TnvedCode }>[] = [];
     for (let i = 0; i < validCodes.length; i += BATCH_SIZE) {
-      const batch = validCodes.slice(i, i + BATCH_SIZE);
-      const batchData = batch.map((code) => ({
-        code,
-        tnved: tnvedData.get(code)!,
-      }));
+      codeBatches.push(
+        validCodes.slice(i, i + BATCH_SIZE).map((code) => ({
+          code,
+          tnved: tnvedData.get(code)!,
+        })),
+      );
+    }
 
+    // First batch alone — warms the prompt cache
+    if (codeBatches.length > 0) {
       try {
-        const { results, tokenUsage } = await this.interpretBatch(batchData, language);
+        const { results, tokenUsage } = await this.interpretBatch(codeBatches[0], language);
         totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
         for (const result of results) {
           interpretations.set(result.tnvedCode, result);
-          this.cache.set(result.tnvedCode, {
-            data: result,
-            expiresAt: Date.now() + CACHE_TTL,
-          });
+          this.cache.set(result.tnvedCode, { data: result, expiresAt: Date.now() + CACHE_TTL });
         }
       } catch (err) {
-        this.logger.error(`Duty interpretation batch failed`, err);
+        this.logger.error('Duty interpretation batch failed', err);
+      }
+    }
+
+    // Remaining batches in parallel — prompt cache is warm
+    const remainingBatches = codeBatches.slice(1);
+    for (let g = 0; g < remainingBatches.length; g += CONCURRENCY) {
+      const group = remainingBatches.slice(g, g + CONCURRENCY);
+      const results = await Promise.all(
+        group.map((batchData) =>
+          this.interpretBatch(batchData, language).catch((err) => {
+            this.logger.error('Duty interpretation batch failed', err);
+            return { results: [] as DutyInterpretation[], tokenUsage: emptyTokenUsageMap() };
+          }),
+        ),
+      );
+      for (const { results: batchResults, tokenUsage } of results) {
+        totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
+        for (const result of batchResults) {
+          interpretations.set(result.tnvedCode, result);
+          this.cache.set(result.tnvedCode, { data: result, expiresAt: Date.now() + CACHE_TTL });
+        }
       }
     }
 
@@ -229,7 +254,7 @@ ${JSON.stringify(codesData, null, 2)}
 Отвечай ТОЛЬКО JSON-массивом.`;
 
     const response = await this.anthropic!.messages.create(
-      { model, max_tokens: 2048, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: userPrompt }] },
+      { model, max_tokens: 2048, system: cachedSystemPrompt(SYSTEM_PROMPT), messages: [{ role: 'user', content: userPrompt }] },
       { timeout: 30_000 },
     );
 

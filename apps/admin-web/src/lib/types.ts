@@ -130,7 +130,12 @@ export interface Document {
   updatedAt: string;
 }
 
-export type TokenUsageMap = Record<string, { inputTokens: number; outputTokens: number }>;
+export type TokenUsageMap = Record<string, {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens?: number;
+  cacheReadTokens?: number;
+}>;
 export type TokenUsageByStage = Record<string, TokenUsageMap>;
 
 export interface TokenStatsPeriod {

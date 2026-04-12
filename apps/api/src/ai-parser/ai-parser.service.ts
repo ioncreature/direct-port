@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
-import { extractClaudeText, parseClaudeJson } from '../common/claude';
+import { cachedSystemPrompt, extractClaudeText, parseClaudeJson } from '../common/claude';
 import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, tokenUsageFromResponse } from '../common/token-usage';
 import type { Dimension } from '../duty-interpreter/interfaces';
 import { SpreadsheetData, SpreadsheetReaderService } from './spreadsheet-reader.service';
@@ -58,6 +58,7 @@ const VALID_CURRENCIES = new Set([
 
 const MAX_ROWS = 400;
 const CHUNK_SIZE = 100;
+const CHUNK_CONCURRENCY = 2;
 const SAMPLE_ROWS = 5;
 const MAX_ATTEMPTS = 2;
 
@@ -213,20 +214,32 @@ export class AiParserService {
     const allProducts = [...firstResult.products];
     const { currency, columnMapping } = firstResult;
 
-    // Remaining chunks: simplified parsing with known structure
+    // Remaining chunks: simplified parsing with known structure (concurrency=2)
+    const remainingChunks = chunks.slice(1);
     let failedChunks = 0;
-    for (let c = 1; c < chunks.length; c++) {
-      const chunkWithHeader = [headerRow, ...chunks[c]];
-      const chunkTsv = this.formatAsTsv(chunkWithHeader);
 
-      try {
-        const { products, tokenUsage } = await this.callClaudeChunk(chunkTsv, currency, columnMapping);
-        totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
-        allProducts.push(...products);
-        this.logger.log(`Chunk ${c}: parsed ${products.length} products`);
-      } catch (err) {
-        failedChunks++;
-        this.logger.error(`Chunk ${c} parsing failed`, err);
+    for (let g = 0; g < remainingChunks.length; g += CHUNK_CONCURRENCY) {
+      const group = remainingChunks.slice(g, g + CHUNK_CONCURRENCY);
+      const results = await Promise.all(
+        group.map((chunk) => {
+          const chunkWithHeader = [headerRow, ...chunk];
+          const chunkTsv = this.formatAsTsv(chunkWithHeader);
+          return this.callClaudeChunk(chunkTsv, currency, columnMapping).catch((err) => {
+            this.logger.error('Chunk parsing failed', err);
+            return null;
+          });
+        }),
+      );
+
+      for (let j = 0; j < results.length; j++) {
+        const r = results[j];
+        if (r) {
+          totalUsage = mergeTokenUsage(totalUsage, r.tokenUsage);
+          allProducts.push(...r.products);
+          this.logger.log(`Chunk ${g + j + 1}: parsed ${r.products.length} products`);
+        } else {
+          failedChunks++;
+        }
       }
     }
 
@@ -319,7 +332,7 @@ export class AiParserService {
     let tokenUsage: TokenUsageMap = emptyTokenUsageMap();
     try {
       const response = await this.anthropic!.messages.create(
-        { model, max_tokens: 8192, system: systemPrompt, messages: [{ role: 'user', content: prompt }] },
+        { model, max_tokens: 8192, system: cachedSystemPrompt(systemPrompt), messages: [{ role: 'user', content: prompt }] },
         { timeout: 45_000 },
       );
       tokenUsage = tokenUsageFromResponse(model, response.usage);
@@ -407,7 +420,7 @@ ${JSON.stringify({ currency: result.currency, products: sampleProducts }, null, 
 
     try {
       const response = await this.anthropic!.messages.create(
-        { model, max_tokens: 1024, system: VALIDATION_SYSTEM_PROMPT, messages: [{ role: 'user', content: prompt }] },
+        { model, max_tokens: 1024, system: cachedSystemPrompt(VALIDATION_SYSTEM_PROMPT), messages: [{ role: 'user', content: prompt }] },
         { timeout: 15_000 },
       );
 

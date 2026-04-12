@@ -7,7 +7,7 @@ import {
 } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
-import { extractClaudeText, parseClaudeJson } from '../common/claude';
+import { cachedSystemPrompt, extractClaudeText, parseClaudeJson } from '../common/claude';
 import { getStaticNoteTranslation } from '../common/note-translations';
 import type { ProductNote } from '../common/product-notes';
 import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, tokenUsageFromResponse } from '../common/token-usage';
@@ -67,8 +67,11 @@ interface ClaudeSelection {
 
 const SEARCH_CONCURRENCY = 5;
 const CLAUDE_BATCH_SIZE = 20;
+const CLAUDE_CONCURRENCY = 2;
 const MAX_CANDIDATES = 5;
 const LOW_CONFIDENCE_THRESHOLD = 0.7;
+const CLASSIFICATION_CACHE_TTL = 86_400_000; // 24 hours
+const CLASSIFICATION_CACHE_MAX = 1000;
 
 const SYSTEM_PROMPT = `Ты — эксперт по таможенной классификации товаров по ТН ВЭД (Товарная номенклатура внешнеэкономической деятельности ЕАЭС).
 
@@ -88,6 +91,7 @@ const SYSTEM_PROMPT = `Ты — эксперт по таможенной кла�
 @Injectable()
 export class ClassifierService {
   private logger = new Logger(ClassifierService.name);
+  private classificationCache = new Map<string, { data: ClaudeSelection; expiresAt: number }>();
 
   constructor(
     private tksApi: TksApiClient,
@@ -124,16 +128,47 @@ export class ClassifierService {
     // Phase 1: TKS search — top-N candidates for each unique product
     const uniqueCandidates = await this.searchAll(uniqueProducts);
 
-    // Phase 2: Claude classify+verify (or fallback to TKS-only)
-    let uniqueSelections: (ClaudeSelection | null)[];
+    // Phase 2: Claude classify+verify with result caching
+    const uniqueSelections: (ClaudeSelection | null)[] = new Array(uniqueProducts.length).fill(null);
     let tokenUsage = emptyTokenUsageMap();
-    if (this.anthropic) {
-      const result = await this.classifyWithClaude(uniqueProducts, uniqueCandidates, language);
-      uniqueSelections = result.selections;
+
+    const classifierModel = await this.aiConfig.getClassifierModel();
+    const uncached: { idx: number; product: ProductRow; candidates: TksCandidate[] }[] = [];
+    const now = Date.now();
+    for (let i = 0; i < uniqueProducts.length; i++) {
+      const key = `${uniqueProducts[i].description.trim().toLowerCase()}|${classifierModel}`;
+      const cached = this.classificationCache.get(key);
+      if (cached && cached.expiresAt > now) {
+        uniqueSelections[i] = cached.data;
+      } else {
+        uncached.push({ idx: i, product: uniqueProducts[i], candidates: uniqueCandidates[i] });
+      }
+    }
+
+    const cacheHits = uniqueProducts.length - uncached.length;
+    if (cacheHits > 0) {
+      this.logger.log(`Classification cache: ${cacheHits} hits, ${uncached.length} misses`);
+    }
+
+    if (this.anthropic && uncached.length > 0) {
+      const result = await this.classifyWithClaude(
+        uncached.map((u) => u.product),
+        uncached.map((u) => u.candidates),
+        language,
+      );
       tokenUsage = result.tokenUsage;
-    } else {
+
+      for (let i = 0; i < uncached.length; i++) {
+        const sel = result.selections[i];
+        uniqueSelections[uncached[i].idx] = sel;
+        if (sel) {
+          const key = `${uncached[i].product.description.trim().toLowerCase()}|${classifierModel}`;
+          this.classificationCache.set(key, { data: sel, expiresAt: now + CLASSIFICATION_CACHE_TTL });
+        }
+      }
+      this.evictExpiredCache();
+    } else if (!this.anthropic) {
       this.logger.warn('ANTHROPIC_API_KEY not set, using TKS-only classification');
-      uniqueSelections = uniqueProducts.map(() => null);
     }
 
     // Map back to original products
@@ -158,6 +193,14 @@ export class ClassifierService {
       products: this.assembleResults(products, candidatesByProduct, selections, tnvedByCode, language),
       tokenUsage,
     };
+  }
+
+  private evictExpiredCache(): void {
+    if (this.classificationCache.size <= CLASSIFICATION_CACHE_MAX) return;
+    const now = Date.now();
+    for (const [key, entry] of this.classificationCache) {
+      if (entry.expiresAt <= now) this.classificationCache.delete(key);
+    }
   }
 
   // --- Phase 1: TKS Search ---
@@ -209,9 +252,11 @@ export class ClassifierService {
     const allSelections: (ClaudeSelection | null)[] = new Array(products.length).fill(null);
     let totalUsage = emptyTokenUsageMap();
 
+    // Pre-build batches
+    const batches: Array<{ index: number; description: string; candidates: TksCandidate[] }>[] = [];
     for (let i = 0; i < products.length; i += CLAUDE_BATCH_SIZE) {
       const batchEnd = Math.min(i + CLAUDE_BATCH_SIZE, products.length);
-      const items = [];
+      const items: Array<{ index: number; description: string; candidates: TksCandidate[] }> = [];
       for (let j = i; j < batchEnd; j++) {
         items.push({
           index: j,
@@ -219,9 +264,13 @@ export class ClassifierService {
           candidates: candidatesByProduct[j] ?? [],
         });
       }
+      batches.push(items);
+    }
 
+    // First batch alone — warms the prompt cache
+    if (batches.length > 0) {
       try {
-        const { selections, tokenUsage } = await this.callClaude(items, language);
+        const { selections, tokenUsage } = await this.callClaude(batches[0], language);
         totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
         for (const sel of selections) {
           if (sel.index >= 0 && sel.index < products.length) {
@@ -229,8 +278,29 @@ export class ClassifierService {
           }
         }
       } catch (err) {
-        this.logger.error(`Claude classify+verify batch failed`, err);
-        // Fallback: null selections → will use best TKS candidate
+        this.logger.error('Claude classify+verify batch failed', err);
+      }
+    }
+
+    // Remaining batches in parallel — prompt cache is warm
+    const remaining = batches.slice(1);
+    for (let g = 0; g < remaining.length; g += CLAUDE_CONCURRENCY) {
+      const group = remaining.slice(g, g + CLAUDE_CONCURRENCY);
+      const results = await Promise.all(
+        group.map((items) =>
+          this.callClaude(items, language).catch((err) => {
+            this.logger.error('Claude classify+verify batch failed', err);
+            return { selections: [] as ClaudeSelection[], tokenUsage: emptyTokenUsageMap() };
+          }),
+        ),
+      );
+      for (const { selections, tokenUsage } of results) {
+        totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
+        for (const sel of selections) {
+          if (sel.index >= 0 && sel.index < products.length) {
+            allSelections[sel.index] = sel;
+          }
+        }
       }
     }
 
@@ -266,7 +336,7 @@ ${commentInstruction}
 Отвечай ТОЛЬКО JSON-массивом.`;
 
     const response = await this.anthropic!.messages.create(
-      { model, max_tokens: 2048, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: userPrompt }] },
+      { model, max_tokens: 2048, system: cachedSystemPrompt(SYSTEM_PROMPT), messages: [{ role: 'user', content: userPrompt }] },
       { timeout: 30_000 },
     );
 
