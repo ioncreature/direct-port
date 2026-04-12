@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AiConfig } from './entities/ai-config.entity';
 import { CalculationConfig } from './entities/calculation-config.entity';
+import { TksCache } from './entities/tks-cache.entity';
 import { CalculationLog } from './entities/calculation-log.entity';
 import { Document } from './entities/document.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
@@ -18,7 +19,10 @@ import { AddRequiresReviewStatus1775900000000 } from './migrations/1775900000000
 import { AddDocumentIdToCalculationLog1776000000000 } from './migrations/1776000000000-AddDocumentIdToCalculationLog';
 import { AddFileBufferAndParsingStatus1776100000000 } from './migrations/1776100000000-AddFileBufferAndParsingStatus';
 import { AddLanguageFields1776200000000 } from './migrations/1776200000000-AddLanguageFields';
+import { AddRejectedStatusAndReasons1776200000000 } from './migrations/1776200000000-AddRejectedStatusAndReasons';
+import { AddTokenUsageFields1776300000000 } from './migrations/1776300000000-AddTokenUsageFields';
 import { AddAiConfig1776400000000 } from './migrations/1776400000000-AddAiConfig';
+import { AddTksCache1776500000000 } from './migrations/1776500000000-AddTksCache';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -37,6 +41,7 @@ import { SeedService } from './seeds/seed.service';
           Document,
           CalculationConfig,
           AiConfig,
+          TksCache,
         ],
         synchronize: false,
         migrations: [
@@ -49,7 +54,10 @@ import { SeedService } from './seeds/seed.service';
           AddDocumentIdToCalculationLog1776000000000,
           AddFileBufferAndParsingStatus1776100000000,
           AddLanguageFields1776200000000,
+          AddRejectedStatusAndReasons1776200000000,
+          AddTokenUsageFields1776300000000,
           AddAiConfig1776400000000,
+          AddTksCache1776500000000,
         ],
         migrationsRun: true,
       }),
