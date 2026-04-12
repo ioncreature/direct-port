@@ -66,7 +66,7 @@ interface ClaudeSelection {
 }
 
 const SEARCH_CONCURRENCY = 5;
-const CLAUDE_BATCH_SIZE = 10;
+const CLAUDE_BATCH_SIZE = 20;
 const MAX_CANDIDATES = 5;
 const LOW_CONFIDENCE_THRESHOLD = 0.7;
 
@@ -99,20 +99,46 @@ export class ClassifierService {
     products: ProductRow[],
     language?: string,
   ): Promise<{ products: ClassifiedProduct[]; tokenUsage: TokenUsageMap }> {
-    // Phase 1: TKS search — top-N candidates for each product
-    const candidatesByProduct = await this.searchAll(products);
+    // Deduplication: classify unique descriptions only, map results back
+    const descToIndex = new Map<string, number>();
+    const uniqueProducts: ProductRow[] = [];
+    const originalToUnique: number[] = [];
+
+    for (let i = 0; i < products.length; i++) {
+      const key = products[i].description.trim().toLowerCase();
+      let uniqueIdx = descToIndex.get(key);
+      if (uniqueIdx === undefined) {
+        uniqueIdx = uniqueProducts.length;
+        descToIndex.set(key, uniqueIdx);
+        uniqueProducts.push(products[i]);
+      }
+      originalToUnique.push(uniqueIdx);
+    }
+
+    if (uniqueProducts.length < products.length) {
+      this.logger.log(
+        `Deduplication: ${products.length} products → ${uniqueProducts.length} unique descriptions`,
+      );
+    }
+
+    // Phase 1: TKS search — top-N candidates for each unique product
+    const uniqueCandidates = await this.searchAll(uniqueProducts);
 
     // Phase 2: Claude classify+verify (or fallback to TKS-only)
-    let selections: (ClaudeSelection | null)[];
+    let uniqueSelections: (ClaudeSelection | null)[];
     let tokenUsage = emptyTokenUsageMap();
     if (this.anthropic) {
-      const result = await this.classifyWithClaude(products, candidatesByProduct, language);
-      selections = result.selections;
+      const result = await this.classifyWithClaude(uniqueProducts, uniqueCandidates, language);
+      uniqueSelections = result.selections;
       tokenUsage = result.tokenUsage;
     } else {
       this.logger.warn('ANTHROPIC_API_KEY not set, using TKS-only classification');
-      selections = products.map(() => null);
+      uniqueSelections = uniqueProducts.map(() => null);
     }
+
+    // Map back to original products
+    const candidatesByProduct = products.map((_, i) => uniqueCandidates[originalToUnique[i]]);
+    const selections = products.map((_, i) => uniqueSelections[originalToUnique[i]]);
 
     // Phase 3: Load TNVED rates for selected codes
     const codesToLoad = new Set<string>();
@@ -121,7 +147,6 @@ export class ClassifierService {
       if (sel?.tnVedCode) {
         codesToLoad.add(sel.tnVedCode);
       } else {
-        // Fallback: best TKS candidate
         const top = candidatesByProduct[i]?.[0];
         if (top) codesToLoad.add(top.code);
       }

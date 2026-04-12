@@ -56,7 +56,8 @@ const VALID_CURRENCIES = new Set([
   'GEL',
 ]);
 
-const MAX_ROWS = 200;
+const MAX_ROWS = 400;
+const CHUNK_SIZE = 100;
 const SAMPLE_ROWS = 5;
 const MAX_ATTEMPTS = 2;
 
@@ -90,6 +91,8 @@ const VALIDATION_SYSTEM_PROMPT = `Ты — валидатор результат
 
 Отвечай ТОЛЬКО валидным JSON. Никакого текста до или после JSON.`;
 
+const CHUNK_SYSTEM_PROMPT = `Ты — эксперт по парсингу коммерческих документов для импорта товаров. Продолжай извлечение данных согласно указанным правилам. Отвечай ТОЛЬКО валидным JSON.`;
+
 @Injectable()
 export class AiParserService {
   private logger = new Logger(AiParserService.name);
@@ -105,12 +108,27 @@ export class AiParserService {
       throw new BadRequestException('AI-парсер недоступен: ANTHROPIC_API_KEY не настроен');
     }
 
-    const data = await this.spreadsheetReader.read(buffer, fileName);
+    const data = await this.spreadsheetReader.read(buffer, fileName, MAX_ROWS + 1);
+
+    if (data.rows.length > MAX_ROWS) {
+      return this.rejected([
+        `Файл содержит слишком много строк (более ${MAX_ROWS}). Пожалуйста, разделите файл на части не более ${MAX_ROWS} строк.`,
+      ]);
+    }
+
     if (data.rows.length < 2) {
       return this.rejected(['Файл пустой или содержит только заголовок (менее 2 строк).']);
     }
 
-    const tsv = this.formatAsTsv(data);
+    if (data.rows.length <= CHUNK_SIZE) {
+      return this.parseSinglePass(data);
+    }
+
+    return this.parseChunked(data);
+  }
+
+  private async parseSinglePass(data: SpreadsheetData): Promise<AiParseResult> {
+    const tsv = this.formatAsTsv(data.rows);
     let lastResult: RawParseResult | null = null;
     let lastIssues: string[] = [];
     let totalUsage = emptyTokenUsageMap();
@@ -123,7 +141,6 @@ export class AiParserService {
       totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
       lastResult = result;
 
-      // Deterministic checks
       const detIssues = this.checkDeterministic(result, data);
       if (detIssues.length > 0) {
         this.logger.warn(`Attempt ${attempt}: deterministic issues: ${detIssues.join('; ')}`);
@@ -132,7 +149,6 @@ export class AiParserService {
         return { ...this.assessFeasibility(result, lastIssues), tokenUsage: totalUsage };
       }
 
-      // AI validation
       const { tokenUsage: valUsage, ...validation } = await this.validateWithAi(data, result);
       totalUsage = mergeTokenUsage(totalUsage, valUsage);
       if (validation.valid) {
@@ -150,6 +166,93 @@ export class AiParserService {
       `Returning result after ${MAX_ATTEMPTS} attempts with issues (${lastIssues.join('; ')})`,
     );
     return { ...this.assessFeasibility(lastResult!, lastIssues), tokenUsage: totalUsage };
+  }
+
+  private async parseChunked(data: SpreadsheetData): Promise<AiParseResult> {
+    let totalUsage = emptyTokenUsageMap();
+    const headerRow = data.rows[0];
+
+    const chunks: string[][][] = [];
+    for (let i = 0; i < data.rows.length; i += CHUNK_SIZE) {
+      chunks.push(data.rows.slice(i, Math.min(i + CHUNK_SIZE, data.rows.length)));
+    }
+
+    this.logger.log(`Parsing ${data.rows.length} rows in ${chunks.length} chunks`);
+
+    // First chunk: full analysis with retry
+    const firstTsv = this.formatAsTsv(chunks[0]);
+    let firstResult: RawParseResult | null = null;
+    let lastIssues: string[] = [];
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const prompt = attempt === 1
+        ? this.buildUserPrompt(firstTsv)
+        : this.buildRetryPrompt(firstTsv, lastIssues);
+
+      const { tokenUsage, ...result } = await this.callClaude(prompt);
+      totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
+      firstResult = result;
+
+      const issues = this.checkDeterministic(result, { rows: chunks[0], columnCount: data.columnCount });
+      if (issues.length === 0) break;
+
+      lastIssues = issues;
+      this.logger.warn(`Chunk 0 attempt ${attempt}: ${issues.join('; ')}`);
+    }
+
+    if (!firstResult || firstResult.products.length === 0) {
+      return {
+        ...this.assessFeasibility(
+          firstResult ?? { products: [], currency: '', columnMapping: {} },
+          lastIssues,
+        ),
+        tokenUsage: totalUsage,
+      };
+    }
+
+    const allProducts = [...firstResult.products];
+    const { currency, columnMapping } = firstResult;
+
+    // Remaining chunks: simplified parsing with known structure
+    let failedChunks = 0;
+    for (let c = 1; c < chunks.length; c++) {
+      const chunkWithHeader = [headerRow, ...chunks[c]];
+      const chunkTsv = this.formatAsTsv(chunkWithHeader);
+
+      try {
+        const { products, tokenUsage } = await this.callClaudeChunk(chunkTsv, currency, columnMapping);
+        totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
+        allProducts.push(...products);
+        this.logger.log(`Chunk ${c}: parsed ${products.length} products`);
+      } catch (err) {
+        failedChunks++;
+        this.logger.error(`Chunk ${c} parsing failed`, err);
+      }
+    }
+
+    const fullResult: RawParseResult = { products: allProducts, currency, columnMapping };
+    const issues: string[] = [];
+
+    if (failedChunks > 0) {
+      issues.push(
+        `Не удалось обработать ${failedChunks} из ${chunks.length - 1} блоков данных, данные могут быть неполными.`,
+      );
+    }
+
+    // AI validation on full result
+    const { tokenUsage: valUsage, ...validation } = await this.validateWithAi(data, fullResult);
+    totalUsage = mergeTokenUsage(totalUsage, valUsage);
+    if (!validation.valid) {
+      issues.push(...validation.issues);
+    }
+
+    if (issues.length > 0) {
+      this.logger.warn(`Chunked parse issues: ${issues.join('; ')}`);
+      return { ...this.assessFeasibility(fullResult, issues), tokenUsage: totalUsage };
+    }
+
+    this.logger.log(`Parsed ${allProducts.length} products in ${chunks.length} chunks, currency=${currency}`);
+    return { ...fullResult, feasibility: 'ok', rejectionReasons: [], tokenUsage: totalUsage };
   }
 
   /**
@@ -207,25 +310,30 @@ export class AiParserService {
     };
   }
 
-  private async callClaude(userPrompt: string): Promise<RawParseResult & { tokenUsage: TokenUsageMap }> {
+  private async callClaudeRaw(
+    prompt: string,
+    systemPrompt = SYSTEM_PROMPT,
+  ): Promise<{ raw: unknown; tokenUsage: TokenUsageMap }> {
     const model = await this.aiConfig.getParserModel();
     let text: string;
     let tokenUsage: TokenUsageMap = emptyTokenUsageMap();
     try {
       const response = await this.anthropic!.messages.create(
-        { model, max_tokens: 4096, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: userPrompt }] },
+        { model, max_tokens: 8192, system: systemPrompt, messages: [{ role: 'user', content: prompt }] },
         { timeout: 45_000 },
       );
-
       tokenUsage = tokenUsageFromResponse(model, response.usage);
       text = extractClaudeText(response);
     } catch (err) {
       this.logger.error('Anthropic API error', err);
       throw new BadRequestException('Ошибка AI-сервиса. Попробуйте позже.');
     }
+    return { raw: this.parseJson(text), tokenUsage };
+  }
 
-    const parsed = this.parseJson(text);
-    return { ...this.validateSchema(parsed), tokenUsage };
+  private async callClaude(userPrompt: string): Promise<RawParseResult & { tokenUsage: TokenUsageMap }> {
+    const { raw, tokenUsage } = await this.callClaudeRaw(userPrompt);
+    return { ...this.validateSchema(raw), tokenUsage };
   }
 
   private checkDeterministic(result: RawParseResult, data: SpreadsheetData): string[] {
@@ -317,13 +425,8 @@ ${JSON.stringify({ currency: result.currency, products: sampleProducts }, null, 
     }
   }
 
-  private formatAsTsv(data: SpreadsheetData): string {
-    const lines: string[] = [];
-    const limit = Math.min(data.rows.length, MAX_ROWS);
-    for (let i = 0; i < limit; i++) {
-      lines.push([String(i), ...data.rows[i]].join('\t'));
-    }
-    return lines.join('\n');
+  private formatAsTsv(rows: string[][]): string {
+    return rows.map((row, i) => [String(i), ...row].join('\t')).join('\n');
   }
 
   private buildUserPrompt(tsv: string): string {
@@ -360,6 +463,46 @@ ${tsv}
     const base = this.buildUserPrompt(tsv);
     const feedback = issues.map((issue, i) => `${i + 1}. ${issue}`).join('\n');
     return `${base}\n\nВНИМАНИЕ: Предыдущая попытка парсинга содержала ошибки:\n${feedback}\n\nИсправь эти ошибки.`;
+  }
+
+  private buildChunkPrompt(tsv: string, currency: string, columnMapping: Record<string, number>): string {
+    return `Продолжи извлечение товаров из таблицы. Структура и валюта уже определены.
+
+Валюта: ${currency}
+Маппинг колонок: ${JSON.stringify(columnMapping)}
+
+<spreadsheet_data>
+${tsv}
+</spreadsheet_data>
+
+Первая строка — заголовок таблицы (для справки). Извлеки товары из остальных строк.
+Правила те же: переведи наименования на русский, пропусти итоги и пустые строки, цена за единицу, вес общий в кг.
+
+Ответь ТОЛЬКО валидным JSON:
+{
+  "products": [
+    {
+      "description": "наименование на русском",
+      "price": цена_за_единицу,
+      "weight": общий_вес_в_кг,
+      "quantity": количество,
+      "dimensions": [{"name": "area", "value": число, "unit": "m2"}]
+    }
+  ]
+}
+
+Поле dimensions — необязательное. Добавляй только если в таблице есть соответствующие колонки.`;
+  }
+
+  private async callClaudeChunk(
+    tsv: string,
+    currency: string,
+    columnMapping: Record<string, number>,
+  ): Promise<{ products: ParsedProduct[]; tokenUsage: TokenUsageMap }> {
+    const prompt = this.buildChunkPrompt(tsv, currency, columnMapping);
+    const { raw, tokenUsage } = await this.callClaudeRaw(prompt, CHUNK_SYSTEM_PROMPT);
+    const { products } = this.validateSchema(raw);
+    return { products, tokenUsage };
   }
 
   private parseJson(text: string): unknown {
