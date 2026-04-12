@@ -3,63 +3,7 @@
 import { type AiModelTier, useAiConfig } from '@/hooks/use-ai-config';
 import { useCalculationConfig } from '@/hooks/use-calculation-config';
 import { useEffect, useState } from 'react';
-
-// --- Описание шагов AI ---
-
-interface AiStepInfo {
-  key: 'parserModel' | 'classifierModel' | 'interpreterModel';
-  title: string;
-  description: string;
-  recommended: AiModelTier;
-  tiers: Record<AiModelTier, string>;
-}
-
-const AI_STEPS: AiStepInfo[] = [
-  {
-    key: 'parserModel',
-    title: 'Парсинг документов',
-    description:
-      'Анализ структуры таблицы, определение валюты, перевод описаний товаров (часто с китайского) на русский, извлечение данных.',
-    recommended: 'sonnet',
-    tiers: {
-      opus: 'Максимальное качество перевода и анализа. Высокая стоимость.',
-      sonnet: 'Оптимальный баланс качества и стоимости. Хорошо справляется с китайским.',
-      haiku: 'Не рекомендуется — заметно теряет качество перевода с китайского.',
-    },
-  },
-  {
-    key: 'classifierModel',
-    title: 'Классификация ТН ВЭД',
-    description:
-      'Выбор кода ТН ВЭД из кандидатов справочника TKS. При отсутствии кандидатов — предлагает код самостоятельно.',
-    recommended: 'sonnet',
-    tiers: {
-      opus: 'Для сложных товаров: химия, специализированное оборудование, фармацевтика.',
-      sonnet: 'Подходит для большинства товаров. Рекомендуется как базовый вариант.',
-      haiku: 'Допустим для простых товаров (одежда, электроника), если TKS даёт хороших кандидатов.',
-    },
-  },
-  {
-    key: 'interpreterModel',
-    title: 'Интерпретация пошлин',
-    description:
-      'Перевод ставок из справочника ТН ВЭД в формализованные правила расчёта: комбинированные ставки, специфические пошлины (EUR/кг, EUR/м²), акцизы.',
-    recommended: 'haiku',
-    tiers: {
-      opus: 'Избыточен для данной задачи — правила хорошо формализованы.',
-      sonnet: 'Работает, но для формализованных правил избыточен по стоимости.',
-      haiku: 'Лучшее соотношение цена/качество. Задача чётко структурирована.',
-    },
-  },
-];
-
-const TIER_LABELS: Record<AiModelTier, string> = {
-  opus: 'Opus',
-  sonnet: 'Sonnet',
-  haiku: 'Haiku',
-};
-
-// --- Компонент ---
+import { AI_STEPS, type AiStepInfo } from './ai-steps';
 
 export default function SettingsPage() {
   return (
@@ -176,9 +120,15 @@ function AiModelsSection() {
   return (
     <div style={{ maxWidth: 700, padding: 24, border: '1px solid #ddd', borderRadius: 8 }}>
       <h3 style={{ marginBottom: 8 }}>Модели AI</h3>
-      <p style={{ fontSize: 14, color: '#666', marginBottom: 24 }}>
-        Выберите модель Claude для каждого этапа обработки документов.
-        Более мощные модели дают лучшее качество, но стоят дороже.
+      <p style={{ fontSize: 14, color: '#555', marginBottom: 12, lineHeight: 1.6 }}>
+        Обработка каждого документа проходит через три этапа. На каждом этапе работает ИИ (Claude),
+        и вы можете выбрать уровень модели — от базовой до максимальной.
+      </p>
+      <p style={{ fontSize: 13, color: '#777', marginBottom: 24, lineHeight: 1.5 }}>
+        <strong>Opus</strong> — самая мощная и дорогая модель, лучшее качество.{' '}
+        <strong>Sonnet</strong> — основная рабочая модель, хороший баланс.{' '}
+        <strong>Haiku</strong> — самая быстрая и дешёвая, подходит для простых задач.
+        Проценты точности — ориентировочные, реальные результаты зависят от ваших документов.
       </p>
 
       {AI_STEPS.map((step) => (
@@ -216,12 +166,13 @@ function AiStepCard({
   onChange: (tier: AiModelTier) => void;
 }) {
   return (
-    <div style={{ marginBottom: 24, padding: 16, background: '#f9fafb', borderRadius: 8 }}>
-      <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{step.title}</div>
-      <div style={{ fontSize: 13, color: '#666', marginBottom: 12 }}>{step.description}</div>
+    <div style={{ marginBottom: 28, padding: 20, background: '#f9fafb', borderRadius: 8 }}>
+      <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 6 }}>{step.title}</div>
+      <div style={{ fontSize: 13, color: '#555', marginBottom: 16, lineHeight: 1.5 }}>{step.description}</div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {(['opus', 'sonnet', 'haiku'] as AiModelTier[]).map((tier) => {
+          const info = step.tiers[tier];
           const isSelected = value === tier;
           const isRecommended = step.recommended === tier;
 
@@ -232,7 +183,7 @@ function AiStepCard({
                 display: 'flex',
                 alignItems: 'flex-start',
                 gap: 10,
-                padding: '10px 12px',
+                padding: '12px 14px',
                 borderRadius: 6,
                 border: isSelected ? '2px solid #2563eb' : '1px solid #e5e7eb',
                 background: isSelected ? '#eff6ff' : 'white',
@@ -244,28 +195,20 @@ function AiStepCard({
                 name={step.key}
                 checked={isSelected}
                 onChange={() => onChange(tier)}
-                style={{ marginTop: 3 }}
+                style={{ marginTop: 4 }}
               />
-              <div>
-                <span style={{ fontWeight: 500, fontSize: 14 }}>
-                  {TIER_LABELS[tier]}
-                </span>
-                {isRecommended && (
-                  <span
-                    style={{
-                      marginLeft: 8,
-                      fontSize: 11,
-                      padding: '2px 8px',
-                      background: '#dcfce7',
-                      color: '#166534',
-                      borderRadius: 10,
-                      fontWeight: 500,
-                    }}
-                  >
-                    рекомендуется
-                  </span>
-                )}
-                <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>{step.tiers[tier]}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <span style={{ fontWeight: 600, fontSize: 14 }}>{info.label}</span>
+                  {isRecommended && (
+                    <span style={recommendedBadge}>рекомендуется</span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#888', marginBottom: 4 }}>
+                  <span>Точность: <strong style={{ color: '#333' }}>{info.accuracy}</strong></span>
+                  <span>Стоимость: <strong style={{ color: '#333' }}>{info.cost}</strong></span>
+                </div>
+                <div style={{ fontSize: 13, color: '#555', lineHeight: 1.4 }}>{info.description}</div>
               </div>
             </label>
           );
@@ -274,6 +217,15 @@ function AiStepCard({
     </div>
   );
 }
+
+const recommendedBadge: React.CSSProperties = {
+  fontSize: 11,
+  padding: '2px 8px',
+  background: '#dcfce7',
+  color: '#166534',
+  borderRadius: 10,
+  fontWeight: 500,
+};
 
 // --- Стили ---
 
