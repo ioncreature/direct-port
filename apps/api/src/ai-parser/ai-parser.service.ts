@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { extractClaudeText, parseClaudeJson } from '../common/claude';
+import { type TokenUsage, addTokenUsage, emptyTokenUsage } from '../common/token-usage';
 import type { Dimension } from '../duty-interpreter/interfaces';
 import { SpreadsheetData, SpreadsheetReaderService } from './spreadsheet-reader.service';
 
@@ -23,9 +24,10 @@ export interface AiParseResult {
   feasibility: ParseFeasibility;
   /** Причины отклонения (при rejected) или замечания (при review). Пустой для ok. */
   rejectionReasons: string[];
+  tokenUsage: TokenUsage;
 }
 
-type RawParseResult = Omit<AiParseResult, 'feasibility' | 'rejectionReasons'>;
+type RawParseResult = Omit<AiParseResult, 'feasibility' | 'rejectionReasons' | 'tokenUsage'>;
 
 interface ValidationResult {
   valid: boolean;
@@ -109,12 +111,14 @@ export class AiParserService {
     const tsv = this.formatAsTsv(data);
     let lastResult: RawParseResult | null = null;
     let lastIssues: string[] = [];
+    let totalUsage = emptyTokenUsage();
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       const userPrompt =
         attempt === 1 ? this.buildUserPrompt(tsv) : this.buildRetryPrompt(tsv, lastIssues);
 
-      const result = await this.callClaude(userPrompt);
+      const { tokenUsage, ...result } = await this.callClaude(userPrompt);
+      totalUsage = addTokenUsage(totalUsage, tokenUsage);
       lastResult = result;
 
       // Deterministic checks
@@ -123,16 +127,17 @@ export class AiParserService {
         this.logger.warn(`Attempt ${attempt}: deterministic issues: ${detIssues.join('; ')}`);
         lastIssues = detIssues;
         if (attempt < MAX_ATTEMPTS) continue;
-        return this.assessFeasibility(result, lastIssues);
+        return { ...this.assessFeasibility(result, lastIssues), tokenUsage: totalUsage };
       }
 
       // AI validation
-      const validation = await this.validateWithAi(data, result);
+      const { tokenUsage: valUsage, ...validation } = await this.validateWithAi(data, result);
+      totalUsage = addTokenUsage(totalUsage, valUsage);
       if (validation.valid) {
         this.logger.log(
           `Parsed ${result.products.length} products, currency=${result.currency} (attempt ${attempt})`,
         );
-        return { ...result, feasibility: 'ok', rejectionReasons: [] };
+        return { ...result, feasibility: 'ok', rejectionReasons: [], tokenUsage: totalUsage };
       }
 
       this.logger.warn(`Attempt ${attempt}: AI validation issues: ${validation.issues.join('; ')}`);
@@ -142,7 +147,7 @@ export class AiParserService {
     this.logger.warn(
       `Returning result after ${MAX_ATTEMPTS} attempts with issues (${lastIssues.join('; ')})`,
     );
-    return this.assessFeasibility(lastResult!, lastIssues);
+    return { ...this.assessFeasibility(lastResult!, lastIssues), tokenUsage: totalUsage };
   }
 
   /**
@@ -150,7 +155,7 @@ export class AiParserService {
    * rejected = критические проблемы, которые пользователь может исправить, перезагрузив файл.
    * review = данные есть, но AI не уверен — пусть декларант проверит.
    */
-  private assessFeasibility(result: RawParseResult, issues: string[]): AiParseResult {
+  private assessFeasibility(result: RawParseResult, issues: string[]): Omit<AiParseResult, 'tokenUsage'> {
     const reasons: string[] = [];
     const total = result.products.length;
 
@@ -196,11 +201,13 @@ export class AiParserService {
       columnMapping: {},
       feasibility: 'rejected',
       rejectionReasons: reasons,
+      tokenUsage: emptyTokenUsage(),
     };
   }
 
-  private async callClaude(userPrompt: string): Promise<RawParseResult> {
+  private async callClaude(userPrompt: string): Promise<RawParseResult & { tokenUsage: TokenUsage }> {
     let text: string;
+    let tokenUsage: TokenUsage = emptyTokenUsage();
     try {
       const response = await this.anthropic!.messages.create(
         {
@@ -212,6 +219,10 @@ export class AiParserService {
         { timeout: 45_000 },
       );
 
+      tokenUsage = {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      };
       text = extractClaudeText(response);
     } catch (err) {
       this.logger.error('Anthropic API error', err);
@@ -219,7 +230,7 @@ export class AiParserService {
     }
 
     const parsed = this.parseJson(text);
-    return this.validateSchema(parsed);
+    return { ...this.validateSchema(parsed), tokenUsage };
   }
 
   private checkDeterministic(result: RawParseResult, data: SpreadsheetData): string[] {
@@ -256,7 +267,7 @@ export class AiParserService {
   private async validateWithAi(
     data: SpreadsheetData,
     result: RawParseResult,
-  ): Promise<ValidationResult> {
+  ): Promise<ValidationResult & { tokenUsage: TokenUsage }> {
     // Pick sample rows from start of data (skip first row as header)
     const startIdx = Math.min(1, data.rows.length - 1);
     const sampleSourceRows = data.rows.slice(startIdx, startIdx + SAMPLE_ROWS);
@@ -307,10 +318,14 @@ ${JSON.stringify({ currency: result.currency, products: sampleProducts }, null, 
       return {
         valid: parsed.valid === true,
         issues: Array.isArray(parsed.issues) ? parsed.issues.map(String) : [],
+        tokenUsage: {
+          inputTokens: response.usage.input_tokens,
+          outputTokens: response.usage.output_tokens,
+        },
       };
     } catch (err) {
       this.logger.warn('AI validation call failed, treating as unvalidated', err);
-      return { valid: false, issues: ['Сервис валидации недоступен'] };
+      return { valid: false, issues: ['Сервис валидации недоступен'], tokenUsage: emptyTokenUsage() };
     }
   }
 

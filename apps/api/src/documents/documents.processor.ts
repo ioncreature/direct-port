@@ -7,11 +7,11 @@ import { CalculationConfigService } from '../calculation-config/calculation-conf
 import { CalculationLogsService } from '../calculation-logs/calculation-logs.service';
 import { CalculatorService } from '../calculator/calculator.service';
 import { ClassifierService, type ProductRow } from '../classifier/classifier.service';
+import { addTokenUsage, emptyTokenUsage } from '../common/token-usage';
 import { CurrencyService } from '../currency/currency.service';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { DutyInterpreterService } from '../duty-interpreter/duty-interpreter.service';
 import type { Dimension } from '../duty-interpreter/interfaces';
-import { VerificationService } from '../verification/verification.service';
 
 export interface DocumentNotification {
   documentId: string;
@@ -19,6 +19,7 @@ export interface DocumentNotification {
   status: 'processed' | 'failed' | 'rejected';
   errorMessage?: string;
   rejectionReasons?: string[];
+  language?: string;
 }
 
 @Processor('document-processing')
@@ -31,7 +32,6 @@ export class DocumentsProcessor extends WorkerHost {
     private classifier: ClassifierService,
     private calculator: CalculatorService,
     private configService: CalculationConfigService,
-    private verification: VerificationService,
     private dutyInterpreter: DutyInterpreterService,
     private currencyService: CurrencyService,
     private calculationLogs: CalculationLogsService,
@@ -68,9 +68,15 @@ export class DocumentsProcessor extends WorkerHost {
       const { pricePercent, weightRate, fixedFee } = await this.configService.get();
       const commission = { pricePercent, weightRate, fixedFee };
 
-      const classified = await this.classifier.classify(rows);
-      const verified = await this.verification.verify(classified);
-      const interpreted = await this.dutyInterpreter.interpret(verified);
+      const language = doc.language ?? doc.telegramUser?.language;
+      const classifyResult = await this.classifier.classify(rows, language);
+      const classified = classifyResult.products;
+      const interpretResult = await this.dutyInterpreter.interpret(classified, language);
+      const interpreted = interpretResult.products;
+
+      const aiTokenUsage = addTokenUsage(classifyResult.tokenUsage, interpretResult.tokenUsage);
+      doc.inputTokens = (doc.inputTokens || 0) + aiTokenUsage.inputTokens;
+      doc.outputTokens = (doc.outputTokens || 0) + aiTokenUsage.outputTokens;
 
       // EUR→doc rate for specific duty amounts (EUR/kg, EUR/m2, etc.)
       const currency = doc.currency || 'USD';
@@ -114,8 +120,8 @@ export class DocumentsProcessor extends WorkerHost {
           verificationStatus: item.verificationStatus, // устаревшее, для BC
           calculationStatus: item.calculationStatus,
           matchConfidence: item.matchConfidence,
-          verified: verified[i]?.verified ?? false,
-          verificationComment: verified[i]?.verificationComment ?? null,
+          verified: classified[i]?.verified ?? false,
+          verificationComment: classified[i]?.verificationComment ?? null,
           notes: item.notes,
         };
         if (!needsConversion) return base;
@@ -195,6 +201,7 @@ export class DocumentsProcessor extends WorkerHost {
       telegramUserId: telegramId,
       status,
       errorMessage,
+      language: doc.language ?? doc.telegramUser?.language,
     };
 
     await this.notificationQueue.add('document-ready', payload).catch((err) => {

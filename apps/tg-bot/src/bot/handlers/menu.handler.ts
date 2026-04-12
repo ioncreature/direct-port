@@ -1,16 +1,16 @@
 import { Injectable } from '@nestjs/common';
-import { Context } from 'grammy';
+import { type BotContext } from '../i18n';
 import { HelpHandler } from './help.handler';
 
 @Injectable()
 export class MenuHandler {
   constructor(private helpHandler: HelpHandler) {}
 
-  async handleUpload(ctx: Context) {
-    await ctx.reply('Отправьте мне файл в формате .xlsx или .csv');
+  async handleUpload(ctx: BotContext) {
+    await ctx.reply(ctx.t('upload-prompt'));
   }
 
-  async handleHelp(ctx: Context) {
+  async handleHelp(ctx: BotContext) {
     return this.helpHandler.handle(ctx);
   }
 }

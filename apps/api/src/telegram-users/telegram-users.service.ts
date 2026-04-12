@@ -11,17 +11,23 @@ export class TelegramUsersService {
   constructor(@InjectRepository(TelegramUser) private repo: Repository<TelegramUser>) {}
 
   async register(dto: RegisterTelegramUserDto): Promise<TelegramUser> {
-    const result = await this.repo.upsert(
-      {
-        telegramId: String(dto.telegramId),
-        username: dto.username ?? null,
-        firstName: dto.firstName ?? null,
-        lastName: dto.lastName ?? null,
-      },
-      { conflictPaths: ['telegramId'] },
-    );
+    const upsertData: Record<string, unknown> = {
+      telegramId: String(dto.telegramId),
+      username: dto.username ?? null,
+      firstName: dto.firstName ?? null,
+      lastName: dto.lastName ?? null,
+    };
+    if (dto.language) upsertData.language = dto.language;
+
+    const result = await this.repo.upsert(upsertData as any, {
+      conflictPaths: ['telegramId'],
+    });
 
     return this.repo.findOneByOrFail({ id: result.identifiers[0].id });
+  }
+
+  async updateLanguage(telegramId: string, language: string): Promise<void> {
+    await this.repo.update({ telegramId }, { language });
   }
 
   async findAll(

@@ -2,8 +2,10 @@ import Anthropic from '@anthropic-ai/sdk';
 import { TksApiClient, TnvedCode } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { extractClaudeText, parseClaudeJson } from '../common/claude';
+import { getStaticNoteTranslation } from '../common/note-translations';
 import type { ProductNote } from '../common/product-notes';
-import type { VerifiedProduct } from '../verification/verification.service';
+import { type TokenUsage, addTokenUsage, emptyTokenUsage } from '../common/token-usage';
+import type { VerifiedProduct } from '../classifier/classifier.service';
 import { DutyInterpretation, InterpretedProduct } from './interfaces';
 
 const BATCH_SIZE = 5;
@@ -38,9 +40,12 @@ export class DutyInterpreterService {
     private tksApi: TksApiClient,
   ) {}
 
-  async interpret(products: VerifiedProduct[]): Promise<InterpretedProduct[]> {
+  async interpret(
+    products: VerifiedProduct[],
+    language?: string,
+  ): Promise<{ products: InterpretedProduct[]; tokenUsage: TokenUsage }> {
     if (!this.anthropic) {
-      return products.map((p) => {
+      return { products: products.map((p) => {
         const extraNotes: ProductNote[] = [];
         if (this.hasNonTrivialRates(p)) {
           extraNotes.push({
@@ -49,10 +54,11 @@ export class DutyInterpreterService {
             field: 'duty',
             message:
               'У кода ТН ВЭД есть нетривиальные ставки (специфическая или комбинированная часть), но AI-интерпретатор отключён (нет ANTHROPIC_API_KEY). Расчёт будет выполнен по упрощённым правилам TKS.',
+            messageLocalized: getStaticNoteTranslation('interpreter-disabled', language),
           });
         }
         return { ...p, dutyInterpretation: null, notes: [...p.notes, ...extraNotes] };
-      });
+      }), tokenUsage: emptyTokenUsage() };
     }
 
     // Group by unique TNVED code
@@ -96,6 +102,7 @@ export class DutyInterpreterService {
     );
 
     // Batch interpret via Claude
+    let totalUsage = emptyTokenUsage();
     const validCodes = codesToInterpret.filter((c) => tnvedData.has(c));
     for (let i = 0; i < validCodes.length; i += BATCH_SIZE) {
       const batch = validCodes.slice(i, i + BATCH_SIZE);
@@ -105,7 +112,8 @@ export class DutyInterpreterService {
       }));
 
       try {
-        const results = await this.interpretBatch(batchData);
+        const { results, tokenUsage } = await this.interpretBatch(batchData, language);
+        totalUsage = addTokenUsage(totalUsage, tokenUsage);
         for (const result of results) {
           interpretations.set(result.tnvedCode, result);
           this.cache.set(result.tnvedCode, {
@@ -119,7 +127,7 @@ export class DutyInterpreterService {
     }
 
     // Apply interpretations to products
-    return products.map((p) => {
+    return { tokenUsage: totalUsage, products: products.map((p) => {
       const interpretation = interpretations.get(p.tnVedCode) ?? null;
       const extraNotes: ProductNote[] = [];
 
@@ -129,6 +137,9 @@ export class DutyInterpreterService {
           severity: 'info',
           field: 'duty',
           message: `Интерпретация ставок: ${interpretation.reasoning}`,
+          messageLocalized: interpretation.reasoningLocalized
+            ? `Duty rate interpretation: ${interpretation.reasoningLocalized}`
+            : undefined,
         });
       }
 
@@ -139,6 +150,7 @@ export class DutyInterpreterService {
           field: 'duty',
           message:
             'AI-интерпретация ставок не получена (Claude вернул пустой ответ или была ошибка). Расчёт использует упрощённые правила TKS.',
+          messageLocalized: getStaticNoteTranslation('interpreter-failed', language),
         });
       }
 
@@ -147,7 +159,7 @@ export class DutyInterpreterService {
         dutyInterpretation: interpretation,
         notes: [...p.notes, ...extraNotes],
       };
-    });
+    }) };
   }
 
   /**
@@ -177,7 +189,8 @@ export class DutyInterpreterService {
 
   private async interpretBatch(
     items: Array<{ code: string; tnved: TnvedCode }>,
-  ): Promise<DutyInterpretation[]> {
+    language?: string,
+  ): Promise<{ results: DutyInterpretation[]; tokenUsage: TokenUsage }> {
     const codesData = items.map((item) => ({
       code: item.code,
       kr_naim: item.tnved.KR_NAIM,
@@ -207,7 +220,7 @@ ${JSON.stringify(codesData, null, 2)}
     }
   ],
   "requiredDimensions": ["area", "volume"],
-  "reasoning": "Пояснение логики"
+  "reasoning": "Пояснение логики"${language && language !== 'ru' ? `,\n  "reasoningLocalized": "Explanation in ${language === 'zh' ? 'Chinese' : 'English'}"` : ''}
 }
 
 Отвечай ТОЛЬКО JSON-массивом.`;
@@ -229,6 +242,12 @@ ${JSON.stringify(codesData, null, 2)}
       throw new Error('Expected JSON array from Claude');
     }
 
-    return parsed as DutyInterpretation[];
+    return {
+      results: parsed as DutyInterpretation[],
+      tokenUsage: {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      },
+    };
   }
 }

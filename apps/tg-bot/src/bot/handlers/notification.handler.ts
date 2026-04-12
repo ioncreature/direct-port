@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 import { Api, InputFile } from 'grammy';
 import { ApiClientService } from '../../api-client/api-client.service';
+import { i18n } from '../i18n';
 
 interface DocumentNotification {
   documentId: string;
@@ -11,6 +12,7 @@ interface DocumentNotification {
   status: 'processed' | 'failed' | 'rejected';
   errorMessage?: string;
   rejectionReasons?: string[];
+  language?: string;
 }
 
 @Injectable()
@@ -28,8 +30,13 @@ export class NotificationHandler extends WorkerHost {
     this.tgApi = token ? new Api(token) : null;
   }
 
+  private t(lang: string | undefined, key: string, args?: Record<string, string>): string {
+    return i18n.t(lang || 'en', key, args);
+  }
+
   async process(job: Job<DocumentNotification>): Promise<void> {
-    const { documentId, telegramUserId, status, errorMessage, rejectionReasons } = job.data;
+    const { documentId, telegramUserId, status, errorMessage, rejectionReasons, language } =
+      job.data;
     this.logger.log(`Notification for document ${documentId}: ${status}`);
 
     if (!this.tgApi) {
@@ -44,15 +51,10 @@ export class NotificationHandler extends WorkerHost {
       const reasonsList =
         reasons.length > 0
           ? reasons.map((r, i) => `${i + 1}. ${r}`).join('\n')
-          : 'Файл не содержит данных, пригодных для оформления декларации.';
+          : this.t(language, 'notif-rejected-default');
 
       await this.tgApi
-        .sendMessage(
-          chatId,
-          `⛔ Документ не может быть обработан.\n\n` +
-            `Причины:\n${reasonsList}\n\n` +
-            `Исправьте файл и загрузите снова.`,
-        )
+        .sendMessage(chatId, this.t(language, 'notif-rejected', { reasons: reasonsList }))
         .catch((err) =>
           this.logger.error(`Failed to send rejection notification to ${chatId}`, err),
         );
@@ -60,11 +62,11 @@ export class NotificationHandler extends WorkerHost {
     }
 
     if (status === 'failed') {
+      const detail = errorMessage
+        ? errorMessage
+        : this.t(language, 'notif-failed-retry');
       await this.tgApi
-        .sendMessage(
-          chatId,
-          `❌ Ошибка при обработке документа.\n${errorMessage ? `Причина: ${errorMessage}` : 'Попробуйте загрузить файл заново.'}`,
-        )
+        .sendMessage(chatId, this.t(language, 'notif-failed', { detail }))
         .catch((err) => this.logger.error(`Failed to send error notification to ${chatId}`, err));
       return;
     }
@@ -75,23 +77,11 @@ export class NotificationHandler extends WorkerHost {
       await this.tgApi.sendDocument(
         chatId,
         new InputFile(fileBuffer, `result_${documentId}.xlsx`),
-        {
-          caption:
-            '✅ Документ обработан!\n\n' +
-            'В файле добавлены столбцы:\n' +
-            '• Код ТН ВЭД\n' +
-            '• Ставки пошлины и НДС\n' +
-            '• Суммы пошлины и НДС\n' +
-            '• Комиссия за доставку\n' +
-            '• Статус расчёта и замечания',
-        },
+        { caption: this.t(language, 'notif-success') },
       );
     } catch (err) {
       this.logger.error(`Failed to send result for document ${documentId}`, err);
-      await this.tgApi.sendMessage(
-        chatId,
-        '⚠️ Документ обработан, но не удалось отправить файл. Попробуйте позже.',
-      );
+      await this.tgApi.sendMessage(chatId, this.t(language, 'notif-send-failed'));
     }
   }
 }

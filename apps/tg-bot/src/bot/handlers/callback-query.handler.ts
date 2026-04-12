@@ -1,15 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Context, InlineKeyboard } from 'grammy';
+import { InlineKeyboard } from 'grammy';
 import { ApiClientService } from '../../api-client/api-client.service';
 import { ColumnMappingInput, ExcelService } from '../../excel/excel.service';
 import { formatUser } from '../format-user';
+import { type BotContext } from '../i18n';
 import { ColumnMapping, ConversationStateService } from '../state/conversation-state.service';
 
 const COLUMN_STEPS = [
-  { field: 'description', next: 'awaiting_column_price', label: 'стоимостью' },
-  { field: 'price', next: 'awaiting_column_weight', label: 'весом' },
-  { field: 'weight', next: 'awaiting_column_quantity', label: 'количеством' },
-  { field: 'quantity', next: null, label: null },
+  { field: 'description', next: 'awaiting_column_price', labelKey: 'price' },
+  { field: 'price', next: 'awaiting_column_weight', labelKey: 'weight' },
+  { field: 'weight', next: 'awaiting_column_quantity', labelKey: 'quantity' },
+  { field: 'quantity', next: null, labelKey: null },
 ] as const;
 
 @Injectable()
@@ -22,7 +23,7 @@ export class CallbackQueryHandler {
     private stateService: ConversationStateService,
   ) {}
 
-  async handle(ctx: Context) {
+  async handle(ctx: BotContext) {
     const data = ctx.callbackQuery?.data;
     if (!data?.startsWith('col_')) return;
 
@@ -36,7 +37,7 @@ export class CallbackQueryHandler {
     const state = await this.stateService.getState(chatId);
     if (!state) {
       this.logger.warn(`Session expired for chat=${chatId} (${user}), data="${data}"`);
-      await ctx.editMessageText('Сессия истекла. Отправьте файл заново.');
+      await ctx.editMessageText(ctx.t('session-expired'));
       return;
     }
 
@@ -71,14 +72,15 @@ export class CallbackQueryHandler {
         }
       });
 
+      const label = ctx.t(`column-label-${currentStep.labelKey}`);
       await ctx.editMessageText(
-        `✅ ${state.headers[index]}\n\nВыберите столбец с ${currentStep.label}:`,
+        ctx.t('column-selected', { header: state.headers[index], label }),
         { reply_markup: kb },
       );
     } else {
       // All 4 columns mapped — process
       await ctx.editMessageText(
-        `✅ ${state.headers[index]}\n\nВсе столбцы выбраны. Обрабатываю...`,
+        ctx.t('all-columns-selected', { header: state.headers[index] }),
       );
 
       try {
@@ -88,7 +90,7 @@ export class CallbackQueryHandler {
 
         if (products.length === 0) {
           this.logger.warn(`Empty file "${state.fileName}" from ${user}`);
-          await ctx.reply('Файл не содержит данных. Проверьте формат.');
+          await ctx.reply(ctx.t('empty-file'));
           await this.stateService.clearState(chatId);
           return;
         }
@@ -104,14 +106,13 @@ export class CallbackQueryHandler {
         );
 
         await ctx.reply(
-          `📄 Файл «${state.fileName}» принят в обработку (${products.length} строк).\n` +
-            'Вы получите уведомление по завершении.',
+          ctx.t('doc-accepted', { fileName: state.fileName, rows: String(products.length) }),
         );
       } catch (err) {
         this.logger.error(
           `Error processing document "${state.fileName}" from ${user}: ${(err as Error).message}`,
         );
-        await ctx.reply('Ошибка при отправке документа. Попробуйте ещё раз.');
+        await ctx.reply(ctx.t('doc-send-error'));
       }
 
       await this.stateService.clearState(chatId);

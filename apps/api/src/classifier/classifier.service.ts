@@ -1,11 +1,15 @@
+import Anthropic from '@anthropic-ai/sdk';
 import {
   TksApiClient,
   calcProbability,
   type GoodsItem,
   type TnvedCode,
 } from '@direct-port/tks-api';
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { extractClaudeText, parseClaudeJson } from '../common/claude';
+import { getStaticNoteTranslation } from '../common/note-translations';
 import type { ProductNote } from '../common/product-notes';
+import { type TokenUsage, addTokenUsage, emptyTokenUsage } from '../common/token-usage';
 import type { Dimension } from '../duty-interpreter/interfaces';
 
 /**
@@ -33,32 +37,116 @@ export interface ClassifiedProduct extends ProductRow {
   matchConfidence: number;
   matched: boolean;
   tnvedRaw?: TnvedCode;
-  /** Аккумулируемые заметки по товару — не теряются между этапами. */
+  verified: boolean;
+  suggestedCode: string | null;
+  verificationComment: string;
   notes: ProductNote[];
 }
 
-const CONCURRENCY = 5;
+/**
+ * Alias для обратной совместимости. Раньше Verification был отдельным шагом,
+ * теперь classify+verify объединены в ClassifierService.
+ */
+export type VerifiedProduct = ClassifiedProduct;
+
+interface TksCandidate {
+  code: string;
+  name: string;
+  confidence: number;
+}
+
+interface ClaudeSelection {
+  index: number;
+  tnVedCode: string;
+  confidence: number;
+  comment: string;
+  comment_localized?: string;
+  fromCandidates: boolean;
+}
+
+const SEARCH_CONCURRENCY = 5;
+const CLAUDE_BATCH_SIZE = 10;
+const MAX_CANDIDATES = 5;
 const LOW_CONFIDENCE_THRESHOLD = 0.7;
+
+const SYSTEM_PROMPT = `Ты — эксперт по таможенной классификации товаров по ТН ВЭД (Товарная номенклатура внешнеэкономической деятельности ЕАЭС).
+
+Для каждого товара тебе предоставлены описание и кандидаты из справочника TKS с оценкой релевантности.
+
+Задача — выбрать наиболее подходящий 10-значный код ТН ВЭД.
+
+Правила:
+- Если один из кандидатов TKS подходит — выбери его (fromCandidates: true)
+- Если ни один кандидат не подходит — предложи более точный 10-значный код (fromCandidates: false)
+- Если кандидатов нет — предложи код на основе описания товара
+- Если описание слишком расплывчатое для точной классификации — выбери наиболее вероятный и укажи это в comment
+- confidence: 0.0-1.0 — твоя уверенность в выбранном коде
+- comment: краткое пояснение выбора на русском
+- Отвечай ТОЛЬКО валидным JSON-массивом, без markdown-обёртки`;
 
 @Injectable()
 export class ClassifierService {
   private logger = new Logger(ClassifierService.name);
 
-  constructor(private tksApi: TksApiClient) {}
+  constructor(
+    private tksApi: TksApiClient,
+    @Optional() @Inject(Anthropic) private anthropic: Anthropic | null,
+  ) {}
 
-  async classify(products: ProductRow[]): Promise<ClassifiedProduct[]> {
-    const results: ClassifiedProduct[] = new Array(products.length);
+  async classify(
+    products: ProductRow[],
+    language?: string,
+  ): Promise<{ products: ClassifiedProduct[]; tokenUsage: TokenUsage }> {
+    // Phase 1: TKS search — top-N candidates for each product
+    const candidatesByProduct = await this.searchAll(products);
 
-    // Bounded concurrency: обрабатываем по CONCURRENCY продуктов параллельно
-    for (let i = 0; i < products.length; i += CONCURRENCY) {
-      const batch = products.slice(i, i + CONCURRENCY);
+    // Phase 2: Claude classify+verify (or fallback to TKS-only)
+    let selections: (ClaudeSelection | null)[];
+    let tokenUsage = emptyTokenUsage();
+    if (this.anthropic) {
+      const result = await this.classifyWithClaude(products, candidatesByProduct, language);
+      selections = result.selections;
+      tokenUsage = result.tokenUsage;
+    } else {
+      this.logger.warn('ANTHROPIC_API_KEY not set, using TKS-only classification');
+      selections = products.map(() => null);
+    }
+
+    // Phase 3: Load TNVED rates for selected codes
+    const codesToLoad = new Set<string>();
+    for (let i = 0; i < products.length; i++) {
+      const sel = selections[i];
+      if (sel?.tnVedCode) {
+        codesToLoad.add(sel.tnVedCode);
+      } else {
+        // Fallback: best TKS candidate
+        const top = candidatesByProduct[i]?.[0];
+        if (top) codesToLoad.add(top.code);
+      }
+    }
+    const tnvedByCode = await this.loadTnvedRates([...codesToLoad]);
+
+    // Phase 4: Assemble results
+    return {
+      products: this.assembleResults(products, candidatesByProduct, selections, tnvedByCode, language),
+      tokenUsage,
+    };
+  }
+
+  // --- Phase 1: TKS Search ---
+
+  private async searchAll(products: ProductRow[]): Promise<TksCandidate[][]> {
+    const results: TksCandidate[][] = new Array(products.length);
+
+    for (let i = 0; i < products.length; i += SEARCH_CONCURRENCY) {
+      const batch = products.slice(i, i + SEARCH_CONCURRENCY);
       const batchResults = await Promise.all(
         batch.map((product) =>
-          this.classifyOne(product).catch((err) => {
+          this.searchOne(product.description).catch((err) => {
             this.logger.warn(
-              `Failed to classify "${product.description}": ${err instanceof Error ? err.message : err}`,
+              `TKS search failed for "${product.description}": ${err instanceof Error ? err.message : err}`,
             );
-            return this.unmatched(product);
+            return [] as TksCandidate[];
           }),
         ),
       );
@@ -67,82 +155,225 @@ export class ClassifierService {
       }
     }
 
-    const matchedCount = results.filter((r) => r.matched).length;
-    this.logger.log(`Classified ${results.length} products, matched: ${matchedCount}`);
     return results;
   }
 
-  private async classifyOne(product: ProductRow): Promise<ClassifiedProduct> {
-    const searchResult = await this.tksApi.searchGoodsGrouped(product.description);
-    if (!searchResult.data.length) {
-      return this.unmatched(product, 'TKS не вернул ни одного кандидата по описанию');
-    }
+  private async searchOne(description: string): Promise<TksCandidate[]> {
+    const result = await this.tksApi.searchGoodsGrouped(description);
+    if (!result.data.length) return [];
 
-    const best = this.selectBest(searchResult.data, searchResult.hm);
-    if (!best) {
-      return this.unmatched(product, 'Не удалось выбрать лучший кандидат из результата TKS');
-    }
-
-    const tnved = await this.tksApi.getTnvedCode(best.item.CODE);
-    const rates = tnved.TNVED ?? {};
-
-    const notes: ProductNote[] = [...(product.notes ?? [])];
-    if (best.confidence < LOW_CONFIDENCE_THRESHOLD) {
-      notes.push({
-        stage: 'classify',
-        severity: 'warning',
-        field: 'code',
-        message: `Классификатор TKS выбрал код ${tnved.CODE} с низкой уверенностью (${best.confidence.toFixed(2)}). Рекомендуется проверить код вручную.`,
-      });
-    }
-
-    return {
-      ...product,
-      tnVedCode: tnved.CODE,
-      tnVedDescription: tnved.KR_NAIM,
-      dutyRate: rates.IMP ?? 0,
-      dutySign: rates.IMPSIGN ?? null,
-      dutyMin: rates.IMP2 ?? null,
-      dutyMinUnit: rates.IMPEDI2 ?? null,
-      vatRate: rates.NDS ?? 20,
-      exciseRate: rates.AKC ?? 0,
-      matchConfidence: best.confidence,
-      matched: true,
-      tnvedRaw: tnved,
-      notes,
-    };
+    return result.data
+      .map((item) => ({
+        code: item.CODE,
+        name: item.KR_NAIM,
+        confidence: calcProbability(item, result.hm),
+      }))
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, MAX_CANDIDATES);
   }
 
-  private selectBest(
-    items: GoodsItem[],
-    total: number,
-  ): { item: GoodsItem; confidence: number } | null {
-    if (!items.length) return null;
+  // --- Phase 2: Claude Classify+Verify ---
 
-    let bestItem = items[0];
-    let bestConfidence = calcProbability(items[0], total);
+  private async classifyWithClaude(
+    products: ProductRow[],
+    candidatesByProduct: TksCandidate[][],
+    language?: string,
+  ): Promise<{ selections: (ClaudeSelection | null)[]; tokenUsage: TokenUsage }> {
+    const allSelections: (ClaudeSelection | null)[] = new Array(products.length).fill(null);
+    let totalUsage = emptyTokenUsage();
 
-    for (let i = 1; i < items.length; i++) {
-      const conf = calcProbability(items[i], total);
-      if (conf > bestConfidence) {
-        bestItem = items[i];
-        bestConfidence = conf;
+    for (let i = 0; i < products.length; i += CLAUDE_BATCH_SIZE) {
+      const batchEnd = Math.min(i + CLAUDE_BATCH_SIZE, products.length);
+      const items = [];
+      for (let j = i; j < batchEnd; j++) {
+        items.push({
+          index: j,
+          description: products[j].description,
+          candidates: candidatesByProduct[j] ?? [],
+        });
+      }
+
+      try {
+        const { selections, tokenUsage } = await this.callClaude(items, language);
+        totalUsage = addTokenUsage(totalUsage, tokenUsage);
+        for (const sel of selections) {
+          if (sel.index >= 0 && sel.index < products.length) {
+            allSelections[sel.index] = sel;
+          }
+        }
+      } catch (err) {
+        this.logger.error(`Claude classify+verify batch failed`, err);
+        // Fallback: null selections → will use best TKS candidate
       }
     }
 
-    return { item: bestItem, confidence: bestConfidence };
+    return { selections: allSelections, tokenUsage: totalUsage };
   }
 
-  private unmatched(product: ProductRow, reason = 'Код ТН ВЭД не определён'): ClassifiedProduct {
-    const notes: ProductNote[] = [
-      ...(product.notes ?? []),
+  private async callClaude(
+    items: Array<{ index: number; description: string; candidates: TksCandidate[] }>,
+    language?: string,
+  ): Promise<{ selections: ClaudeSelection[]; tokenUsage: TokenUsage }> {
+    const needsLocalized = language && language !== 'ru';
+    const commentInstruction = needsLocalized
+      ? `    "comment": "краткое пояснение на русском",
+    "comment_localized": "brief explanation in ${language === 'zh' ? 'Chinese' : 'English'}",`
+      : `    "comment": "краткое пояснение",`;
+
+    const userPrompt = `Классифицируй товары по ТН ВЭД:
+
+${JSON.stringify(items, null, 2)}
+
+Для каждого товара ответь JSON-массивом:
+[
+  {
+    "index": 0,
+    "tnVedCode": "1234567890",
+    "confidence": 0.85,
+${commentInstruction}
+    "fromCandidates": true
+  }
+]
+
+Отвечай ТОЛЬКО JSON-массивом.`;
+
+    const response = await this.anthropic!.messages.create(
       {
-        stage: 'classify',
-        severity: 'blocker',
-        field: 'code',
-        message: `${reason}. Без кода ТН ВЭД расчёт пошлины и НДС невозможен.`,
+        model: 'claude-sonnet-4-6',
+        max_tokens: 2048,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userPrompt }],
       },
-    ];
+      { timeout: 30_000 },
+    );
+
+    const text = extractClaudeText(response);
+    const parsed = parseClaudeJson(text);
+    if (!Array.isArray(parsed)) {
+      throw new Error(`Expected JSON array, got: ${typeof parsed}`);
+    }
+    return {
+      selections: parsed as ClaudeSelection[],
+      tokenUsage: {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      },
+    };
+  }
+
+  // --- Phase 3: Load TNVED Rates ---
+
+  private async loadTnvedRates(codes: string[]): Promise<Map<string, TnvedCode>> {
+    const map = new Map<string, TnvedCode>();
+    for (let i = 0; i < codes.length; i += SEARCH_CONCURRENCY) {
+      const batch = codes.slice(i, i + SEARCH_CONCURRENCY);
+      await Promise.all(
+        batch.map(async (code) => {
+          try {
+            map.set(code, await this.tksApi.getTnvedCode(code));
+          } catch {
+            this.logger.warn(`Failed to load TNVED for ${code}`);
+          }
+        }),
+      );
+    }
+    return map;
+  }
+
+  // --- Phase 4: Assemble Results ---
+
+  private assembleResults(
+    products: ProductRow[],
+    candidatesByProduct: TksCandidate[][],
+    selections: (ClaudeSelection | null)[],
+    tnvedByCode: Map<string, TnvedCode>,
+    language?: string,
+  ): ClassifiedProduct[] {
+    return products.map((product, i) => {
+      const sel = selections[i];
+      const candidates = candidatesByProduct[i] ?? [];
+      const bestTks = candidates[0] ?? null;
+
+      // Priority: Claude selection > best TKS candidate > unmatched
+      const chosenCode = sel?.tnVedCode ?? bestTks?.code ?? '';
+      const tnved = chosenCode ? tnvedByCode.get(chosenCode) : undefined;
+
+      if (!chosenCode || !tnved) {
+        return this.unmatched(product, sel, candidates);
+      }
+
+      const rates = tnved.TNVED ?? {};
+      const notes: ProductNote[] = [...(product.notes ?? [])];
+
+      const confidence = sel?.confidence ?? bestTks?.confidence ?? 0;
+      const verified = sel != null;
+
+      if (!verified) {
+        notes.push({
+          stage: 'classify',
+          severity: 'warning',
+          field: 'code',
+          message:
+            'AI-классификация недоступна, код выбран только по справочнику TKS. Рекомендуется проверка.',
+          messageLocalized: getStaticNoteTranslation('verification-disabled', language),
+        });
+      } else if (confidence < LOW_CONFIDENCE_THRESHOLD) {
+        notes.push({
+          stage: 'classify',
+          severity: 'warning',
+          field: 'code',
+          message: `Код ${chosenCode} выбран с невысокой уверенностью (${confidence.toFixed(2)}). ${sel.comment}`,
+          messageLocalized: sel.comment_localized
+            ? `Code ${chosenCode} selected with low confidence (${confidence.toFixed(2)}). ${sel.comment_localized}`
+            : undefined,
+        });
+      } else if (sel.comment) {
+        notes.push({
+          stage: 'classify',
+          severity: 'info',
+          field: 'code',
+          message: `Классификация: ${sel.comment}`,
+          messageLocalized: sel.comment_localized
+            ? `Classification: ${sel.comment_localized}`
+            : undefined,
+        });
+      }
+
+      const suggestedCode =
+        sel && !sel.fromCandidates ? sel.tnVedCode : null;
+
+      return {
+        ...product,
+        tnVedCode: tnved.CODE,
+        tnVedDescription: tnved.KR_NAIM,
+        dutyRate: rates.IMP ?? 0,
+        dutySign: rates.IMPSIGN ?? null,
+        dutyMin: rates.IMP2 ?? null,
+        dutyMinUnit: rates.IMPEDI2 ?? null,
+        vatRate: rates.NDS ?? 20,
+        exciseRate: rates.AKC ?? 0,
+        matchConfidence: confidence,
+        matched: true,
+        tnvedRaw: tnved,
+        verified,
+        suggestedCode,
+        verificationComment: sel?.comment ?? '',
+        notes,
+      };
+    });
+  }
+
+  private unmatched(
+    product: ProductRow,
+    sel: ClaudeSelection | null,
+    candidates: TksCandidate[],
+  ): ClassifiedProduct {
+    const reason = candidates.length === 0
+      ? 'TKS не вернул кандидатов, AI не смог предложить код'
+      : sel
+        ? `AI предложил код ${sel.tnVedCode}, но он не найден в справочнике`
+        : 'Не удалось определить код ТН ВЭД';
+
     return {
       ...product,
       tnVedCode: '',
@@ -155,7 +386,19 @@ export class ClassifierService {
       exciseRate: 0,
       matchConfidence: 0,
       matched: false,
-      notes,
+      tnvedRaw: undefined,
+      verified: false,
+      suggestedCode: sel?.tnVedCode ?? null,
+      verificationComment: sel?.comment ?? reason,
+      notes: [
+        ...(product.notes ?? []),
+        {
+          stage: 'classify',
+          severity: 'blocker',
+          field: 'code',
+          message: `${reason}. Без кода ТН ВЭД расчёт пошлины и НДС невозможен.`,
+        },
+      ],
     };
   }
 }

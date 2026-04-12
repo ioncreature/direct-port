@@ -46,6 +46,9 @@ export class Document {
   @Column({ type: 'varchar', length: 10, nullable: true })
   currency: string | null;
 
+  @Column({ type: 'varchar', length: 5, nullable: true })
+  language: string | null;
+
   @Column({ type: 'jsonb', name: 'parsed_data', nullable: true })
   parsedData: Record<string, unknown>[] | null;
 
@@ -60,6 +63,12 @@ export class Document {
 
   @Column({ type: 'jsonb', name: 'rejection_reasons', nullable: true })
   rejectionReasons: string[] | null;
+
+  @Column({ type: 'int', name: 'input_tokens', default: 0 })
+  inputTokens: number;
+
+  @Column({ type: 'int', name: 'output_tokens', default: 0 })
+  outputTokens: number;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

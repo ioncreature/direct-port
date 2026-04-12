@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Context } from 'grammy';
 import { ApiClientService } from '../../api-client/api-client.service';
 import { formatUser } from '../format-user';
+import { type BotContext, mapTelegramLocale } from '../i18n';
 import { ConversationStateService } from '../state/conversation-state.service';
 
 @Injectable()
@@ -13,7 +13,7 @@ export class FileUploadHandler {
     private stateService: ConversationStateService,
   ) {}
 
-  async handle(ctx: Context) {
+  async handle(ctx: BotContext) {
     const document = ctx.message?.document;
     if (!document) return;
 
@@ -23,12 +23,12 @@ export class FileUploadHandler {
 
     if (ext !== 'xlsx' && ext !== 'csv') {
       this.logger.warn(`Rejected unsupported file "${fileName}" (ext=${ext}) from ${user}`);
-      await ctx.reply('Поддерживаются только файлы .xlsx и .csv');
+      await ctx.reply(ctx.t('unsupported-format'));
       return;
     }
 
     try {
-      await ctx.reply('📥 Загружаю файл...');
+      await ctx.reply(ctx.t('uploading'));
 
       const file = await ctx.getFile();
       const url = `https://api.telegram.org/file/bot${ctx.api.token}/${file.file_path}`;
@@ -38,11 +38,13 @@ export class FileUploadHandler {
       let telegramUserId = (await this.stateService.getState(ctx.chat!.id))?.telegramUserId;
 
       if (!telegramUserId && ctx.from) {
+        const language = mapTelegramLocale(ctx.from.language_code);
         const tgUser = await this.apiClient.registerTelegramUser({
           telegramId: ctx.from.id,
           username: ctx.from.username,
           firstName: ctx.from.first_name,
           lastName: ctx.from.last_name,
+          language,
         });
         telegramUserId = tgUser.id;
         await this.stateService.setState(ctx.chat!.id, {
@@ -53,6 +55,7 @@ export class FileUploadHandler {
           headers: [],
           columnMapping: {},
           telegramUserId,
+          language,
         });
       }
 
@@ -61,12 +64,12 @@ export class FileUploadHandler {
         `Uploaded "${fileName}" (${buffer.length}B) from ${user}: documentId=${uploadResult.id} status=${uploadResult.status}`,
       );
 
-      await ctx.reply(
-        `📄 Файл «${fileName}» принят в обработку.\n` + 'Вы получите уведомление по завершении.',
-      );
+      await ctx.reply(ctx.t('file-accepted', { fileName }));
     } catch (err) {
       this.logger.error(`File upload failed for "${fileName}" from ${user}: ${(err as Error).message}`);
-      await ctx.reply('Ошибка при обработке файла. Попробуйте ещё раз.');
+      const code = (err as any)?.response?.data?.code;
+      const msgKey = code ? `error-${code}` : 'upload-error';
+      await ctx.reply(ctx.t(msgKey));
     }
   }
 }

@@ -26,7 +26,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
 
     const doc = await this.repo
       .createQueryBuilder('doc')
-      .select(['doc.id', 'doc.status', 'doc.originalFileName', 'doc.fileBuffer'])
+      .select(['doc.id', 'doc.status', 'doc.originalFileName', 'doc.fileBuffer', 'doc.language'])
       .leftJoinAndSelect('doc.telegramUser', 'tu')
       .where('doc.id = :id', { id: documentId })
       .getOne();
@@ -46,13 +46,15 @@ export class DocumentsParsingProcessor extends WorkerHost {
     }
 
     try {
-      const { products, currency, columnMapping, feasibility, rejectionReasons } =
+      const { products, currency, columnMapping, feasibility, rejectionReasons, tokenUsage } =
         await this.aiParser.parse(doc.fileBuffer, doc.originalFileName);
 
       doc.parsedData = products;
       doc.currency = currency;
       doc.columnMapping = columnMapping;
       doc.rowCount = products.length;
+      doc.inputTokens = (doc.inputTokens || 0) + tokenUsage.inputTokens;
+      doc.outputTokens = (doc.outputTokens || 0) + tokenUsage.outputTokens;
       doc.fileBuffer = null;
 
       if (feasibility === 'rejected') {
@@ -100,6 +102,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
       status: opts.status,
       errorMessage: opts.errorMessage,
       rejectionReasons: opts.rejectionReasons,
+      language: opts.doc.language ?? opts.doc.telegramUser?.language,
     };
 
     await this.notificationQueue.add('document-ready', payload).catch((err) => {

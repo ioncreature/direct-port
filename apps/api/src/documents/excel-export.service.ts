@@ -43,7 +43,12 @@ interface ColumnDef {
   numFmt?: string;
 }
 
-function buildColumns(currency: string, hasRub: boolean): ColumnDef[] {
+const LOCALIZED_NOTES_HEADERS: Record<string, string> = {
+  zh: '备注（翻译）',
+  en: 'Notes (translated)',
+};
+
+function buildColumns(currency: string, hasRub: boolean, language?: string | null): ColumnDef[] {
   const columns: ColumnDef[] = [
     { header: 'Наименование', key: 'description', width: 40 },
     { header: 'Количество', key: 'quantity', width: 12 },
@@ -77,6 +82,15 @@ function buildColumns(currency: string, hasRub: boolean): ColumnDef[] {
 
   columns.push({ header: 'Статус', key: 'calculationStatus', width: 20 });
   columns.push({ header: 'Замечания', key: 'notesText', width: 60 });
+
+  if (language && language !== 'ru' && LOCALIZED_NOTES_HEADERS[language]) {
+    columns.push({
+      header: LOCALIZED_NOTES_HEADERS[language],
+      key: 'notesLocalized',
+      width: 60,
+    });
+  }
+
   return columns;
 }
 
@@ -108,16 +122,16 @@ function resolveStatus(row: ResultRow): CalculationStatus {
   return row.verificationStatus === 'exact' ? 'exact' : 'partial';
 }
 
-function formatNotes(notes: ProductNote[] | undefined): string {
+function formatNotes(notes: ProductNote[] | undefined, localized = false): string {
   if (!notes || notes.length === 0) return '';
-  // Блокеры первыми, затем warning, затем info
   const order: Record<string, number> = { blocker: 0, warning: 1, info: 2 };
   const sorted = [...notes].sort((a, b) => (order[a.severity] ?? 99) - (order[b.severity] ?? 99));
   return sorted
     .map((n) => {
       const prefix =
         n.severity === 'blocker' ? '⚠ ' : n.severity === 'warning' ? '! ' : '• ';
-      return prefix + n.message;
+      const text = localized ? (n.messageLocalized || n.message) : n.message;
+      return prefix + text;
     })
     .join('\n');
 }
@@ -164,7 +178,9 @@ export class ExcelExportService {
 
     const currency = doc.currency || 'USD';
     const hasRub = currency !== 'RUB' && data.length > 0 && 'totalCostRub' in data[0];
-    const COLUMNS = buildColumns(currency, hasRub);
+    const language = doc.language || null;
+    const COLUMNS = buildColumns(currency, hasRub, language);
+    const hasLocalizedNotes = language != null && language !== 'ru';
 
     sheet.columns = COLUMNS.map((col) => ({
       header: col.header,
@@ -212,6 +228,10 @@ export class ExcelExportService {
         calculationStatus: STATUS_LABELS[status],
         notesText,
       };
+
+      if (hasLocalizedNotes) {
+        rowData.notesLocalized = formatNotes(row.notes, true);
+      }
 
       if (hasRub) {
         rowData.totalPriceRub = row.totalPriceRub;

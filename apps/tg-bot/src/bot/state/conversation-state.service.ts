@@ -22,6 +22,7 @@ export interface ConversationState {
   headers: string[];
   columnMapping: ColumnMapping;
   telegramUserId: string;
+  language: string;
 }
 
 const STATE_TTL = 3600; // 1 hour

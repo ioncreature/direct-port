@@ -69,9 +69,14 @@ export class ApiClientService {
     username?: string;
     firstName?: string;
     lastName?: string;
-  }): Promise<{ id: string; telegramId: string }> {
+    language?: string;
+  }): Promise<{ id: string; telegramId: string; language: string }> {
     const { data } = await this.client.post('/telegram-users/register', payload);
     return data;
+  }
+
+  async updateUserLanguage(telegramId: number, language: string): Promise<void> {
+    await this.client.patch(`/telegram-users/${telegramId}/language`, { language });
   }
 
   async createDocument(payload: {

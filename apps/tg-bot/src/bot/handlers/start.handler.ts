@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Context, Keyboard } from 'grammy';
+import { Keyboard } from 'grammy';
 import { ApiClientService } from '../../api-client/api-client.service';
+import { type BotContext, mapTelegramLocale } from '../i18n';
 import { ConversationStateService } from '../state/conversation-state.service';
 
 @Injectable()
@@ -12,12 +13,15 @@ export class StartHandler {
     private stateService: ConversationStateService,
   ) {}
 
-  async handle(ctx: Context) {
+  async handle(ctx: BotContext) {
     const from = ctx.from;
     if (!from) {
       this.logger.warn('/start received without "from" field');
       return;
     }
+
+    const language = mapTelegramLocale(from.language_code);
+    ctx.i18n.useLocale(language);
 
     try {
       const tgUser = await this.apiClient.registerTelegramUser({
@@ -25,6 +29,7 @@ export class StartHandler {
         username: from.username,
         firstName: from.first_name,
         lastName: from.last_name,
+        language,
       });
       this.logger.log(`Registered telegram user: internalId=${tgUser.id} telegramId=${from.id}`);
 
@@ -36,6 +41,7 @@ export class StartHandler {
         headers: [],
         columnMapping: {},
         telegramUserId: tgUser.id,
+        language,
       });
     } catch (err) {
       this.logger.error(
@@ -43,15 +49,12 @@ export class StartHandler {
       );
     }
 
-    const keyboard = new Keyboard().text('📁 Загрузить файл').row().text('❓ Помощь').resized();
+    const keyboard = new Keyboard()
+      .text(ctx.t('btn-upload'))
+      .row()
+      .text(ctx.t('btn-help'))
+      .resized();
 
-    await ctx.reply(
-      'Добро пожаловать в DirectPort Bot!\n\n' +
-        '• Загрузите файл с товарами (.xlsx или .csv)\n' +
-        '• Выберите нужные столбцы\n' +
-        '• Получите результат обработки\n\n' +
-        'Выберите действие:',
-      { reply_markup: keyboard },
-    );
+    await ctx.reply(ctx.t('welcome'), { reply_markup: keyboard });
   }
 }

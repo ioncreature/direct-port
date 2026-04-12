@@ -9,6 +9,7 @@ import { FileUploadHandler } from './handlers/file-upload.handler';
 import { HelpHandler } from './handlers/help.handler';
 import { MenuHandler } from './handlers/menu.handler';
 import { NotificationHandler } from './handlers/notification.handler';
+import { LanguageHandler } from './handlers/language.handler';
 import { StartHandler } from './handlers/start.handler';
 import { ConversationStateModule } from './state/conversation-state.module';
 
@@ -36,6 +37,7 @@ import { ConversationStateModule } from './state/conversation-state.module';
     FileUploadHandler,
     CallbackQueryHandler,
     NotificationHandler,
+    LanguageHandler,
   ],
 })
 export class BotModule {}

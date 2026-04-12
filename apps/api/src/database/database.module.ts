@@ -16,6 +16,7 @@ import { AddAdminDocumentUpload1775800000000 } from './migrations/1775800000000-
 import { AddRequiresReviewStatus1775900000000 } from './migrations/1775900000000-AddRequiresReviewStatus';
 import { AddDocumentIdToCalculationLog1776000000000 } from './migrations/1776000000000-AddDocumentIdToCalculationLog';
 import { AddFileBufferAndParsingStatus1776100000000 } from './migrations/1776100000000-AddFileBufferAndParsingStatus';
+import { AddLanguageFields1776200000000 } from './migrations/1776200000000-AddLanguageFields';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -44,6 +45,7 @@ import { SeedService } from './seeds/seed.service';
           AddRequiresReviewStatus1775900000000,
           AddDocumentIdToCalculationLog1776000000000,
           AddFileBufferAndParsingStatus1776100000000,
+          AddLanguageFields1776200000000,
         ],
         migrationsRun: true,
       }),

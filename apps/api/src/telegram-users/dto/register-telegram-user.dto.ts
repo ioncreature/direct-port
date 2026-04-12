@@ -1,4 +1,4 @@
-import { IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class RegisterTelegramUserDto {
   @IsNumber()
@@ -15,4 +15,9 @@ export class RegisterTelegramUserDto {
   @IsOptional()
   @IsString()
   lastName?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['ru', 'zh', 'en'])
+  language?: string;
 }

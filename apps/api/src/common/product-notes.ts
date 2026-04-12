@@ -19,6 +19,8 @@ export interface ProductNote {
   severity: ProductNoteSeverity;
   /** Человекочитаемое сообщение на русском. Показывается в Excel и в админке. */
   message: string;
+  /** Сообщение на языке пользователя (если document.language !== 'ru'). */
+  messageLocalized?: string;
   /** Какое поле затронуто: 'duty' | 'vat' | 'excise' | 'code' | 'dimensions' | ... */
   field?: string;
 }

@@ -145,7 +145,7 @@ describe('Documents (e2e)', () => {
       const classifier = app.get(ClassifierService);
       const calculator = app.get(CalculatorService);
 
-      const products = await classifier.classify([
+      const { products } = await classifier.classify([
         { description: 'Говядина', quantity: 10, price: 500, weight: 100 },
       ]);
 

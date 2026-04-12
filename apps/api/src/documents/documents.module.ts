@@ -8,8 +8,8 @@ import { CalculatorModule } from '../calculator/calculator.module';
 import { ClassifierModule } from '../classifier/classifier.module';
 import { CurrencyModule } from '../currency/currency.module';
 import { Document } from '../database/entities/document.entity';
+import { TelegramUser } from '../database/entities/telegram-user.entity';
 import { DutyInterpreterModule } from '../duty-interpreter/duty-interpreter.module';
-import { VerificationModule } from '../verification/verification.module';
 import { DocumentsParsingProcessor } from './documents-parsing.processor';
 import { DocumentsController } from './documents.controller';
 import { DocumentsProcessor } from './documents.processor';
@@ -18,14 +18,13 @@ import { ExcelExportService } from './excel-export.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Document]),
+    TypeOrmModule.forFeature([Document, TelegramUser]),
     BullModule.registerQueue({ name: 'document-parsing' }),
     BullModule.registerQueue({ name: 'document-processing' }),
     BullModule.registerQueue({ name: 'document-notifications' }),
     ClassifierModule,
     CalculatorModule,
     CalculationConfigModule,
-    VerificationModule,
     AiParserModule,
     CurrencyModule,
     DutyInterpreterModule,

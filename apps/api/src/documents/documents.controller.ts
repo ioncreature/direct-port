@@ -17,6 +17,7 @@ import type { MulterOptions } from '@nestjs/platform-express/multer/interfaces/m
 import { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { ErrorCode } from '../common/error-codes';
 import { UserRole } from '../database/entities/user.entity';
 import { DocumentsService } from './documents.service';
 import { CreateDocumentDto } from './dto/create-document.dto';
@@ -31,7 +32,14 @@ const SPREADSHEET_UPLOAD: MulterOptions = {
   fileFilter: (_req, file, cb) => {
     const ext = file.originalname.split('.').pop()?.toLowerCase();
     if (ext === 'xlsx' || ext === 'csv') cb(null, true);
-    else cb(new BadRequestException('Only .xlsx and .csv files are supported'), false);
+    else
+      cb(
+        new BadRequestException({
+          code: ErrorCode.UNSUPPORTED_FORMAT,
+          message: 'Only .xlsx and .csv files are supported',
+        }),
+        false,
+      );
   },
 };
 
@@ -50,7 +58,11 @@ export class DocumentsController {
   @Post('upload')
   @UseInterceptors(FileInterceptor('file', SPREADSHEET_UPLOAD))
   async upload(@UploadedFile() file: Express.Multer.File, @Body() dto: UploadDocumentDto) {
-    if (!file) throw new BadRequestException('File is required');
+    if (!file)
+      throw new BadRequestException({
+        code: ErrorCode.FILE_REQUIRED,
+        message: 'File is required',
+      });
     return this.service.createFromFile(file.buffer, file.originalname, {
       telegramUserId: dto.telegramUserId,
     });
@@ -63,7 +75,11 @@ export class DocumentsController {
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: { id: string },
   ) {
-    if (!file) throw new BadRequestException('File is required');
+    if (!file)
+      throw new BadRequestException({
+        code: ErrorCode.FILE_REQUIRED,
+        message: 'File is required',
+      });
     return this.service.createFromFile(file.buffer, file.originalname, {
       uploadedByUserId: user.id,
     });

@@ -38,20 +38,19 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 - Модули:
   - Auth, Users — авторизация и управление пользователями
   - TnVed — поиск кодов ТН ВЭД в БД
-  - TelegramUsers — регистрация пользователей Telegram, детальный просмотр по UUID
+  - TelegramUsers — регистрация пользователей Telegram, детальный просмотр по UUID, PATCH :telegramId/language
   - Documents — загрузка (Telegram + админка), обработка, переобработка, скачивание
   - AiParser — AI-парсинг таблиц (Claude): определение валюты, перевод, извлечение данных. Retry + валидация
   - Classifier — классификация товаров через TKS API (searchGoodsGrouped)
   - Calculator — расчёт пошлин, НДС, акцизов, комиссии за доставку
   - DutyInterpreter — AI-интерпретация правил расчёта пошлин из справочника ТН ВЭД (Claude)
-  - Verification — верификация кодов ТН ВЭД через Claude (опционально)
   - CalculationConfig — конфигурируемая формула комиссии (CRUD)
   - CalculationLogs — аудит-лог расчётов (запись после обработки, просмотр в админке)
   - Currency — курсы валют ЦБ РФ, конвертация в RUB
   - Tks — shared-модуль TksApiClient
-- Common: PaginationQueryDto, PaginatedResponse — shared инфраструктура пагинации
+- Common: PaginationQueryDto, PaginatedResponse, ErrorCode (коды ошибок для i18n), ProductNote (messageLocalized), note-translations — shared инфраструктура
 - Очереди BullMQ: document-parsing (AI-парсинг), document-processing (классификация/расчёт), document-notifications (уведомления в Telegram)
-- Entities: User, TnVedCode, RefreshToken, CalculationLog, TelegramUser, Document, CalculationConfig
+- Entities: User, TnVedCode, RefreshToken, CalculationLog, TelegramUser (+ language), Document (+ language), CalculationConfig
 - Миграции и seed через TypeORM CLI (tsx)
 
 ### apps/admin-web — Админ-панель (Next.js)
@@ -69,7 +68,13 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 
 ### apps/tg-bot — Telegram-бот
 
-- grammY, команды /start, /help
+- grammY, команды /start, /help, /language
+- Локализация: @grammyjs/i18n + Fluent (.ftl), 3 языка: ru, zh, en
+  - Locale файлы: `src/bot/locales/{ru,en,zh}.ftl` (27 ключей)
+  - BotContext = Context & I18nFlavor (типизированный контекст с ctx.t())
+  - Автодетект языка из Telegram `language_code`, ручной выбор через /language
+  - Язык сохраняется в TelegramUser.language (API) + ConversationState.language (Redis)
+  - NotificationHandler (BullMQ worker) использует `i18n.t(locale, key)` вне middleware
 - Загрузка .xlsx/.csv → отправка файла в API (POST /documents/upload), мгновенный ответ (парсинг асинхронный через BullMQ)
 - Состояние диалога в Redis (ConversationStateService, TTL 1 час)
 - Получение уведомлений через BullMQ (document-notifications) → отправка Excel в Telegram
@@ -91,9 +96,9 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 → Валидация (детерминистическая + AI), retry до 2 попыток
 → Если confident → status=PENDING → BullMQ: document-processing
 → Если не confident → status=REQUIRES_REVIEW → ручная проверка в админке (PATCH :id/review + POST :id/reprocess или POST :id/reject)
-→ [Воркер] Classifier (TKS API: searchGoodsGrouped → getTnvedCode)
-→ Verification (Claude: верификация кодов, опционально)
+→ [Воркер] Classifier+Verify (TKS API: searchGoodsGrouped → Claude classify+verify → getTnvedCode)
 → DutyInterpreter (Claude: интерпретация правил расчёта пошлин)
+→ При language≠ru: Claude возвращает comment_localized / reasoning_localized для двуязычных замечаний
 → Calculator (пошлина + НДС + акциз + комиссия, конвертация валют → RUB)
 → resultData + CalculationLog (аудит) → BullMQ: document-notifications
 → Excel-экспорт → отправка пользователю (только для Telegram-загрузок)
@@ -123,15 +128,11 @@ interface ProductRow {
 }
 ```
 
-**После классификации** (`ClassifiedProduct`):
+**После классификации+верификации** (`ClassifiedProduct` / `VerifiedProduct` — алиасы):
 
-- Добавляются: tnVedCode, tnVedDescription, dutyRate, dutySign, dutyMin, dutyMinUnit, vatRate, exciseRate, matchConfidence, matched
-- Батчи по 5 товаров параллельно
-
-**После верификации** (`VerifiedProduct`, опционально):
-
-- Добавляются: verified, suggestedCode, verificationComment
-- Батчи по 10, Claude claude-sonnet-4-6
+- Добавляются: tnVedCode, tnVedDescription, dutyRate, dutySign, dutyMin, dutyMinUnit, vatRate, exciseRate, matchConfidence, matched, verified, suggestedCode, verificationComment
+- TKS search батчи по 5, Claude classify+verify батчи по 10
+- При language≠ru: Claude возвращает comment_localized → попадает в ProductNote.messageLocalized
 
 **После расчёта** (`CalculatedProduct`):
 
@@ -148,6 +149,7 @@ interface ProductRow {
 - Все стоимости указываются как в исходной валюте, так и в рублях
 - Статус проверки: зелёный (точное) / жёлтый (ручная проверка)
 - Стилизация: синий заголовок, автофильтр, заморозка строки заголовка
+- При document.language≠ru: доп. колонка «Notes (translated)» / «备注（翻译）» с локализованными замечаниями
 
 ### Формула расчёта
 
@@ -234,8 +236,21 @@ Docker compose (порты выбраны чтобы не конфликтова
 ## Три точки применения AI (Claude)
 
 1. **Парсинг документов** (AiParserService) — анализ структуры таблицы, определение валюты, перевод наименований, извлечение данных. Детерминистическая + AI валидация, retry до 2 попыток
-2. **Верификация кодов ТН ВЭД** (VerificationService) — проверка и уточнение кодов, предложенных классификатором TKS API
-3. **Интерпретация правил расчёта пошлин** (DutyInterpreterService) — анализ текстовых правил из справочника ТН ВЭД: комбинированные ставки, специфические пошлины (EUR/кг, EUR/л), акцизы. Claude извлекает параметры расчёта из описания кода
+2. **Классификация+верификация кодов ТН ВЭД** (ClassifierService) — объединённый classify+verify в одном запросе Claude. При language≠ru промпт запрашивает comment_localized для двуязычных замечаний
+3. **Интерпретация правил расчёта пошлин** (DutyInterpreterService) — анализ текстовых правил из справочника ТН ВЭД: комбинированные ставки, специфические пошлины (EUR/кг, EUR/л), акцизы. При language≠ru промпт запрашивает reasoning_localized
+
+## Локализация бота (i18n)
+
+Локализован только Telegram-бот. Админка и REST API остаются на русском. Изменения в API — исключительно инфраструктурные (хранение языка, коды ошибок, локализованные поля в notes) и не меняют поведение для админки.
+
+- Поддерживаемые языки: ru, zh, en
+- Бот: @grammyjs/i18n + Fluent (.ftl), locale файлы в `apps/tg-bot/src/bot/locales/`
+- API: ErrorCode enum → бот маппит на локализованные строки (error-CODE ключи в .ftl)
+- AI-комментарии: Claude возвращает двуязычные comment/reasoning при language≠ru
+- ProductNote: `message` (всегда русский, для админки и логов) + `messageLocalized` (язык пользователя бота)
+- Статичные замечания: `common/note-translations.ts` (en/zh переводы для ~5 hardcoded нот)
+- Excel: заголовки всегда на русском, доп. колонка с переведёнными замечаниями только для не-ru пользователей бота
+- Язык пользователя: TelegramUser.language (DB) → Document.language (при загрузке) → pipeline → notification
 
 ## Правила
 

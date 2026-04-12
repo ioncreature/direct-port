@@ -1,4 +1,4 @@
-import type { VerifiedProduct } from '../verification/verification.service';
+import type { VerifiedProduct } from '../classifier/classifier.service';
 
 export type ChargeType =
   | 'import_duty'
@@ -32,6 +32,7 @@ export interface DutyInterpretation {
   charges: DutyChargeRule[];
   requiredDimensions?: string[];
   reasoning: string;
+  reasoningLocalized?: string;
 }
 
 export interface InterpretedProduct extends VerifiedProduct {

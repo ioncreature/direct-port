@@ -27,6 +27,9 @@ export class TelegramUser {
   @Column({ type: 'varchar', length: 255, name: 'last_name', nullable: true })
   lastName: string | null;
 
+  @Column({ type: 'varchar', length: 5, default: 'ru' })
+  language: string;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
