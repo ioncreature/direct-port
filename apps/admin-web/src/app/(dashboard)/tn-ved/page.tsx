@@ -1,6 +1,7 @@
 'use client';
 
 import { useTnVed } from '@/hooks/use-tn-ved';
+import { fmt } from '@/lib/format';
 import { td, th } from '@/lib/table-styles';
 import type { TnVedCodeDetail, TnVedRateInfo, TnVedSearchResultItem } from '@/lib/types';
 import { useCallback, useState } from 'react';
@@ -173,6 +174,132 @@ function CodeDetailCard({ detail }: { detail: TnVedCodeDetail }) {
       {detail.notes && (
         <p style={{ marginTop: 12, fontSize: 13, color: '#666' }}>{detail.notes}</p>
       )}
+
+      <DutyCalculator rates={detail.rates} />
+    </div>
+  );
+}
+
+interface DimensionInfo {
+  unit: string;
+  label: string;
+}
+
+function parseDutyUnit(dutyMinUnit: string | null): DimensionInfo | null {
+  if (!dutyMinUnit) return null;
+  const raw = dutyMinUnit.split('/')[1]?.trim();
+  if (!raw) return null;
+  const map: Record<string, DimensionInfo | null> = {
+    'кг': { unit: 'кг', label: 'Вес' },
+    'kg': { unit: 'кг', label: 'Вес' },
+    'г': { unit: 'г', label: 'Вес' },
+    'т': { unit: 'т', label: 'Вес' },
+    'л': { unit: 'л', label: 'Объём' },
+    'l': { unit: 'л', label: 'Объём' },
+    'м2': { unit: 'м²', label: 'Площадь' },
+    'м²': { unit: 'м²', label: 'Площадь' },
+    'm2': { unit: 'м²', label: 'Площадь' },
+    'м3': { unit: 'м³', label: 'Объём' },
+    'м³': { unit: 'м³', label: 'Объём' },
+    'm3': { unit: 'м³', label: 'Объём' },
+    'шт': null,
+    'pcs': null,
+  };
+  const info = map[raw.toLowerCase()];
+  return info === undefined ? { unit: raw, label: raw } : info;
+}
+
+function DutyCalculator({ rates }: { rates: TnVedRateInfo }) {
+  const [price, setPrice] = useState('');
+  const [qty, setQty] = useState('');
+  const [dim, setDim] = useState('');
+
+  const dimInfo = parseDutyUnit(rates.dutyMinUnit);
+  const hasSpecific = rates.dutyMin != null && rates.dutyMin > 0 && !!rates.dutyMinUnit;
+
+  const p = parseFloat(price) || 0;
+  const q = parseFloat(qty) || 0;
+  const d = parseFloat(dim) || 0;
+
+  const totalPrice = p * q;
+  const canCalc = totalPrice > 0;
+
+  let dutyAmount = 0;
+  let specificAmount: number | null = null;
+
+  if (canCalc) {
+    const adValorem = totalPrice * (rates.dutyRate / 100);
+
+    if (hasSpecific) {
+      const dimValue = dimInfo ? d : q;
+      specificAmount = rates.dutyMin! * dimValue;
+      if (rates.dutySign === '>') {
+        dutyAmount = Math.max(adValorem, specificAmount);
+      } else if (rates.dutySign === '<') {
+        dutyAmount = Math.min(adValorem, specificAmount);
+      } else {
+        dutyAmount = adValorem;
+      }
+    } else {
+      dutyAmount = adValorem;
+    }
+  }
+
+  const exciseAmount = canCalc ? totalPrice * (rates.exciseRate / 100) : 0;
+  const vatAmount = canCalc ? (totalPrice + dutyAmount + exciseAmount) * (rates.vatRate / 100) : 0;
+  const total = totalPrice + dutyAmount + vatAmount + exciseAmount;
+
+  return (
+    <div style={{ marginTop: 16, padding: 16, border: '1px solid #e5e7eb', borderRadius: 6, backgroundColor: '#fff' }}>
+      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Калькулятор пошлин</div>
+
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+        <CalcInput label="Цена за ед." value={price} onChange={setPrice} />
+        <CalcInput label="Количество" value={qty} onChange={setQty} />
+        {dimInfo && (
+          <CalcInput label={`${dimInfo.label}, ${dimInfo.unit}`} value={dim} onChange={setDim} />
+        )}
+      </div>
+
+      {canCalc && (
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: 14 }}>
+          <div><span style={labelStyle}>Стоимость:</span> {fmt(totalPrice)}</div>
+          <div><span style={labelStyle}>Пошлина:</span> {fmt(dutyAmount)}</div>
+          {exciseAmount > 0 && <div><span style={labelStyle}>Акциз:</span> {fmt(exciseAmount)}</div>}
+          <div><span style={labelStyle}>НДС:</span> {fmt(vatAmount)}</div>
+          <div style={{ fontWeight: 600 }}><span style={labelStyle}>Итого:</span> {fmt(total)}</div>
+        </div>
+      )}
+
+      {canCalc && hasSpecific && specificAmount != null && (
+        <p style={{ fontSize: 12, color: '#888', marginTop: 8 }}>
+          Специфическая ставка: {fmt(specificAmount)} {rates.dutyMinUnit?.split('/')[0] || 'EUR'}.
+          {' '}Для точного сравнения с адвалорной частью необходим курс валют.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function CalcInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>{label}</div>
+      <input
+        type="number"
+        min="0"
+        step="any"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          width: 130,
+          padding: '6px 10px',
+          fontSize: 14,
+          border: '1px solid #ddd',
+          borderRadius: 4,
+          boxSizing: 'border-box',
+        }}
+      />
     </div>
   );
 }
