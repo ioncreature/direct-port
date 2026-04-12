@@ -3,6 +3,7 @@ import { TksApiClient } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { ClassifiedProduct } from '../classifier/classifier.service';
 import { extractClaudeText, parseClaudeJson } from '../common/claude';
+import type { ProductNote } from '../common/product-notes';
 
 export interface VerifiedProduct extends ClassifiedProduct {
   /** Claude подтвердил код */
@@ -19,6 +20,10 @@ interface VerificationResult {
   suggestedCode: string | null;
   comment: string;
   confidence: number;
+}
+
+function verifyNote(severity: ProductNote['severity'], message: string): ProductNote {
+  return { stage: 'verify', severity, field: 'code', message };
 }
 
 const SYSTEM_PROMPT = `Ты — эксперт по таможенной классификации товаров по ТН ВЭД (Товарная номенклатура внешнеэкономической деятельности ЕАЭС).
@@ -55,6 +60,13 @@ export class VerificationService {
         verified: false,
         suggestedCode: null,
         verificationComment: 'Верификация отключена (нет API-ключа)',
+        notes: [
+          ...p.notes,
+          verifyNote(
+            'warning',
+            'Верификация кода ТН ВЭД через ИИ пропущена — не настроен ANTHROPIC_API_KEY.',
+          ),
+        ],
       }));
     }
 
@@ -124,6 +136,13 @@ ${JSON.stringify(items, null, 2)}
         verified: false,
         suggestedCode: null,
         verificationComment: 'Ошибка верификации',
+        notes: [
+          ...p.notes,
+          verifyNote(
+            'warning',
+            'Верификация кода ТН ВЭД через ИИ завершилась ошибкой. Код используется в том виде, в котором его предложил классификатор TKS.',
+          ),
+        ],
       }));
     }
   }
@@ -164,17 +183,29 @@ ${JSON.stringify(items, null, 2)}
           verified: false,
           suggestedCode: null,
           verificationComment: 'Нет ответа от верификатора',
+          notes: [
+            ...product.notes,
+            verifyNote(
+              'warning',
+              'Верификатор не вернул результат по этой строке — используется код от классификатора TKS.',
+            ),
+          ],
         });
         continue;
       }
 
       if (result.correct) {
+        const notes = [...product.notes];
+        if (result.comment && result.comment.trim()) {
+          notes.push(verifyNote('info', `Верификация ИИ: ${result.comment}`));
+        }
         verified.push({
           ...product,
           verified: true,
           suggestedCode: null,
           verificationComment: result.comment,
           matchConfidence: Math.max(product.matchConfidence, result.confidence),
+          notes,
         });
       } else if (result.suggestedCode && /^\d{10}$/.test(result.suggestedCode)) {
         const tnved = tnvedCache.get(result.suggestedCode);
@@ -196,6 +227,13 @@ ${JSON.stringify(items, null, 2)}
             suggestedCode: result.suggestedCode,
             verificationComment: result.comment,
             tnvedRaw: tnved,
+            notes: [
+              ...product.notes,
+              verifyNote(
+                'warning',
+                `ИИ заменил код классификатора на ${result.suggestedCode}: ${result.comment}`,
+              ),
+            ],
           });
         } else {
           verified.push({
@@ -203,6 +241,13 @@ ${JSON.stringify(items, null, 2)}
             verified: false,
             suggestedCode: result.suggestedCode,
             verificationComment: `${result.comment} (код ${result.suggestedCode} не найден в справочнике)`,
+            notes: [
+              ...product.notes,
+              verifyNote(
+                'warning',
+                `ИИ предложил код ${result.suggestedCode}, но он не найден в справочнике TKS. Используется исходный код классификатора. ${result.comment}`,
+              ),
+            ],
           });
         }
       } else {
@@ -211,6 +256,7 @@ ${JSON.stringify(items, null, 2)}
           verified: false,
           suggestedCode: result.suggestedCode,
           verificationComment: result.comment,
+          notes: [...product.notes, verifyNote('warning', `ИИ не подтвердил код: ${result.comment}`)],
         });
       }
     }

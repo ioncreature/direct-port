@@ -6,10 +6,11 @@ import { Repository } from 'typeorm';
 import { CalculationConfigService } from '../calculation-config/calculation-config.service';
 import { CalculationLogsService } from '../calculation-logs/calculation-logs.service';
 import { CalculatorService } from '../calculator/calculator.service';
-import { ClassifierService } from '../classifier/classifier.service';
+import { ClassifierService, type ProductRow } from '../classifier/classifier.service';
 import { CurrencyService } from '../currency/currency.service';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { DutyInterpreterService } from '../duty-interpreter/duty-interpreter.service';
+import type { Dimension } from '../duty-interpreter/interfaces';
 import { VerificationService } from '../verification/verification.service';
 
 export interface DocumentNotification {
@@ -54,11 +55,13 @@ export class DocumentsProcessor extends WorkerHost {
     await this.repo.save(doc);
 
     try {
-      const rows = (doc.parsedData ?? []).map((row) => ({
+      const rows: ProductRow[] = (doc.parsedData ?? []).map((row) => ({
         description: String(row.description ?? ''),
         quantity: Number(row.quantity) || 1,
         price: Number(row.price) || 0,
         weight: Number(row.weight) || 0,
+        dimensions: this.extractDimensions(row),
+        notes: [],
       }));
 
       const { pricePercent, weightRate, fixedFee } = await this.configService.get();
@@ -77,7 +80,7 @@ export class DocumentsProcessor extends WorkerHost {
         eurToDoc = eurRate / docRate;
       }
 
-      const summary = this.calculator.calculateInterpreted(interpreted, commission, { eurToDoc });
+      const summary = this.calculator.calculate(interpreted, commission, { eurToDoc });
 
       const needsConversion = currency !== 'RUB';
       let exchangeRate = 1;
@@ -92,6 +95,7 @@ export class DocumentsProcessor extends WorkerHost {
           quantity: item.quantity,
           price: item.price,
           weight: item.weight,
+          dimensions: item.dimensions ?? null,
           tnVedCode: item.tnVedCode,
           tnVedDescription: item.tnVedDescription,
           dutyRate: item.dutyRate,
@@ -99,14 +103,19 @@ export class DocumentsProcessor extends WorkerHost {
           exciseRate: item.exciseRate,
           totalPrice: item.totalPrice,
           dutyAmount: item.dutyAmount,
+          dutyAmountIsEstimate: item.dutyAmountIsEstimate,
+          dutyFormula: item.dutyFormula,
+          dutyBase: item.dutyBase,
           vatAmount: item.vatAmount,
           exciseAmount: item.exciseAmount,
           logisticsCommission: item.logisticsCommission,
           totalCost: item.totalCost,
-          verificationStatus: item.verificationStatus,
+          verificationStatus: item.verificationStatus, // устаревшее, для BC
+          calculationStatus: item.calculationStatus,
           matchConfidence: item.matchConfidence,
           verified: verified[i]?.verified ?? false,
           verificationComment: verified[i]?.verificationComment ?? null,
+          notes: item.notes,
         };
         if (!needsConversion) return base;
         return {
@@ -154,6 +163,22 @@ export class DocumentsProcessor extends WorkerHost {
       await this.notify(doc, 'failed', doc.errorMessage ?? undefined);
       this.logger.error(`Document ${documentId} failed`, err);
     }
+  }
+
+  private extractDimensions(row: Record<string, unknown>): Dimension[] | undefined {
+    const raw = row.dimensions;
+    if (!Array.isArray(raw)) return undefined;
+    const result: Dimension[] = [];
+    for (const entry of raw) {
+      if (!entry || typeof entry !== 'object') continue;
+      const obj = entry as Record<string, unknown>;
+      const name = typeof obj.name === 'string' ? obj.name : null;
+      const unit = typeof obj.unit === 'string' ? obj.unit : null;
+      const value = Number(obj.value);
+      if (!name || !unit || !Number.isFinite(value)) continue;
+      result.push({ name, value, unit });
+    }
+    return result.length > 0 ? result : undefined;
   }
 
   private async notify(

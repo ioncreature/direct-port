@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { TksApiClient, TnvedCode } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { extractClaudeText, parseClaudeJson } from '../common/claude';
+import type { ProductNote } from '../common/product-notes';
 import type { VerifiedProduct } from '../verification/verification.service';
 import { DutyInterpretation, InterpretedProduct } from './interfaces';
 
@@ -39,7 +40,19 @@ export class DutyInterpreterService {
 
   async interpret(products: VerifiedProduct[]): Promise<InterpretedProduct[]> {
     if (!this.anthropic) {
-      return products.map((p) => ({ ...p, dutyInterpretation: null }));
+      return products.map((p) => {
+        const extraNotes: ProductNote[] = [];
+        if (this.hasNonTrivialRates(p)) {
+          extraNotes.push({
+            stage: 'interpret',
+            severity: 'warning',
+            field: 'duty',
+            message:
+              'У кода ТН ВЭД есть нетривиальные ставки (специфическая или комбинированная часть), но AI-интерпретатор отключён (нет ANTHROPIC_API_KEY). Расчёт будет выполнен по упрощённым правилам TKS.',
+          });
+        }
+        return { ...p, dutyInterpretation: null, notes: [...p.notes, ...extraNotes] };
+      });
     }
 
     // Group by unique TNVED code
@@ -106,10 +119,60 @@ export class DutyInterpreterService {
     }
 
     // Apply interpretations to products
-    return products.map((p) => ({
-      ...p,
-      dutyInterpretation: interpretations.get(p.tnVedCode) ?? null,
-    }));
+    return products.map((p) => {
+      const interpretation = interpretations.get(p.tnVedCode) ?? null;
+      const extraNotes: ProductNote[] = [];
+
+      if (interpretation?.reasoning) {
+        extraNotes.push({
+          stage: 'interpret',
+          severity: 'info',
+          field: 'duty',
+          message: `Интерпретация ставок: ${interpretation.reasoning}`,
+        });
+      }
+
+      if (!interpretation && p.tnVedCode && this.hasNonTrivialRates(p)) {
+        extraNotes.push({
+          stage: 'interpret',
+          severity: 'warning',
+          field: 'duty',
+          message:
+            'AI-интерпретация ставок не получена (Claude вернул пустой ответ или была ошибка). Расчёт использует упрощённые правила TKS.',
+        });
+      }
+
+      return {
+        ...p,
+        dutyInterpretation: interpretation,
+        notes: [...p.notes, ...extraNotes],
+      };
+    });
+  }
+
+  /**
+   * Есть ли у товара нетривиальные ставки, для корректной обработки которых нужен AI?
+   * Триггеры: специфическая часть (IMP2), комбинированная ставка (IMPSIGN), акциз не 0,
+   * антидемпинговая/компенсационная/временная пошлина.
+   */
+  private hasNonTrivialRates(p: VerifiedProduct): boolean {
+    const rates = p.tnvedRaw?.TNVED;
+    if (!rates) {
+      // Работаем по denormalized полям
+      return (
+        (p.dutyMin != null && p.dutyMin > 0) ||
+        !!p.dutySign ||
+        (p.exciseRate != null && p.exciseRate > 0)
+      );
+    }
+    return (
+      (rates.IMP2 != null && rates.IMP2 > 0) ||
+      !!rates.IMPSIGN ||
+      (rates.AKC != null && rates.AKC > 0) ||
+      (rates.IMPTMP != null && rates.IMPTMP > 0) ||
+      (rates.IMPDEMP != null && rates.IMPDEMP > 0) ||
+      (rates.IMPCOMP != null && rates.IMPCOMP > 0)
+    );
   }
 
   private async interpretBatch(

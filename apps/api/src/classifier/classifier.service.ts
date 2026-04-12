@@ -5,14 +5,23 @@ import {
   type TnvedCode,
 } from '@direct-port/tks-api';
 import { Injectable, Logger } from '@nestjs/common';
+import type { ProductNote } from '../common/product-notes';
 import type { Dimension } from '../duty-interpreter/interfaces';
 
-export interface ClassifiedProduct {
+/**
+ * Вход классификатора. Содержит минимум для поиска в TKS + опциональные
+ * размеры (площадь/объём/штуки) и заметки от предыдущих этапов (парсер).
+ */
+export interface ProductRow {
   description: string;
   quantity: number;
   price: number;
   weight: number;
   dimensions?: Dimension[];
+  notes?: ProductNote[];
+}
+
+export interface ClassifiedProduct extends ProductRow {
   tnVedCode: string;
   tnVedDescription: string;
   dutyRate: number;
@@ -24,16 +33,12 @@ export interface ClassifiedProduct {
   matchConfidence: number;
   matched: boolean;
   tnvedRaw?: TnvedCode;
-}
-
-interface ProductRow {
-  description: string;
-  quantity: number;
-  price: number;
-  weight: number;
+  /** Аккумулируемые заметки по товару — не теряются между этапами. */
+  notes: ProductNote[];
 }
 
 const CONCURRENCY = 5;
+const LOW_CONFIDENCE_THRESHOLD = 0.7;
 
 @Injectable()
 export class ClassifierService {
@@ -70,16 +75,26 @@ export class ClassifierService {
   private async classifyOne(product: ProductRow): Promise<ClassifiedProduct> {
     const searchResult = await this.tksApi.searchGoodsGrouped(product.description);
     if (!searchResult.data.length) {
-      return this.unmatched(product);
+      return this.unmatched(product, 'TKS не вернул ни одного кандидата по описанию');
     }
 
     const best = this.selectBest(searchResult.data, searchResult.hm);
     if (!best) {
-      return this.unmatched(product);
+      return this.unmatched(product, 'Не удалось выбрать лучший кандидат из результата TKS');
     }
 
     const tnved = await this.tksApi.getTnvedCode(best.item.CODE);
     const rates = tnved.TNVED ?? {};
+
+    const notes: ProductNote[] = [...(product.notes ?? [])];
+    if (best.confidence < LOW_CONFIDENCE_THRESHOLD) {
+      notes.push({
+        stage: 'classify',
+        severity: 'warning',
+        field: 'code',
+        message: `Классификатор TKS выбрал код ${tnved.CODE} с низкой уверенностью (${best.confidence.toFixed(2)}). Рекомендуется проверить код вручную.`,
+      });
+    }
 
     return {
       ...product,
@@ -94,6 +109,7 @@ export class ClassifierService {
       matchConfidence: best.confidence,
       matched: true,
       tnvedRaw: tnved,
+      notes,
     };
   }
 
@@ -117,7 +133,16 @@ export class ClassifierService {
     return { item: bestItem, confidence: bestConfidence };
   }
 
-  private unmatched(product: ProductRow): ClassifiedProduct {
+  private unmatched(product: ProductRow, reason = 'Код ТН ВЭД не определён'): ClassifiedProduct {
+    const notes: ProductNote[] = [
+      ...(product.notes ?? []),
+      {
+        stage: 'classify',
+        severity: 'blocker',
+        field: 'code',
+        message: `${reason}. Без кода ТН ВЭД расчёт пошлины и НДС невозможен.`,
+      },
+    ];
     return {
       ...product,
       tnVedCode: '',
@@ -130,6 +155,7 @@ export class ClassifierService {
       exciseRate: 0,
       matchConfidence: 0,
       matched: false,
+      notes,
     };
   }
 }

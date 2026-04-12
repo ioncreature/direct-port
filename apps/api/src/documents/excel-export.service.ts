@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import * as ExcelJS from 'exceljs';
+import type { CalculationStatus, ProductNote } from '../common/product-notes';
 import { Document } from '../database/entities/document.entity';
 
 interface ResultRow {
@@ -25,12 +26,19 @@ interface ResultRow {
   logisticsCommissionRub?: number;
   totalCostRub?: number;
   exchangeRate?: number;
+  /** Устаревшее поле, оставлено для совместимости со старыми resultData. */
   verificationStatus: 'exact' | 'review';
+  /** Новое: агрегированный статус расчёта */
+  calculationStatus?: CalculationStatus;
+  dutyAmountIsEstimate?: boolean;
+  dutyFormula?: string | null;
+  dutyBase?: string | null;
+  notes?: ProductNote[];
 }
 
 interface ColumnDef {
   header: string;
-  key: keyof ResultRow;
+  key: string;
   width: number;
   numFmt?: string;
 }
@@ -47,6 +55,8 @@ function buildColumns(currency: string, hasRub: boolean): ColumnDef[] {
     { header: 'Ставка НДС (%)', key: 'vatRate', width: 16, numFmt: '0.00' },
     { header: `Сумма (${currency})`, key: 'totalPrice', width: 16, numFmt: '#,##0.00' },
     { header: `Пошлина (${currency})`, key: 'dutyAmount', width: 16, numFmt: '#,##0.00' },
+    { header: 'База пошлины', key: 'dutyBase', width: 14 },
+    { header: 'Формула пошлины', key: 'dutyFormula', width: 40 },
     { header: `НДС (${currency})`, key: 'vatAmount', width: 14, numFmt: '#,##0.00' },
     { header: `Акциз (${currency})`, key: 'exciseAmount', width: 14, numFmt: '#,##0.00' },
     { header: `Комиссия (${currency})`, key: 'logisticsCommission', width: 16, numFmt: '#,##0.00' },
@@ -65,20 +75,65 @@ function buildColumns(currency: string, hasRub: boolean): ColumnDef[] {
     );
   }
 
-  columns.push({ header: 'Статус проверки', key: 'verificationStatus', width: 18 });
+  columns.push({ header: 'Статус', key: 'calculationStatus', width: 20 });
+  columns.push({ header: 'Замечания', key: 'notesText', width: 60 });
   return columns;
 }
 
-const GREEN_FILL: ExcelJS.Fill = {
-  type: 'pattern',
-  pattern: 'solid',
-  fgColor: { argb: 'FFC6EFCE' },
+const BASE_LABELS: Record<string, string> = {
+  kg: 'кг',
+  g: 'г',
+  t: 'т',
+  pcs: 'шт',
+  m2: 'м²',
+  m3: 'м³',
+  l: 'л',
 };
 
-const YELLOW_FILL: ExcelJS.Fill = {
-  type: 'pattern',
-  pattern: 'solid',
-  fgColor: { argb: 'FFFFEB9C' },
+function humanizeBase(per: string | null | undefined): string {
+  if (!per) return '—';
+  return BASE_LABELS[per] ?? per;
+}
+
+const STATUS_LABELS: Record<CalculationStatus, string> = {
+  exact: 'Точное',
+  partial: 'Есть замечания',
+  needs_info: 'Требует уточнения',
+  error: 'Ошибка',
+};
+
+function resolveStatus(row: ResultRow): CalculationStatus {
+  if (row.calculationStatus) return row.calculationStatus;
+  // Обратная совместимость: старые resultData без calculationStatus
+  return row.verificationStatus === 'exact' ? 'exact' : 'partial';
+}
+
+function formatNotes(notes: ProductNote[] | undefined): string {
+  if (!notes || notes.length === 0) return '';
+  // Блокеры первыми, затем warning, затем info
+  const order: Record<string, number> = { blocker: 0, warning: 1, info: 2 };
+  const sorted = [...notes].sort((a, b) => (order[a.severity] ?? 99) - (order[b.severity] ?? 99));
+  return sorted
+    .map((n) => {
+      const prefix =
+        n.severity === 'blocker' ? '⚠ ' : n.severity === 'warning' ? '! ' : '• ';
+      return prefix + n.message;
+    })
+    .join('\n');
+}
+
+const STATUS_FILLS: Record<CalculationStatus, ExcelJS.Fill> = {
+  exact: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6EFCE' } },
+  partial: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEB9C' } },
+  needs_info: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFCD5B4' } },
+  error: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7CE' } },
+};
+
+const STATUS_FONT_COLORS: Record<CalculationStatus, string> = {
+  exact: 'FF006100',
+  partial: 'FF9C5700',
+  needs_info: 'FF974706',
+  error: 'FF9C0006',
 };
 
 const HEADER_FILL: ExcelJS.Fill = {
@@ -129,7 +184,14 @@ export class ExcelExportService {
       (c) => c.numFmt,
     );
 
+    const statusColIdx = COLUMNS.findIndex((c) => c.key === 'calculationStatus') + 1;
+    const notesColIdx = COLUMNS.findIndex((c) => c.key === 'notesText') + 1;
+    const formulaColIdx = COLUMNS.findIndex((c) => c.key === 'dutyFormula') + 1;
+
     for (const row of data) {
+      const status = resolveStatus(row);
+      const notesText = formatNotes(row.notes);
+
       const rowData: Record<string, unknown> = {
         description: row.description,
         quantity: row.quantity,
@@ -141,11 +203,14 @@ export class ExcelExportService {
         vatRate: row.vatRate,
         totalPrice: row.totalPrice,
         dutyAmount: row.dutyAmount,
+        dutyBase: humanizeBase(row.dutyBase),
+        dutyFormula: row.dutyFormula ?? '',
         vatAmount: row.vatAmount,
         exciseAmount: row.exciseAmount,
         logisticsCommission: row.logisticsCommission,
         totalCost: row.totalCost,
-        verificationStatus: row.verificationStatus === 'exact' ? 'Точное' : 'Ручная проверка',
+        calculationStatus: STATUS_LABELS[status],
+        notesText,
       };
 
       if (hasRub) {
@@ -164,12 +229,31 @@ export class ExcelExportService {
         excelRow.getCell(col.index).numFmt = col.numFmt!;
       }
 
-      const statusCell = excelRow.getCell(COLUMNS.length);
-      statusCell.fill = row.verificationStatus === 'exact' ? GREEN_FILL : YELLOW_FILL;
-      statusCell.font = {
-        bold: true,
-        color: { argb: row.verificationStatus === 'exact' ? 'FF006100' : 'FF9C5700' },
-      };
+      const statusCell = excelRow.getCell(statusColIdx);
+      statusCell.fill = STATUS_FILLS[status];
+      statusCell.font = { bold: true, color: { argb: STATUS_FONT_COLORS[status] } };
+      statusCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      if (row.dutyFormula) {
+        const formulaCell = excelRow.getCell(formulaColIdx);
+        formulaCell.font = { italic: true, color: { argb: STATUS_FONT_COLORS.needs_info } };
+        formulaCell.alignment = { wrapText: true, vertical: 'middle' };
+      }
+
+      // Замечания — перенос строк, если есть
+      if (notesText) {
+        const notesCell = excelRow.getCell(notesColIdx);
+        notesCell.alignment = { wrapText: true, vertical: 'top' };
+        if (status === 'needs_info' || status === 'error') {
+          notesCell.fill = STATUS_FILLS[status];
+          notesCell.font = { color: { argb: STATUS_FONT_COLORS[status] } };
+        }
+        // Увеличиваем высоту строки, чтобы заметки не обрезались
+        const lineCount = notesText.split('\n').length;
+        if (lineCount > 1) {
+          excelRow.height = Math.min(15 * lineCount + 5, 120);
+        }
+      }
     }
 
     sheet.autoFilter = {
