@@ -51,7 +51,8 @@ export function createMockAiParser(): Partial<AiParserService> {
       ],
       currency: 'USD',
       columnMapping: { description: 0, price: 1, weight: 2, quantity: 3 },
-      confident: true,
+      feasibility: 'ok',
+      rejectionReasons: [],
     }),
   };
 }

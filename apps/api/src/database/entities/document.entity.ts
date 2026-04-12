@@ -17,6 +17,7 @@ export enum DocumentStatus {
   PROCESSED = 'processed',
   FAILED = 'failed',
   REQUIRES_REVIEW = 'requires_review',
+  REJECTED = 'rejected',
 }
 
 @Entity('documents')
@@ -56,6 +57,9 @@ export class Document {
 
   @Column({ type: 'text', name: 'error_message', nullable: true })
   errorMessage: string | null;
+
+  @Column({ type: 'jsonb', name: 'rejection_reasons', nullable: true })
+  rejectionReasons: string[] | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

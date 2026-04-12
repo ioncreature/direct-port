@@ -147,7 +147,8 @@ describe('Document parsing (e2e)', () => {
         products: [{ description: 'Неуверенный товар', quantity: 1, price: 10, weight: 1 }],
         currency: 'CNY',
         columnMapping: { description: 0 },
-        confident: false,
+        feasibility: 'review',
+        rejectionReasons: ['AI-валидация не прошла'],
       });
 
       const doc = await createDocumentWithBuffer();

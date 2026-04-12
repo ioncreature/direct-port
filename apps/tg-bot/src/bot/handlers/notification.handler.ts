@@ -8,8 +8,9 @@ import { ApiClientService } from '../../api-client/api-client.service';
 interface DocumentNotification {
   documentId: string;
   telegramUserId: string;
-  status: 'processed' | 'failed';
+  status: 'processed' | 'failed' | 'rejected';
   errorMessage?: string;
+  rejectionReasons?: string[];
 }
 
 @Injectable()
@@ -28,7 +29,7 @@ export class NotificationHandler extends WorkerHost {
   }
 
   async process(job: Job<DocumentNotification>): Promise<void> {
-    const { documentId, telegramUserId, status, errorMessage } = job.data;
+    const { documentId, telegramUserId, status, errorMessage, rejectionReasons } = job.data;
     this.logger.log(`Notification for document ${documentId}: ${status}`);
 
     if (!this.tgApi) {
@@ -37,6 +38,26 @@ export class NotificationHandler extends WorkerHost {
     }
 
     const chatId = telegramUserId;
+
+    if (status === 'rejected') {
+      const reasons = rejectionReasons ?? [];
+      const reasonsList =
+        reasons.length > 0
+          ? reasons.map((r, i) => `${i + 1}. ${r}`).join('\n')
+          : 'Файл не содержит данных, пригодных для оформления декларации.';
+
+      await this.tgApi
+        .sendMessage(
+          chatId,
+          `⛔ Документ не может быть обработан.\n\n` +
+            `Причины:\n${reasonsList}\n\n` +
+            `Исправьте файл и загрузите снова.`,
+        )
+        .catch((err) =>
+          this.logger.error(`Failed to send rejection notification to ${chatId}`, err),
+        );
+      return;
+    }
 
     if (status === 'failed') {
       await this.tgApi
@@ -62,7 +83,7 @@ export class NotificationHandler extends WorkerHost {
             '• Ставки пошлины и НДС\n' +
             '• Суммы пошлины и НДС\n' +
             '• Комиссия за доставку\n' +
-            '• Статус проверки (🟢 точное / 🟡 ручная проверка)',
+            '• Статус расчёта и замечания',
         },
       );
     } catch (err) {

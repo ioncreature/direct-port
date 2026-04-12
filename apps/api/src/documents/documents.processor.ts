@@ -16,8 +16,9 @@ import { VerificationService } from '../verification/verification.service';
 export interface DocumentNotification {
   documentId: string;
   telegramUserId: string;
-  status: 'processed' | 'failed';
+  status: 'processed' | 'failed' | 'rejected';
   errorMessage?: string;
+  rejectionReasons?: string[];
 }
 
 @Processor('document-processing')

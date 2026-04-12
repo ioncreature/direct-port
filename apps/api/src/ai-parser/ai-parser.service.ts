@@ -13,14 +13,19 @@ export interface ParsedProduct {
   [key: string]: unknown;
 }
 
+export type ParseFeasibility = 'ok' | 'review' | 'rejected';
+
 export interface AiParseResult {
   products: ParsedProduct[];
   currency: string;
   columnMapping: Record<string, number>;
-  confident: boolean;
+  /** 'ok' — уверенный результат, 'review' — сомнительный, 'rejected' — данные непригодны */
+  feasibility: ParseFeasibility;
+  /** Причины отклонения (при rejected) или замечания (при review). Пустой для ok. */
+  rejectionReasons: string[];
 }
 
-type RawParseResult = Omit<AiParseResult, 'confident'>;
+type RawParseResult = Omit<AiParseResult, 'feasibility' | 'rejectionReasons'>;
 
 interface ValidationResult {
   valid: boolean;
@@ -51,6 +56,11 @@ const VALID_CURRENCIES = new Set([
 const MAX_ROWS = 200;
 const SAMPLE_ROWS = 5;
 const MAX_ATTEMPTS = 2;
+
+/** Порог для assessFeasibility: отклонять если >80% товаров имеют нулевую цену */
+const REJECT_ZERO_PRICE_RATIO = 0.8;
+/** Порог: отклонять если >80% описаний пустые или < 3 символов */
+const REJECT_EMPTY_DESC_RATIO = 0.8;
 
 const SYSTEM_PROMPT = `Ты — эксперт по парсингу коммерческих документов для импорта товаров.
 
@@ -93,7 +103,7 @@ export class AiParserService {
 
     const data = await this.spreadsheetReader.read(buffer, fileName);
     if (data.rows.length < 2) {
-      throw new BadRequestException('Файл не содержит данных');
+      return this.rejected(['Файл пустой или содержит только заголовок (менее 2 строк).']);
     }
 
     const tsv = this.formatAsTsv(data);
@@ -113,16 +123,16 @@ export class AiParserService {
         this.logger.warn(`Attempt ${attempt}: deterministic issues: ${detIssues.join('; ')}`);
         lastIssues = detIssues;
         if (attempt < MAX_ATTEMPTS) continue;
-        return { ...result, confident: false };
+        return this.assessFeasibility(result, lastIssues);
       }
 
       // AI validation
       const validation = await this.validateWithAi(data, result);
       if (validation.valid) {
         this.logger.log(
-          `Parsed ${result.products.length} products, currency=${result.currency} (attempt ${attempt}, confident)`,
+          `Parsed ${result.products.length} products, currency=${result.currency} (attempt ${attempt})`,
         );
-        return { ...result, confident: true };
+        return { ...result, feasibility: 'ok', rejectionReasons: [] };
       }
 
       this.logger.warn(`Attempt ${attempt}: AI validation issues: ${validation.issues.join('; ')}`);
@@ -130,9 +140,63 @@ export class AiParserService {
     }
 
     this.logger.warn(
-      `Returning result after ${MAX_ATTEMPTS} attempts with low confidence (${lastIssues.join('; ')})`,
+      `Returning result after ${MAX_ATTEMPTS} attempts with issues (${lastIssues.join('; ')})`,
     );
-    return { ...lastResult!, confident: false };
+    return this.assessFeasibility(lastResult!, lastIssues);
+  }
+
+  /**
+   * Определяет, файл rejected (непригоден) или review (сомнительный, но обрабатываемый).
+   * rejected = критические проблемы, которые пользователь может исправить, перезагрузив файл.
+   * review = данные есть, но AI не уверен — пусть декларант проверит.
+   */
+  private assessFeasibility(result: RawParseResult, issues: string[]): AiParseResult {
+    const reasons: string[] = [];
+    const total = result.products.length;
+
+    if (total === 0) {
+      reasons.push('Не удалось извлечь ни одного товара из файла.');
+    } else {
+      let zeroPriceCount = 0;
+      let emptyDescCount = 0;
+      let zeroWeightCount = 0;
+      for (const p of result.products) {
+        if (p.price <= 0) zeroPriceCount++;
+        if (!p.description || p.description.trim().length < 3) emptyDescCount++;
+        if (!p.weight || p.weight <= 0) zeroWeightCount++;
+      }
+
+      if (zeroPriceCount > total * REJECT_ZERO_PRICE_RATIO) {
+        reasons.push(
+          `Не удалось определить цены: у ${zeroPriceCount} из ${total} товаров цена нулевая или не найдена.`,
+        );
+      }
+      if (emptyDescCount > total * REJECT_EMPTY_DESC_RATIO) {
+        reasons.push(
+          'Описания товаров отсутствуют или слишком короткие для классификации по ТН ВЭД.',
+        );
+      }
+      if (zeroWeightCount === total) {
+        reasons.push('Не указан вес ни для одного товара.');
+      }
+    }
+
+    if (reasons.length > 0) {
+      this.logger.warn(`Document rejected: ${reasons.join('; ')}`);
+      return { ...result, feasibility: 'rejected', rejectionReasons: reasons };
+    }
+
+    return { ...result, feasibility: 'review', rejectionReasons: issues };
+  }
+
+  private rejected(reasons: string[]): AiParseResult {
+    return {
+      products: [],
+      currency: '',
+      columnMapping: {},
+      feasibility: 'rejected',
+      rejectionReasons: reasons,
+    };
   }
 
   private async callClaude(userPrompt: string): Promise<RawParseResult> {
@@ -310,15 +374,18 @@ ${tsv}
 
     const obj = raw as Record<string, unknown>;
 
-    const currency = String(obj.currency ?? '').toUpperCase();
+    let currency = String(obj.currency ?? '').toUpperCase();
     if (!VALID_CURRENCIES.has(currency)) {
-      throw new BadRequestException(`Неизвестная валюта: ${obj.currency}`);
+      // Не выбрасываем — assessFeasibility разберётся
+      this.logger.warn(`Unknown currency from Claude: ${obj.currency}, defaulting to USD`);
+      currency = 'USD';
     }
 
     const columnMapping = (obj.columnMapping ?? {}) as Record<string, number>;
 
     if (!Array.isArray(obj.products) || obj.products.length === 0) {
-      throw new BadRequestException('AI не нашёл товаров в файле');
+      // Не выбрасываем — assessFeasibility пометит как rejected
+      return { products: [], currency, columnMapping };
     }
 
     const products: ParsedProduct[] = [];
@@ -339,10 +406,6 @@ ${tsv}
         weight: isNaN(weight) ? 0 : Math.max(0, weight),
         quantity: Math.max(1, quantity),
       });
-    }
-
-    if (products.length === 0) {
-      throw new BadRequestException('AI не нашёл валидных товаров в файле');
     }
 
     return { products, currency, columnMapping };
