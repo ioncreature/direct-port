@@ -1,31 +1,23 @@
 import { TksApiClient } from '@direct-port/tks-api';
 import { Logger, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { RedisTksCacheStore } from './redis-tks-cache.store';
-
-const DEFAULT_TKS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-
-function resolveCacheTtl(config: ConfigService): number {
-  const raw = config.get<string>('TKS_CACHE_TTL_MS');
-  if (!raw) return DEFAULT_TKS_CACHE_TTL_MS;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TKS_CACHE_TTL_MS;
-}
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { TksCache } from '../database/entities/tks-cache.entity';
+import { PgTksCacheStore } from './pg-tks-cache.store';
 
 @Module({
-  imports: [ConfigModule],
+  imports: [ConfigModule, TypeOrmModule.forFeature([TksCache])],
   providers: [
-    RedisTksCacheStore,
+    PgTksCacheStore,
     {
       provide: TksApiClient,
-      inject: [ConfigService, RedisTksCacheStore],
-      useFactory: (config: ConfigService, cacheStore: RedisTksCacheStore) => {
+      inject: [ConfigService, PgTksCacheStore],
+      useFactory: (config: ConfigService, cacheStore: PgTksCacheStore) => {
         const logger = new Logger('TksApiClient');
         return new TksApiClient({
           baseUrl: config.getOrThrow<string>('TKS_API_BASE_URL'),
           tnvedKey: config.getOrThrow<string>('TKS_TNVED_API_KEY'),
           goodsKey: config.getOrThrow<string>('TKS_GOODS_API_KEY'),
-          cacheTtl: resolveCacheTtl(config),
           cacheStore,
           logger: {
             log: (message) => logger.log(message),

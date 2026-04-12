@@ -6,6 +6,7 @@ import { CalculationLog } from './entities/calculation-log.entity';
 import { Document } from './entities/document.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { TelegramUser } from './entities/telegram-user.entity';
+import { TksCache } from './entities/tks-cache.entity';
 import { TnVedCode } from './entities/tn-ved-code.entity';
 import { User } from './entities/user.entity';
 
@@ -22,6 +23,7 @@ export default new DataSource({
     TelegramUser,
     Document,
     CalculationConfig,
+    TksCache,
   ],
   migrations: ['src/database/migrations/*{.ts,.js}'],
 });

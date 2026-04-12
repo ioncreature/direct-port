@@ -141,15 +141,26 @@ export class TksApiClient {
     if (existing) return existing;
 
     const promise = (async () => {
-      const data = await this.fetch<T>(path);
-      // Запись в кэш — fire-and-forget: ждущие в inFlight получают ответ сразу,
-      // не блокируясь на Redis-латенси.
-      void this.cacheStore.set(key, data, this.cacheTtl).catch((err) => {
-        this.logger?.error(
-          `TKS API cache set failed for ${path}: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      });
-      return data;
+      try {
+        const data = await this.fetch<T>(path);
+        void this.cacheStore.set(key, data, this.cacheTtl).catch((err) => {
+          this.logger?.error(
+            `TKS API cache set failed for ${path}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
+        return data;
+      } catch (fetchErr) {
+        if (this.cacheStore.getStale) {
+          const stale = await this.cacheStore.getStale<T>(key).catch(() => undefined);
+          if (stale !== undefined) {
+            this.logger?.error(
+              `TKS API fetch failed for ${path}, using stale cache: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`,
+            );
+            return stale;
+          }
+        }
+        throw fetchErr;
+      }
     })();
 
     this.inFlight.set(key, promise);
