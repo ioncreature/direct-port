@@ -442,7 +442,7 @@ export class AiParserService {
           tools: [tool],
           tool_choice: { type: 'any' },
         },
-        { timeout: 45_000 },
+        { timeout: 90_000 },
       );
       tokenUsage = tokenUsageFromResponse(model, response.usage);
       return { raw: extractToolInput(response), tokenUsage };
