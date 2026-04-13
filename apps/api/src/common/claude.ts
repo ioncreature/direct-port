@@ -10,15 +10,43 @@ export function extractClaudeText(response: Anthropic.Message): string {
 
 /**
  * Claude периодически возвращает JSON в markdown-обёртке ```json ... ```
- * несмотря на инструкцию "отвечай только JSON". Эта утилита снимает обёртку
- * перед JSON.parse.
+ * или предваряет JSON рассуждениями, несмотря на инструкцию "отвечай только JSON".
+ * Эта утилита извлекает JSON из ответа:
+ * 1. Прямой parse
+ * 2. Снятие markdown-обёртки
+ * 3. Извлечение первого JSON-объекта/массива из текста
  */
 export function parseClaudeJson(text: string): unknown {
-  let cleaned = text.trim();
-  if (cleaned.startsWith('```')) {
-    cleaned = cleaned.replace(/^```\s*(?:json)?\s*/, '').replace(/\s*```$/, '');
+  const cleaned = text.trim();
+
+  // 1. Прямой parse
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    // continue
   }
-  return JSON.parse(cleaned);
+
+  // 2. Markdown-обёртка ```json ... ```
+  if (cleaned.startsWith('```')) {
+    const unwrapped = cleaned.replace(/^```\s*(?:json)?\s*/, '').replace(/\s*```$/, '');
+    try {
+      return JSON.parse(unwrapped);
+    } catch {
+      // continue
+    }
+  }
+
+  // 3. Извлечение JSON-объекта/массива из текста с рассуждениями
+  const jsonStart = Math.max(cleaned.lastIndexOf('{'), cleaned.lastIndexOf('['));
+  if (jsonStart >= 0) {
+    try {
+      return JSON.parse(cleaned.slice(jsonStart));
+    } catch {
+      // continue
+    }
+  }
+
+  throw new SyntaxError('No valid JSON found in response');
 }
 
 /** Оборачивает system prompt для Anthropic API. При cache=true добавляет cache_control: ephemeral. */
