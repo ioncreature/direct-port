@@ -100,7 +100,9 @@ const VALIDATION_SYSTEM_PROMPT = `Ты — валидатор результат
 - НЕ упоминай пропущенные итоговые строки (ИТОГО, 合计, Total) — они пропускаются намеренно.
 - НЕ упоминай отсутствующие поля, которых нет в формате (артикул, номер, габариты) — они не требуются.
 - НЕ используй внутренние имена полей (weight, price, parsed_result и т.д.).
+- НЕ проверяй поля hsCode и rawContext — они информационные и не влияют на расчёт.
 - Каждый issue — одно предложение, понятное обычному пользователю, который загрузил файл.
+- Если значение корректно — НЕ пиши о нём. Не нужно объяснять почему оно верно.
 - Если возможно, укажи что нужно исправить в файле.
 
 `;
@@ -496,7 +498,9 @@ export class AiParserService {
     // Pick sample rows from start of data (skip first row as header)
     const startIdx = Math.min(1, data.rows.length - 1);
     const sampleSourceRows = data.rows.slice(startIdx, startIdx + SAMPLE_ROWS);
-    const sampleProducts = result.products.slice(0, SAMPLE_ROWS);
+    const sampleProducts = result.products.slice(0, SAMPLE_ROWS).map(
+      ({ hsCode, rawContext, ...core }) => core,
+    );
 
     const sourceTsv = sampleSourceRows
       .map((row, i) => [String(startIdx + i), ...row].join('\t'))
