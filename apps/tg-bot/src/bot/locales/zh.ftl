@@ -81,6 +81,15 @@ notif-send-failed = ⚠️ 文档已处理，但无法发送文件，请稍后�
 language-prompt = 请选择语言：
 language-set = 语言已设为中文。
 
+# 文档状态
+status-parsing = 识别中
+status-pending = 等待处理
+status-processing = 处理中
+status-processed = 已处理
+status-failed = 错误
+status-requires_review = 需要审核
+status-rejected = 已拒绝
+
 # API 错误代码
 error-FILE_REQUIRED = 未附加文件，请发送 .xlsx 或 .csv 文件。
 error-UNSUPPORTED_FORMAT = 仅支持 .xlsx 和 .csv 文件。

@@ -21,6 +21,16 @@ export enum DocumentStatus {
   REJECTED = 'rejected',
 }
 
+export const documentStatusLabels: Record<DocumentStatus, string> = {
+  [DocumentStatus.PARSING]: 'Распознавание',
+  [DocumentStatus.PENDING]: 'Ожидает обработки',
+  [DocumentStatus.PROCESSING]: 'Обработка',
+  [DocumentStatus.PROCESSED]: 'Обработан',
+  [DocumentStatus.FAILED]: 'Ошибка',
+  [DocumentStatus.REQUIRES_REVIEW]: 'Требует проверки',
+  [DocumentStatus.REJECTED]: 'Отклонён',
+};
+
 @Entity('documents')
 export class Document {
   @PrimaryGeneratedColumn('uuid')
@@ -81,4 +91,12 @@ export class Document {
   @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'uploaded_by_user_id' })
   uploadedBy: User | null;
+
+  get statusLabel(): string {
+    return documentStatusLabels[this.status] ?? this.status;
+  }
+
+  toJSON() {
+    return { ...this, statusLabel: this.statusLabel };
+  }
 }

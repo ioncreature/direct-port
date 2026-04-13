@@ -81,6 +81,15 @@ notif-send-failed = ⚠️ Document processed, but failed to send the file. Plea
 language-prompt = Choose your language:
 language-set = Language set to English.
 
+# Document statuses
+status-parsing = Parsing
+status-pending = Pending
+status-processing = Processing
+status-processed = Processed
+status-failed = Error
+status-requires_review = Requires review
+status-rejected = Rejected
+
 # API error codes
 error-FILE_REQUIRED = No file attached. Please send an .xlsx or .csv file.
 error-UNSUPPORTED_FORMAT = Only .xlsx and .csv files are supported.

@@ -81,6 +81,15 @@ notif-send-failed = ⚠️ Документ обработан, но не уда
 language-prompt = Выберите язык:
 language-set = Язык установлен: Русский.
 
+# Статусы документа
+status-parsing = Распознавание
+status-pending = Ожидает обработки
+status-processing = Обработка
+status-processed = Обработан
+status-failed = Ошибка
+status-requires_review = Требует проверки
+status-rejected = Отклонён
+
 # Коды ошибок API
 error-FILE_REQUIRED = Файл не прикреплён. Отправьте файл .xlsx или .csv.
 error-UNSUPPORTED_FORMAT = Поддерживаются только файлы .xlsx и .csv.
