@@ -30,6 +30,7 @@ COPY --from=prod-deps /app/node_modules node_modules
 COPY --from=prod-deps /app/apps/tg-bot/node_modules apps/tg-bot/node_modules
 COPY --from=build /app/apps/tg-bot/dist apps/tg-bot/dist
 COPY --from=build /app/apps/tg-bot/package.json apps/tg-bot/package.json
+COPY --from=prod-deps /app/libs/common/node_modules libs/common/node_modules
 COPY --from=build /app/libs/common/dist libs/common/dist
 COPY --from=build /app/libs/common/package.json libs/common/package.json
 

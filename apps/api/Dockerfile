@@ -34,6 +34,7 @@ COPY --from=prod-deps /app/apps/api/node_modules apps/api/node_modules
 COPY --from=build /app/apps/api/dist apps/api/dist
 COPY --from=build /app/libs/tks-api/dist libs/tks-api/dist
 COPY --from=build /app/libs/tks-api/package.json libs/tks-api/package.json
+COPY --from=prod-deps /app/libs/common/node_modules libs/common/node_modules
 COPY --from=build /app/libs/common/dist libs/common/dist
 COPY --from=build /app/libs/common/package.json libs/common/package.json
 COPY --from=build /app/apps/api/package.json apps/api/package.json
