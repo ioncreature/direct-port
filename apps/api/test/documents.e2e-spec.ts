@@ -222,7 +222,7 @@ describe('Documents (e2e)', () => {
         .expect(200);
 
       expect(res.headers['content-type']).toContain('spreadsheetml');
-      expect(res.headers['content-disposition']).toContain('download-test.xlsx');
+      expect(res.headers['content-disposition']).toMatch(/DP_.*\.xlsx/);
       // supertest возвращает бинарный body как Buffer через .buffer(true)
       expect(res.status).toBe(200);
     });

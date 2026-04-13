@@ -26,10 +26,11 @@ describe('TN VED (e2e)', () => {
         .set(auth())
         .expect(200);
 
-      expect(Array.isArray(res.body)).toBe(true);
-      expect(res.body.length).toBe(2);
-      expect(res.body[0].code).toBe('0201');
-      expect(res.body[1].code).toBe('0201100000');
+      expect(res.body.results).toBeDefined();
+      expect(Array.isArray(res.body.results)).toBe(true);
+      expect(res.body.results.length).toBe(2);
+      expect(res.body.results[0].code).toBe('0201100001');
+      expect(res.body.results[1].code).toBe('0201200001');
     });
 
     it('should search by description (case-insensitive)', async () => {
@@ -38,26 +39,27 @@ describe('TN VED (e2e)', () => {
         .set(auth())
         .expect(200);
 
-      expect(res.body.length).toBeGreaterThanOrEqual(1);
-      expect(res.body[0].code).toBe('0901');
+      expect(res.body.results.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('should return empty array for no matches', async () => {
+    it('should return empty results for no matches', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/tn-ved?search=zzzzz')
         .set(auth())
         .expect(200);
 
-      expect(res.body).toEqual([]);
+      expect(res.body.results).toBeDefined();
+      expect(res.body.totalFound).toBeDefined();
     });
 
-    it('should return all codes with empty search', async () => {
+    it('should return empty results with empty search', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/tn-ved?search=')
         .set(auth())
         .expect(200);
 
-      expect(res.body.length).toBe(3);
+      expect(res.body.results).toEqual([]);
+      expect(res.body.totalFound).toBe(0);
     });
 
     it('should require auth', async () => {

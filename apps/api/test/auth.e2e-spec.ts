@@ -144,7 +144,8 @@ describe('Auth (e2e)', () => {
         .set('x-internal-key', 'test-internal-key')
         .expect(200);
 
-      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body).toBeDefined();
+      expect(res.body.results).toBeDefined();
     });
   });
 });

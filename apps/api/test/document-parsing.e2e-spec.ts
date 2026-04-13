@@ -149,6 +149,7 @@ describe('Document parsing (e2e)', () => {
         columnMapping: { description: 0 },
         feasibility: 'review',
         rejectionReasons: ['AI-валидация не прошла'],
+        tokenUsage: {},
       });
 
       const doc = await createDocumentWithBuffer();
