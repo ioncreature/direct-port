@@ -13,6 +13,8 @@ export interface ParsedProduct {
   weight: number;
   quantity: number;
   dimensions?: Dimension[];
+  hsCode?: string;
+  rawContext?: string;
   [key: string]: unknown;
 }
 
@@ -83,6 +85,8 @@ const SYSTEM_PROMPT = `Ты — эксперт по парсингу комме�
 11. Если в таблице есть дополнительные числовые характеристики товара (площадь, объём, длина, объём м3 и т.д.) — извлеки их в массив dimensions с единицами измерения
 12. Каждая строка таблицы — отдельная товарная позиция. НЕ объединяй и НЕ дедуплицируй строки, даже если они имеют одинаковое наименование, цену или другие параметры. Количество извлечённых товаров должно точно совпадать с количеством товарных строк в таблице
 13. Числовые значения (вес, цена, количество) округляй до 4 знаков после запятой
+14. Если в таблице есть колонка с кодами ТН ВЭД / HS (海关编码, HS编码, код ТН ВЭД, HS code — 6-10 цифр) — извлеки код в поле hsCode (только цифры, без точек и пробелов). Если такой колонки нет — не включай поле
+15. Для каждого товара собери ВСЕ оставшиеся данные строки в поле rawContext: материал, состав, назначение, технические характеристики, артикул, бренд, упаковка — всё что не вошло в description, price, weight, quantity. Объедини через "; ". Если дополнительных данных нет — не включай поле
 
 `;
 
@@ -121,6 +125,14 @@ const PRODUCT_ITEMS_SCHEMA: Anthropic.Messages.Tool['input_schema'] = {
         },
         required: ['name', 'value', 'unit'],
       },
+    },
+    hsCode: {
+      type: 'string',
+      description: 'Код ТН ВЭД / HS code если указан автором (6-10 цифр, только цифры). Пропусти если нет',
+    },
+    rawContext: {
+      type: 'string',
+      description: 'ВСЕ остальные данные строки через "; " (материал, назначение, характеристики, артикул, бренд и т.д.). НЕ включай description/price/weight/quantity. Пропусти если доп. данных нет',
     },
   },
   required: ['description', 'price', 'weight', 'quantity'],
@@ -613,11 +625,16 @@ ${tsv}
 
       if (isNaN(price) || isNaN(quantity)) continue;
 
+      const hsCodeRaw = typeof p.hsCode === 'string' ? p.hsCode.replace(/\D/g, '') : undefined;
+      const rawContext = typeof p.rawContext === 'string' ? p.rawContext.trim() : undefined;
+
       products.push({
         description,
         price: round4(Math.max(0, price)),
         weight: round4(isNaN(weight) ? 0 : Math.max(0, weight)),
         quantity: Math.max(1, quantity),
+        ...(hsCodeRaw && hsCodeRaw.length >= 6 ? { hsCode: hsCodeRaw } : {}),
+        ...(rawContext ? { rawContext } : {}),
       });
     }
 

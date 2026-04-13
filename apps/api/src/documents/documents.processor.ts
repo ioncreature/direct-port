@@ -66,6 +66,8 @@ export class DocumentsProcessor extends WorkerHost {
         weight: Number(row.weight) || 0,
         dimensions: this.extractDimensions(row),
         notes: [],
+        ...(typeof row.hsCode === 'string' && row.hsCode ? { hsCode: row.hsCode } : {}),
+        ...(typeof row.rawContext === 'string' && row.rawContext ? { rawContext: row.rawContext } : {}),
       }));
 
       this.logger.log(`Document ${documentId}: ${rows.length} rows, currency=${doc.currency || 'USD'}`);

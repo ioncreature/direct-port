@@ -335,6 +335,88 @@ describe('AiParserService', () => {
     });
   });
 
+  describe('hsCode и rawContext', () => {
+    it('извлекает hsCode и rawContext из ответа Claude', async () => {
+      const { service } = createService({
+        spreadsheetData: makeSpreadsheetData(2),
+        claudeResponses: [
+          {
+            currency: 'CNY',
+            columnMapping: { description: 0, price: 1, weight: 2, quantity: 3 },
+            products: [
+              { description: 'Игрушка', price: 100, weight: 1, quantity: 10, hsCode: '9503005500', rawContext: 'АБС-пластик; батарейка' },
+              { description: 'Чайник', price: 200, weight: 2, quantity: 5, rawContext: 'нержавеющая сталь; 1500 Вт' },
+            ],
+          },
+          VALIDATION_OK,
+        ],
+      });
+
+      const result = await service.parse(Buffer.from(''), 'test.xlsx');
+      expect(result.products[0].hsCode).toBe('9503005500');
+      expect(result.products[0].rawContext).toBe('АБС-пластик; батарейка');
+      expect(result.products[1].hsCode).toBeUndefined();
+      expect(result.products[1].rawContext).toBe('нержавеющая сталь; 1500 Вт');
+    });
+
+    it('нормализует hsCode — убирает не-цифры', async () => {
+      const { service } = createService({
+        spreadsheetData: makeSpreadsheetData(2),
+        claudeResponses: [
+          {
+            currency: 'CNY',
+            columnMapping: {},
+            products: [
+              { description: 'Товар', price: 100, weight: 1, quantity: 10, hsCode: '9503.00.55.00' },
+            ],
+          },
+          VALIDATION_OK,
+        ],
+      });
+
+      const result = await service.parse(Buffer.from(''), 'test.xlsx');
+      expect(result.products[0].hsCode).toBe('9503005500');
+    });
+
+    it('отбрасывает hsCode короче 6 цифр', async () => {
+      const { service } = createService({
+        spreadsheetData: makeSpreadsheetData(2),
+        claudeResponses: [
+          {
+            currency: 'CNY',
+            columnMapping: {},
+            products: [
+              { description: 'Товар', price: 100, weight: 1, quantity: 10, hsCode: '9503' },
+            ],
+          },
+          VALIDATION_OK,
+        ],
+      });
+
+      const result = await service.parse(Buffer.from(''), 'test.xlsx');
+      expect(result.products[0].hsCode).toBeUndefined();
+    });
+
+    it('пропускает пустой rawContext', async () => {
+      const { service } = createService({
+        spreadsheetData: makeSpreadsheetData(2),
+        claudeResponses: [
+          {
+            currency: 'CNY',
+            columnMapping: {},
+            products: [
+              { description: 'Товар', price: 100, weight: 1, quantity: 10, rawContext: '  ' },
+            ],
+          },
+          VALIDATION_OK,
+        ],
+      });
+
+      const result = await service.parse(Buffer.from(''), 'test.xlsx');
+      expect(result.products[0].rawContext).toBeUndefined();
+    });
+  });
+
   describe('Token usage', () => {
     it('накапливает tokenUsage из всех вызовов Claude', async () => {
       const { service } = createService({
