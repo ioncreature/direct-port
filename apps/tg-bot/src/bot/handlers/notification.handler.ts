@@ -13,6 +13,7 @@ interface DocumentNotification {
   errorMessage?: string;
   rejectionReasons?: string[];
   language?: string;
+  outputFileName?: string;
 }
 
 @Injectable()
@@ -35,7 +36,7 @@ export class NotificationHandler extends WorkerHost {
   }
 
   async process(job: Job<DocumentNotification>): Promise<void> {
-    const { documentId, telegramUserId, status, errorMessage, rejectionReasons, language } =
+    const { documentId, telegramUserId, status, errorMessage, rejectionReasons, language, outputFileName } =
       job.data;
     this.logger.log(`Notification for document ${documentId}: ${status}`);
 
@@ -74,9 +75,10 @@ export class NotificationHandler extends WorkerHost {
     try {
       const fileBuffer = await this.apiClient.downloadDocument(documentId);
 
+      const fileName = outputFileName || `result_${documentId}.xlsx`;
       await this.tgApi.sendDocument(
         chatId,
-        new InputFile(fileBuffer, `result_${documentId}.xlsx`),
+        new InputFile(fileBuffer, fileName),
         { caption: this.t(language, 'notif-success') },
       );
     } catch (err) {

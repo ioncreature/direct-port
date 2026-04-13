@@ -77,7 +77,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </button>
         </div>
       </aside>
-      <main style={{ flex: 1, padding: 24 }}>{children}</main>
+      <main style={{ flex: 1, padding: 24, paddingBottom: 64 }}>{children}</main>
       <ForbiddenToast />
     </div>
   );

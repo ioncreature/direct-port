@@ -19,10 +19,18 @@ export const statusColors: Record<DocumentStatus, string> = {
   requires_review: '#ca8a04',
 };
 
-export async function downloadDocument(id: string, fileName: string) {
+export async function downloadDocument(id: string) {
   const response = await api.get(`/documents/${id}/download`, {
     responseType: 'blob',
   });
+
+  let fileName = `document_${id.slice(0, 8)}.xlsx`;
+  const disposition = response.headers['content-disposition'] as string | undefined;
+  if (disposition) {
+    const match = disposition.match(/filename\*?=(?:UTF-8'')?([^;"\s]+)/i);
+    if (match) fileName = decodeURIComponent(match[1]);
+  }
+
   const url = window.URL.createObjectURL(new Blob([response.data]));
   const link = document.createElement('a');
   link.href = url;

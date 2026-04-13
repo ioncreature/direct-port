@@ -7,6 +7,7 @@ import { CalculationConfigService } from '../calculation-config/calculation-conf
 import { CalculationLogsService } from '../calculation-logs/calculation-logs.service';
 import { CalculatorService } from '../calculator/calculator.service';
 import { ClassifierService, type ProductRow } from '../classifier/classifier.service';
+import { buildOutputFileName, getDocumentClientName } from '../common/output-filename';
 import { addStageUsage } from '../common/token-usage';
 import { CurrencyService } from '../currency/currency.service';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
@@ -20,6 +21,7 @@ export interface DocumentNotification {
   errorMessage?: string;
   rejectionReasons?: string[];
   language?: string;
+  outputFileName?: string;
 }
 
 @Processor('document-processing')
@@ -195,12 +197,14 @@ export class DocumentsProcessor extends WorkerHost {
     const telegramId = doc.telegramUser?.telegramId;
     if (!telegramId) return;
 
+    const clientName = getDocumentClientName(doc);
     const payload: DocumentNotification = {
       documentId: doc.id,
       telegramUserId: telegramId,
       status,
       errorMessage,
       language: doc.language ?? doc.telegramUser?.language,
+      outputFileName: buildOutputFileName(doc.createdAt, clientName),
     };
 
     await this.notificationQueue.add('document-ready', payload).catch((err) => {

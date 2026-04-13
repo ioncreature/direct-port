@@ -215,7 +215,7 @@ export default function DocumentDetailPage() {
           )}
           {doc.status === 'processed' && (
             <button
-              onClick={() => downloadDocument(doc.id, doc.originalFileName)}
+              onClick={() => downloadDocument(doc.id)}
               style={{
                 padding: '8px 16px',
                 background: '#2563eb',

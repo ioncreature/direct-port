@@ -117,7 +117,7 @@ export default function TelegramUserDetailPage() {
                   <td style={td}>{new Date(doc.createdAt).toLocaleDateString('ru')}</td>
                   <td style={td}>
                     <button
-                      onClick={() => downloadDocument(doc.id, doc.originalFileName)}
+                      onClick={() => downloadDocument(doc.id)}
                       disabled={doc.status !== 'processed'}
                       style={{
                         cursor: doc.status === 'processed' ? 'pointer' : 'not-allowed',

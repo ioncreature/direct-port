@@ -18,6 +18,7 @@ import { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ErrorCode } from '../common/error-codes';
+import { buildOutputFileName, getDocumentClientName } from '../common/output-filename';
 import { UserRole } from '../database/entities/user.entity';
 import { DocumentsService } from './documents.service';
 import { CreateDocumentDto } from './dto/create-document.dto';
@@ -143,10 +144,12 @@ export class DocumentsController {
     const doc = await this.service.findOne(id);
     const buffer = await this.excelExport.generate(doc);
 
-    const fileName = encodeURIComponent(doc.originalFileName || 'document.xlsx');
+    const clientName = getDocumentClientName(doc);
+    const outputName = buildOutputFileName(doc.createdAt, clientName);
+    const encoded = encodeURIComponent(outputName);
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename="${fileName}"`,
+      'Content-Disposition': `attachment; filename="${encoded}"; filename*=UTF-8''${encoded}`,
     });
 
     res.send(buffer);

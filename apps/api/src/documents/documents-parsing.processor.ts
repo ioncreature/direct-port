@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Job, Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 import { AiParserService } from '../ai-parser/ai-parser.service';
+import { buildOutputFileName, getDocumentClientName } from '../common/output-filename';
 import { addStageUsage } from '../common/token-usage';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import type { DocumentNotification } from './documents.processor';
@@ -96,6 +97,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
     const telegramId = opts.doc.telegramUser?.telegramId;
     if (!telegramId) return;
 
+    const clientName = getDocumentClientName(opts.doc);
     const payload: DocumentNotification = {
       documentId: opts.doc.id,
       telegramUserId: telegramId,
@@ -103,6 +105,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
       errorMessage: opts.errorMessage,
       rejectionReasons: opts.rejectionReasons,
       language: opts.doc.language ?? opts.doc.telegramUser?.language,
+      outputFileName: buildOutputFileName(opts.doc.createdAt, clientName),
     };
 
     await this.notificationQueue.add('document-ready', payload).catch((err) => {

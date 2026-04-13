@@ -167,7 +167,7 @@ export default function DocumentsPage() {
                     )}
                     {doc.status === 'processed' && (
                       <button
-                        onClick={() => downloadDocument(doc.id, doc.originalFileName)}
+                        onClick={() => downloadDocument(doc.id)}
                         style={{ ...btnLink, color: '#2563eb' }}
                       >
                         Скачать

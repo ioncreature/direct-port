@@ -1,6 +1,7 @@
 'use client';
 
 import api from '@/lib/api';
+import { downloadDocument } from '@/lib/documents';
 import type { Document, DocumentStatus, PaginatedResponse, SortOrder } from '@/lib/types';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -49,18 +50,6 @@ export function useDocuments(options?: { telegramUserId?: string }) {
   const filterByStatus = useCallback((s: DocumentStatus | '') => {
     setStatus(s);
     setPage(1);
-  }, []);
-
-  const downloadDocument = useCallback(async (id: string, fileName: string) => {
-    const response = await api.get(`/documents/${id}/download`, { responseType: 'blob' });
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', fileName);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
   }, []);
 
   const reprocessDocument = useCallback(
