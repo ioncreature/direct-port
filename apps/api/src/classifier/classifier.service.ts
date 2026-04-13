@@ -7,7 +7,7 @@ import {
 } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
-import { cachedSystemPrompt, extractClaudeText, parseClaudeJson } from '../common/claude';
+import { extractClaudeText, parseClaudeJson, systemPrompt } from '../common/claude';
 import { errMsg } from '../common/errors';
 import { normalizeImpediUnit } from '../common/normalize-impedi';
 import { getStaticNoteTranslation } from '../common/note-translations';
@@ -268,10 +268,12 @@ export class ClassifierService {
       batches.push(items);
     }
 
-    // First batch alone — warms the prompt cache
+    const useCache = batches.length > 1;
+
+    // First batch alone — warms the prompt cache only when there are more batches
     if (batches.length > 0) {
       try {
-        const { selections, tokenUsage } = await this.callClaude(batches[0], language);
+        const { selections, tokenUsage } = await this.callClaude(batches[0], language, useCache);
         totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
         for (const sel of selections) {
           if (sel.index >= 0 && sel.index < products.length) {
@@ -289,7 +291,7 @@ export class ClassifierService {
       const group = remaining.slice(g, g + CLAUDE_CONCURRENCY);
       const results = await Promise.all(
         group.map((items) =>
-          this.callClaude(items, language).catch((err) => {
+          this.callClaude(items, language, true).catch((err) => {
             this.logger.error('Claude classify+verify batch failed', err);
             return { selections: [] as ClaudeSelection[], tokenUsage: emptyTokenUsageMap() };
           }),
@@ -311,6 +313,7 @@ export class ClassifierService {
   private async callClaude(
     items: Array<{ index: number; description: string; candidates: TksCandidate[] }>,
     language?: string,
+    useCache = false,
   ): Promise<{ selections: ClaudeSelection[]; tokenUsage: TokenUsageMap }> {
     const model = await this.aiConfig.getClassifierModel();
     const needsLocalized = language && language !== 'ru';
@@ -336,8 +339,9 @@ ${commentInstruction}
 
 Отвечай ТОЛЬКО JSON-массивом.`;
 
+    const system = systemPrompt(SYSTEM_PROMPT, useCache);
     const response = await this.anthropic!.messages.create(
-      { model, max_tokens: 2048, system: cachedSystemPrompt(SYSTEM_PROMPT), messages: [{ role: 'user', content: userPrompt }] },
+      { model, max_tokens: 2048, system, messages: [{ role: 'user', content: userPrompt }] },
       { timeout: 30_000 },
     );
 

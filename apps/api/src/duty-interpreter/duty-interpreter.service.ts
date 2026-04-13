@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { TksApiClient, TnvedCode } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
-import { cachedSystemPrompt, extractClaudeText, parseClaudeJson } from '../common/claude';
+import { extractClaudeText, parseClaudeJson, systemPrompt } from '../common/claude';
 import { errMsg } from '../common/errors';
 import { getStaticNoteTranslation } from '../common/note-translations';
 import type { ProductNote } from '../common/product-notes';
@@ -120,10 +120,12 @@ export class DutyInterpreterService {
       );
     }
 
-    // First batch alone — warms the prompt cache
+    const useCache = codeBatches.length > 1;
+
+    // First batch alone — warms the prompt cache only when there are more batches
     if (codeBatches.length > 0) {
       try {
-        const { results, tokenUsage } = await this.interpretBatch(codeBatches[0], language);
+        const { results, tokenUsage } = await this.interpretBatch(codeBatches[0], language, useCache);
         totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
         for (const result of results) {
           interpretations.set(result.tnvedCode, result);
@@ -140,7 +142,7 @@ export class DutyInterpreterService {
       const group = remainingBatches.slice(g, g + CONCURRENCY);
       const results = await Promise.all(
         group.map((batchData) =>
-          this.interpretBatch(batchData, language).catch((err) => {
+          this.interpretBatch(batchData, language, true).catch((err) => {
             this.logger.error('Duty interpretation batch failed', err);
             return { results: [] as DutyInterpretation[], tokenUsage: emptyTokenUsageMap() };
           }),
@@ -221,6 +223,7 @@ export class DutyInterpreterService {
   private async interpretBatch(
     items: Array<{ code: string; tnved: TnvedCode }>,
     language?: string,
+    useCache = false,
   ): Promise<{ results: DutyInterpretation[]; tokenUsage: TokenUsageMap }> {
     const model = await this.aiConfig.getInterpreterModel();
     const codesData = items.map((item) => ({
@@ -257,8 +260,9 @@ ${JSON.stringify(codesData, null, 2)}
 
 Отвечай ТОЛЬКО JSON-массивом.`;
 
+    const system = systemPrompt(SYSTEM_PROMPT, useCache);
     const response = await this.anthropic!.messages.create(
-      { model, max_tokens: 2048, system: cachedSystemPrompt(SYSTEM_PROMPT), messages: [{ role: 'user', content: userPrompt }] },
+      { model, max_tokens: 2048, system, messages: [{ role: 'user', content: userPrompt }] },
       { timeout: 30_000 },
     );
 

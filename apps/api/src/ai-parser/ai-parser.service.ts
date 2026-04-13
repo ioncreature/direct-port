@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
-import { cachedSystemPrompt, extractClaudeText, parseClaudeJson } from '../common/claude';
+import { extractClaudeText, parseClaudeJson, systemPrompt } from '../common/claude';
 import { errMsg } from '../common/errors';
 import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, tokenUsageFromResponse } from '../common/token-usage';
 import type { Dimension } from '../duty-interpreter/interfaces';
@@ -82,9 +82,18 @@ const SYSTEM_PROMPT = `Ты — эксперт по парсингу комме�
 
 Отвечай ТОЛЬКО валидным JSON в указанном формате. Никакого текста до или после JSON.`;
 
-const VALIDATION_SYSTEM_PROMPT = `Ты — валидатор результатов парсинга коммерческих документов.
+const VALIDATION_SYSTEM_PROMPT = `Ты — валидатор результатов парсинга коммерческих документов для импорта товаров в Россию.
 
 Тебе предоставлены исходные строки таблицы и результат их парсинга. Проверь корректность.
+
+Правила составления issues:
+- Сообщай ТОЛЬКО о реальных ошибках, влияющих на расчёт пошлин (неверная цена, вес, количество, валюта, перевод).
+- НЕ сообщай о корректно распознанных данных — только о проблемах.
+- НЕ упоминай пропущенные итоговые строки (ИТОГО, 合计, Total) — они пропускаются намеренно.
+- НЕ упоминай отсутствующие поля, которых нет в формате (артикул, номер, габариты) — они не требуются.
+- НЕ используй внутренние имена полей (weight, price, parsed_result и т.д.).
+- Каждый issue — одно предложение, понятное обычному пользователю, который загрузил файл.
+- Если возможно, укажи что нужно исправить в файле.
 
 Отвечай ТОЛЬКО валидным JSON. Никакого текста до или после JSON.`;
 
@@ -191,7 +200,7 @@ export class AiParserService {
         ? this.buildUserPrompt(firstTsv)
         : this.buildRetryPrompt(firstTsv, lastIssues);
 
-      const { tokenUsage, ...result } = await this.callClaude(prompt);
+      const { tokenUsage, ...result } = await this.callClaude(prompt, true);
       totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
       firstResult = result;
 
@@ -329,14 +338,16 @@ export class AiParserService {
 
   private async callClaudeRaw(
     prompt: string,
-    systemPrompt = SYSTEM_PROMPT,
+    sysPrompt = SYSTEM_PROMPT,
+    useCache = false,
   ): Promise<{ raw: unknown; tokenUsage: TokenUsageMap }> {
     const model = await this.aiConfig.getParserModel();
     let text: string;
     let tokenUsage: TokenUsageMap = emptyTokenUsageMap();
     try {
+      const system = systemPrompt(sysPrompt, useCache);
       const response = await this.anthropic!.messages.create(
-        { model, max_tokens: 8192, system: cachedSystemPrompt(systemPrompt), messages: [{ role: 'user', content: prompt }] },
+        { model, max_tokens: 8192, system, messages: [{ role: 'user', content: prompt }] },
         { timeout: 45_000 },
       );
       tokenUsage = tokenUsageFromResponse(model, response.usage);
@@ -348,8 +359,8 @@ export class AiParserService {
     return { raw: this.parseJson(text), tokenUsage };
   }
 
-  private async callClaude(userPrompt: string): Promise<RawParseResult & { tokenUsage: TokenUsageMap }> {
-    const { raw, tokenUsage } = await this.callClaudeRaw(userPrompt);
+  private async callClaude(userPrompt: string, useCache = false): Promise<RawParseResult & { tokenUsage: TokenUsageMap }> {
+    const { raw, tokenUsage } = await this.callClaudeRaw(userPrompt, SYSTEM_PROMPT, useCache);
     return { ...this.validateSchema(raw), tokenUsage };
   }
 
@@ -409,22 +420,23 @@ ${JSON.stringify({ currency: result.currency, products: sampleProducts }, null, 
 </parsed_result>
 
 Проверь:
-1. Правильно ли определена валюта?
+1. Правильно ли определена валюта? Если в исходных данных есть прямые указания (символ ¥/$€/₽ или слово), а определённая валюта не совпадает — это ошибка. Если валюта определена по контексту (язык, страна) и это разумное предположение — это НЕ ошибка.
 2. Корректен ли перевод наименований (смысловой, не транслитерация)?
-3. Совпадают ли числа (цена за единицу, общее количество, вес за единицу) с исходными данными? Вес должен быть за одну единицу товара, не общий
-4. Нет ли пропущенных или лишних строк?
+3. Совпадают ли числа (цена за единицу, общее количество, вес за единицу) с исходными данными? Вес должен быть за одну единицу товара, не общий.
+4. Нет ли пропущенных товарных строк? Итоговые строки (ИТОГО, Total, 合计) НЕ считаются пропущенными.
 
 Ответь JSON:
 {
   "valid": true или false,
-  "issues": ["описание проблемы 1", "..."]
+  "issues": ["понятное пользователю описание проблемы", "..."]
 }
 
-Если всё корректно — {"valid": true, "issues": []}`;
+Если всё корректно — {"valid": true, "issues": []}.
+Не включай в issues то, что распознано правильно.`;
 
     try {
       const response = await this.anthropic!.messages.create(
-        { model, max_tokens: 1024, system: cachedSystemPrompt(VALIDATION_SYSTEM_PROMPT), messages: [{ role: 'user', content: prompt }] },
+        { model, max_tokens: 1024, system: systemPrompt(VALIDATION_SYSTEM_PROMPT), messages: [{ role: 'user', content: prompt }] },
         { timeout: 15_000 },
       );
 
@@ -517,7 +529,7 @@ ${tsv}
     columnMapping: Record<string, number>,
   ): Promise<{ products: ParsedProduct[]; tokenUsage: TokenUsageMap }> {
     const prompt = this.buildChunkPrompt(tsv, currency, columnMapping);
-    const { raw, tokenUsage } = await this.callClaudeRaw(prompt, CHUNK_SYSTEM_PROMPT);
+    const { raw, tokenUsage } = await this.callClaudeRaw(prompt, CHUNK_SYSTEM_PROMPT, true);
     const { products } = this.validateSchema(raw);
     return { products, tokenUsage };
   }

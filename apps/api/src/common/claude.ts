@@ -21,7 +21,9 @@ export function parseClaudeJson(text: string): unknown {
   return JSON.parse(cleaned);
 }
 
-/** Оборачивает system prompt для Anthropic prompt caching (cache_control: ephemeral). */
-export function cachedSystemPrompt(text: string) {
-  return [{ type: 'text' as const, text, cache_control: { type: 'ephemeral' as const } }];
+/** Оборачивает system prompt для Anthropic API. При cache=true добавляет cache_control: ephemeral. */
+export function systemPrompt(text: string, cache = false) {
+  return cache
+    ? [{ type: 'text' as const, text, cache_control: { type: 'ephemeral' as const } }]
+    : [{ type: 'text' as const, text }];
 }
