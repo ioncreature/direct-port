@@ -27,8 +27,10 @@ export async function downloadDocument(id: string) {
   let fileName = `document_${id.slice(0, 8)}.xlsx`;
   const disposition = response.headers['content-disposition'] as string | undefined;
   if (disposition) {
-    const match = disposition.match(/filename\*?=(?:UTF-8'')?([^;"\s]+)/i);
-    if (match) fileName = decodeURIComponent(match[1]);
+    const rfc5987 = disposition.match(/filename\*=UTF-8''([^;\s]+)/i);
+    const plain = disposition.match(/filename="([^"]+)"/i);
+    const extracted = rfc5987?.[1] ?? plain?.[1];
+    if (extracted) fileName = decodeURIComponent(extracted);
   }
 
   const url = window.URL.createObjectURL(new Blob([response.data]));
