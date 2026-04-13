@@ -68,7 +68,7 @@ function createService(opts: {
     ? {
         messages: {
           create: jest.fn().mockResolvedValue({
-            content: [{ type: 'text', text: JSON.stringify(opts.claudeResponse ?? []) }],
+            content: [{ type: 'tool_use', id: 'toolu_mock', name: 'classify_products', input: { items: opts.claudeResponse ?? [] } }],
             usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
           }),
         },

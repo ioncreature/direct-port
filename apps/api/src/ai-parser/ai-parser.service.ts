@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
-import { extractClaudeText, parseClaudeJson, systemPrompt } from '../common/claude';
+import { extractToolInput, systemPrompt } from '../common/claude';
 import { errMsg } from '../common/errors';
 import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, tokenUsageFromResponse } from '../common/token-usage';
 import type { Dimension } from '../duty-interpreter/interfaces';
@@ -80,7 +80,7 @@ const SYSTEM_PROMPT = `Ты — эксперт по парсингу комме�
 10. Если таблица содержит несколько строк заголовков (например, на двух языках) — используй их для понимания структуры, но не включай в результат
 11. Если в таблице есть дополнительные числовые характеристики товара (площадь, объём, длина, объём м3 и т.д.) — извлеки их в массив dimensions с единицами измерения
 
-Отвечай ТОЛЬКО валидным JSON в указанном формате. Никакого текста до или после JSON.`;
+`;
 
 const VALIDATION_SYSTEM_PROMPT = `Ты — валидатор результатов парсинга коммерческих документов для импорта товаров в Россию.
 
@@ -95,9 +95,80 @@ const VALIDATION_SYSTEM_PROMPT = `Ты — валидатор результат
 - Каждый issue — одно предложение, понятное обычному пользователю, который загрузил файл.
 - Если возможно, укажи что нужно исправить в файле.
 
-Отвечай ТОЛЬКО валидным JSON. Никакого текста до или после JSON.`;
+`;
 
-const CHUNK_SYSTEM_PROMPT = `Ты — эксперт по парсингу коммерческих документов для импорта товаров. Продолжай извлечение данных согласно указанным правилам. Отвечай ТОЛЬКО валидным JSON.`;
+const CHUNK_SYSTEM_PROMPT = `Ты — эксперт по парсингу коммерческих документов для импорта товаров. Продолжай извлечение данных согласно указанным правилам.`;
+
+const PRODUCT_ITEMS_SCHEMA: Anthropic.Messages.Tool['input_schema'] = {
+  type: 'object' as const,
+  properties: {
+    description: { type: 'string', description: 'Наименование товара на русском' },
+    price: { type: 'number', description: 'Цена за единицу' },
+    weight: { type: 'number', description: 'Вес за единицу в кг' },
+    quantity: { type: 'number', description: 'Общее количество' },
+    dimensions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          value: { type: 'number' },
+          unit: { type: 'string' },
+        },
+        required: ['name', 'value', 'unit'],
+      },
+    },
+  },
+  required: ['description', 'price', 'weight', 'quantity'],
+};
+
+const PARSE_TOOL: Anthropic.Messages.Tool = {
+  name: 'parse_products',
+  description: 'Извлечённые товары из таблицы коммерческого документа',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      currency: { type: 'string', description: 'ISO 4217 код валюты (CNY, USD, EUR, RUB и т.д.)' },
+      columnMapping: {
+        type: 'object',
+        properties: {
+          description: { type: 'number' },
+          price: { type: 'number' },
+          weight: { type: 'number' },
+          quantity: { type: 'number' },
+        },
+        required: ['description', 'price', 'weight', 'quantity'],
+      },
+      products: { type: 'array', items: PRODUCT_ITEMS_SCHEMA },
+    },
+    required: ['currency', 'columnMapping', 'products'],
+  },
+};
+
+const PARSE_CHUNK_TOOL: Anthropic.Messages.Tool = {
+  name: 'parse_products_chunk',
+  description: 'Продолжение извлечения товаров из следующего блока таблицы',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      products: { type: 'array', items: PRODUCT_ITEMS_SCHEMA },
+    },
+    required: ['products'],
+  },
+};
+
+const VALIDATE_TOOL: Anthropic.Messages.Tool = {
+  name: 'validate_parsing',
+  description: 'Результат валидации парсинга коммерческого документа',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      valid: { type: 'boolean' },
+      issues: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['valid', 'issues'],
+  },
+};
 
 @Injectable()
 export class AiParserService {
@@ -340,23 +411,29 @@ export class AiParserService {
     prompt: string,
     sysPrompt = SYSTEM_PROMPT,
     useCache = false,
+    tool: Anthropic.Messages.Tool = PARSE_TOOL,
   ): Promise<{ raw: unknown; tokenUsage: TokenUsageMap }> {
     const model = await this.aiConfig.getParserModel();
-    let text: string;
     let tokenUsage: TokenUsageMap = emptyTokenUsageMap();
     try {
       const system = systemPrompt(sysPrompt, useCache);
       const response = await this.anthropic!.messages.create(
-        { model, max_tokens: 8192, system, messages: [{ role: 'user', content: prompt }] },
+        {
+          model,
+          max_tokens: 8192,
+          system,
+          messages: [{ role: 'user', content: prompt }],
+          tools: [tool],
+          tool_choice: { type: 'any' },
+        },
         { timeout: 45_000 },
       );
       tokenUsage = tokenUsageFromResponse(model, response.usage);
-      text = extractClaudeText(response);
+      return { raw: extractToolInput(response), tokenUsage };
     } catch (err) {
       this.logger.error(`Anthropic API error: ${errMsg(err)}`, err);
       throw new BadRequestException(`Ошибка AI-сервиса: ${errMsg(err)}`);
     }
-    return { raw: this.parseJson(text), tokenUsage };
   }
 
   private async callClaude(userPrompt: string, useCache = false): Promise<RawParseResult & { tokenUsage: TokenUsageMap }> {
@@ -425,24 +502,23 @@ ${JSON.stringify({ currency: result.currency, products: sampleProducts }, null, 
 3. Совпадают ли числа (цена за единицу, общее количество, вес за единицу) с исходными данными? Вес должен быть за одну единицу товара, не общий.
 4. Нет ли пропущенных товарных строк? Итоговые строки (ИТОГО, Total, 合计) НЕ считаются пропущенными.
 
-Ответь JSON:
-{
-  "valid": true или false,
-  "issues": ["понятное пользователю описание проблемы", "..."]
-}
-
-Если всё корректно — {"valid": true, "issues": []}.
+Если всё корректно — valid: true, issues: [].
 Не включай в issues то, что распознано правильно.`;
 
     try {
       const response = await this.anthropic!.messages.create(
-        { model, max_tokens: 1024, system: systemPrompt(VALIDATION_SYSTEM_PROMPT), messages: [{ role: 'user', content: prompt }] },
+        {
+          model,
+          max_tokens: 1024,
+          system: systemPrompt(VALIDATION_SYSTEM_PROMPT),
+          messages: [{ role: 'user', content: prompt }],
+          tools: [VALIDATE_TOOL],
+          tool_choice: { type: 'any' },
+        },
         { timeout: 15_000 },
       );
 
-      const text = extractClaudeText(response);
-
-      const parsed = this.parseJson(text) as Record<string, unknown>;
+      const parsed = extractToolInput<{ valid: boolean; issues: unknown[] }>(response);
       return {
         valid: parsed.valid === true,
         issues: Array.isArray(parsed.issues) ? parsed.issues.map(String) : [],
@@ -465,33 +541,13 @@ ${JSON.stringify({ currency: result.currency, products: sampleProducts }, null, 
 ${tsv}
 </spreadsheet_data>
 
-Ответь JSON в формате:
-{
-  "currency": "ISO 4217 код валюты (CNY, USD, EUR, RUB и т.д.)",
-  "columnMapping": {
-    "description": номер_колонки_начиная_с_0,
-    "price": номер_колонки_начиная_с_0,
-    "weight": номер_колонки_начиная_с_0,
-    "quantity": номер_колонки_начиная_с_0
-  },
-  "products": [
-    {
-      "description": "наименование на русском",
-      "price": цена_за_единицу_число,
-      "weight": вес_за_единицу_в_кг_число,
-      "quantity": общее_количество_число,
-      "dimensions": [{"name": "area", "value": число, "unit": "m2"}]
-    }
-  ]
-}
-
 Поле dimensions — необязательное. Добавляй только если в таблице есть соответствующие колонки (площадь, объём и т.д.).`;
   }
 
   private buildRetryPrompt(tsv: string, issues: string[]): string {
     const base = this.buildUserPrompt(tsv);
     const feedback = issues.map((issue, i) => `${i + 1}. ${issue}`).join('\n');
-    return `${base}\n\nВНИМАНИЕ: Предыдущая попытка парсинга содержала ошибки:\n${feedback}\n\nИсправь эти ошибки и верни исправленный результат. Начни ответ СРАЗУ с символа { — никакого текста, рассуждений или анализа до или после JSON.`;
+    return `${base}\n\nВНИМАНИЕ: Предыдущая попытка парсинга содержала ошибки:\n${feedback}\n\nИсправь эти ошибки и верни исправленный результат.`;
   }
 
   private buildChunkPrompt(tsv: string, currency: string, columnMapping: Record<string, number>): string {
@@ -506,20 +562,6 @@ ${tsv}
 
 Первая строка — заголовок таблицы (для справки). Извлеки товары из остальных строк.
 Правила те же: переведи наименования на русский, пропусти итоги и пустые строки, цена за единицу, вес за единицу в кг.
-
-Ответь ТОЛЬКО валидным JSON:
-{
-  "products": [
-    {
-      "description": "наименование на русском",
-      "price": цена_за_единицу,
-      "weight": вес_за_единицу_в_кг,
-      "quantity": количество,
-      "dimensions": [{"name": "area", "value": число, "unit": "m2"}]
-    }
-  ]
-}
-
 Поле dimensions — необязательное. Добавляй только если в таблице есть соответствующие колонки.`;
   }
 
@@ -529,19 +571,9 @@ ${tsv}
     columnMapping: Record<string, number>,
   ): Promise<{ products: ParsedProduct[]; tokenUsage: TokenUsageMap }> {
     const prompt = this.buildChunkPrompt(tsv, currency, columnMapping);
-    const { raw, tokenUsage } = await this.callClaudeRaw(prompt, CHUNK_SYSTEM_PROMPT);
+    const { raw, tokenUsage } = await this.callClaudeRaw(prompt, CHUNK_SYSTEM_PROMPT, false, PARSE_CHUNK_TOOL);
     const { products } = this.validateSchema(raw);
     return { products, tokenUsage };
-  }
-
-  private parseJson(text: string): unknown {
-    try {
-      return parseClaudeJson(text);
-    } catch (err) {
-      const snippet = text.length > 200 ? text.substring(0, 200) + '…' : text;
-      this.logger.error(`Failed to parse Claude JSON: ${errMsg(err)}`, { snippet });
-      throw new BadRequestException('AI вернул невалидный JSON');
-    }
   }
 
   private validateSchema(raw: unknown): RawParseResult {

@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { TksApiClient, TnvedCode } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
-import { extractClaudeText, parseClaudeJson, systemPrompt } from '../common/claude';
+import { extractToolInput, systemPrompt } from '../common/claude';
 import { errMsg } from '../common/errors';
 import { getStaticNoteTranslation } from '../common/note-translations';
 import type { ProductNote } from '../common/product-notes';
@@ -31,7 +31,64 @@ const SYSTEM_PROMPT = `Ты — эксперт по таможенному ре�
 7. База: пошлина от customs_value, акциз от customs_value, НДС от customs_value_plus_duty_plus_excise
 8. В поле "per" указывай единицу для специфических ставок: kg, m2, l, pcs, m3 и т.д.
 
-Выдавай ТОЛЬКО валидный JSON-массив. Без markdown-обёртки.`;
+`;
+
+const INTERPRET_TOOL: Anthropic.Messages.Tool = {
+  name: 'interpret_duties',
+  description: 'Формализованные правила расчёта таможенных пошлин',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      items: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            tnvedCode: { type: 'string' },
+            charges: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  type: {
+                    type: 'string',
+                    enum: ['import_duty', 'excise', 'vat', 'antidumping', 'compensatory', 'temp_duty'],
+                  },
+                  label: { type: 'string' },
+                  method: {
+                    type: 'object',
+                    properties: {
+                      kind: {
+                        type: 'string',
+                        enum: ['ad_valorem', 'specific', 'combined_min', 'combined_max', 'fixed_rate'],
+                      },
+                      rate: { type: 'number', description: 'Ставка в процентах (для ad_valorem, combined_*, fixed_rate)' },
+                      amount: { type: 'number', description: 'Сумма (для specific)' },
+                      specificAmount: { type: 'number', description: 'Специфическая сумма (для combined_*)' },
+                      unit: { type: 'string', description: 'Валюта (EUR)' },
+                      per: { type: 'string', description: 'Единица: kg, m2, l, pcs, m3' },
+                    },
+                    required: ['kind'],
+                  },
+                  base: {
+                    type: 'string',
+                    enum: ['customs_value', 'customs_value_plus_duty', 'customs_value_plus_duty_plus_excise'],
+                  },
+                },
+                required: ['type', 'label', 'method', 'base'],
+              },
+            },
+            requiredDimensions: { type: 'array', items: { type: 'string' } },
+            reasoning: { type: 'string', description: 'Пояснение логики на русском' },
+            reasoningLocalized: { type: 'string', description: 'Пояснение на языке пользователя' },
+          },
+          required: ['tnvedCode', 'charges', 'reasoning'],
+        },
+      },
+    },
+    required: ['items'],
+  },
+};
 
 @Injectable()
 export class DutyInterpreterService {
@@ -232,48 +289,32 @@ export class DutyInterpreterService {
       conditions: item.tnved.Tnvedall ?? [],
     }));
 
+    const localizedInstruction = language && language !== 'ru'
+      ? `\nДополнительно: для каждого кода добавь reasoningLocalized — пояснение на ${language === 'zh' ? 'китайском' : 'английском'} языке.`
+      : '';
+
     const userPrompt = `Интерпретируй ставки пошлин для следующих кодов ТН ВЭД:
 
 <codes>
 ${JSON.stringify(codesData, null, 2)}
-</codes>
-
-Для каждого кода верни объект:
-{
-  "tnvedCode": "1234567890",
-  "charges": [
-    {
-      "type": "import_duty" | "excise" | "vat" | "antidumping" | "compensatory" | "temp_duty",
-      "label": "Описание на русском",
-      "method": { "kind": "ad_valorem", "rate": число }
-             | { "kind": "specific", "amount": число, "unit": "EUR", "per": "kg" }
-             | { "kind": "combined_min", "rate": число, "specificAmount": число, "unit": "EUR", "per": "kg" }
-             | { "kind": "combined_max", "rate": число, "specificAmount": число, "unit": "EUR", "per": "kg" }
-             | { "kind": "fixed_rate", "rate": число },
-      "base": "customs_value" | "customs_value_plus_duty" | "customs_value_plus_duty_plus_excise"
-    }
-  ],
-  "requiredDimensions": ["area", "volume"],
-  "reasoning": "Пояснение логики"${language && language !== 'ru' ? `,\n  "reasoningLocalized": "Explanation in ${language === 'zh' ? 'Chinese' : 'English'}"` : ''}
-}
-
-Отвечай ТОЛЬКО JSON-массивом.`;
+</codes>${localizedInstruction}`;
 
     const system = systemPrompt(SYSTEM_PROMPT, useCache);
     const response = await this.anthropic!.messages.create(
-      { model, max_tokens: 2048, system, messages: [{ role: 'user', content: userPrompt }] },
+      {
+        model,
+        max_tokens: 2048,
+        system,
+        messages: [{ role: 'user', content: userPrompt }],
+        tools: [INTERPRET_TOOL],
+        tool_choice: { type: 'any' },
+      },
       { timeout: 30_000 },
     );
 
-    const text = extractClaudeText(response);
-
-    const parsed = parseClaudeJson(text);
-    if (!Array.isArray(parsed)) {
-      throw new Error('Expected JSON array from Claude');
-    }
-
+    const result = extractToolInput<{ items: DutyInterpretation[] }>(response);
     return {
-      results: parsed as DutyInterpretation[],
+      results: result.items,
       tokenUsage: tokenUsageFromResponse(model, response.usage),
     };
   }

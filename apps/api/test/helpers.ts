@@ -23,11 +23,13 @@ import { JwtAuthGuard } from '../src/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../src/auth/guards/roles.guard';
 
 // Entities
+import { AiConfig } from '../src/database/entities/ai-config.entity';
 import { CalculationConfig } from '../src/database/entities/calculation-config.entity';
 import { CalculationLog } from '../src/database/entities/calculation-log.entity';
 import { Document } from '../src/database/entities/document.entity';
 import { RefreshToken } from '../src/database/entities/refresh-token.entity';
 import { TelegramUser } from '../src/database/entities/telegram-user.entity';
+import { TksCache } from '../src/database/entities/tks-cache.entity';
 import { TnVedCode } from '../src/database/entities/tn-ved-code.entity';
 import { User, UserRole } from '../src/database/entities/user.entity';
 
@@ -53,6 +55,7 @@ export function createMockAiParser(): Partial<AiParserService> {
       columnMapping: { description: 0, price: 1, weight: 2, quantity: 3 },
       feasibility: 'ok',
       rejectionReasons: [],
+      tokenUsage: {},
     }),
   };
 }
@@ -111,6 +114,7 @@ export async function createTestApp(): Promise<INestApplication> {
         type: 'postgres',
         url: TEST_DB_URL,
         entities: [
+          AiConfig,
           User,
           RefreshToken,
           TnVedCode,
@@ -118,6 +122,7 @@ export async function createTestApp(): Promise<INestApplication> {
           TelegramUser,
           Document,
           CalculationConfig,
+          TksCache,
         ],
         synchronize: true,
         dropSchema: true,

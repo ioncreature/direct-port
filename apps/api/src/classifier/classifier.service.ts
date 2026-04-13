@@ -7,7 +7,7 @@ import {
 } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
-import { extractClaudeText, parseClaudeJson, systemPrompt } from '../common/claude';
+import { extractToolInput, systemPrompt } from '../common/claude';
 import { errMsg } from '../common/errors';
 import { normalizeImpediUnit } from '../common/normalize-impedi';
 import { getStaticNoteTranslation } from '../common/note-translations';
@@ -88,7 +88,33 @@ const SYSTEM_PROMPT = `Ты — эксперт по таможенной кла�
 - Если описание слишком расплывчатое для точной классификации — выбери наиболее вероятный и укажи это в comment
 - confidence: 0.0-1.0 — твоя уверенность в выбранном коде
 - comment: краткое пояснение выбора на русском
-- Отвечай ТОЛЬКО валидным JSON-массивом, без markdown-обёртки`;
+`;
+
+const CLASSIFY_TOOL: Anthropic.Messages.Tool = {
+  name: 'classify_products',
+  description: 'Результаты классификации товаров по ТН ВЭД',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      items: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            index: { type: 'number' },
+            tnVedCode: { type: 'string', description: '10-значный код ТН ВЭД' },
+            confidence: { type: 'number', description: '0.0-1.0' },
+            comment: { type: 'string', description: 'Пояснение на русском' },
+            comment_localized: { type: 'string', description: 'Пояснение на языке пользователя' },
+            fromCandidates: { type: 'boolean' },
+          },
+          required: ['index', 'tnVedCode', 'confidence', 'comment', 'fromCandidates'],
+        },
+      },
+    },
+    required: ['items'],
+  },
+};
 
 @Injectable()
 export class ClassifierService {
@@ -316,41 +342,30 @@ export class ClassifierService {
   ): Promise<{ selections: ClaudeSelection[]; tokenUsage: TokenUsageMap }> {
     const model = await this.aiConfig.getClassifierModel();
     const needsLocalized = language && language !== 'ru';
-    const commentInstruction = needsLocalized
-      ? `    "comment": "краткое пояснение на русском",
-    "comment_localized": "brief explanation in ${language === 'zh' ? 'Chinese' : 'English'}",`
-      : `    "comment": "краткое пояснение",`;
+    const localizedInstruction = needsLocalized
+      ? `\nДополнительно: для каждого товара добавь comment_localized — пояснение на ${language === 'zh' ? 'китайском' : 'английском'} языке.`
+      : '';
 
     const userPrompt = `Классифицируй товары по ТН ВЭД:
 
-${JSON.stringify(items, null, 2)}
-
-Для каждого товара ответь JSON-массивом:
-[
-  {
-    "index": 0,
-    "tnVedCode": "1234567890",
-    "confidence": 0.85,
-${commentInstruction}
-    "fromCandidates": true
-  }
-]
-
-Отвечай ТОЛЬКО JSON-массивом.`;
+${JSON.stringify(items, null, 2)}${localizedInstruction}`;
 
     const system = systemPrompt(SYSTEM_PROMPT, useCache);
     const response = await this.anthropic!.messages.create(
-      { model, max_tokens: 2048, system, messages: [{ role: 'user', content: userPrompt }] },
+      {
+        model,
+        max_tokens: 2048,
+        system,
+        messages: [{ role: 'user', content: userPrompt }],
+        tools: [CLASSIFY_TOOL],
+        tool_choice: { type: 'any' },
+      },
       { timeout: 30_000 },
     );
 
-    const text = extractClaudeText(response);
-    const parsed = parseClaudeJson(text);
-    if (!Array.isArray(parsed)) {
-      throw new Error(`Expected JSON array, got: ${typeof parsed}`);
-    }
+    const result = extractToolInput<{ items: ClaudeSelection[] }>(response);
     return {
-      selections: parsed as ClaudeSelection[],
+      selections: result.items,
       tokenUsage: tokenUsageFromResponse(model, response.usage),
     };
   }

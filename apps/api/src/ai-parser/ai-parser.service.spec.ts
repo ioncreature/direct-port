@@ -9,7 +9,7 @@ function createMockClaude(responses: unknown[]) {
         const resp = responses[callIdx] ?? responses[responses.length - 1];
         callIdx++;
         return Promise.resolve({
-          content: [{ type: 'text', text: JSON.stringify(resp) }],
+          content: [{ type: 'tool_use', id: 'toolu_mock', name: 'mock_tool', input: resp }],
           usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
         });
       }),

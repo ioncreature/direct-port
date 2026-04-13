@@ -29,7 +29,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
 
     const doc = await this.repo
       .createQueryBuilder('doc')
-      .select(['doc.id', 'doc.status', 'doc.originalFileName', 'doc.fileBuffer', 'doc.language'])
+      .select(['doc.id', 'doc.status', 'doc.originalFileName', 'doc.fileBuffer', 'doc.language', 'doc.createdAt'])
       .leftJoinAndSelect('doc.telegramUser', 'tu')
       .where('doc.id = :id', { id: documentId })
       .getOne();

@@ -8,7 +8,20 @@ export function extractClaudeText(response: Anthropic.Message): string {
     .join('');
 }
 
+/** Извлекает input из первого tool_use блока ответа Claude. */
+export function extractToolInput<T>(response: Anthropic.Message): T {
+  const block = response.content.find(
+    (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
+  );
+  if (!block) {
+    throw new Error('No tool_use block in Claude response');
+  }
+  return block.input as T;
+}
+
 /**
+ * @deprecated Используй tool_use + extractToolInput вместо текстового парсинга JSON.
+ *
  * Claude периодически возвращает JSON в markdown-обёртке ```json ... ```
  * или предваряет JSON рассуждениями, несмотря на инструкцию "отвечай только JSON".
  * Эта утилита извлекает JSON из ответа:
