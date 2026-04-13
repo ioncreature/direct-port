@@ -1,9 +1,12 @@
 import type { NextRequest } from 'next/server';
+import { createLogger, formatFetchError } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 const API_URL = process.env.API_URL || 'http://localhost:3001/api';
+
+const logger = createLogger().child({ component: 'proxy' });
 
 const HOP_BY_HOP_REQUEST_HEADERS = ['host', 'connection', 'content-length'];
 const HOP_BY_HOP_RESPONSE_HEADERS = [
@@ -15,32 +18,69 @@ const HOP_BY_HOP_RESPONSE_HEADERS = [
 
 async function proxy(req: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   const { path } = await context.params;
-  const targetUrl = `${API_URL}/${path.join('/')}${req.nextUrl.search}`;
+  const pathname = `/${path.join('/')}`;
+  const targetUrl = `${API_URL}${pathname}${req.nextUrl.search}`;
+  const method = req.method;
+  const start = performance.now();
 
   const headers = new Headers(req.headers);
   for (const h of HOP_BY_HOP_REQUEST_HEADERS) headers.delete(h);
 
   const init: RequestInit & { duplex?: 'half' } = {
-    method: req.method,
+    method,
     headers,
     redirect: 'manual',
   };
 
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
+  if (method !== 'GET' && method !== 'HEAD') {
     init.body = req.body;
     init.duplex = 'half';
   }
 
-  const res = await fetch(targetUrl, init);
+  try {
+    const res = await fetch(targetUrl, init);
+    const responseTimeMs = Math.round(performance.now() - start);
 
-  const responseHeaders = new Headers(res.headers);
-  for (const h of HOP_BY_HOP_RESPONSE_HEADERS) responseHeaders.delete(h);
+    const logData = {
+      http: { method, url: pathname, statusCode: res.status },
+      responseTimeMs,
+    };
 
-  return new Response(res.body, {
-    status: res.status,
-    statusText: res.statusText,
-    headers: responseHeaders,
-  });
+    if (res.status >= 500) {
+      logger.error(logData, `${method} ${pathname} -> ${res.status}`);
+    } else if (res.status >= 400) {
+      logger.warn(logData, `${method} ${pathname} -> ${res.status}`);
+    } else {
+      logger.debug(logData, `${method} ${pathname} -> ${res.status}`);
+    }
+
+    const responseHeaders = new Headers(res.headers);
+    for (const h of HOP_BY_HOP_RESPONSE_HEADERS) responseHeaders.delete(h);
+
+    return new Response(res.body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers: responseHeaders,
+    });
+  } catch (err) {
+    const responseTimeMs = Math.round(performance.now() - start);
+    const errorSummary = formatFetchError(err);
+
+    logger.error(
+      {
+        http: { method, url: pathname },
+        targetUrl,
+        responseTimeMs,
+        err: errorSummary,
+      },
+      `${method} ${pathname} -> FETCH_FAILED`,
+    );
+
+    return new Response(JSON.stringify({ error: 'Backend unavailable' }), {
+      status: 502,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
 }
 
 export {
