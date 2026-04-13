@@ -3,6 +3,7 @@ import { TksApiClient, TnvedCode } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
 import { cachedSystemPrompt, extractClaudeText, parseClaudeJson } from '../common/claude';
+import { errMsg } from '../common/errors';
 import { getStaticNoteTranslation } from '../common/note-translations';
 import type { ProductNote } from '../common/product-notes';
 import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, tokenUsageFromResponse } from '../common/token-usage';
@@ -47,6 +48,7 @@ export class DutyInterpreterService {
     products: VerifiedProduct[],
     language?: string,
   ): Promise<{ products: InterpretedProduct[]; tokenUsage: TokenUsageMap }> {
+    this.logger.log(`Interpreting duties for ${products.length} products`);
     if (!this.anthropic) {
       return { products: products.map((p) => {
         const extraNotes: ProductNote[] = [];
@@ -98,8 +100,8 @@ export class DutyInterpreterService {
           } else {
             tnvedData.set(code, await this.tksApi.getTnvedCode(code));
           }
-        } catch {
-          this.logger.warn(`Failed to fetch TNVED data for ${code}`);
+        } catch (err) {
+          this.logger.warn(`Failed to fetch TNVED data for ${code}: ${errMsg(err)}`);
         }
       }),
     );
@@ -152,6 +154,8 @@ export class DutyInterpreterService {
         }
       }
     }
+
+    this.logger.log(`Interpretation done: ${interpretations.size} codes interpreted, ${codesToInterpret.length - validCodes.length} codes skipped (no TNVED data)`);
 
     // Apply interpretations to products
     return { tokenUsage: totalUsage, products: products.map((p) => {

@@ -142,22 +142,24 @@ describe('AiParserService', () => {
     });
 
     it('нормализует: price≥0, weight≥0, quantity≥1', async () => {
+      const badProducts = {
+        currency: 'USD',
+        columnMapping: {},
+        products: [
+          { description: 'Нормальный', price: 100, weight: 1, quantity: 10 },
+          { description: 'Плохой', price: -5, weight: -1, quantity: 0 },
+        ],
+      };
       const { service } = createService({
         spreadsheetData: makeSpreadsheetData(3),
         claudeResponses: [
-          {
-            currency: 'USD',
-            columnMapping: {},
-            products: [
-              { description: 'Нормальный', price: 100, weight: 1, quantity: 10 },
-              { description: 'Плохой', price: -5, weight: -1, quantity: 0 },
-            ],
-          },
-          VALIDATION_OK,
+          badProducts, // attempt 1: zero price → deterministic fail
+          badProducts, // attempt 2: retry → same → assessFeasibility
         ],
       });
 
       const result = await service.parse(Buffer.from(''), 'test.xlsx');
+      // Rejected из-за нулевой цены, но нормализация применяется
       const bad = result.products.find((p) => p.description === 'Плохой')!;
       expect(bad.price).toBe(0);
       expect(bad.weight).toBe(0);
@@ -183,7 +185,7 @@ describe('AiParserService', () => {
   });
 
   describe('checkDeterministic: детерминистическая валидация', () => {
-    it('retry при >50% нулевых цен', async () => {
+    it('retry при наличии нулевых цен', async () => {
       const data = makeSpreadsheetData(4);
       const badResponse = {
         currency: 'CNY',
@@ -251,7 +253,7 @@ describe('AiParserService', () => {
       expect(result.rejectionReasons[0]).toContain('ни одного товара');
     });
 
-    it('rejected если >80% нулевых цен', async () => {
+    it('rejected если есть нулевые цены', async () => {
       const products = Array.from({ length: 10 }, (_, i) => ({
         description: `Товар ${i}`,
         price: i < 9 ? 0 : 100, // 90% нулевых
@@ -272,7 +274,7 @@ describe('AiParserService', () => {
       expect(result.rejectionReasons.some((r) => r.includes('цен'))).toBe(true);
     });
 
-    it('rejected если >80% пустых описаний', async () => {
+    it('rejected если есть пустые описания', async () => {
       const products = Array.from({ length: 10 }, (_, i) => ({
         description: i < 9 ? 'ab' : 'Нормальный товар', // 90% коротких (<3)
         price: 100,
@@ -293,7 +295,7 @@ describe('AiParserService', () => {
       expect(result.rejectionReasons.some((r) => r.includes('описания') || r.includes('Описания'))).toBe(true);
     });
 
-    it('rejected если вес = 0 у всех товаров', async () => {
+    it('rejected если есть товары с нулевым весом', async () => {
       const products = Array.from({ length: 5 }, (_, i) => ({
         description: `Товар ${i + 1}`,
         price: 100,

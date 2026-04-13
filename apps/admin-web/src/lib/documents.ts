@@ -7,6 +7,7 @@ export const statusLabels: Record<DocumentStatus, string> = {
   processing: 'Обработка...',
   processed: 'Обработан',
   failed: 'Ошибка',
+  rejected: 'Отклонён',
   requires_review: 'На проверку',
 };
 
@@ -16,6 +17,7 @@ export const statusColors: Record<DocumentStatus, string> = {
   processing: '#2563eb',
   processed: '#16a34a',
   failed: '#dc2626',
+  rejected: '#ea580c',
   requires_review: '#ca8a04',
 };
 

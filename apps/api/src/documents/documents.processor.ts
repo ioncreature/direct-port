@@ -7,6 +7,7 @@ import { CalculationConfigService } from '../calculation-config/calculation-conf
 import { CalculationLogsService } from '../calculation-logs/calculation-logs.service';
 import { CalculatorService } from '../calculator/calculator.service';
 import { ClassifierService, type ProductRow } from '../classifier/classifier.service';
+import { errMsg } from '../common/errors';
 import { buildOutputFileName, getDocumentClientName } from '../common/output-filename';
 import { addStageUsage } from '../common/token-usage';
 import { CurrencyService } from '../currency/currency.service';
@@ -67,14 +68,22 @@ export class DocumentsProcessor extends WorkerHost {
         notes: [],
       }));
 
+      this.logger.log(`Document ${documentId}: ${rows.length} rows, currency=${doc.currency || 'USD'}`);
+
       const { pricePercent, weightRate, fixedFee } = await this.configService.get();
       const commission = { pricePercent, weightRate, fixedFee };
 
       const language = doc.language ?? doc.telegramUser?.language;
+
+      const t0 = Date.now();
       const classifyResult = await this.classifier.classify(rows, language);
       const classified = classifyResult.products;
+      this.logger.log(`Document ${documentId}: classification done in ${Date.now() - t0}ms`);
+
+      const t1 = Date.now();
       const interpretResult = await this.dutyInterpreter.interpret(classified, language);
       const interpreted = interpretResult.products;
+      this.logger.log(`Document ${documentId}: interpretation done in ${Date.now() - t1}ms`);
 
       doc.tokenUsage = addStageUsage(doc.tokenUsage ?? {}, 'classifier', classifyResult.tokenUsage);
       doc.tokenUsage = addStageUsage(doc.tokenUsage, 'interpreter', interpretResult.tokenUsage);
@@ -87,8 +96,11 @@ export class DocumentsProcessor extends WorkerHost {
         const docRate = currency === 'RUB' ? 1 : await this.currencyService.getRate(currency);
         eurToDoc = eurRate / docRate;
       }
+      this.logger.log(`Document ${documentId}: eurToDoc=${eurToDoc.toFixed(4)}, currency=${currency}`);
 
+      const t2 = Date.now();
       const summary = this.calculator.calculate(interpreted, commission, { eurToDoc });
+      this.logger.log(`Document ${documentId}: calculation done in ${Date.now() - t2}ms`);
 
       const needsConversion = currency !== 'RUB';
       let exchangeRate = 1;
@@ -166,10 +178,13 @@ export class DocumentsProcessor extends WorkerHost {
       );
     } catch (err) {
       doc.status = DocumentStatus.FAILED;
-      doc.errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      doc.errorMessage = errMsg(err) || 'Unknown error';
       await this.repo.save(doc);
       await this.notify(doc, 'failed', doc.errorMessage ?? undefined);
-      this.logger.error(`Document ${documentId} failed`, err);
+      this.logger.error(
+        `Document ${documentId} processing failed: ${doc.errorMessage}`,
+        err instanceof Error ? err.stack : err,
+      );
     }
   }
 

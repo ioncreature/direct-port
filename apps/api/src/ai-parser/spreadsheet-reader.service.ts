@@ -36,10 +36,19 @@ export class SpreadsheetReaderService {
   }
 
   private async readXlsx(buffer: Buffer, maxRows: number): Promise<SpreadsheetData> {
+    this.logger.log(`Loading XLSX: buffer ${buffer.length} bytes`);
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+    try {
+      await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+    } catch (err) {
+      this.logger.error(`Failed to load XLSX (${buffer.length} bytes)`, err);
+      throw err;
+    }
     const sheet = workbook.worksheets[0];
-    if (!sheet) return { rows: [], columnCount: 0 };
+    if (!sheet) {
+      this.logger.warn('XLSX has no worksheets');
+      return { rows: [], columnCount: 0 };
+    }
 
     const rows: string[][] = [];
     let columnCount = 0;
@@ -59,13 +68,20 @@ export class SpreadsheetReaderService {
   }
 
   private readCsv(buffer: Buffer, maxRows: number): SpreadsheetData {
-    const records = csvParseSync(buffer.toString('utf-8'), {
-      columns: false,
-      skip_empty_lines: true,
-      relax_column_count: true,
-      delimiter: [',', ';', '\t'],
-      to: maxRows,
-    }) as string[][];
+    this.logger.log(`Loading CSV: buffer ${buffer.length} bytes`);
+    let records: string[][];
+    try {
+      records = csvParseSync(buffer.toString('utf-8'), {
+        columns: false,
+        skip_empty_lines: true,
+        relax_column_count: true,
+        delimiter: [',', ';', '\t'],
+        to: maxRows,
+      }) as string[][];
+    } catch (err) {
+      this.logger.error(`Failed to parse CSV (${buffer.length} bytes)`, err);
+      throw err;
+    }
 
     const columnCount = records.reduce((max, row) => Math.max(max, row.length), 0);
     const rows = records.map((row) => row.map((cell) => (cell ?? '').trim()));

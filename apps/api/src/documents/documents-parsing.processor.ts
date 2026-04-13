@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Job, Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 import { AiParserService } from '../ai-parser/ai-parser.service';
+import { errMsg } from '../common/errors';
 import { buildOutputFileName, getDocumentClientName } from '../common/output-filename';
 import { addStageUsage } from '../common/token-usage';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
@@ -47,6 +48,8 @@ export class DocumentsParsingProcessor extends WorkerHost {
       return;
     }
 
+    this.logger.log(`Document ${documentId}: file="${doc.originalFileName}", buffer=${doc.fileBuffer.length} bytes`);
+
     try {
       const { products, currency, columnMapping, feasibility, rejectionReasons, tokenUsage } =
         await this.aiParser.parse(doc.fileBuffer, doc.originalFileName);
@@ -80,11 +83,14 @@ export class DocumentsParsingProcessor extends WorkerHost {
       }
     } catch (err) {
       doc.status = DocumentStatus.FAILED;
-      doc.errorMessage = err instanceof Error ? err.message : 'Parsing failed';
+      doc.errorMessage = errMsg(err) || 'Parsing failed';
       doc.fileBuffer = null;
       await this.repo.save(doc);
       await this.notify({ doc, status: 'failed', errorMessage: doc.errorMessage ?? undefined });
-      this.logger.error(`Document ${documentId} parsing failed`, err);
+      this.logger.error(
+        `Document ${documentId} parsing failed: ${doc.errorMessage}`,
+        err instanceof Error ? err.stack : err,
+      );
     }
   }
 

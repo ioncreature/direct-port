@@ -357,6 +357,25 @@ export default function DocumentDetailPage() {
         </div>
       )}
 
+      {doc.rejectionReasons && doc.rejectionReasons.length > 0 && (
+        <div
+          style={{
+            padding: 16,
+            background: '#fff7ed',
+            border: '1px solid #fed7aa',
+            borderRadius: 8,
+            marginBottom: 24,
+          }}
+        >
+          <strong style={{ color: '#c2410c' }}>Причины отклонения:</strong>
+          <ol style={{ margin: '8px 0 0', paddingLeft: 20, color: '#9a3412' }}>
+            {doc.rejectionReasons.map((reason, i) => (
+              <li key={i} style={{ marginBottom: 4, fontSize: 14 }}>{reason}</li>
+            ))}
+          </ol>
+        </div>
+      )}
+
       {/* Column mapping */}
       {doc.columnMapping && Object.keys(doc.columnMapping).length > 0 && (
         <div style={{ marginBottom: 24 }}>

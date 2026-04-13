@@ -75,6 +75,7 @@ export type DocumentStatus =
   | 'processing'
   | 'processed'
   | 'failed'
+  | 'rejected'
   | 'requires_review';
 
 export interface ParsedDataRow {
@@ -142,6 +143,7 @@ export interface Document {
   parsedData: ParsedDataRow[] | null;
   resultData: DocumentResultRow[] | null;
   errorMessage: string | null;
+  rejectionReasons: string[] | null;
   tokenUsage: TokenUsageByStage | null;
   createdAt: string;
   updatedAt: string;

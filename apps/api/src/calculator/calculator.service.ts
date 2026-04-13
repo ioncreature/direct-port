@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { ClassifiedProduct } from '../classifier/classifier.service';
 import {
   resolveCalculationStatus,
@@ -126,13 +126,18 @@ interface MethodResult {
 
 @Injectable()
 export class CalculatorService {
+  private logger = new Logger(CalculatorService.name);
+
   calculate(
     products: CalculatorInput[],
     commission: CommissionConfig = DEFAULT_COMMISSION,
     currencyRates?: { eurToDoc: number },
   ): CalculationSummary {
+    this.logger.log(`Calculating ${products.length} products, commission: ${JSON.stringify(commission)}, eurToDoc=${currencyRates?.eurToDoc ?? 1}`);
     const items = products.map((p) => this.calculateOne(p, commission, currencyRates));
-    return this.summarize(items);
+    const summary = this.summarize(items);
+    this.logger.log(`Calculation done: grandTotal=${summary.grandTotal.toFixed(2)}, duty=${summary.totalDuty.toFixed(2)}, vat=${summary.totalVat.toFixed(2)}`);
+    return summary;
   }
 
   private summarize(items: CalculatedProduct[]): CalculationSummary {

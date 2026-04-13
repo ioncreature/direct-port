@@ -8,6 +8,7 @@ import {
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
 import { cachedSystemPrompt, extractClaudeText, parseClaudeJson } from '../common/claude';
+import { errMsg } from '../common/errors';
 import { normalizeImpediUnit } from '../common/normalize-impedi';
 import { getStaticNoteTranslation } from '../common/note-translations';
 import type { ProductNote } from '../common/product-notes';
@@ -104,6 +105,7 @@ export class ClassifierService {
     products: ProductRow[],
     language?: string,
   ): Promise<{ products: ClassifiedProduct[]; tokenUsage: TokenUsageMap }> {
+    this.logger.log(`Classifying ${products.length} products${language ? `, language=${language}` : ''}`);
     // Deduplication: classify unique descriptions only, map results back
     const descToIndex = new Map<string, number>();
     const uniqueProducts: ProductRow[] = [];
@@ -190,10 +192,10 @@ export class ClassifierService {
     const tnvedByCode = await this.loadTnvedRates([...codesToLoad]);
 
     // Phase 4: Assemble results
-    return {
-      products: this.assembleResults(products, candidatesByProduct, selections, tnvedByCode, language),
-      tokenUsage,
-    };
+    const assembled = this.assembleResults(products, candidatesByProduct, selections, tnvedByCode, language);
+    const matched = assembled.filter((p) => p.matched).length;
+    this.logger.log(`Classification done: ${matched}/${assembled.length} matched, ${codesToLoad.size} unique codes`);
+    return { products: assembled, tokenUsage };
   }
 
   private evictExpiredCache(): void {
@@ -214,9 +216,7 @@ export class ClassifierService {
       const batchResults = await Promise.all(
         batch.map((product) =>
           this.searchOne(product.description).catch((err) => {
-            this.logger.warn(
-              `TKS search failed for "${product.description}": ${err instanceof Error ? err.message : err}`,
-            );
+            this.logger.warn(`TKS search failed for "${product.description}": ${errMsg(err)}`);
             return [] as TksCandidate[];
           }),
         ),
@@ -362,8 +362,8 @@ ${commentInstruction}
         batch.map(async (code) => {
           try {
             map.set(code, await this.tksApi.getTnvedCode(code));
-          } catch {
-            this.logger.warn(`Failed to load TNVED for ${code}`);
+          } catch (err) {
+            this.logger.warn(`Failed to load TNVED for ${code}: ${errMsg(err)}`);
           }
         }),
       );

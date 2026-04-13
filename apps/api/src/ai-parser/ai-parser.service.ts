@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
 import { cachedSystemPrompt, extractClaudeText, parseClaudeJson } from '../common/claude';
+import { errMsg } from '../common/errors';
 import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, tokenUsageFromResponse } from '../common/token-usage';
 import type { Dimension } from '../duty-interpreter/interfaces';
 import { SpreadsheetData, SpreadsheetReaderService } from './spreadsheet-reader.service';
@@ -62,11 +63,6 @@ const CHUNK_CONCURRENCY = 2;
 const SAMPLE_ROWS = 5;
 const MAX_ATTEMPTS = 2;
 
-/** Порог для assessFeasibility: отклонять если >80% товаров имеют нулевую цену */
-const REJECT_ZERO_PRICE_RATIO = 0.8;
-/** Порог: отклонять если >80% описаний пустые или < 3 символов */
-const REJECT_EMPTY_DESC_RATIO = 0.8;
-
 const SYSTEM_PROMPT = `Ты — эксперт по парсингу коммерческих документов для импорта товаров.
 
 Твоя задача — проанализировать таблицу с данными о товарах и извлечь структурированную информацию.
@@ -105,19 +101,24 @@ export class AiParserService {
   ) {}
 
   async parse(buffer: Buffer, fileName: string): Promise<AiParseResult> {
+    this.logger.log(`Starting parse: file="${fileName}", buffer=${buffer.length} bytes`);
+
     if (!this.anthropic) {
       throw new BadRequestException('AI-парсер недоступен: ANTHROPIC_API_KEY не настроен');
     }
 
     const data = await this.spreadsheetReader.read(buffer, fileName, MAX_ROWS + 1);
+    this.logger.log(`Spreadsheet read: ${data.rows.length} rows, ${data.columnCount} columns`);
 
     if (data.rows.length > MAX_ROWS) {
+      this.logger.warn(`File rejected: too many rows (${data.rows.length} > ${MAX_ROWS})`);
       return this.rejected([
         `Файл содержит слишком много строк (более ${MAX_ROWS}). Пожалуйста, разделите файл на части не более ${MAX_ROWS} строк.`,
       ]);
     }
 
     if (data.rows.length < 2) {
+      this.logger.warn(`File rejected: too few rows (${data.rows.length})`);
       return this.rejected(['Файл пустой или содержит только заголовок (менее 2 строк).']);
     }
 
@@ -289,26 +290,29 @@ export class AiParserService {
         if (!p.weight || p.weight <= 0) zeroWeightCount++;
       }
 
-      if (zeroPriceCount > total * REJECT_ZERO_PRICE_RATIO) {
+      if (zeroPriceCount > 0) {
         reasons.push(
           `Не удалось определить цены: у ${zeroPriceCount} из ${total} товаров цена нулевая или не найдена.`,
         );
       }
-      if (emptyDescCount > total * REJECT_EMPTY_DESC_RATIO) {
+      if (emptyDescCount > 0) {
         reasons.push(
-          'Описания товаров отсутствуют или слишком короткие для классификации по ТН ВЭД.',
+          `Описания товаров отсутствуют или слишком короткие для классификации по ТН ВЭД (${emptyDescCount} из ${total}).`,
         );
       }
-      if (zeroWeightCount === total) {
-        reasons.push('Не указан вес ни для одного товара.');
+      if (zeroWeightCount > 0) {
+        reasons.push(
+          `Не указан вес у ${zeroWeightCount} из ${total} товаров. Вес необходим для расчёта пошлин.`,
+        );
       }
     }
 
     if (reasons.length > 0) {
-      this.logger.warn(`Document rejected: ${reasons.join('; ')}`);
+      this.logger.warn(`Document rejected (${total} products): ${reasons.join('; ')}`);
       return { ...result, feasibility: 'rejected', rejectionReasons: reasons };
     }
 
+    this.logger.log(`Document needs review (${total} products): ${issues.join('; ')}`);
     return { ...result, feasibility: 'review', rejectionReasons: issues };
   }
 
@@ -338,8 +342,8 @@ export class AiParserService {
       tokenUsage = tokenUsageFromResponse(model, response.usage);
       text = extractClaudeText(response);
     } catch (err) {
-      this.logger.error('Anthropic API error', err);
-      throw new BadRequestException('Ошибка AI-сервиса. Попробуйте позже.');
+      this.logger.error(`Anthropic API error: ${errMsg(err)}`, err);
+      throw new BadRequestException(`Ошибка AI-сервиса: ${errMsg(err)}`);
     }
     return { raw: this.parseJson(text), tokenUsage };
   }
@@ -354,9 +358,9 @@ export class AiParserService {
 
     // All prices should be > 0
     const zeroPriceCount = result.products.filter((p) => p.price <= 0).length;
-    if (zeroPriceCount > result.products.length * 0.5) {
+    if (zeroPriceCount > 0) {
       issues.push(
-        `Больше половины товаров (${zeroPriceCount}/${result.products.length}) имеют нулевую цену`,
+        `${zeroPriceCount} из ${result.products.length} товаров имеют нулевую цену`,
       );
     }
 
@@ -521,7 +525,9 @@ ${tsv}
   private parseJson(text: string): unknown {
     try {
       return parseClaudeJson(text);
-    } catch {
+    } catch (err) {
+      const snippet = text.length > 200 ? text.substring(0, 200) + '…' : text;
+      this.logger.error(`Failed to parse Claude JSON: ${errMsg(err)}`, { snippet });
       throw new BadRequestException('AI вернул невалидный JSON');
     }
   }

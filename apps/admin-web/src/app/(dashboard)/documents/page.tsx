@@ -149,7 +149,10 @@ export default function DocumentsPage() {
                     </Link>
                   </td>
                   <td style={td}>
-                    <span style={{ color: statusColors[doc.status], fontWeight: 500 }}>
+                    <span
+                      style={{ color: statusColors[doc.status], fontWeight: 500 }}
+                      title={doc.rejectionReasons?.join('; ') || doc.errorMessage || undefined}
+                    >
                       {statusLabels[doc.status]}
                     </span>
                   </td>

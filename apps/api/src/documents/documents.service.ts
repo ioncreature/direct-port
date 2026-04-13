@@ -1,5 +1,5 @@
 import { InjectQueue } from '@nestjs/bullmq';
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
 import { FindOptionsWhere, Repository } from 'typeorm';
@@ -14,6 +14,8 @@ import { ReviewDocumentDto } from './dto/review-document.dto';
 
 @Injectable()
 export class DocumentsService {
+  private logger = new Logger(DocumentsService.name);
+
   constructor(
     @InjectRepository(Document) private repo: Repository<Document>,
     @InjectRepository(TelegramUser) private tgUserRepo: Repository<TelegramUser>,
@@ -60,6 +62,7 @@ export class DocumentsService {
     });
 
     const saved = await this.repo.save(doc);
+    this.logger.log(`Document created: id=${saved.id}, file="${fileName}", size=${buffer.length} bytes, source=${JSON.stringify(source)}`);
     await this.parsingQueue.add('parse-document', { documentId: saved.id });
     const { fileBuffer: _, ...result } = saved;
     return result as Document;
@@ -79,6 +82,7 @@ export class DocumentsService {
         'status',
         'rowCount',
         'errorMessage',
+        'rejectionReasons',
         'createdAt',
         'updatedAt',
       ],
@@ -93,6 +97,7 @@ export class DocumentsService {
   }
 
   async reprocess(id: string): Promise<Document> {
+    this.logger.log(`Reprocessing document ${id}`);
     const doc = await this.findOne(id);
     if (doc.status !== DocumentStatus.FAILED && doc.status !== DocumentStatus.REQUIRES_REVIEW) {
       throw new BadRequestException({
@@ -142,6 +147,7 @@ export class DocumentsService {
   }
 
   async reject(id: string, dto: RejectDocumentDto): Promise<Document> {
+    this.logger.log(`Rejecting document ${id}: ${dto.reason}`);
     const doc = await this.findOne(id);
     if (doc.status !== DocumentStatus.REQUIRES_REVIEW) {
       throw new BadRequestException({
