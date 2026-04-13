@@ -5,9 +5,14 @@ WORKDIR /app
 FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/admin-web/package.json apps/admin-web/
+COPY libs/common/package.json libs/common/
 RUN pnpm install --frozen-lockfile --prod=false
 
-FROM deps AS build
+FROM deps AS build-libs
+COPY libs/common libs/common
+RUN pnpm --filter @direct-port/common build
+
+FROM build-libs AS build
 COPY apps/admin-web apps/admin-web
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm --filter @direct-port/admin-web build
