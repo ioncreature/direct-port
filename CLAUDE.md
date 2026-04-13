@@ -125,7 +125,7 @@ interface ProductRow {
   description: string; // наименование товара (переведённое на русский)
   quantity: number;
   price: number; // цена в исходной валюте документа
-  weight: number; // вес в кг
+  weight: number; // вес за единицу в кг
 }
 ```
 
