@@ -347,19 +347,11 @@ export class AiParserService {
     try {
       const system = systemPrompt(sysPrompt, useCache);
       const response = await this.anthropic!.messages.create(
-        {
-          model,
-          max_tokens: 8192,
-          system,
-          messages: [
-            { role: 'user', content: prompt },
-            { role: 'assistant', content: '{' },
-          ],
-        },
+        { model, max_tokens: 8192, system, messages: [{ role: 'user', content: prompt }] },
         { timeout: 45_000 },
       );
       tokenUsage = tokenUsageFromResponse(model, response.usage);
-      text = '{' + extractClaudeText(response);
+      text = extractClaudeText(response);
     } catch (err) {
       this.logger.error(`Anthropic API error: ${errMsg(err)}`, err);
       throw new BadRequestException(`Ошибка AI-сервиса: ${errMsg(err)}`);
@@ -499,7 +491,7 @@ ${tsv}
   private buildRetryPrompt(tsv: string, issues: string[]): string {
     const base = this.buildUserPrompt(tsv);
     const feedback = issues.map((issue, i) => `${i + 1}. ${issue}`).join('\n');
-    return `${base}\n\nВНИМАНИЕ: Предыдущая попытка парсинга содержала ошибки:\n${feedback}\n\nИсправь эти ошибки. Отвечай ТОЛЬКО валидным JSON в указанном формате выше. Никакого текста до или после JSON.`;
+    return `${base}\n\nВНИМАНИЕ: Предыдущая попытка парсинга содержала ошибки:\n${feedback}\n\nИсправь эти ошибки и верни исправленный результат. Начни ответ СРАЗУ с символа { — никакого текста, рассуждений или анализа до или после JSON.`;
   }
 
   private buildChunkPrompt(tsv: string, currency: string, columnMapping: Record<string, number>): string {
