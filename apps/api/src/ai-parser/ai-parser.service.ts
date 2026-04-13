@@ -529,7 +529,7 @@ ${tsv}
     columnMapping: Record<string, number>,
   ): Promise<{ products: ParsedProduct[]; tokenUsage: TokenUsageMap }> {
     const prompt = this.buildChunkPrompt(tsv, currency, columnMapping);
-    const { raw, tokenUsage } = await this.callClaudeRaw(prompt, CHUNK_SYSTEM_PROMPT, true);
+    const { raw, tokenUsage } = await this.callClaudeRaw(prompt, CHUNK_SYSTEM_PROMPT);
     const { products } = this.validateSchema(raw);
     return { products, tokenUsage };
   }

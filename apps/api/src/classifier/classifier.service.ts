@@ -270,7 +270,6 @@ export class ClassifierService {
 
     const useCache = batches.length > 1;
 
-    // First batch alone — warms the prompt cache only when there are more batches
     if (batches.length > 0) {
       try {
         const { selections, tokenUsage } = await this.callClaude(batches[0], language, useCache);
@@ -291,7 +290,7 @@ export class ClassifierService {
       const group = remaining.slice(g, g + CLAUDE_CONCURRENCY);
       const results = await Promise.all(
         group.map((items) =>
-          this.callClaude(items, language, true).catch((err) => {
+          this.callClaude(items, language, useCache).catch((err) => {
             this.logger.error('Claude classify+verify batch failed', err);
             return { selections: [] as ClaudeSelection[], tokenUsage: emptyTokenUsageMap() };
           }),

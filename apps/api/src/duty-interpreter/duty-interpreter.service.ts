@@ -122,7 +122,6 @@ export class DutyInterpreterService {
 
     const useCache = codeBatches.length > 1;
 
-    // First batch alone — warms the prompt cache only when there are more batches
     if (codeBatches.length > 0) {
       try {
         const { results, tokenUsage } = await this.interpretBatch(codeBatches[0], language, useCache);
@@ -142,7 +141,7 @@ export class DutyInterpreterService {
       const group = remainingBatches.slice(g, g + CONCURRENCY);
       const results = await Promise.all(
         group.map((batchData) =>
-          this.interpretBatch(batchData, language, true).catch((err) => {
+          this.interpretBatch(batchData, language, useCache).catch((err) => {
             this.logger.error('Duty interpretation batch failed', err);
             return { results: [] as DutyInterpretation[], tokenUsage: emptyTokenUsageMap() };
           }),
