@@ -49,7 +49,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       if (chatId) {
         const state = await this.stateService.getState(chatId);
         if (state?.language) {
-          ctx.i18n.setLocale(state.language);
+          ctx.i18n.useLocale(state.language);
         }
       }
       return next();
