@@ -551,7 +551,7 @@ ${mappingInfo}
           tools: [VALIDATE_TOOL],
           tool_choice: { type: 'any' },
         },
-        { timeout: 15_000 },
+        { timeout: 60_000 },
       );
 
       const parsed = extractToolInput<{ valid: boolean; issues: unknown[] }>(response);
@@ -563,7 +563,7 @@ ${mappingInfo}
         tokenUsage: tokenUsageFromResponse(model, response.usage),
       };
     } catch (err) {
-      this.logger.warn('AI validation call failed, treating as unvalidated', err);
+      this.logger.warn(`AI validation call failed, treating as unvalidated: ${errMsg(err)}`);
       return { valid: false, issues: ['Сервис валидации недоступен'], tokenUsage: emptyTokenUsageMap() };
     }
   }
