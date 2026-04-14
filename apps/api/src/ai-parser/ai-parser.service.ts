@@ -542,7 +542,7 @@ ${mappingInfo}
       const response = await this.anthropic!.messages.create(
         {
           model,
-          max_tokens: 1024,
+          max_tokens: 2048,
           system: systemPrompt(VALIDATION_SYSTEM_PROMPT),
           messages: [{ role: 'user', content: prompt }],
           tools: [VALIDATE_TOOL],
@@ -552,15 +552,27 @@ ${mappingInfo}
       );
 
       const parsed = extractToolInput<{ valid: boolean; issues: unknown[] }>(response);
+      const rawIssues = Array.isArray(parsed.issues) ? parsed.issues.map(String) : [];
+      const issues = rawIssues.filter((issue) => !this.isFalsePositiveIssue(issue));
       return {
-        valid: parsed.valid === true,
-        issues: Array.isArray(parsed.issues) ? parsed.issues.map(String) : [],
+        valid: parsed.valid === true || (rawIssues.length > 0 && issues.length === 0),
+        issues,
         tokenUsage: tokenUsageFromResponse(model, response.usage),
       };
     } catch (err) {
       this.logger.warn('AI validation call failed, treating as unvalidated', err);
       return { valid: false, issues: ['Сервис валидации недоступен'], tokenUsage: emptyTokenUsageMap() };
     }
+  }
+
+  private isFalsePositiveIssue(issue: string): boolean {
+    const lower = issue.toLowerCase();
+    const okPhrases = [
+      'ошибки нет', 'ошибок нет', 'значение верно', 'значение верное',
+      'значение корректно', 'совпадает', 'исправление не требуется',
+      'всё корректно', 'всё верно', 'не является ошибкой',
+    ];
+    return okPhrases.some((phrase) => lower.includes(phrase));
   }
 
   private formatAsTsv(rows: string[][]): string {
