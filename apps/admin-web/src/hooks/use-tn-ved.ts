@@ -50,7 +50,7 @@ export function useTnVed() {
       return;
     }
     setDebouncing(true);
-    const timer = setTimeout(() => search(query), 1000);
+    const timer = setTimeout(() => search(query), 500);
     return () => clearTimeout(timer);
   }, [query, search]);
 
