@@ -18,7 +18,7 @@ api:
       memory: 512Mi
   env:
     CORS_ORIGIN: '*'
-    JWT_ACCESS_EXPIRATION: '15m'
+    JWT_ACCESS_EXPIRATION: '30m'
 
 adminWeb:
   replicaCount: 1

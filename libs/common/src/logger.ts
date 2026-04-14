@@ -24,11 +24,26 @@ function resolveMode(explicit?: 'production' | 'development'): 'production' | 'd
   return process.env.NODE_ENV === 'production' ? 'production' : 'development';
 }
 
+function errSerializer(err: Error): Record<string, unknown> {
+  const obj: Record<string, unknown> = {
+    type: err.constructor?.name,
+    message: err.message,
+    stack: err.stack,
+  };
+  for (const key of Object.keys(err)) {
+    if (!(key in obj)) {
+      obj[key] = (err as unknown as Record<string, unknown>)[key];
+    }
+  }
+  return obj;
+}
+
 export function createLogger(options: LoggerOpts = {}): Logger {
   const mode = resolveMode(options.mode);
   const baseOptions: LoggerOptions = {
     name: options.name ?? process.env.SERVICE_NAME,
     level: resolveLogLevel(options.level),
+    serializers: { err: errSerializer },
   };
 
   if (mode === 'development') {
