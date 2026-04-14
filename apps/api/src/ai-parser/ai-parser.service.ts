@@ -545,13 +545,13 @@ ${mappingInfo}
       const response = await this.anthropic!.messages.create(
         {
           model,
-          max_tokens: 4096,
+          max_tokens: 8192,
           system: systemPrompt(VALIDATION_SYSTEM_PROMPT),
           messages: [{ role: 'user', content: prompt }],
           tools: [VALIDATE_TOOL],
           tool_choice: { type: 'any' },
         },
-        { timeout: 60_000 },
+        { timeout: 90_000 },
       );
 
       const parsed = extractToolInput<{ valid: boolean; issues: unknown[] }>(response);
