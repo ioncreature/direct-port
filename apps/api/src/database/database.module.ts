@@ -24,6 +24,7 @@ import { AddTokenUsageFields1776300000000 } from './migrations/1776300000000-Add
 import { AddAiConfig1776400000000 } from './migrations/1776400000000-AddAiConfig';
 import { AddTksCache1776500000000 } from './migrations/1776500000000-AddTksCache';
 import { AddExchangeRates1776700000000 } from './migrations/1776700000000-AddExchangeRates';
+import { AddSendResultFile1776800000000 } from './migrations/1776800000000-AddSendResultFile';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -60,6 +61,7 @@ import { SeedService } from './seeds/seed.service';
           AddAiConfig1776400000000,
           AddTksCache1776500000000,
           AddExchangeRates1776700000000,
+          AddSendResultFile1776800000000,
         ],
         migrationsRun: true,
       }),
