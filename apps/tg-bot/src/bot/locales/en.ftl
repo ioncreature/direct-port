@@ -76,6 +76,11 @@ notif-success =
     • Logistics commission
     • Calculation status and notes
 notif-send-failed = ⚠️ Document processed, but failed to send the file. Please try later.
+notif-processed-with-errors =
+    ⚠️ Document processed, but some rows contain classification errors.
+
+    The file cannot be sent.
+    Contact an operator or upload a corrected file.
 
 # /language
 language-prompt = Choose your language:
@@ -86,6 +91,7 @@ status-parsing = Parsing
 status-pending = Pending
 status-processing = Processing
 status-processed = Processed
+status-processed_with_errors = Processed with errors
 status-failed = Error
 status-requires_review = Requires review
 status-rejected = Rejected

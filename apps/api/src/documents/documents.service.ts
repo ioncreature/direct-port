@@ -99,10 +99,14 @@ export class DocumentsService {
   async reprocess(id: string): Promise<Document> {
     this.logger.log(`Reprocessing document ${id}`);
     const doc = await this.findOne(id);
-    if (doc.status !== DocumentStatus.FAILED && doc.status !== DocumentStatus.REQUIRES_REVIEW) {
+    if (
+      doc.status !== DocumentStatus.FAILED &&
+      doc.status !== DocumentStatus.REQUIRES_REVIEW &&
+      doc.status !== DocumentStatus.PROCESSED_WITH_ERRORS
+    ) {
       throw new BadRequestException({
         code: ErrorCode.INVALID_STATUS_FOR_REPROCESS,
-        message: 'Only failed or requires_review documents can be reprocessed',
+        message: 'Only failed, requires_review or processed_with_errors documents can be reprocessed',
       });
     }
 

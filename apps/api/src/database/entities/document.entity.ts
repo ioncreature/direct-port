@@ -16,6 +16,7 @@ export enum DocumentStatus {
   PENDING = 'pending',
   PROCESSING = 'processing',
   PROCESSED = 'processed',
+  PROCESSED_WITH_ERRORS = 'processed_with_errors',
   FAILED = 'failed',
   REQUIRES_REVIEW = 'requires_review',
   REJECTED = 'rejected',
@@ -26,6 +27,7 @@ export const documentStatusLabels: Record<DocumentStatus, string> = {
   [DocumentStatus.PENDING]: 'Ожидает обработки',
   [DocumentStatus.PROCESSING]: 'Обработка',
   [DocumentStatus.PROCESSED]: 'Обработан',
+  [DocumentStatus.PROCESSED_WITH_ERRORS]: 'Обработан с ошибками',
   [DocumentStatus.FAILED]: 'Ошибка',
   [DocumentStatus.REQUIRES_REVIEW]: 'Требует проверки',
   [DocumentStatus.REJECTED]: 'Отклонён',
@@ -56,6 +58,9 @@ export class Document {
 
   @Column({ type: 'varchar', length: 10, nullable: true })
   currency: string | null;
+
+  @Column({ type: 'jsonb', name: 'exchange_rates', nullable: true })
+  exchangeRates: Record<string, number> | null;
 
   @Column({ type: 'varchar', length: 5, nullable: true })
   language: string | null;

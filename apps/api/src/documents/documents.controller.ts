@@ -19,6 +19,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ErrorCode } from '../common/error-codes';
 import { buildOutputFileName, getDocumentClientName } from '../common/output-filename';
+import { DocumentStatus } from '../database/entities/document.entity';
 import { UserRole } from '../database/entities/user.entity';
 import { DocumentsService } from './documents.service';
 import { CreateDocumentDto } from './dto/create-document.dto';
@@ -142,6 +143,12 @@ export class DocumentsController {
 
   private async sendExcel(id: string, res: Response) {
     const doc = await this.service.findOne(id);
+    if (doc.status !== DocumentStatus.PROCESSED) {
+      throw new BadRequestException({
+        code: ErrorCode.DOWNLOAD_NOT_AVAILABLE,
+        message: 'Download is only available for successfully processed documents',
+      });
+    }
     const buffer = await this.excelExport.generate(doc);
 
     const clientName = getDocumentClientName(doc);

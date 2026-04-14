@@ -18,7 +18,7 @@ import type { Dimension } from '../duty-interpreter/interfaces';
 export interface DocumentNotification {
   documentId: string;
   telegramUserId: string;
-  status: 'processed' | 'failed' | 'rejected';
+  status: 'processed' | 'processed_with_errors' | 'failed' | 'rejected';
   errorMessage?: string;
   rejectionReasons?: string[];
   language?: string;
@@ -111,6 +111,16 @@ export class DocumentsProcessor extends WorkerHost {
       }
       const toRub = (v: number) => this.currencyService.toRubSync(v, exchangeRate);
 
+      // Store display exchange rates (1 unit = X RUB) for currency selector in admin
+      const ratesMap: Record<string, number> = { RUB: 1 };
+      for (const cur of ['USD', 'EUR', 'CNY', 'INR']) {
+        if (cur in ratesMap) continue;
+        try {
+          ratesMap[cur] = await this.currencyService.getRate(cur);
+        } catch { /* skip unavailable */ }
+      }
+      doc.exchangeRates = ratesMap;
+
       doc.resultData = summary.items.map((item, i) => {
         const base = {
           description: item.description,
@@ -151,10 +161,15 @@ export class DocumentsProcessor extends WorkerHost {
           exchangeRate,
         };
       });
-      doc.status = DocumentStatus.PROCESSED;
+      const hasRowErrors = summary.items.some(
+        (item) => item.calculationStatus === 'error',
+      );
+      doc.status = hasRowErrors
+        ? DocumentStatus.PROCESSED_WITH_ERRORS
+        : DocumentStatus.PROCESSED;
       await this.repo.save(doc);
 
-      await this.notify(doc, 'processed');
+      await this.notify(doc, hasRowErrors ? 'processed_with_errors' : 'processed');
 
       this.calculationLogs
         .create({
@@ -208,7 +223,7 @@ export class DocumentsProcessor extends WorkerHost {
 
   private async notify(
     doc: Document,
-    status: 'processed' | 'failed',
+    status: 'processed' | 'processed_with_errors' | 'failed',
     errorMessage?: string,
   ): Promise<void> {
     const telegramId = doc.telegramUser?.telegramId;

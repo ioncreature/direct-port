@@ -11,13 +11,6 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 
-const columnMappingLabels: Record<string, string> = {
-  description: 'Описание',
-  price: 'Цена',
-  weight: 'Вес',
-  quantity: 'Количество',
-};
-
 const calcStatusConfig: Record<CalculationStatus, { label: string; color: string; bg: string }> = {
   exact: { label: 'Точное', color: '#16a34a', bg: '#dcfce7' },
   partial: { label: 'Есть замечания', color: '#ca8a04', bg: '#fef9c3' },
@@ -32,6 +25,11 @@ const noteSeverityConfig: Record<ProductNoteSeverity, { icon: string; color: str
 };
 
 const severityOrder: ProductNoteSeverity[] = ['blocker', 'warning', 'info'];
+
+const DISPLAY_CURRENCIES = ['RUB', 'USD', 'EUR', 'CNY', 'INR'] as const;
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  RUB: '₽', USD: '$', EUR: '€', CNY: '¥', INR: '₹',
+};
 
 function resolveStatus(row: DocumentResultRow): CalculationStatus {
   if (row.calculationStatus) return row.calculationStatus;
@@ -55,8 +53,30 @@ export default function DocumentDetailPage() {
   const [editableCurrency, setEditableCurrency] = useState('');
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [displayCurrency, setDisplayCurrency] = useState('');
+
+  useEffect(() => {
+    const saved = localStorage.getItem('doc-display-currency');
+    if (saved) setDisplayCurrency(saved);
+  }, []);
 
   const isReview = doc?.status === 'requires_review';
+  const docCurrency = doc?.currency || 'USD';
+  const activeCurrency = displayCurrency || docCurrency;
+
+  const conversionRate = useMemo(() => {
+    if (activeCurrency === docCurrency) return 1;
+    const rates = doc?.exchangeRates;
+    if (!rates) return 1;
+    const fromRate = rates[docCurrency] ?? 1;
+    const toRate = rates[activeCurrency] ?? 1;
+    return fromRate / toRate;
+  }, [activeCurrency, docCurrency, doc?.exchangeRates]);
+
+  const fmtMoney = useCallback(
+    (n: number) => fmt(Math.round(n * conversionRate * 100) / 100),
+    [conversionRate],
+  );
 
   useEffect(() => {
     if (doc?.parsedData) {
@@ -190,7 +210,7 @@ export default function DocumentDetailPage() {
               </button>
             </>
           )}
-          {doc.status === 'failed' && (
+          {(doc.status === 'failed' || doc.status === 'processed_with_errors') && (
             <button
               onClick={async () => {
                 setReprocessing(true);
@@ -376,17 +396,21 @@ export default function DocumentDetailPage() {
         </div>
       )}
 
-      {/* Column mapping */}
-      {doc.columnMapping && Object.keys(doc.columnMapping).length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <h3 style={{ marginBottom: 8 }}>Маппинг колонок</h3>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-            {Object.entries(doc.columnMapping).map(([key, col]) => (
-              <span key={key} style={{ fontSize: 14, color: '#555' }}>
-                {columnMappingLabels[key] || key}: <strong>колонка {col}</strong>
-              </span>
-            ))}
-          </div>
+      {doc.status === 'processed_with_errors' && (
+        <div
+          style={{
+            padding: 16,
+            background: '#fffbeb',
+            border: '1px solid #fcd34d',
+            borderRadius: 8,
+            marginBottom: 24,
+          }}
+        >
+          <strong style={{ color: '#d97706' }}>Внимание:</strong>{' '}
+          <span style={{ color: '#92400e' }}>
+            Документ обработан, но часть строк содержит ошибки классификации.
+            Скачивание недоступно. Попробуйте переобработать документ.
+          </span>
         </div>
       )}
 
@@ -545,7 +569,35 @@ export default function DocumentDetailPage() {
       {/* Result data table */}
       {rows.length > 0 && (
         <>
-          <h3 style={{ marginBottom: 12 }}>Результаты расчёта</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h3 style={{ margin: 0 }}>Результаты расчёта</h3>
+            {doc.exchangeRates && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <label style={{ fontSize: 13, color: '#666' }}>Валюта:</label>
+                <select
+                  value={displayCurrency}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setDisplayCurrency(val);
+                    if (val) localStorage.setItem('doc-display-currency', val);
+                    else localStorage.removeItem('doc-display-currency');
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    fontSize: 13,
+                    borderRadius: 4,
+                    border: '1px solid #ddd',
+                    background: '#fff',
+                  }}
+                >
+                  <option value="">{CURRENCY_SYMBOLS[docCurrency] ?? ''} {docCurrency} (оригинал)</option>
+                  {DISPLAY_CURRENCIES.filter(c => c !== docCurrency).map(cur => (
+                    <option key={cur} value={cur}>{CURRENCY_SYMBOLS[cur]} {cur}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
@@ -554,8 +606,8 @@ export default function DocumentDetailPage() {
                   <th style={{ ...th, width: 50 }}></th>
                   <th style={{ ...th, minWidth: 200 }}>Наименование</th>
                   <th style={{ ...th, minWidth: 100 }}>Код ТН ВЭД</th>
-                  <th style={{ ...thR, minWidth: 90 }}>Сумма</th>
-                  <th style={{ ...thR, minWidth: 90 }}>Итого</th>
+                  <th style={{ ...thR, minWidth: 90 }}>Сумма ({activeCurrency})</th>
+                  <th style={{ ...thR, minWidth: 90 }}>Итого ({activeCurrency})</th>
                   <th style={{ ...th, width: 150, textAlign: 'center' }}>Статус</th>
                   <th style={{ ...th, width: 36 }}></th>
                 </tr>
@@ -568,14 +620,15 @@ export default function DocumentDetailPage() {
                     index={i}
                     isExpanded={expandedRow === i}
                     onToggle={toggleRow}
+                    fmtMoney={fmtMoney}
                   />
                 ))}
               </tbody>
               <tfoot>
                 <tr style={{ fontWeight: 700 }}>
                   <td style={td} colSpan={4}>Итого</td>
-                  <td style={tdR}>{fmt(totals.totalPrice)}</td>
-                  <td style={tdR}>{fmt(totals.totalCost)}</td>
+                  <td style={tdR}>{fmtMoney(totals.totalPrice)}</td>
+                  <td style={tdR}>{fmtMoney(totals.totalCost)}</td>
                   <td style={td} colSpan={2}></td>
                 </tr>
               </tfoot>
@@ -584,7 +637,7 @@ export default function DocumentDetailPage() {
         </>
       )}
 
-      {doc.status === 'processed' && rows.length === 0 && (
+      {(doc.status === 'processed' || doc.status === 'processed_with_errors') && rows.length === 0 && (
         <p style={{ color: '#888' }}>Нет данных результата</p>
       )}
     </div>
@@ -596,11 +649,13 @@ const ResultRow = memo(function ResultRow({
   index,
   isExpanded,
   onToggle,
+  fmtMoney,
 }: {
   row: DocumentResultRow;
   index: number;
   isExpanded: boolean;
   onToggle: (index: number) => void;
+  fmtMoney: (n: number) => string;
 }) {
   const [hovered, setHovered] = useState(false);
   const status = resolveStatus(row);
@@ -624,8 +679,8 @@ const ResultRow = memo(function ResultRow({
         <td style={td} title={row.tnVedDescription}>
           <code style={{ fontSize: 12 }}>{row.tnVedCode}</code>
         </td>
-        <td style={tdR}>{fmt(row.totalPrice)}</td>
-        <td style={tdR}>{fmt(row.totalCost)}</td>
+        <td style={tdR}>{fmtMoney(row.totalPrice)}</td>
+        <td style={tdR}>{fmtMoney(row.totalCost)}</td>
         <td style={tdCenter}>
           <span
             style={{
@@ -656,12 +711,12 @@ const ResultRow = memo(function ResultRow({
         </td>
       </tr>
 
-      {isExpanded && <ResultDetail row={row} />}
+      {isExpanded && <ResultDetail row={row} fmtMoney={fmtMoney} />}
     </>
   );
 });
 
-function ResultDetail({ row }: { row: DocumentResultRow }) {
+function ResultDetail({ row, fmtMoney }: { row: DocumentResultRow; fmtMoney: (n: number) => string }) {
   const notes = row.notes ?? [];
   const sortedNotes = [...notes].sort(
     (a, b) => severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity),
@@ -682,7 +737,7 @@ function ResultDetail({ row }: { row: DocumentResultRow }) {
           <div style={{ flex: '0 0 200px' }}>
             <ImagePlaceholder size={120} label="Нет фото" />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
-              <DetailField label="Цена за ед." value={fmt(row.price)} />
+              <DetailField label="Цена за ед." value={fmtMoney(row.price)} />
               <DetailField label="Количество" value={String(row.quantity)} />
               <DetailField label="Вес" value={`${fmt(row.weight)} кг`} />
               {row.tnVedDescription && (
@@ -696,18 +751,18 @@ function ResultDetail({ row }: { row: DocumentResultRow }) {
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#333' }}>
               Расчёт
             </div>
-            <CalcLine label="Сумма товара" value={fmt(row.totalPrice)} />
+            <CalcLine label="Сумма товара" value={fmtMoney(row.totalPrice)} />
             <CalcLine
               label="Пошлина"
-              value={fmt(row.dutyAmount)}
+              value={fmtMoney(row.dutyAmount)}
               note={row.dutyAmountIsEstimate ? 'оценочная' : undefined}
             />
-            <CalcLine label="НДС" value={fmt(row.vatAmount)} />
+            <CalcLine label="НДС" value={fmtMoney(row.vatAmount)} />
             <CalcLine
               label="Акциз"
-              value={row.exciseAmount > 0 ? fmt(row.exciseAmount) : '—'}
+              value={row.exciseAmount > 0 ? fmtMoney(row.exciseAmount) : '—'}
             />
-            <CalcLine label="Комиссия доставки" value={fmt(row.logisticsCommission)} />
+            <CalcLine label="Комиссия доставки" value={fmtMoney(row.logisticsCommission)} />
             <div
               style={{
                 display: 'flex',
@@ -720,7 +775,7 @@ function ResultDetail({ row }: { row: DocumentResultRow }) {
               }}
             >
               <span>Итого</span>
-              <span>{fmt(row.totalCost)}</span>
+              <span>{fmtMoney(row.totalCost)}</span>
             </div>
             <div style={{ marginTop: 8, fontSize: 12, color: '#888' }}>
               Ставка пошлины: {row.dutyRate}% &middot; НДС: {row.vatRate}%

@@ -159,7 +159,7 @@ export default function DocumentsPage() {
                   <td style={td}>{doc.rowCount}</td>
                   <td style={td}>{fmtDateTime(doc.createdAt)}</td>
                   <td style={td}>
-                    {(doc.status === 'failed' || doc.status === 'requires_review') && (
+                    {(doc.status === 'failed' || doc.status === 'requires_review' || doc.status === 'processed_with_errors') && (
                       <button
                         onClick={() => handleReprocess(doc.id)}
                         disabled={reprocessingIds.has(doc.id)}

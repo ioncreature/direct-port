@@ -74,6 +74,7 @@ export type DocumentStatus =
   | 'pending'
   | 'processing'
   | 'processed'
+  | 'processed_with_errors'
   | 'failed'
   | 'rejected'
   | 'requires_review';
@@ -139,6 +140,7 @@ export interface Document {
   status: DocumentStatus;
   rowCount: number;
   currency: string | null;
+  exchangeRates: Record<string, number> | null;
   columnMapping: Record<string, number>;
   parsedData: ParsedDataRow[] | null;
   resultData: DocumentResultRow[] | null;

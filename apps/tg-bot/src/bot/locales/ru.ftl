@@ -76,6 +76,11 @@ notif-success =
     • Комиссия за доставку
     • Статус расчёта и замечания
 notif-send-failed = ⚠️ Документ обработан, но не удалось отправить файл. Попробуйте позже.
+notif-processed-with-errors =
+    ⚠️ Документ обработан, но часть строк содержит ошибки классификации.
+
+    Файл не может быть отправлен.
+    Обратитесь к оператору или загрузите исправленный файл.
 
 # /language
 language-prompt = Выберите язык:
@@ -86,6 +91,7 @@ status-parsing = Распознавание
 status-pending = Ожидает обработки
 status-processing = Обработка
 status-processed = Обработан
+status-processed_with_errors = Обработан с ошибками
 status-failed = Ошибка
 status-requires_review = Требует проверки
 status-rejected = Отклонён

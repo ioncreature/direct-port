@@ -54,6 +54,7 @@ export default function DashboardPage() {
         <StatCard label="Telegram" value={telegramUsers.length} href="/telegram-users" />
         <StatCard label="Документы" value={documents.length} href="/documents" />
         <StatCard label="Обработано" value={statusCounts['processed'] || 0} color="#16a34a" />
+        <StatCard label="С ошибками" value={statusCounts['processed_with_errors'] || 0} color="#d97706" />
         <StatCard label="Ошибки" value={statusCounts['failed'] || 0} color="#dc2626" />
         <StatCard
           label="AI за месяц"
@@ -67,7 +68,7 @@ export default function DashboardPage() {
         <div>
           <h3 style={{ marginBottom: 12 }}>Статусы документов</h3>
           <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 16 }}>
-            {(['parsing', 'pending', 'processing', 'processed', 'failed'] as DocumentStatus[]).map(
+            {(['parsing', 'pending', 'processing', 'processed', 'processed_with_errors', 'failed'] as DocumentStatus[]).map(
               (status) => (
                 <div
                   key={status}

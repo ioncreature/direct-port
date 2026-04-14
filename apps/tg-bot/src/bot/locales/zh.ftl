@@ -76,6 +76,11 @@ notif-success =
     • 物流佣金
     • 计算状态和备注
 notif-send-failed = ⚠️ 文档已处理，但无法发送文件，请稍后重试。
+notif-processed-with-errors =
+    ⚠️ 文档已处理，但部分行包含分类错误。
+
+    无法发送文件。
+    请联系操作员或上传修正后的文件。
 
 # /language
 language-prompt = 请选择语言：
@@ -86,6 +91,7 @@ status-parsing = 识别中
 status-pending = 等待处理
 status-processing = 处理中
 status-processed = 已处理
+status-processed_with_errors = 处理有错误
 status-failed = 错误
 status-requires_review = 需要审核
 status-rejected = 已拒绝

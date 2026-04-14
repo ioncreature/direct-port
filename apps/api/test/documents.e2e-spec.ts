@@ -253,6 +253,72 @@ describe('Documents (e2e)', () => {
     });
   });
 
+  describe('PROCESSED_WITH_ERRORS status', () => {
+    it('should block download for processed_with_errors documents', async () => {
+      const ds = app.get(DataSource);
+      const repo = ds.getRepository(Document);
+
+      const doc = repo.create({
+        telegramUserId,
+        originalFileName: 'error-status-test.xlsx',
+        columnMapping: { description: 0 },
+        parsedData: [{ description: 'Test', quantity: 1, price: 100, weight: 1 }],
+        resultData: [
+          {
+            description: 'Test',
+            quantity: 1,
+            price: 100,
+            weight: 1,
+            tnVedCode: '',
+            tnVedDescription: '',
+            dutyRate: 0,
+            vatRate: 0,
+            exciseRate: 0,
+            totalPrice: 100,
+            dutyAmount: 0,
+            vatAmount: 0,
+            exciseAmount: 0,
+            logisticsCommission: 5,
+            totalCost: 105,
+            verificationStatus: 'review',
+            calculationStatus: 'error',
+            matchConfidence: 0,
+            notes: [{ stage: 'classify', severity: 'blocker', field: 'code', message: 'Classification failed' }],
+          },
+        ],
+        rowCount: 1,
+        status: DocumentStatus.PROCESSED_WITH_ERRORS,
+      });
+      const saved = await repo.save(doc);
+
+      await request(app.getHttpServer())
+        .get(`/api/documents/${saved.id}/download`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(400);
+    });
+
+    it('should allow reprocessing for processed_with_errors documents', async () => {
+      const ds = app.get(DataSource);
+      const repo = ds.getRepository(Document);
+
+      const doc = repo.create({
+        telegramUserId,
+        originalFileName: 'reprocess-error-test.xlsx',
+        columnMapping: { description: 0 },
+        parsedData: [{ description: 'Test', quantity: 1, price: 100, weight: 1 }],
+        resultData: [],
+        rowCount: 1,
+        status: DocumentStatus.PROCESSED_WITH_ERRORS,
+      });
+      const saved = await repo.save(doc);
+
+      await request(app.getHttpServer())
+        .post(`/api/documents/${saved.id}/reprocess`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(201);
+    });
+  });
+
   describe('ExcelExportService', () => {
     it('should produce valid Excel with color-coded status column', async () => {
       const exportService = app.get(ExcelExportService);
