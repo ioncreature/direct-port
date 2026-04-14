@@ -8,6 +8,7 @@ export interface CalculationConfig {
   pricePercent: number;
   weightRate: number;
   fixedFee: number;
+  sendResultFile: boolean;
   updatedAt: string;
 }
 
@@ -32,7 +33,7 @@ export function useCalculationConfig() {
 
   const save = useCallback(
     async (
-      values: Partial<Pick<CalculationConfig, 'pricePercent' | 'weightRate' | 'fixedFee'>>,
+      values: Partial<Pick<CalculationConfig, 'pricePercent' | 'weightRate' | 'fixedFee' | 'sendResultFile'>>,
     ) => {
       setSaving(true);
       setError(null);

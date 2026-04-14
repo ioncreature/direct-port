@@ -6,20 +6,77 @@ import { useEffect, useState } from 'react';
 import { AI_STEPS, type AiStepInfo } from './ai-steps';
 
 export default function SettingsPage() {
+  const calcConfig = useCalculationConfig();
+
   return (
     <div>
       <h1 style={{ marginBottom: 24 }}>Настройки</h1>
-      <CommissionSection />
+      <NotificationSection {...calcConfig} />
+      <CommissionSection {...calcConfig} />
       <AiModelsSection />
+    </div>
+  );
+}
+
+type CalcConfigProps = ReturnType<typeof useCalculationConfig>;
+
+// --- Секция: Уведомления ---
+
+function NotificationSection({ config, loading, saving, error, save }: CalcConfigProps) {
+  const [sendResultFile, setSendResultFile] = useState(true);
+  const [success, setSuccess] = useState(false);
+
+  useEffect(() => {
+    if (config) {
+      setSendResultFile(config.sendResultFile);
+    }
+  }, [config]);
+
+  if (loading) return <p>Загрузка...</p>;
+
+  const hasChanges = config && sendResultFile !== config.sendResultFile;
+
+  const handleSave = async () => {
+    setSuccess(false);
+    await save({ sendResultFile });
+    setSuccess(true);
+    setTimeout(() => setSuccess(false), 3000);
+  };
+
+  return (
+    <div style={{ maxWidth: 500, padding: 24, border: '1px solid #ddd', borderRadius: 8, marginBottom: 32 }}>
+      <h3 style={{ marginBottom: 16 }}>Уведомления в Telegram</h3>
+
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', marginBottom: 16 }}>
+        <input
+          type="checkbox"
+          checked={sendResultFile}
+          onChange={(e) => setSendResultFile(e.target.checked)}
+          style={{ marginTop: 3, width: 18, height: 18 }}
+        />
+        <div>
+          <div style={{ fontWeight: 500, fontSize: 14 }}>Отправлять файл-результат в Telegram</div>
+          <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>
+            {sendResultFile
+              ? 'После обработки документа пользователь получит Excel-файл с результатами.'
+              : 'После обработки документа пользователь получит сообщение с просьбой связаться с вами.'}
+          </div>
+        </div>
+      </label>
+
+      {error && <p style={{ color: '#dc2626', marginBottom: 12 }}>{error}</p>}
+      {success && <p style={{ color: '#16a34a', marginBottom: 12 }}>Сохранено!</p>}
+
+      <button onClick={handleSave} disabled={saving || !hasChanges} style={btnStyle(saving || !hasChanges)}>
+        {saving ? 'Сохранение...' : 'Сохранить'}
+      </button>
     </div>
   );
 }
 
 // --- Секция: Формула комиссии ---
 
-function CommissionSection() {
-  const { config, loading, saving, error, save } = useCalculationConfig();
-
+function CommissionSection({ config, loading, saving, error, save }: CalcConfigProps) {
   const [pricePercent, setPricePercent] = useState('');
   const [weightRate, setWeightRate] = useState('');
   const [fixedFee, setFixedFee] = useState('');

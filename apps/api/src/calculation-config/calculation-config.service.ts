@@ -32,11 +32,13 @@ export class CalculationConfigService {
     pricePercent?: number;
     weightRate?: number;
     fixedFee?: number;
+    sendResultFile?: boolean;
   }): Promise<CalculationConfig> {
     const config = await this.get();
     if (dto.pricePercent !== undefined) config.pricePercent = dto.pricePercent;
     if (dto.weightRate !== undefined) config.weightRate = dto.weightRate;
     if (dto.fixedFee !== undefined) config.fixedFee = dto.fixedFee;
+    if (dto.sendResultFile !== undefined) config.sendResultFile = dto.sendResultFile;
     const saved = await this.repo.save(config);
     this.cached = saved;
     return saved;

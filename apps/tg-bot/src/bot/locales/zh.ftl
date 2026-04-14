@@ -75,6 +75,10 @@ notif-success =
     • 关税和增值税金额
     • 物流佣金
     • 计算状态和备注
+notif-success-contact =
+    ✅ 文档处理完成！
+
+    请联系我们获取结果。
 notif-send-failed = ⚠️ 文档已处理，但无法发送文件，请稍后重试。
 notif-processed-with-errors =
     ⚠️ 文档已处理，但部分行包含分类错误。

@@ -14,6 +14,7 @@ interface DocumentNotification {
   rejectionReasons?: string[];
   language?: string;
   outputFileName?: string;
+  sendResultFile?: boolean;
 }
 
 @Injectable()
@@ -36,7 +37,7 @@ export class NotificationHandler extends WorkerHost {
   }
 
   async process(job: Job<DocumentNotification>): Promise<void> {
-    const { documentId, telegramUserId, status, errorMessage, rejectionReasons, language, outputFileName } =
+    const { documentId, telegramUserId, status, errorMessage, rejectionReasons, language, outputFileName, sendResultFile } =
       job.data;
     this.logger.log(`Notification for document ${documentId}: ${status}`);
 
@@ -77,6 +78,15 @@ export class NotificationHandler extends WorkerHost {
         .sendMessage(chatId, this.t(language, 'notif-processed-with-errors'))
         .catch((err) =>
           this.logger.error(`Failed to send partial-error notification to ${chatId}`, err),
+        );
+      return;
+    }
+
+    if (sendResultFile === false) {
+      await this.tgApi
+        .sendMessage(chatId, this.t(language, 'notif-success-contact'))
+        .catch((err) =>
+          this.logger.error(`Failed to send contact notification to ${chatId}`, err),
         );
       return;
     }

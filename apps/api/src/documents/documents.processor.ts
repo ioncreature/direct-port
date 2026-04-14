@@ -23,6 +23,7 @@ export interface DocumentNotification {
   rejectionReasons?: string[];
   language?: string;
   outputFileName?: string;
+  sendResultFile?: boolean;
 }
 
 @Processor('document-processing')
@@ -72,7 +73,7 @@ export class DocumentsProcessor extends WorkerHost {
 
       this.logger.log(`Document ${documentId}: ${rows.length} rows, currency=${doc.currency || 'USD'}`);
 
-      const { pricePercent, weightRate, fixedFee } = await this.configService.get();
+      const { pricePercent, weightRate, fixedFee, sendResultFile } = await this.configService.get();
       const commission = { pricePercent, weightRate, fixedFee };
 
       const language = doc.language ?? doc.telegramUser?.language;
@@ -169,7 +170,7 @@ export class DocumentsProcessor extends WorkerHost {
         : DocumentStatus.PROCESSED;
       await this.repo.save(doc);
 
-      await this.notify(doc, hasRowErrors ? 'processed_with_errors' : 'processed');
+      await this.notify({ doc, status: hasRowErrors ? 'processed_with_errors' : 'processed', sendResultFile });
 
       this.calculationLogs
         .create({
@@ -197,7 +198,7 @@ export class DocumentsProcessor extends WorkerHost {
       doc.status = DocumentStatus.FAILED;
       doc.errorMessage = errMsg(err) || 'Unknown error';
       await this.repo.save(doc);
-      await this.notify(doc, 'failed', doc.errorMessage ?? undefined);
+      await this.notify({ doc, status: 'failed', errorMessage: doc.errorMessage ?? undefined });
       this.logger.error(
         `Document ${documentId} processing failed: ${doc.errorMessage}`,
         err instanceof Error ? err.stack : err,
@@ -221,26 +222,28 @@ export class DocumentsProcessor extends WorkerHost {
     return result.length > 0 ? result : undefined;
   }
 
-  private async notify(
-    doc: Document,
-    status: 'processed' | 'processed_with_errors' | 'failed',
-    errorMessage?: string,
-  ): Promise<void> {
-    const telegramId = doc.telegramUser?.telegramId;
+  private async notify(opts: {
+    doc: Document;
+    status: 'processed' | 'processed_with_errors' | 'failed';
+    errorMessage?: string;
+    sendResultFile?: boolean;
+  }): Promise<void> {
+    const telegramId = opts.doc.telegramUser?.telegramId;
     if (!telegramId) return;
 
-    const clientName = getDocumentClientName(doc);
+    const clientName = getDocumentClientName(opts.doc);
     const payload: DocumentNotification = {
-      documentId: doc.id,
+      documentId: opts.doc.id,
       telegramUserId: telegramId,
-      status,
-      errorMessage,
-      language: doc.language ?? doc.telegramUser?.language,
-      outputFileName: buildOutputFileName(doc.createdAt, clientName),
+      status: opts.status,
+      errorMessage: opts.errorMessage,
+      language: opts.doc.language ?? opts.doc.telegramUser?.language,
+      outputFileName: buildOutputFileName(opts.doc.createdAt, clientName),
+      sendResultFile: opts.sendResultFile,
     };
 
     await this.notificationQueue.add('document-ready', payload).catch((err) => {
-      this.logger.warn(`Failed to send notification for ${doc.id}`, err);
+      this.logger.warn(`Failed to send notification for ${opts.doc.id}`, err);
     });
   }
 }

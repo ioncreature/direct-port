@@ -1,4 +1,4 @@
-import { IsNumber, IsOptional, Max, Min } from 'class-validator';
+import { IsBoolean, IsNumber, IsOptional, Max, Min } from 'class-validator';
 
 export class UpdateCalculationConfigDto {
   @IsOptional()
@@ -16,4 +16,8 @@ export class UpdateCalculationConfigDto {
   @IsNumber()
   @Min(0)
   fixedFee?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  sendResultFile?: boolean;
 }

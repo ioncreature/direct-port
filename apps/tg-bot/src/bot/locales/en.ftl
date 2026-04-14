@@ -75,6 +75,10 @@ notif-success =
     • Duty and VAT amounts
     • Logistics commission
     • Calculation status and notes
+notif-success-contact =
+    ✅ Document processed successfully!
+
+    Please contact us to get the results.
 notif-send-failed = ⚠️ Document processed, but failed to send the file. Please try later.
 notif-processed-with-errors =
     ⚠️ Document processed, but some rows contain classification errors.

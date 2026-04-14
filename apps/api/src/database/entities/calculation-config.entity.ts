@@ -40,6 +40,9 @@ export class CalculationConfig {
   })
   fixedFee: number;
 
+  @Column({ name: 'send_result_file', type: 'boolean', default: true })
+  sendResultFile: boolean;
+
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 }

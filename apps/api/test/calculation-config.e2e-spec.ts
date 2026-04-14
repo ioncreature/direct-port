@@ -89,6 +89,30 @@ describe('CalculationConfig (e2e)', () => {
         .expect(400);
     });
 
+    it('should update sendResultFile', async () => {
+      const res = await request(app.getHttpServer())
+        .put('/api/calculation-config')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ sendResultFile: false })
+        .expect(200);
+
+      expect(res.body.sendResultFile).toBe(false);
+
+      const res2 = await request(app.getHttpServer())
+        .get('/api/calculation-config')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      expect(res2.body.sendResultFile).toBe(false);
+
+      // Restore default
+      await request(app.getHttpServer())
+        .put('/api/calculation-config')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ sendResultFile: true })
+        .expect(200);
+    });
+
     it('should reject without auth', async () => {
       await request(app.getHttpServer())
         .put('/api/calculation-config')
