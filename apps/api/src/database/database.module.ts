@@ -3,11 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AiConfig } from './entities/ai-config.entity';
 import { CalculationConfig } from './entities/calculation-config.entity';
-import { TksCache } from './entities/tks-cache.entity';
 import { CalculationLog } from './entities/calculation-log.entity';
 import { Document } from './entities/document.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { TelegramUser } from './entities/telegram-user.entity';
+import { TksCache } from './entities/tks-cache.entity';
 import { TnVedCode } from './entities/tn-ved-code.entity';
 import { User } from './entities/user.entity';
 import { Init1775502921706 } from './migrations/1775502921706-Init';
@@ -23,6 +23,7 @@ import { AddRejectedStatusAndReasons1776200000000 } from './migrations/177620000
 import { AddTokenUsageFields1776300000000 } from './migrations/1776300000000-AddTokenUsageFields';
 import { AddAiConfig1776400000000 } from './migrations/1776400000000-AddAiConfig';
 import { AddTksCache1776500000000 } from './migrations/1776500000000-AddTksCache';
+import { AddExchangeRates1776700000000 } from './migrations/1776700000000-AddExchangeRates';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -58,6 +59,7 @@ import { SeedService } from './seeds/seed.service';
           AddTokenUsageFields1776300000000,
           AddAiConfig1776400000000,
           AddTksCache1776500000000,
+          AddExchangeRates1776700000000,
         ],
         migrationsRun: true,
       }),
