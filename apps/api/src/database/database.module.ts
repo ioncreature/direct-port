@@ -23,6 +23,7 @@ import { AddRejectedStatusAndReasons1776200000000 } from './migrations/177620000
 import { AddTokenUsageFields1776300000000 } from './migrations/1776300000000-AddTokenUsageFields';
 import { AddAiConfig1776400000000 } from './migrations/1776400000000-AddAiConfig';
 import { AddTksCache1776500000000 } from './migrations/1776500000000-AddTksCache';
+import { AddProcessedWithErrorsStatus1776600000000 } from './migrations/1776600000000-AddProcessedWithErrorsStatus';
 import { AddExchangeRates1776700000000 } from './migrations/1776700000000-AddExchangeRates';
 import { AddSendResultFile1776800000000 } from './migrations/1776800000000-AddSendResultFile';
 import { SeedService } from './seeds/seed.service';
@@ -60,6 +61,7 @@ import { SeedService } from './seeds/seed.service';
           AddTokenUsageFields1776300000000,
           AddAiConfig1776400000000,
           AddTksCache1776500000000,
+          AddProcessedWithErrorsStatus1776600000000,
           AddExchangeRates1776700000000,
           AddSendResultFile1776800000000,
         ],
