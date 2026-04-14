@@ -66,8 +66,8 @@ const CHUNK_SIZE = 100;
 const CHUNK_CONCURRENCY = 2;
 const SAMPLE_ROWS = 5;
 const MAX_ATTEMPTS = 2;
-/** Максимальный размер TSV-данных в символах (~125K токенов). Защита от вредоносных файлов с огромным текстом в ячейках. */
-const MAX_TSV_LENGTH = 500_000;
+/** Максимальный размер TSV-данных в символах (~50K токенов). Защита от вредоносных файлов с огромным текстом в ячейках. */
+const MAX_TSV_LENGTH = 200_000;
 
 interface DocumentStructure {
   headerRows: number[];
