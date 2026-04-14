@@ -444,7 +444,7 @@ export class AiParserService {
       const response = await this.anthropic!.messages.create(
         {
           model,
-          max_tokens: 8192,
+          max_tokens: 16384,
           system,
           messages: [{ role: 'user', content: prompt }],
           tools: [tool],
@@ -545,7 +545,7 @@ ${mappingInfo}
       const response = await this.anthropic!.messages.create(
         {
           model,
-          max_tokens: 2048,
+          max_tokens: 4096,
           system: systemPrompt(VALIDATION_SYSTEM_PROMPT),
           messages: [{ role: 'user', content: prompt }],
           tools: [VALIDATE_TOOL],
