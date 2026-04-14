@@ -2,7 +2,6 @@ import Anthropic from '@anthropic-ai/sdk';
 import {
   TksApiClient,
   calcProbability,
-  type GoodsItem,
   type TnvedCode,
 } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
@@ -69,6 +68,16 @@ interface ClaudeSelection {
   fromCandidates: boolean;
 }
 
+interface ClassifyItem {
+  index: number;
+  description: string;
+  candidates: TksCandidate[];
+  rawContext?: string;
+  hsCode?: string;
+  hsCodeValid?: boolean;
+}
+
+const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
 const SEARCH_CONCURRENCY = 5;
 const CLAUDE_BATCH_SIZE = 20;
 const CLAUDE_CONCURRENCY = 2;
@@ -336,9 +345,9 @@ export class ClassifierService {
     try {
       const response = await this.anthropic.messages.create(
         {
-          model: 'claude-haiku-4-5-20251001',
+          model: HAIKU_MODEL,
           max_tokens: 4096,
-          system: [{ type: 'text', text: QUERY_FORMULATION_SYSTEM }],
+          system: systemPrompt(QUERY_FORMULATION_SYSTEM),
           messages: [{ role: 'user', content: JSON.stringify(items) }],
           tools: [FORMULATE_QUERIES_TOOL],
           tool_choice: { type: 'any' },
@@ -351,7 +360,7 @@ export class ClassifierService {
       const queries = products.map((p, i) => queryMap.get(i) ?? p.description);
 
       this.logger.log(`Formulated ${queryMap.size} search queries via Haiku`);
-      return { queries, tokenUsage: tokenUsageFromResponse('claude-haiku-4-5-20251001', response.usage) };
+      return { queries, tokenUsage: tokenUsageFromResponse(HAIKU_MODEL, response.usage) };
     } catch (err) {
       this.logger.warn(`Query formulation failed, using raw descriptions: ${errMsg(err)}`);
       return { queries: products.map((p) => p.description), tokenUsage: emptyTokenUsageMap() };
@@ -406,14 +415,6 @@ export class ClassifierService {
     const allSelections: (ClaudeSelection | null)[] = new Array(products.length).fill(null);
     let totalUsage = emptyTokenUsageMap();
 
-    type ClassifyItem = {
-      index: number;
-      description: string;
-      candidates: TksCandidate[];
-      rawContext?: string;
-      hsCode?: string;
-      hsCodeValid?: boolean;
-    };
     const batches: ClassifyItem[][] = [];
     for (let i = 0; i < products.length; i += CLAUDE_BATCH_SIZE) {
       const batchEnd = Math.min(i + CLAUDE_BATCH_SIZE, products.length);
@@ -474,14 +475,7 @@ export class ClassifierService {
   }
 
   private async callClaude(
-    items: Array<{
-      index: number;
-      description: string;
-      candidates: TksCandidate[];
-      rawContext?: string;
-      hsCode?: string;
-      hsCodeValid?: boolean;
-    }>,
+    items: ClassifyItem[],
     language?: string,
     useCache = false,
   ): Promise<{ selections: ClaudeSelection[]; tokenUsage: TokenUsageMap }> {
@@ -499,7 +493,7 @@ ${JSON.stringify(items, null, 2)}${localizedInstruction}`;
     const response = await this.anthropic!.messages.create(
       {
         model,
-        max_tokens: 2048,
+        max_tokens: 4096,
         system,
         messages: [{ role: 'user', content: userPrompt }],
         tools: [CLASSIFY_TOOL],
