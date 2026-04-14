@@ -67,6 +67,9 @@ function makeClaudeParseResponse(productCount = 4) {
   };
 }
 
+/** Ответ, который analyzeStructure отклонит → fallback на парсинг без структуры */
+const STRUCTURE_FALLBACK = {};
+
 /** Ответ Claude при валидации — ok */
 const VALIDATION_OK = { valid: true, issues: [] };
 const VALIDATION_FAIL = { valid: false, issues: ['Некорректный перевод'] };
@@ -105,6 +108,7 @@ describe('AiParserService', () => {
       const { service } = createService({
         spreadsheetData: makeSpreadsheetData(4),
         claudeResponses: [
+          STRUCTURE_FALLBACK,          // анализ структуры → fallback
           makeClaudeParseResponse(4), // основной парсинг
           VALIDATION_OK,               // AI-валидация
         ],
@@ -123,6 +127,7 @@ describe('AiParserService', () => {
       const { service } = createService({
         spreadsheetData: makeSpreadsheetData(3),
         claudeResponses: [
+          STRUCTURE_FALLBACK,
           {
             currency: 'USD',
             columnMapping: {},
@@ -153,6 +158,7 @@ describe('AiParserService', () => {
       const { service } = createService({
         spreadsheetData: makeSpreadsheetData(3),
         claudeResponses: [
+          STRUCTURE_FALLBACK,
           badProducts, // attempt 1: zero price → deterministic fail
           badProducts, // attempt 2: retry → same → assessFeasibility
         ],
@@ -170,6 +176,7 @@ describe('AiParserService', () => {
       const { service } = createService({
         spreadsheetData: makeSpreadsheetData(2),
         claudeResponses: [
+          STRUCTURE_FALLBACK,
           {
             currency: 'XYZ',
             columnMapping: {},
@@ -202,6 +209,7 @@ describe('AiParserService', () => {
       const { service, anthropic } = createService({
         spreadsheetData: data,
         claudeResponses: [
+          STRUCTURE_FALLBACK, // анализ структуры → fallback
           badResponse,    // attempt 1 → deterministic fail
           goodResponse,   // attempt 2 (retry)
           VALIDATION_OK,  // validation
@@ -209,8 +217,8 @@ describe('AiParserService', () => {
       });
 
       const result = await service.parse(Buffer.from(''), 'test.xlsx');
-      // Claude вызван 3 раза: attempt1 + attempt2 + validation
-      expect(anthropic!.messages.create).toHaveBeenCalledTimes(3);
+      // Claude вызван 4 раза: structure + attempt1 + attempt2 + validation
+      expect(anthropic!.messages.create).toHaveBeenCalledTimes(4);
       expect(result.products).toHaveLength(4);
     });
 
@@ -225,14 +233,15 @@ describe('AiParserService', () => {
       const { service, anthropic } = createService({
         spreadsheetData: data,
         claudeResponses: [
+          STRUCTURE_FALLBACK, // анализ структуры → fallback
           tooFewProducts, // attempt 1 → too few products
           tooFewProducts, // attempt 2 → still too few → assessFeasibility
         ],
       });
 
       const result = await service.parse(Buffer.from(''), 'test.xlsx');
-      // 2 попытки парсинга (без AI-валидации — deterministic issues на обоих)
-      expect(anthropic!.messages.create).toHaveBeenCalledTimes(2);
+      // 3 вызова: structure + 2 попытки парсинга (без AI-валидации)
+      expect(anthropic!.messages.create).toHaveBeenCalledTimes(3);
       // assessFeasibility — не rejected (1 товар с ценой), но review
       expect(result.feasibility).toBe('review');
     });
@@ -243,6 +252,7 @@ describe('AiParserService', () => {
       const { service } = createService({
         spreadsheetData: makeSpreadsheetData(3),
         claudeResponses: [
+          STRUCTURE_FALLBACK,
           { currency: 'USD', columnMapping: {}, products: [] },
           { currency: 'USD', columnMapping: {}, products: [] },
         ],
@@ -264,6 +274,7 @@ describe('AiParserService', () => {
       const { service } = createService({
         spreadsheetData: makeSpreadsheetData(10),
         claudeResponses: [
+          STRUCTURE_FALLBACK,
           { currency: 'USD', columnMapping: {}, products },
           { currency: 'USD', columnMapping: {}, products },
         ],
@@ -285,6 +296,7 @@ describe('AiParserService', () => {
       const { service } = createService({
         spreadsheetData: makeSpreadsheetData(10),
         claudeResponses: [
+          STRUCTURE_FALLBACK,
           { currency: 'USD', columnMapping: {}, products },
           { currency: 'USD', columnMapping: {}, products },
         ],
@@ -306,6 +318,7 @@ describe('AiParserService', () => {
       const { service } = createService({
         spreadsheetData: makeSpreadsheetData(5),
         claudeResponses: [
+          STRUCTURE_FALLBACK,
           { currency: 'USD', columnMapping: {}, products },
           { currency: 'USD', columnMapping: {}, products },
         ],
@@ -321,6 +334,7 @@ describe('AiParserService', () => {
       const { service } = createService({
         spreadsheetData: makeSpreadsheetData(4),
         claudeResponses: [
+          STRUCTURE_FALLBACK, // анализ структуры → fallback
           parseResp,       // attempt 1: parse
           VALIDATION_FAIL, // attempt 1: AI-validation → fail
           parseResp,       // attempt 2: retry parse
@@ -340,6 +354,7 @@ describe('AiParserService', () => {
       const { service } = createService({
         spreadsheetData: makeSpreadsheetData(2),
         claudeResponses: [
+          STRUCTURE_FALLBACK,
           {
             currency: 'CNY',
             columnMapping: { description: 0, price: 1, weight: 2, quantity: 3 },
@@ -363,6 +378,7 @@ describe('AiParserService', () => {
       const { service } = createService({
         spreadsheetData: makeSpreadsheetData(2),
         claudeResponses: [
+          STRUCTURE_FALLBACK,
           {
             currency: 'CNY',
             columnMapping: {},
@@ -382,6 +398,7 @@ describe('AiParserService', () => {
       const { service } = createService({
         spreadsheetData: makeSpreadsheetData(2),
         claudeResponses: [
+          STRUCTURE_FALLBACK,
           {
             currency: 'CNY',
             columnMapping: {},
@@ -401,6 +418,7 @@ describe('AiParserService', () => {
       const { service } = createService({
         spreadsheetData: makeSpreadsheetData(2),
         claudeResponses: [
+          STRUCTURE_FALLBACK,
           {
             currency: 'CNY',
             columnMapping: {},
@@ -421,17 +439,17 @@ describe('AiParserService', () => {
     it('накапливает tokenUsage из всех вызовов Claude', async () => {
       const { service } = createService({
         spreadsheetData: makeSpreadsheetData(4),
-        claudeResponses: [makeClaudeParseResponse(4), VALIDATION_OK],
+        claudeResponses: [STRUCTURE_FALLBACK, makeClaudeParseResponse(4), VALIDATION_OK],
       });
 
       const result = await service.parse(Buffer.from(''), 'test.xlsx');
       expect(result.tokenUsage).toBeDefined();
-      // 2 вызова Claude (parse + validate) × 100 input tokens
+      // 3 вызова Claude (structure + parse + validate) × 100 input tokens
       const totalInput = Object.values(result.tokenUsage).reduce(
         (sum, usage) => sum + usage.inputTokens,
         0,
       );
-      expect(totalInput).toBe(200);
+      expect(totalInput).toBe(300);
     });
   });
 });

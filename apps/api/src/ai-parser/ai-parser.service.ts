@@ -66,6 +66,16 @@ const CHUNK_SIZE = 100;
 const CHUNK_CONCURRENCY = 2;
 const SAMPLE_ROWS = 5;
 const MAX_ATTEMPTS = 2;
+/** Максимальный размер TSV-данных в символах (~125K токенов). Защита от вредоносных файлов с огромным текстом в ячейках. */
+const MAX_TSV_LENGTH = 500_000;
+
+interface DocumentStructure {
+  headerRows: number[];
+  dataRows: number[];
+  columnMapping: Record<string, number>;
+  currency: string;
+  weightNote: string;
+}
 
 const SYSTEM_PROMPT = `Ты — эксперт по парсингу коммерческих документов для импорта товаров.
 
@@ -113,6 +123,57 @@ const VALIDATION_SYSTEM_PROMPT = `Ты — валидатор результат
 `;
 
 const CHUNK_SYSTEM_PROMPT = `Ты — эксперт по парсингу коммерческих документов для импорта товаров. Продолжай извлечение данных согласно указанным правилам.`;
+
+const STRUCTURE_ANALYSIS_PROMPT = `Ты — эксперт по анализу структуры коммерческих документов для импорта товаров.
+
+Определи структуру таблицы. НЕ извлекай данные — только определи формат.
+
+1. Строки-заголовки: могут быть на нескольких языках (русский + китайский и т.д.). Перечисли все индексы.
+2. Перечисли индексы ВСЕХ строк, содержащих товарные данные. Не включай: заголовки, итоги (ИТОГО, Total, 合计), пустые строки, комментарии, примечания.
+3. Маппинг колонок (0-indexed): наименование, цена за единицу, вес, итоговое количество.
+   - Цена: колонка с ценой за ЕДИНИЦУ товара (не стоимость партии).
+   - Количество: колонка с ИТОГОВЫМ количеством (если есть коробки × штук/коробку — бери итог).
+   - Вес: укажи колонку и опиши что в ней (за единицу, за коробку, общий).
+4. Валюту: по символам (¥/$€/₽) или контексту.`;
+
+const ANALYZE_STRUCTURE_TOOL: Anthropic.Messages.Tool = {
+  name: 'analyze_structure',
+  description: 'Результат анализа структуры коммерческого документа',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      headerRows: {
+        type: 'array',
+        items: { type: 'number' },
+        description: 'Индексы строк-заголовков (0-indexed)',
+      },
+      dataRows: {
+        type: 'array',
+        items: { type: 'number' },
+        description: 'Индексы ВСЕХ строк с товарными данными (0-indexed). Не включай заголовки, итоги, пустые строки, комментарии',
+      },
+      columnMapping: {
+        type: 'object',
+        properties: {
+          description: { type: 'number', description: 'Колонка с наименованием товара' },
+          price: { type: 'number', description: 'Колонка с ценой за единицу' },
+          weight: { type: 'number', description: 'Колонка с весом' },
+          quantity: { type: 'number', description: 'Колонка с итоговым количеством' },
+        },
+        required: ['description', 'price', 'weight', 'quantity'],
+      },
+      currency: {
+        type: 'string',
+        description: 'ISO 4217 код валюты (CNY, USD, EUR и т.д.)',
+      },
+      weightNote: {
+        type: 'string',
+        description: 'Что содержит колонка веса: "per_unit" (за единицу товара), "per_box" (за коробку), "total" (общий вес позиции)',
+      },
+    },
+    required: ['headerRows', 'dataRows', 'columnMapping', 'currency', 'weightNote'],
+  },
+};
 
 const PRODUCT_ITEMS_SCHEMA: Anthropic.Messages.Tool['input_schema'] = {
   type: 'object' as const,
@@ -226,28 +287,52 @@ export class AiParserService {
       return this.rejected(['Файл пустой или содержит только заголовок (менее 2 строк).']);
     }
 
-    if (data.rows.length <= CHUNK_SIZE) {
-      return this.parseSinglePass(data);
+    const tsv = this.formatAsTsv(data.rows);
+    if (tsv.length > MAX_TSV_LENGTH) {
+      this.logger.warn(`File rejected: content too large (${tsv.length} chars > ${MAX_TSV_LENGTH})`);
+      return this.rejected([
+        `Содержимое файла слишком большое (${Math.round(tsv.length / 1000)}K символов). Максимум — ${MAX_TSV_LENGTH / 1000}K. Уменьшите объём текста в ячейках или разделите файл.`,
+      ]);
     }
 
-    return this.parseChunked(data);
+    const { structure, tokenUsage: analysisUsage } = await this.analyzeStructure(data, tsv);
+
+    let result: AiParseResult;
+    if (data.rows.length <= CHUNK_SIZE) {
+      result = await this.parseSinglePass(tsv, data, structure);
+    } else {
+      result = await this.parseChunked(data, structure);
+    }
+    result.tokenUsage = mergeTokenUsage(analysisUsage, result.tokenUsage);
+    return result;
   }
 
-  private async parseSinglePass(data: SpreadsheetData): Promise<AiParseResult> {
-    const tsv = this.formatAsTsv(data.rows);
+  private async parseSinglePass(
+    tsv: string,
+    data: SpreadsheetData,
+    structure?: DocumentStructure | null,
+  ): Promise<AiParseResult> {
     let lastResult: RawParseResult | null = null;
     let lastIssues: string[] = [];
     let totalUsage = emptyTokenUsageMap();
+    const expectedCount = structure ? structure.dataRows.length : undefined;
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       const userPrompt =
-        attempt === 1 ? this.buildUserPrompt(tsv) : this.buildRetryPrompt(tsv, lastIssues);
+        attempt === 1
+          ? this.buildUserPrompt(tsv, structure, expectedCount)
+          : this.buildRetryPrompt(tsv, lastIssues, structure, expectedCount);
 
       const { tokenUsage, ...result } = await this.callClaude(userPrompt);
       totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
       lastResult = result;
 
-      const detIssues = this.checkDeterministic(result, data);
+      if (structure) {
+        lastResult.currency = structure.currency;
+        lastResult.columnMapping = structure.columnMapping;
+      }
+
+      const detIssues = this.checkDeterministic(result, data, expectedCount);
       if (detIssues.length > 0) {
         this.logger.warn(`Attempt ${attempt}: deterministic issues: ${detIssues.join('; ')}`);
         lastIssues = detIssues;
@@ -255,7 +340,11 @@ export class AiParserService {
         return { ...this.assessFeasibility(result, lastIssues), tokenUsage: totalUsage };
       }
 
-      const { tokenUsage: valUsage, ...validation } = await this.validateWithAi(data, result);
+      const { tokenUsage: valUsage, ...validation } = await this.validateWithAi(
+        data,
+        result,
+        structure,
+      );
       totalUsage = mergeTokenUsage(totalUsage, valUsage);
       if (validation.valid) {
         this.logger.log(
@@ -274,32 +363,56 @@ export class AiParserService {
     return { ...this.assessFeasibility(lastResult!, lastIssues), tokenUsage: totalUsage };
   }
 
-  private async parseChunked(data: SpreadsheetData): Promise<AiParseResult> {
+  private async parseChunked(
+    data: SpreadsheetData,
+    structure?: DocumentStructure | null,
+  ): Promise<AiParseResult> {
     let totalUsage = emptyTokenUsageMap();
-    const headerRow = data.rows[0];
 
-    const chunks: string[][][] = [];
-    for (let i = 0; i < data.rows.length; i += CHUNK_SIZE) {
-      chunks.push(data.rows.slice(i, Math.min(i + CHUNK_SIZE, data.rows.length)));
+    let parseRows: string[][];
+    let headerRow: string[];
+    let expectedTotal: number | undefined;
+
+    if (structure) {
+      parseRows = structure.dataRows.map((i) => data.rows[i]);
+      headerRow = structure.headerRows.length > 0 ? data.rows[structure.headerRows[0]] : data.rows[0];
+      expectedTotal = structure.dataRows.length;
+    } else {
+      parseRows = data.rows;
+      headerRow = data.rows[0];
     }
 
-    this.logger.log(`Parsing ${data.rows.length} rows in ${chunks.length} chunks`);
+    const chunks: string[][][] = [];
+    for (let i = 0; i < parseRows.length; i += CHUNK_SIZE) {
+      chunks.push(parseRows.slice(i, Math.min(i + CHUNK_SIZE, parseRows.length)));
+    }
 
-    // First chunk: full analysis with retry
+    this.logger.log(`Parsing ${parseRows.length} data rows in ${chunks.length} chunks`);
+
     const firstTsv = this.formatAsTsv(chunks[0]);
     let firstResult: RawParseResult | null = null;
     let lastIssues: string[] = [];
+    const expectedChunkCount = structure ? chunks[0].length : undefined;
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       const prompt = attempt === 1
-        ? this.buildUserPrompt(firstTsv)
-        : this.buildRetryPrompt(firstTsv, lastIssues);
+        ? this.buildUserPrompt(firstTsv, structure, expectedChunkCount)
+        : this.buildRetryPrompt(firstTsv, lastIssues, structure, expectedChunkCount);
 
       const { tokenUsage, ...result } = await this.callClaude(prompt, true);
       totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
       firstResult = result;
 
-      const issues = this.checkDeterministic(result, { rows: chunks[0], columnCount: data.columnCount });
+      if (structure) {
+        firstResult.currency = structure.currency;
+        firstResult.columnMapping = structure.columnMapping;
+      }
+
+      const issues = this.checkDeterministic(
+        result,
+        { rows: chunks[0], columnCount: data.columnCount },
+        expectedChunkCount,
+      );
       if (issues.length === 0) break;
 
       lastIssues = issues;
@@ -319,7 +432,6 @@ export class AiParserService {
     const allProducts = [...firstResult.products];
     const { currency, columnMapping } = firstResult;
 
-    // Remaining chunks: simplified parsing with known structure (concurrency=2)
     const remainingChunks = chunks.slice(1);
     let failedChunks = 0;
 
@@ -357,8 +469,13 @@ export class AiParserService {
       );
     }
 
-    // AI validation on full result
-    const { tokenUsage: valUsage, ...validation } = await this.validateWithAi(data, fullResult);
+    if (expectedTotal !== undefined && allProducts.length !== expectedTotal) {
+      issues.push(
+        `Ожидалось ${expectedTotal} товаров (по структуре), получено ${allProducts.length}`,
+      );
+    }
+
+    const { tokenUsage: valUsage, ...validation } = await this.validateWithAi(data, fullResult, structure);
     totalUsage = mergeTokenUsage(totalUsage, valUsage);
     if (!validation.valid) {
       issues.push(...validation.issues);
@@ -371,6 +488,55 @@ export class AiParserService {
 
     this.logger.log(`Parsed ${allProducts.length} products in ${chunks.length} chunks, currency=${currency}`);
     return { ...fullResult, feasibility: 'ok', rejectionReasons: [], tokenUsage: totalUsage };
+  }
+
+  private async analyzeStructure(
+    data: SpreadsheetData,
+    tsv: string,
+  ): Promise<{ structure: DocumentStructure | null; tokenUsage: TokenUsageMap }> {
+    if (!this.anthropic) {
+      return { structure: null, tokenUsage: emptyTokenUsageMap() };
+    }
+
+    try {
+      const prompt = `Проанализируй структуру таблицы коммерческого документа.\n\n<spreadsheet_data>\n${tsv}\n</spreadsheet_data>\n\n(Всего ${data.rows.length} строк)`;
+
+      const { raw, tokenUsage } = await this.callClaudeRaw(
+        prompt,
+        STRUCTURE_ANALYSIS_PROMPT,
+        false,
+        ANALYZE_STRUCTURE_TOOL,
+        { maxTokens: 2048, timeout: 30_000 },
+      );
+      const result = raw as Record<string, unknown>;
+
+      if (
+        !Array.isArray(result.headerRows) ||
+        !Array.isArray(result.dataRows) ||
+        result.dataRows.length === 0 ||
+        !result.dataRows.every((i: unknown) => typeof i === 'number' && i >= 0 && i < data.rows.length) ||
+        !result.columnMapping ||
+        typeof (result.columnMapping as Record<string, unknown>).description !== 'number' ||
+        typeof (result.columnMapping as Record<string, unknown>).price !== 'number' ||
+        typeof (result.columnMapping as Record<string, unknown>).weight !== 'number' ||
+        typeof (result.columnMapping as Record<string, unknown>).quantity !== 'number'
+      ) {
+        this.logger.warn('Structure analysis returned invalid result, falling back');
+        return { structure: null, tokenUsage };
+      }
+
+      const structure = result as unknown as DocumentStructure;
+      this.logger.log(
+        `Structure: headers=${JSON.stringify(structure.headerRows)}, dataRows=${structure.dataRows.length}, ` +
+          `currency=${structure.currency}, weight=${structure.weightNote}`,
+      );
+
+      return { structure, tokenUsage };
+    } catch (err) {
+      // callClaudeRaw throws on API errors — catch and fallback gracefully
+      this.logger.warn(`Structure analysis failed: ${errMsg(err)}`);
+      return { structure: null, tokenUsage: emptyTokenUsageMap() };
+    }
   }
 
   /**
@@ -436,6 +602,7 @@ export class AiParserService {
     sysPrompt = SYSTEM_PROMPT,
     useCache = false,
     tool: Anthropic.Messages.Tool = PARSE_TOOL,
+    opts?: { maxTokens?: number; timeout?: number },
   ): Promise<{ raw: unknown; tokenUsage: TokenUsageMap }> {
     const model = await this.aiConfig.getParserModel();
     let tokenUsage: TokenUsageMap = emptyTokenUsageMap();
@@ -444,13 +611,13 @@ export class AiParserService {
       const response = await this.anthropic!.messages.create(
         {
           model,
-          max_tokens: 16384,
+          max_tokens: opts?.maxTokens ?? 16384,
           system,
           messages: [{ role: 'user', content: prompt }],
           tools: [tool],
           tool_choice: { type: 'any' },
         },
-        { timeout: 90_000 },
+        { timeout: opts?.timeout ?? 90_000 },
       );
       tokenUsage = tokenUsageFromResponse(model, response.usage);
       return { raw: extractToolInput(response), tokenUsage };
@@ -465,10 +632,13 @@ export class AiParserService {
     return { ...this.validateSchema(raw), tokenUsage };
   }
 
-  private checkDeterministic(result: RawParseResult, data: SpreadsheetData): string[] {
+  private checkDeterministic(
+    result: RawParseResult,
+    data: SpreadsheetData,
+    expectedProductCount?: number,
+  ): string[] {
     const issues: string[] = [];
 
-    // All prices should be > 0
     const zeroPriceCount = result.products.filter((p) => p.price <= 0).length;
     if (zeroPriceCount > 0) {
       issues.push(
@@ -476,21 +646,29 @@ export class AiParserService {
       );
     }
 
-    // Row count sanity: parsed products should be within ±50% of non-empty data rows
-    const nonEmptyRows = data.rows.filter((row) =>
-      row.some((cell) => cell.trim().length > 0),
-    ).length;
-    // Subtract ~2 header rows estimate
-    const estimatedDataRows = Math.max(1, nonEmptyRows - 2);
-    if (result.products.length > estimatedDataRows * 2) {
-      issues.push(
-        `Слишком много товаров (${result.products.length}) для ${estimatedDataRows} строк данных`,
-      );
-    }
-    if (result.products.length < estimatedDataRows * 0.3 && estimatedDataRows > 5) {
-      issues.push(
-        `Слишком мало товаров (${result.products.length}) для ${estimatedDataRows} строк данных`,
-      );
+    if (expectedProductCount !== undefined) {
+      // Strict check when structure analysis determined exact row count
+      if (result.products.length !== expectedProductCount) {
+        issues.push(
+          `Ожидалось ${expectedProductCount} товаров (по структуре документа), получено ${result.products.length}`,
+        );
+      }
+    } else {
+      // Heuristic check when structure is unknown
+      const nonEmptyRows = data.rows.filter((row) =>
+        row.some((cell) => cell.trim().length > 0),
+      ).length;
+      const estimatedDataRows = Math.max(1, nonEmptyRows - 2);
+      if (result.products.length > estimatedDataRows * 2) {
+        issues.push(
+          `Слишком много товаров (${result.products.length}) для ${estimatedDataRows} строк данных`,
+        );
+      }
+      if (result.products.length < estimatedDataRows * 0.3 && estimatedDataRows > 5) {
+        issues.push(
+          `Слишком мало товаров (${result.products.length}) для ${estimatedDataRows} строк данных`,
+        );
+      }
     }
 
     return issues;
@@ -499,16 +677,32 @@ export class AiParserService {
   private async validateWithAi(
     data: SpreadsheetData,
     result: RawParseResult,
+    structure?: DocumentStructure | null,
   ): Promise<ValidationResult & { tokenUsage: TokenUsageMap }> {
     const model = await this.aiConfig.getParserModel();
-    // Pick sample rows from start of data (skip first row as header)
-    const startIdx = Math.min(1, data.rows.length - 1);
-    const sampleSourceRows = data.rows.slice(startIdx, startIdx + SAMPLE_ROWS);
+
+    let headerRow: string[];
+    let sampleSourceRows: string[][];
+    let startIdx: number;
+
+    if (structure) {
+      headerRow =
+        structure.headerRows.length > 0 ? (data.rows[structure.headerRows[0]] ?? []) : [];
+      sampleSourceRows = structure.dataRows
+        .slice(0, SAMPLE_ROWS)
+        .map((i) => data.rows[i])
+        .filter(Boolean);
+      startIdx = structure.dataRows[0] ?? 0;
+    } else {
+      headerRow = data.rows[0] ?? [];
+      startIdx = Math.min(1, data.rows.length - 1);
+      sampleSourceRows = data.rows.slice(startIdx, startIdx + SAMPLE_ROWS);
+    }
+
     const sampleProducts = result.products.slice(0, SAMPLE_ROWS).map(
       ({ hsCode, rawContext, ...core }) => core,
     );
 
-    const headerRow = data.rows[0] ?? [];
     const sourceTsv = sampleSourceRows
       .map((row, i) => [String(startIdx + i), ...row].join('\t'))
       .join('\n');
@@ -582,18 +776,52 @@ ${mappingInfo}
     return rows.map((row, i) => [String(i), ...row].join('\t')).join('\n');
   }
 
-  private buildUserPrompt(tsv: string): string {
-    return `Проанализируй таблицу и извлеки данные о товарах.
+  private buildUserPrompt(
+    tsv: string,
+    structure?: DocumentStructure | null,
+    expectedCount?: number,
+  ): string {
+    let prompt = `Проанализируй таблицу и извлеки данные о товарах.
 
 <spreadsheet_data>
 ${tsv}
 </spreadsheet_data>
 
 Поле dimensions — необязательное. Добавляй только если в таблице есть соответствующие колонки (площадь, объём и т.д.).`;
+
+    if (structure && expectedCount) {
+      const weightDesc =
+        structure.weightNote === 'per_unit'
+          ? 'за единицу товара'
+          : structure.weightNote === 'per_box'
+            ? 'за коробку (раздели на кол-во штук в коробке для получения веса за единицу)'
+            : 'общий вес позиции (раздели на количество для получения веса за единицу)';
+
+      const dataRowsInfo =
+        expectedCount <= 50
+          ? `Товарные строки: ${structure.dataRows.join(', ')} (ровно ${expectedCount} товаров)`
+          : `${expectedCount} товарных строк`;
+
+      prompt += `\n\nВАЖНО — структура документа определена:
+- Строки-заголовки: ${structure.headerRows.join(', ')} (НЕ извлекай как товары)
+- ${dataRowsInfo}
+- Валюта: ${structure.currency}
+- Маппинг колонок (0-indexed): наименование=${structure.columnMapping.description}, цена=${structure.columnMapping.price}, вес=${structure.columnMapping.weight}, количество=${structure.columnMapping.quantity}
+- Вес в таблице: ${weightDesc}
+
+Извлеки ровно ${expectedCount} товаров — каждая товарная строка = один товар. Не больше и не меньше.`;
+    }
+
+    return prompt;
   }
 
-  private buildRetryPrompt(tsv: string, issues: string[]): string {
-    const base = this.buildUserPrompt(tsv);
+  private buildRetryPrompt(
+    tsv: string,
+    issues: string[],
+    structure?: DocumentStructure | null,
+    expectedCount?: number,
+  ): string {
+    const base = this.buildUserPrompt(tsv, structure, expectedCount);
     const feedback = issues.map((issue, i) => `${i + 1}. ${issue}`).join('\n');
     return `${base}\n\nВНИМАНИЕ: Предыдущая попытка парсинга содержала ошибки:\n${feedback}\n\nИсправь эти ошибки и верни исправленный результат.`;
   }
