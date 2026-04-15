@@ -8,7 +8,7 @@ import { TksCache } from '../database/entities/tks-cache.entity';
 type Category = 'goods' | 'tnved' | 'reference' | 'other';
 
 const DEFAULT_TTL: Record<Category, number> = {
-  goods: 30 * 24 * 60 * 60 * 1000, // 30 дней
+  goods: 120 * 24 * 60 * 60 * 1000, // 120 дней
   tnved: 7 * 24 * 60 * 60 * 1000, // 7 дней
   reference: 7 * 24 * 60 * 60 * 1000, // 7 дней
   other: 24 * 60 * 60 * 1000, // 24 часа

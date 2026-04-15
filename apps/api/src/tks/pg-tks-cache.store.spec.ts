@@ -64,9 +64,9 @@ describe('PgTksCacheStore', () => {
       expect(result).toBeUndefined();
     });
 
-    it('uses goods TTL (30 days) for goods category', async () => {
+    it('uses goods TTL (120 days) for goods category', async () => {
       const { store, repo } = createStore();
-      // 10 days ago — fresh for goods (30d TTL), stale for other (24h TTL)
+      // 10 days ago — fresh for goods (120d TTL), stale for other (24h TTL)
       const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
       repo.findOne.mockResolvedValue(makeEntry({
         category: 'goods',
