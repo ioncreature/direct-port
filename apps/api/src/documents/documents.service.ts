@@ -264,6 +264,21 @@ export class DocumentsService {
     return { models: this.toModelsMap(modelsRows), documentCount: Number(countRow?.count) || 0 };
   }
 
+  async getStatusCounts(): Promise<Record<string, number>> {
+    const rows: Array<{ status: string; count: string }> = await this.repo
+      .createQueryBuilder('doc')
+      .select('doc.status', 'status')
+      .addSelect('COUNT(*)', 'count')
+      .groupBy('doc.status')
+      .getRawMany();
+
+    const counts: Record<string, number> = {};
+    for (const row of rows) {
+      counts[row.status] = Number(row.count);
+    }
+    return counts;
+  }
+
   async findOne(id: string): Promise<Document> {
     const doc = await this.repo.findOne({
       where: { id },

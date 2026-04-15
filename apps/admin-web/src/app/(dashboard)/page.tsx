@@ -11,28 +11,24 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 export default function DashboardPage() {
-  const { users, loading: usersLoading } = useUsers();
-  const { documents, loading: docsLoading } = useDocuments();
-  const { telegramUsers, loading: tgLoading } = useTelegramUsers();
+  const { total: usersTotal, loading: usersLoading } = useUsers();
+  const { documents, total: docsTotal, loading: docsLoading } = useDocuments();
+  const { total: tgTotal, loading: tgLoading } = useTelegramUsers();
   const [aiCost, setAiCost] = useState<number | null>(null);
+  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     api.get<TokenStatsPeriod>('/documents/token-stats/monthly').then(({ data }) => {
       setAiCost(calcAiCostFromMap(data.models));
+    }).catch(() => {});
+    api.get<Record<string, number>>('/documents/status-counts').then(({ data }) => {
+      setStatusCounts(data);
     }).catch(() => {});
   }, []);
 
   const loading = usersLoading || docsLoading || tgLoading;
 
   if (loading) return <p>Загрузка...</p>;
-
-  const statusCounts = documents.reduce(
-    (acc, doc) => {
-      acc[doc.status] = (acc[doc.status] || 0) + 1;
-      return acc;
-    },
-    {} as Record<string, number>,
-  );
 
   const recentDocs = [...documents]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -50,9 +46,9 @@ export default function DashboardPage() {
           marginBottom: 32,
         }}
       >
-        <StatCard label="Пользователи" value={users.length} href="/users" />
-        <StatCard label="Telegram" value={telegramUsers.length} href="/telegram-users" />
-        <StatCard label="Документы" value={documents.length} href="/documents" />
+        <StatCard label="Пользователи" value={usersTotal} href="/users" />
+        <StatCard label="Telegram" value={tgTotal} href="/telegram-users" />
+        <StatCard label="Документы" value={docsTotal} href="/documents" />
         <StatCard label="Обработано" value={statusCounts['processed'] || 0} color="#16a34a" />
         <StatCard label="С ошибками" value={statusCounts['processed_with_errors'] || 0} color="#d97706" />
         <StatCard label="Ошибки" value={statusCounts['failed'] || 0} color="#dc2626" />

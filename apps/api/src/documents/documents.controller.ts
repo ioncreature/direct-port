@@ -93,6 +93,12 @@ export class DocumentsController {
     return this.service.findAll(query);
   }
 
+  @Get('status-counts')
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  getStatusCounts() {
+    return this.service.getStatusCounts();
+  }
+
   @Get('token-stats')
   @Roles(UserRole.ADMIN)
   getTokenStats(@Query('model') model?: string) {
