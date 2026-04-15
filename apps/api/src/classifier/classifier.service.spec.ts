@@ -48,7 +48,7 @@ function createService(opts: {
   tnvedCodes?: Record<string, TnvedCode>;
   claudeResponse?: any[];
   claudeEnabled?: boolean;
-  queryFormulationResults?: Array<{ index: number; query: string }>;
+  queryFormulationResults?: Array<{ index: number; queries: string[] }>;
 } = {}) {
   const searchResults = opts.searchResults ?? {};
   const tnvedCodes = opts.tnvedCodes ?? {};
@@ -71,12 +71,12 @@ function createService(opts: {
           create: jest.fn().mockImplementation((params: any) => {
             const toolName = params.tools?.[0]?.name;
             if (toolName === 'formulate_search_queries') {
-              // Default: pass descriptions through as-is
+              // Default: pass descriptions through as single-element arrays
               const userContent = JSON.parse(params.messages[0].content);
-              const queries = opts.queryFormulationResults ??
-                userContent.map((item: any) => ({ index: item.index, query: item.description }));
+              const products = opts.queryFormulationResults ??
+                userContent.map((item: any) => ({ index: item.index, queries: [item.description] }));
               return Promise.resolve({
-                content: [{ type: 'tool_use', id: 'toolu_q', name: 'formulate_search_queries', input: { queries } }],
+                content: [{ type: 'tool_use', id: 'toolu_q', name: 'formulate_search_queries', input: { products } }],
                 usage: { input_tokens: 50, output_tokens: 30, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
               });
             }
@@ -350,11 +350,14 @@ describe('ClassifierService', () => {
   });
 
   describe('Формулирование поисковых запросов', () => {
-    it('использует Haiku для формулирования декларационных запросов', async () => {
-      const { service, tksApi, anthropic } = createService({
-        searchResults: { 'ИГРУШКА МУЗЫКАЛЬНАЯ ИЗ ПЛАСТМАССЫ': makeSearchResult('9503005500', 'Игрушки') },
+    it('использует Haiku для формулирования нескольких коротких запросов', async () => {
+      const { service, tksApi } = createService({
+        searchResults: {
+          'ИГРУШКА МУЗЫКАЛЬНАЯ': makeSearchResult('9503005500', 'Игрушки', 60, 100),
+          'ИГРУШКА ПЛАСТМАССА': makeSearchResult('9503005500', 'Игрушки', 40, 80),
+        },
         tnvedCodes: { '9503005500': makeTnvedCode('9503005500') },
-        queryFormulationResults: [{ index: 0, query: 'ИГРУШКА МУЗЫКАЛЬНАЯ ИЗ ПЛАСТМАССЫ' }],
+        queryFormulationResults: [{ index: 0, queries: ['ИГРУШКА МУЗЫКАЛЬНАЯ', 'ИГРУШКА ПЛАСТМАССА', 'ИГРУШКА ДЕТСКАЯ', 'ИГРУШКА ЗВУКОВАЯ', 'ИЗДЕЛИЕ ПЛАСТМАССА'] }],
         claudeResponse: [makeClaudeSelection({ tnVedCode: '9503005500', comment: 'Игрушка' })],
       });
 
@@ -362,9 +365,55 @@ describe('ClassifierService', () => {
         makeProduct('Музыкальная игрушка', { rawContext: 'АБС-пластик; батарейка' }),
       ]);
 
-      // TKS searched with formulated query, not raw description
-      expect(tksApi.searchGoodsGrouped).toHaveBeenCalledWith('ИГРУШКА МУЗЫКАЛЬНАЯ ИЗ ПЛАСТМАССЫ');
+      // TKS searched with all 5 formulated queries
+      expect(tksApi.searchGoodsGrouped).toHaveBeenCalledTimes(5);
+      expect(tksApi.searchGoodsGrouped).toHaveBeenCalledWith('ИГРУШКА МУЗЫКАЛЬНАЯ');
+      expect(tksApi.searchGoodsGrouped).toHaveBeenCalledWith('ИГРУШКА ПЛАСТМАССА');
       expect(result.products[0].tnVedCode).toBe('9503005500');
+    });
+
+    it('объединяет кандидатов из разных запросов, дедуплицируя по коду', async () => {
+      const { service, anthropic } = createService({
+        searchResults: {
+          'ЧАЙНИК ЭЛЕКТРИЧЕСКИЙ': {
+            data: [
+              { CODE: '8516101000', KR_NAIM: 'Чайники электрические', CNT: 60 },
+              { CODE: '8516790000', KR_NAIM: 'Другое', CNT: 20 },
+            ],
+            hm: 100,
+          },
+          'ЧАЙНИК СТАЛЬ': {
+            data: [
+              { CODE: '8516101000', KR_NAIM: 'Чайники электрические', CNT: 50 },
+              { CODE: '7323930000', KR_NAIM: 'Посуда из нерж. стали', CNT: 30 },
+            ],
+            hm: 100,
+          },
+        },
+        tnvedCodes: {
+          '8516101000': makeTnvedCode('8516101000'),
+        },
+        queryFormulationResults: [{ index: 0, queries: ['ЧАЙНИК ЭЛЕКТРИЧЕСКИЙ', 'ЧАЙНИК СТАЛЬ'] }],
+        claudeResponse: [makeClaudeSelection({ tnVedCode: '8516101000', comment: 'Чайник' })],
+      });
+
+      await service.classify([makeProduct('Чайник электрический', { rawContext: 'нержавеющая сталь' })]);
+
+      // Verify candidates passed to Claude are deduplicated (3 unique codes, not 4)
+      const classifyCall = anthropic!.messages.create.mock.calls.find(
+        (call: any[]) => call[0]?.tools?.[0]?.name === 'classify_products',
+      );
+      const userPrompt: string = classifyCall?.[0]?.messages?.[0]?.content ?? '';
+      const parsed = JSON.parse(userPrompt.replace(/^Классифицируй товары по ТН ВЭД:\s*/, ''));
+      const candidates: Array<{ code: string }> = parsed[0].candidates;
+      const codes = candidates.map((c) => c.code);
+      // 8516101000 appears once (deduped), plus 8516790000 and 7323930000
+      expect(codes.filter((c) => c === '8516101000')).toHaveLength(1);
+      expect(codes).toContain('8516790000');
+      expect(codes).toContain('7323930000');
+      // Deduped 8516101000 keeps highest confidence (60/100=0.6 > 50/100=0.5)
+      const topCandidate = candidates.find((c) => c.code === '8516101000') as any;
+      expect(topCandidate.confidence).toBe(0.6);
     });
 
     it('fallback на raw description при ошибке Haiku', async () => {

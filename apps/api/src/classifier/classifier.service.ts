@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import {
   TksApiClient,
   calcProbability,
+  type GoodsItem,
   type TnvedCode,
 } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
@@ -11,7 +12,12 @@ import { errMsg } from '../common/errors';
 import { normalizeImpediUnit } from '../common/normalize-impedi';
 import { getStaticNoteTranslation } from '../common/note-translations';
 import type { ProductNote } from '../common/product-notes';
-import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, tokenUsageFromResponse } from '../common/token-usage';
+import {
+  emptyTokenUsageMap,
+  mergeTokenUsage,
+  tokenUsageFromResponse,
+  type TokenUsageMap,
+} from '../common/token-usage';
 import type { Dimension } from '../duty-interpreter/interfaces';
 
 /**
@@ -82,6 +88,7 @@ const SEARCH_CONCURRENCY = 5;
 const CLAUDE_BATCH_SIZE = 20;
 const CLAUDE_CONCURRENCY = 2;
 const MAX_CANDIDATES = 5;
+const QUERIES_PER_PRODUCT = 5;
 const LOW_CONFIDENCE_THRESHOLD = 0.7;
 const CLASSIFICATION_CACHE_TTL = 86_400_000; // 24 hours
 const CLASSIFICATION_CACHE_MAX = 1000;
@@ -129,21 +136,29 @@ const CLASSIFY_TOOL: Anthropic.Messages.Tool = {
   },
 };
 
-const QUERY_FORMULATION_SYSTEM = `Ты — эксперт по таможенному оформлению. Переформулируй описания товаров в стиль таможенных деклараций для поиска в базе реальных деклараций.
+const QUERY_FORMULATION_SYSTEM = `Ты — эксперт по таможенному оформлению. Для каждого товара сформулируй ${QUERIES_PER_PRODUCT} коротких поисковых запросов для поиска в базе реальных таможенных деклараций.
+
+ВАЖНО: Поиск работает по заголовкам реальных деклараций. Он НЕ поддерживает склонения и морфологию. Чем больше слов в запросе — тем меньше шансов найти совпадение.
 
 Правила:
-- Формат: МАТЕРИАЛ + ТИП ТОВАРА + ХАРАКТЕРИСТИКИ
-- Материал — в первую очередь (пластмасса, сталь, хлопок, медь и т.д.)
-- Убери бренды, маркетинговые слова и общие фразы
-- Используй таможенную терминологию
-- Если материал неизвестен из контекста — не выдумывай, пиши только тип
-- Максимум 8-10 слов
+- Каждый запрос: 2-3 слова, максимум 4 в исключительных случаях. 5 слов — НИКОГДА
+- ${QUERIES_PER_PRODUCT} запросов должны покрывать разные аспекты товара
+- Обязательно включи запрос с основным МАТЕРИАЛОМ (пластмасса, сталь, хлопок, медь и т.д.) если он известен
+- Используй таможенную терминологию (ИЗДЕЛИЯ, ЧАСТИ, ПРИНАДЛЕЖНОСТИ)
+- Убери бренды и маркетинговые слова
+- Запросы должны отличаться друг от друга
+
+Стратегия формулирования:
+1. ТИП товара (общее название)
+2. МАТЕРИАЛ + ТИП
+3. НАЗНАЧЕНИЕ или ХАРАКТЕРИСТИКА
+4. Синоним или альтернативное название
+5. Более узкий или широкий термин
 
 Примеры:
-- "Музыкальная детская игрушка со звуками животных" + context "АБС-пластик; дудочка со звуковыми эффектами; батарейка" → "ИГРУШКА МУЗЫКАЛЬНАЯ ИЗ ПЛАСТМАССЫ СО ЗВУКОВЫМИ ЭФФЕКТАМИ"
-- "Натуральный кофе арабика в зернах 250г" → "КОФЕ НАТУРАЛЬНЫЙ ЖАРЕНЫЙ В ЗЕРНАХ"
-- "Электрический чайник Xiaomi 1.5л" + context "нержавеющая сталь; 1500 Вт" → "ЧАЙНИК ЭЛЕКТРИЧЕСКИЙ ИЗ НЕРЖАВЕЮЩЕЙ СТАЛИ"
-- "Кабель USB Type-C 1м" + context "медь; в оплётке" → "КАБЕЛЬ МЕДНЫЙ С РАЗЪЁМАМИ"
+- "Музыкальная детская игрушка" + context "АБС-пластик; батарейка" → ["ИГРУШКА МУЗЫКАЛЬНАЯ", "ИГРУШКА ПЛАСТМАССА", "ИГРУШКА ДЕТСКАЯ", "ИГРУШКА ЗВУКОВАЯ", "ИЗДЕЛИЕ ПЛАСТМАССА ДЕТСКОЕ"]
+- "Электрический чайник Xiaomi 1.5л" + context "нержавеющая сталь; 1500 Вт" → ["ЧАЙНИК ЭЛЕКТРИЧЕСКИЙ", "ЧАЙНИК СТАЛЬ", "ЭЛЕКТРОПРИБОР КУХОННЫЙ", "ЧАЙНИК НЕРЖАВЕЮЩАЯ", "ПРИБОР НАГРЕВАТЕЛЬНЫЙ"]
+- "Кабель USB Type-C 1м" + context "медь; в оплётке" → ["КАБЕЛЬ МЕДНЫЙ", "ПРОВОД ЭЛЕКТРИЧЕСКИЙ", "КАБЕЛЬ РАЗЪЁМ", "ПРОВОД МЕДНЫЙ", "КАБЕЛЬ СОЕДИНИТЕЛЬНЫЙ"]
 `;
 
 const FORMULATE_QUERIES_TOOL: Anthropic.Messages.Tool = {
@@ -152,19 +167,23 @@ const FORMULATE_QUERIES_TOOL: Anthropic.Messages.Tool = {
   input_schema: {
     type: 'object' as const,
     properties: {
-      queries: {
+      products: {
         type: 'array',
         items: {
           type: 'object',
           properties: {
             index: { type: 'number' },
-            query: { type: 'string', description: 'Запрос в декларационном стиле' },
+            queries: {
+              type: 'array',
+              items: { type: 'string' },
+              description: `${QUERIES_PER_PRODUCT} коротких поисковых запросов по 2-3 слова`,
+            },
           },
-          required: ['index', 'query'],
+          required: ['index', 'queries'],
         },
       },
     },
-    required: ['queries'],
+    required: ['products'],
   },
 };
 
@@ -183,7 +202,9 @@ export class ClassifierService {
     products: ProductRow[],
     language?: string,
   ): Promise<{ products: ClassifiedProduct[]; tokenUsage: TokenUsageMap }> {
-    this.logger.log(`Classifying ${products.length} products${language ? `, language=${language}` : ''}`);
+    this.logger.log(
+      `Classifying ${products.length} products${language ? `, language=${language}` : ''}`,
+    );
     // Deduplication: classify unique descriptions+context only, map results back
     const dedupMap = new Map<string, number>();
     const uniqueProducts: ProductRow[] = [];
@@ -218,7 +239,9 @@ export class ClassifierService {
     const uniqueCandidates = await this.searchAll(searchQueries);
 
     // Phase 2: Claude classify+verify with result caching
-    const uniqueSelections: (ClaudeSelection | null)[] = new Array(uniqueProducts.length).fill(null);
+    const uniqueSelections: (ClaudeSelection | null)[] = new Array(uniqueProducts.length).fill(
+      null,
+    );
 
     const classifierModel = await this.aiConfig.getClassifierModel();
     const uncached: { idx: number; product: ProductRow; candidates: TksCandidate[] }[] = [];
@@ -253,7 +276,10 @@ export class ClassifierService {
         uniqueSelections[uncached[i].idx] = sel;
         if (sel) {
           const cacheKey = this.buildProductKey(uncached[i].product, classifierModel);
-          this.classificationCache.set(cacheKey, { data: sel, expiresAt: now + CLASSIFICATION_CACHE_TTL });
+          this.classificationCache.set(cacheKey, {
+            data: sel,
+            expiresAt: now + CLASSIFICATION_CACHE_TTL,
+          });
         }
       }
       this.evictExpiredCache();
@@ -282,9 +308,17 @@ export class ClassifierService {
     }
 
     // Phase 4: Assemble results
-    const assembled = this.assembleResults(products, candidatesByProduct, selections, tnvedByCode, language);
+    const assembled = this.assembleResults(
+      products,
+      candidatesByProduct,
+      selections,
+      tnvedByCode,
+      language,
+    );
     const matched = assembled.filter((p) => p.matched).length;
-    this.logger.log(`Classification done: ${matched}/${assembled.length} matched, ${codesToLoad.size} unique codes`);
+    this.logger.log(
+      `Classification done: ${matched}/${assembled.length} matched, ${codesToLoad.size} unique codes`,
+    );
     return { products: assembled, tokenUsage };
   }
 
@@ -309,11 +343,11 @@ export class ClassifierService {
   // --- Phase 0: HS Code Validation ---
 
   private async validateHsCodes(products: ProductRow[]): Promise<Map<string, TnvedCode>> {
-    const codes = [...new Set(
-      products
-        .map((p) => p.hsCode)
-        .filter((c): c is string => !!c && /^\d{10}$/.test(c)),
-    )];
+    const codes = [
+      ...new Set(
+        products.map((p) => p.hsCode).filter((c): c is string => !!c && /^\d{10}$/.test(c)),
+      ),
+    ];
     if (codes.length === 0) return new Map();
 
     const validated = await this.loadTnvedRates(codes);
@@ -331,9 +365,9 @@ export class ClassifierService {
 
   private async formulateSearchQueries(
     products: ProductRow[],
-  ): Promise<{ queries: string[]; tokenUsage: TokenUsageMap }> {
+  ): Promise<{ queries: string[][]; tokenUsage: TokenUsageMap }> {
     if (!this.anthropic || products.length === 0) {
-      return { queries: products.map((p) => p.description), tokenUsage: emptyTokenUsageMap() };
+      return { queries: products.map((p) => [p.description]), tokenUsage: emptyTokenUsageMap() };
     }
 
     const items = products.map((p, i) => ({
@@ -346,42 +380,39 @@ export class ClassifierService {
       const response = await this.anthropic.messages.create(
         {
           model: HAIKU_MODEL,
-          max_tokens: 4096,
+          max_tokens: 16384,
           system: systemPrompt(QUERY_FORMULATION_SYSTEM),
           messages: [{ role: 'user', content: JSON.stringify(items) }],
           tools: [FORMULATE_QUERIES_TOOL],
           tool_choice: { type: 'any' },
         },
-        { timeout: 15_000 },
+        { timeout: 45_000 },
       );
 
-      const result = extractToolInput<{ queries: Array<{ index: number; query: string }> }>(response);
-      const queryMap = new Map(result.queries.map((q) => [q.index, q.query]));
-      const queries = products.map((p, i) => queryMap.get(i) ?? p.description);
+      const result = extractToolInput<{ products: Array<{ index: number; queries: string[] }> }>(
+        response,
+      );
+      const queryMap = new Map(result.products.map((p) => [p.index, p.queries]));
+      const queries = products.map((p, i) => queryMap.get(i) ?? [p.description]);
 
-      this.logger.log(`Formulated ${queryMap.size} search queries via Haiku`);
+      this.logger.log(
+        `Formulated ${queryMap.size}×${QUERIES_PER_PRODUCT} search queries via Haiku`,
+      );
       return { queries, tokenUsage: tokenUsageFromResponse(HAIKU_MODEL, response.usage) };
     } catch (err) {
       this.logger.warn(`Query formulation failed, using raw descriptions: ${errMsg(err)}`);
-      return { queries: products.map((p) => p.description), tokenUsage: emptyTokenUsageMap() };
+      return { queries: products.map((p) => [p.description]), tokenUsage: emptyTokenUsageMap() };
     }
   }
 
-  // --- Phase 1: TKS Search ---
+  // --- Phase 1: TKS Search (multiple queries per product) ---
 
-  private async searchAll(queries: string[]): Promise<TksCandidate[][]> {
-    const results: TksCandidate[][] = new Array(queries.length);
+  private async searchAll(queryGroups: string[][]): Promise<TksCandidate[][]> {
+    const results: TksCandidate[][] = new Array(queryGroups.length);
 
-    for (let i = 0; i < queries.length; i += SEARCH_CONCURRENCY) {
-      const batch = queries.slice(i, i + SEARCH_CONCURRENCY);
-      const batchResults = await Promise.all(
-        batch.map((query) =>
-          this.searchOne(query).catch((err) => {
-            this.logger.warn(`TKS search failed for "${query}": ${errMsg(err)}`);
-            return [] as TksCandidate[];
-          }),
-        ),
-      );
+    for (let i = 0; i < queryGroups.length; i += SEARCH_CONCURRENCY) {
+      const batch = queryGroups.slice(i, i + SEARCH_CONCURRENCY);
+      const batchResults = await Promise.all(batch.map((queries) => this.searchMulti(queries)));
       for (let j = 0; j < batchResults.length; j++) {
         results[i + j] = batchResults[j];
       }
@@ -390,16 +421,29 @@ export class ClassifierService {
     return results;
   }
 
-  private async searchOne(description: string): Promise<TksCandidate[]> {
-    const result = await this.tksApi.searchGoodsGrouped(description);
-    if (!result.data.length) return [];
+  private async searchMulti(queries: string[]): Promise<TksCandidate[]> {
+    const allResults = await Promise.all(
+      queries.map((query) =>
+        this.tksApi.searchGoodsGrouped(query).catch((err) => {
+          this.logger.warn(`TKS search failed for "${query}": ${errMsg(err)}`);
+          return { data: [] as GoodsItem[], hm: 0 };
+        }),
+      ),
+    );
 
-    return result.data
-      .map((item) => ({
-        code: item.CODE,
-        name: item.KR_NAIM,
-        confidence: calcProbability(item, result.hm),
-      }))
+    // Merge results: deduplicate by code, keep highest confidence
+    const byCode = new Map<string, TksCandidate>();
+    for (const result of allResults) {
+      for (const item of result.data) {
+        const confidence = calcProbability(item, result.hm);
+        const existing = byCode.get(item.CODE);
+        if (!existing || confidence > existing.confidence) {
+          byCode.set(item.CODE, { code: item.CODE, name: item.KR_NAIM, confidence });
+        }
+      }
+    }
+
+    return [...byCode.values()]
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, MAX_CANDIDATES);
   }
@@ -485,9 +529,7 @@ export class ClassifierService {
       ? `\nДополнительно: для каждого товара добавь comment_localized — пояснение на ${language === 'zh' ? 'китайском' : 'английском'} языке.`
       : '';
 
-    const userPrompt = `Классифицируй товары по ТН ВЭД:
-
-${JSON.stringify(items, null, 2)}${localizedInstruction}`;
+    const userPrompt = `Классифицируй товары по ТН ВЭД: ${JSON.stringify(items, null, 2)}${localizedInstruction}`;
 
     const system = systemPrompt(SYSTEM_PROMPT, useCache);
     const response = await this.anthropic!.messages.create(
@@ -587,8 +629,7 @@ ${JSON.stringify(items, null, 2)}${localizedInstruction}`;
         });
       }
 
-      const suggestedCode =
-        sel && !sel.fromCandidates ? sel.tnVedCode : null;
+      const suggestedCode = sel && !sel.fromCandidates ? sel.tnVedCode : null;
 
       return {
         ...product,
@@ -616,11 +657,12 @@ ${JSON.stringify(items, null, 2)}${localizedInstruction}`;
     sel: ClaudeSelection | null,
     candidates: TksCandidate[],
   ): ClassifiedProduct {
-    const reason = candidates.length === 0
-      ? 'TKS не вернул кандидатов, AI не смог предложить код'
-      : sel
-        ? `AI предложил код ${sel.tnVedCode}, но он не найден в справочнике`
-        : 'Не удалось определить код ТН ВЭД';
+    const reason =
+      candidates.length === 0
+        ? 'TKS не вернул кандидатов, AI не смог предложить код'
+        : sel
+          ? `AI предложил код ${sel.tnVedCode}, но он не найден в справочнике`
+          : 'Не удалось определить код ТН ВЭД';
 
     return {
       ...product,
