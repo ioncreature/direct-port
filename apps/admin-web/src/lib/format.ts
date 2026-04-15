@@ -66,7 +66,7 @@ export function totalTokensFromStages(map: TokenUsageByStage | null | undefined)
 }
 
 export function fmtCost(usd: number): string {
-  return '$' + usd.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  return '$' + usd.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export function fmtTokens(n: number): string {
