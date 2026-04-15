@@ -7,7 +7,7 @@ export function fmt(n: number): string {
 /** Per-model config: pricing ($/1M tokens) + display label */
 export const MODEL_CONFIG: Record<string, { label: string; input: number; output: number }> = {
   'claude-sonnet-4-6': { label: 'Sonnet', input: 3, output: 15 },
-  'claude-haiku-4-5': { label: 'Haiku', input: 0.8, output: 4 },
+  'claude-haiku-4-5': { label: 'Haiku', input: 1, output: 5 },
 };
 const DEFAULT_PRICING = { input: 3, output: 15 };
 

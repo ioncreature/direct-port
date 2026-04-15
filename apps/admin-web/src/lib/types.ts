@@ -190,6 +190,11 @@ export interface TokenStats {
   recentDocuments: TokenStatsDocument[];
 }
 
+export interface DailyTokenStats {
+  date: string;
+  models: TokenUsageMap;
+}
+
 export interface CalculationLogSummary {
   grandTotal: number;
   totalDuty: number;

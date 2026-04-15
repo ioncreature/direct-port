@@ -111,6 +111,12 @@ export class DocumentsController {
     return this.service.getMonthlyTotal();
   }
 
+  @Get('token-stats/daily')
+  @Roles(UserRole.ADMIN)
+  getTokenStatsByDay(@Query('days') days?: string, @Query('model') model?: string) {
+    return this.service.getTokenStatsByDay(Math.min(Number(days) || 30, 90), model || undefined);
+  }
+
   @Patch(':id/review')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   review(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReviewDocumentDto) {

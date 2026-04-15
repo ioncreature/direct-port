@@ -5,6 +5,7 @@ import { Queue } from 'bullmq';
 import { FindOptionsWhere, Repository } from 'typeorm';
 import { ErrorCode } from '../common/error-codes';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
+import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
 import { CreateDocumentDto } from './dto/create-document.dto';
@@ -19,6 +20,7 @@ export class DocumentsService {
   constructor(
     @InjectRepository(Document) private repo: Repository<Document>,
     @InjectRepository(TelegramUser) private tgUserRepo: Repository<TelegramUser>,
+    @InjectRepository(AiUsageLog) private aiUsageLogRepo: Repository<AiUsageLog>,
     @InjectQueue('document-parsing') private parsingQueue: Queue,
     @InjectQueue('document-processing') private processingQueue: Queue,
   ) {}
@@ -262,6 +264,83 @@ export class DocumentsService {
       this.tokenDocCount(startOfMonth),
     ]);
     return { models: this.toModelsMap(modelsRows), documentCount: Number(countRow?.count) || 0 };
+  }
+
+  async getTokenStatsByDay(days: number, model?: string) {
+    const since = new Date();
+    since.setDate(since.getDate() - days + 1);
+    since.setHours(0, 0, 0, 0);
+
+    let docQuery = `SELECT DATE(doc.created_at AT TIME ZONE 'UTC') AS "date", model.key AS "model",
+         COALESCE(SUM((model.value->>'inputTokens')::int), 0) AS "inputTokens",
+         COALESCE(SUM((model.value->>'outputTokens')::int), 0) AS "outputTokens",
+         COALESCE(SUM((model.value->>'cacheCreationTokens')::int), 0) AS "cacheCreationTokens",
+         COALESCE(SUM((model.value->>'cacheReadTokens')::int), 0) AS "cacheReadTokens"
+       FROM documents doc,
+         jsonb_each(doc.token_usage) stage,
+         jsonb_each(stage.value) model
+       WHERE doc.created_at >= $1`;
+    const docParams: unknown[] = [since];
+    if (model) {
+      docParams.push(model);
+      docQuery += ` AND model.key = $2`;
+    }
+    docQuery += ` GROUP BY "date", model.key ORDER BY "date"`;
+
+    let logQuery = `SELECT DATE(created_at AT TIME ZONE 'UTC') AS "date", model AS "model",
+         COALESCE(SUM(input_tokens), 0) AS "inputTokens",
+         COALESCE(SUM(output_tokens), 0) AS "outputTokens",
+         COALESCE(SUM(cache_creation_tokens), 0) AS "cacheCreationTokens",
+         COALESCE(SUM(cache_read_tokens), 0) AS "cacheReadTokens"
+       FROM ai_usage_log
+       WHERE created_at >= $1`;
+    const logParams: unknown[] = [since];
+    if (model) {
+      logParams.push(model);
+      logQuery += ` AND model = $2`;
+    }
+    logQuery += ` GROUP BY "date", model ORDER BY "date"`;
+
+    const [docRows, logRows] = await Promise.all([
+      this.repo.manager.query(docQuery, docParams),
+      this.aiUsageLogRepo.manager.query(logQuery, logParams),
+    ]);
+
+    const dayMap = new Map<string, Record<string, { inputTokens: number; outputTokens: number; cacheCreationTokens: number; cacheReadTokens: number }>>();
+
+    for (const row of [...docRows, ...logRows]) {
+      const dateStr = typeof row.date === 'string' ? row.date.slice(0, 10) : (row.date as Date).toISOString().slice(0, 10);
+      let models = dayMap.get(dateStr);
+      if (!models) {
+        models = {};
+        dayMap.set(dateStr, models);
+      }
+      const existing = models[row.model];
+      if (existing) {
+        existing.inputTokens += Number(row.inputTokens) || 0;
+        existing.outputTokens += Number(row.outputTokens) || 0;
+        existing.cacheCreationTokens += Number(row.cacheCreationTokens) || 0;
+        existing.cacheReadTokens += Number(row.cacheReadTokens) || 0;
+      } else {
+        models[row.model] = {
+          inputTokens: Number(row.inputTokens) || 0,
+          outputTokens: Number(row.outputTokens) || 0,
+          cacheCreationTokens: Number(row.cacheCreationTokens) || 0,
+          cacheReadTokens: Number(row.cacheReadTokens) || 0,
+        };
+      }
+    }
+
+    // Fill missing days using UTC dates to match SQL
+    const result: Array<{ date: string; models: Record<string, { inputTokens: number; outputTokens: number; cacheCreationTokens: number; cacheReadTokens: number }> }> = [];
+    const cursorMs = Date.UTC(since.getFullYear(), since.getMonth(), since.getDate());
+    const todayMs = Date.UTC(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+    for (let ms = cursorMs; ms <= todayMs; ms += 86_400_000) {
+      const dateStr = new Date(ms).toISOString().slice(0, 10);
+      result.push({ date: dateStr, models: dayMap.get(dateStr) ?? {} });
+    }
+
+    return result;
   }
 
   async getStatusCounts(): Promise<Record<string, number>> {

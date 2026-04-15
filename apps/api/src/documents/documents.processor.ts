@@ -81,15 +81,14 @@ export class DocumentsProcessor extends WorkerHost {
       const t0 = Date.now();
       const classifyResult = await this.classifier.classify(rows, language);
       const classified = classifyResult.products;
+      doc.tokenUsage = addStageUsage(doc.tokenUsage ?? {}, 'classifier', classifyResult.tokenUsage);
       this.logger.log(`Document ${documentId}: classification done in ${Date.now() - t0}ms`);
 
       const t1 = Date.now();
       const interpretResult = await this.dutyInterpreter.interpret(classified, language);
       const interpreted = interpretResult.products;
-      this.logger.log(`Document ${documentId}: interpretation done in ${Date.now() - t1}ms`);
-
-      doc.tokenUsage = addStageUsage(doc.tokenUsage ?? {}, 'classifier', classifyResult.tokenUsage);
       doc.tokenUsage = addStageUsage(doc.tokenUsage, 'interpreter', interpretResult.tokenUsage);
+      this.logger.log(`Document ${documentId}: interpretation done in ${Date.now() - t1}ms`);
 
       // EUR→doc rate for specific duty amounts (EUR/kg, EUR/m2, etc.)
       const currency = doc.currency || 'USD';

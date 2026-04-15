@@ -1,6 +1,7 @@
 import { config } from 'dotenv';
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
+import { AiUsageLog } from './entities/ai-usage-log.entity';
 import { CalculationConfig } from './entities/calculation-config.entity';
 import { CalculationLog } from './entities/calculation-log.entity';
 import { Document } from './entities/document.entity';
@@ -24,6 +25,7 @@ export default new DataSource({
     Document,
     CalculationConfig,
     TksCache,
+    AiUsageLog,
   ],
   migrations: ['src/database/migrations/*{.ts,.js}'],
 });

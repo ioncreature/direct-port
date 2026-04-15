@@ -5,6 +5,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { extractClaudeText } from '../common/claude';
 import { normalizeImpediUnit } from '../common/normalize-impedi';
+import { normalizeModelId } from '../common/token-usage';
+import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
 import { TnVedCode } from '../database/entities/tn-ved-code.entity';
 
 export interface TnVedRateInfo {
@@ -49,6 +51,7 @@ export class TnVedService {
 
   constructor(
     @InjectRepository(TnVedCode) private tnVedRepo: Repository<TnVedCode>,
+    @InjectRepository(AiUsageLog) private aiUsageLogRepo: Repository<AiUsageLog>,
     private tksApi: TksApiClient,
     @Optional() @Inject(Anthropic) private anthropic: Anthropic | null,
   ) {}
@@ -156,10 +159,11 @@ export class TnVedService {
     if (!this.anthropic) return query;
     if (this.isCyrillic(query)) return query;
 
+    const model = 'claude-haiku-4-5';
     try {
       const response = await this.anthropic.messages.create(
         {
-          model: 'claude-haiku-4-5',
+          model,
           max_tokens: 100,
           messages: [
             {
@@ -170,6 +174,17 @@ export class TnVedService {
         },
         { timeout: 10_000 },
       );
+
+      this.aiUsageLogRepo
+        .save({
+          model: normalizeModelId(model),
+          purpose: 'translate',
+          inputTokens: response.usage.input_tokens,
+          outputTokens: response.usage.output_tokens,
+          cacheCreationTokens: response.usage.cache_creation_input_tokens ?? 0,
+          cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
+        })
+        .catch((err) => this.logger.warn('Failed to log translate token usage', err));
 
       return extractClaudeText(response).trim() || query;
     } catch (err) {

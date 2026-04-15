@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AiConfig } from './entities/ai-config.entity';
+import { AiUsageLog } from './entities/ai-usage-log.entity';
 import { CalculationConfig } from './entities/calculation-config.entity';
 import { CalculationLog } from './entities/calculation-log.entity';
 import { Document } from './entities/document.entity';
@@ -26,6 +27,7 @@ import { AddTksCache1776500000000 } from './migrations/1776500000000-AddTksCache
 import { AddProcessedWithErrorsStatus1776600000000 } from './migrations/1776600000000-AddProcessedWithErrorsStatus';
 import { AddExchangeRates1776700000000 } from './migrations/1776700000000-AddExchangeRates';
 import { AddSendResultFile1776800000000 } from './migrations/1776800000000-AddSendResultFile';
+import { AddAiUsageLog1776900000000 } from './migrations/1776900000000-AddAiUsageLog';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -45,6 +47,7 @@ import { SeedService } from './seeds/seed.service';
           CalculationConfig,
           AiConfig,
           TksCache,
+          AiUsageLog,
         ],
         synchronize: false,
         migrations: [
@@ -64,6 +67,7 @@ import { SeedService } from './seeds/seed.service';
           AddProcessedWithErrorsStatus1776600000000,
           AddExchangeRates1776700000000,
           AddSendResultFile1776800000000,
+          AddAiUsageLog1776900000000,
         ],
         migrationsRun: true,
       }),

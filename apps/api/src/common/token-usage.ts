@@ -13,13 +13,18 @@ export function emptyTokenUsageMap(): TokenUsageMap {
   return {};
 }
 
+/** Strip date suffix from model ID (e.g. 'claude-haiku-4-5-20251001' → 'claude-haiku-4-5') */
+export function normalizeModelId(model: string): string {
+  return model.replace(/-\d{8}$/, '');
+}
+
 /** Create a single-model entry from an Anthropic API response */
 export function tokenUsageFromResponse(
   model: string,
   usage: { input_tokens: number; output_tokens: number; cache_creation_input_tokens?: number | null; cache_read_input_tokens?: number | null },
 ): TokenUsageMap {
   return {
-    [model]: {
+    [normalizeModelId(model)]: {
       inputTokens: usage.input_tokens,
       outputTokens: usage.output_tokens,
       cacheCreationTokens: usage.cache_creation_input_tokens ?? 0,
