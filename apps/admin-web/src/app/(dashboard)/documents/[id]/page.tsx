@@ -6,7 +6,7 @@ import { downloadDocument, statusColors, statusLabels } from '@/lib/documents';
 import { calcAiCostFromMap, calcAiCostFromStages, fmt, fmtCost, fmtTokens, modelLabel, stageLabel } from '@/lib/format';
 import { btnOutline } from '@/lib/table-styles';
 import { getDocumentUploaderName } from '@/lib/telegram';
-import type { CalculationStatus, DocumentResultRow, ParsedDataRow, ProductNoteSeverity } from '@/lib/types';
+import type { CalculationStatus, DocumentResultRow, DocumentStatus, ParsedDataRow, ProductNoteSeverity } from '@/lib/types';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
@@ -30,6 +30,95 @@ const DISPLAY_CURRENCIES = ['RUB', 'USD', 'EUR', 'CNY', 'INR'] as const;
 const CURRENCY_SYMBOLS: Record<string, string> = {
   RUB: '₽', USD: '$', EUR: '€', CNY: '¥', INR: '₹',
 };
+
+const SM_W = 124, SM_HW = 62, SM_H = 30, SM_HH = 15, SM_R = 6;
+
+const smNodes: { id: DocumentStatus; label: string; cx: number; cy: number }[] = [
+  { id: 'parsing', label: 'Распознавание', cx: 85, cy: 55 },
+  { id: 'pending', label: 'Ожидает', cx: 245, cy: 55 },
+  { id: 'processing', label: 'Обработка', cx: 405, cy: 55 },
+  { id: 'processed', label: 'Обработан', cx: 580, cy: 55 },
+  { id: 'requires_review', label: 'На проверку', cx: 85, cy: 140 },
+  { id: 'failed', label: 'Ошибка', cx: 355, cy: 140 },
+  { id: 'processed_with_errors', label: 'С ошибками', cx: 540, cy: 140 },
+  { id: 'rejected', label: 'Отклонён', cx: 85, cy: 210 },
+];
+
+type SmEdgeType = 'main' | 'branch' | 'return';
+const smEdges: { d: string; type: SmEdgeType }[] = [
+  { d: 'M147,55 L183,55', type: 'main' },
+  { d: 'M307,55 L343,55', type: 'main' },
+  { d: 'M467,55 L518,55', type: 'main' },
+  { d: 'M85,70 L85,125', type: 'branch' },
+  { d: 'M395,70 L365,125', type: 'branch' },
+  { d: 'M415,70 L540,125', type: 'branch' },
+  { d: 'M85,155 L85,195', type: 'branch' },
+  { d: 'M147,140 Q200,100 245,70', type: 'return' },
+  { d: 'M355,125 C355,15 85,15 85,40', type: 'return' },
+  { d: 'M540,125 C540,10 245,10 245,40', type: 'return' },
+];
+
+function DocumentStateMachine({ status }: { status: DocumentStatus }) {
+  return (
+    <div style={{ marginBottom: 24, border: '1px solid #e5e7eb', borderRadius: 8, padding: '16px 12px 12px', background: '#fafafa', overflowX: 'auto' }}>
+      <svg viewBox="0 0 660 225" style={{ width: '100%', minWidth: 500, display: 'block' }}>
+        <defs>
+          <marker id="sm-arr" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="7" markerHeight="5" orient="auto-start-reverse">
+            <path d="M0,0.5 L9,3.5 L0,6.5" fill="#aaa" />
+          </marker>
+        </defs>
+
+        {smEdges.map((e, i) => (
+          <path
+            key={i}
+            d={e.d}
+            fill="none"
+            stroke="#aaa"
+            strokeWidth={e.type === 'main' ? 1.5 : 1}
+            strokeDasharray={e.type === 'return' ? '4 3' : undefined}
+            markerEnd="url(#sm-arr)"
+          />
+        ))}
+
+        <text x={200} y={96} textAnchor="middle" fontSize={9} fill="#999" fontFamily="system-ui, sans-serif">утвердить</text>
+        <text x={300} y={12} textAnchor="middle" fontSize={9} fill="#999" fontFamily="system-ui, sans-serif">переобработка</text>
+
+        {smNodes.map((n) => {
+          const active = n.id === status;
+          const color = statusColors[n.id];
+          return (
+            <g key={n.id}>
+              {active && (
+                <rect
+                  x={n.cx - SM_HW - 3} y={n.cy - SM_HH - 3}
+                  width={SM_W + 6} height={SM_H + 6}
+                  rx={SM_R + 2} fill={color} opacity={0.15}
+                />
+              )}
+              <rect
+                x={n.cx - SM_HW} y={n.cy - SM_HH}
+                width={SM_W} height={SM_H} rx={SM_R}
+                fill={active ? color : '#fff'}
+                stroke={active ? color : '#d1d5db'}
+                strokeWidth={active ? 2 : 1}
+              />
+              <text
+                x={n.cx} y={n.cy + 1}
+                textAnchor="middle" dominantBaseline="central"
+                fill={active ? '#fff' : '#6b7280'}
+                fontSize={11}
+                fontWeight={active ? 600 : 400}
+                fontFamily="system-ui, sans-serif"
+              >
+                {n.label}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
 
 function resolveStatus(row: DocumentResultRow): CalculationStatus {
   if (row.calculationStatus) return row.calculationStatus;
@@ -250,6 +339,8 @@ export default function DocumentDetailPage() {
           )}
         </div>
       </div>
+
+      <DocumentStateMachine status={doc.status} />
 
       {/* Reject form */}
       {showRejectForm && (
