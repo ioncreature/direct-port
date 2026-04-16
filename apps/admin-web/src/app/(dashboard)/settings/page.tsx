@@ -1,6 +1,6 @@
 'use client';
 
-import { type AiModelTier, useAiConfig } from '@/hooks/use-ai-config';
+import { AI_MODEL_TIERS, type AiConfig, type AiModelTier, useAiConfig } from '@/hooks/use-ai-config';
 import { useCalculationConfig } from '@/hooks/use-calculation-config';
 import { useEffect, useState } from 'react';
 import { AI_STEPS, type AiStepInfo } from './ai-steps';
@@ -146,13 +146,14 @@ function CommissionSection({ config, loading, saving, error, save }: CalcConfigP
 function AiModelsSection() {
   const { config, loading, saving, error, save } = useAiConfig();
 
-  const [models, setModels] = useState<Record<string, AiModelTier>>({});
+  const [models, setModels] = useState<Partial<Pick<AiConfig, AiStepInfo['key']>>>({});
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
     if (config) {
       setModels({
         parserModel: config.parserModel,
+        queryFormulationModel: config.queryFormulationModel,
         classifierModel: config.classifierModel,
         interpreterModel: config.interpreterModel,
       });
@@ -163,13 +164,14 @@ function AiModelsSection() {
 
   const handleSave = async () => {
     setSuccess(false);
-    await save(models as Record<'parserModel' | 'classifierModel' | 'interpreterModel', AiModelTier>);
+    await save(models);
     setSuccess(true);
     setTimeout(() => setSuccess(false), 3000);
   };
 
   const hasChanges = config && (
     models.parserModel !== config.parserModel ||
+    models.queryFormulationModel !== config.queryFormulationModel ||
     models.classifierModel !== config.classifierModel ||
     models.interpreterModel !== config.interpreterModel
   );
@@ -178,13 +180,13 @@ function AiModelsSection() {
     <div style={{ maxWidth: 700, padding: 24, border: '1px solid #ddd', borderRadius: 8 }}>
       <h3 style={{ marginBottom: 8 }}>Модели AI</h3>
       <p style={{ fontSize: 14, color: '#555', marginBottom: 12, lineHeight: 1.6 }}>
-        Обработка каждого документа проходит через три этапа. На каждом этапе работает ИИ (Claude),
+        Обработка каждого документа проходит через четыре этапа. На каждом этапе работает ИИ (Claude),
         и вы можете выбрать уровень модели — от базовой до максимальной.
       </p>
       <p style={{ fontSize: 13, color: '#777', marginBottom: 24, lineHeight: 1.5 }}>
-        <strong>Opus</strong> — самая мощная и дорогая модель, лучшее качество.{' '}
-        <strong>Sonnet</strong> — основная рабочая модель, хороший баланс.{' '}
-        <strong>Haiku</strong> — самая быстрая и дешёвая, подходит для простых задач.
+        <strong>Opus 4.7</strong> — самая мощная и дорогая модель, лучшее качество.{' '}
+        <strong>Sonnet 4.6</strong> — основная рабочая модель, хороший баланс.{' '}
+        <strong>Haiku 4.5</strong> — самая быстрая и дешёвая, подходит для простых задач.
         Проценты точности — ориентировочные, реальные результаты зависят от ваших документов.
       </p>
 
@@ -192,7 +194,7 @@ function AiModelsSection() {
         <AiStepCard
           key={step.key}
           step={step}
-          value={(models[step.key] as AiModelTier) ?? 'sonnet'}
+          value={models[step.key] ?? step.recommended}
           onChange={(tier) => setModels((prev) => ({ ...prev, [step.key]: tier }))}
         />
       ))}
@@ -228,7 +230,7 @@ function AiStepCard({
       <div style={{ fontSize: 13, color: '#555', marginBottom: 16, lineHeight: 1.5 }}>{step.description}</div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {(['opus', 'sonnet', 'haiku'] as AiModelTier[]).map((tier) => {
+        {AI_MODEL_TIERS.map((tier) => {
           const info = step.tiers[tier];
           const isSelected = value === tier;
           const isRecommended = step.recommended === tier;

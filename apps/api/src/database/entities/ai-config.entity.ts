@@ -13,6 +13,9 @@ export class AiConfig {
   @Column({ type: 'varchar', length: 10, name: 'parser_model', default: 'sonnet' })
   parserModel: AiModelTier;
 
+  @Column({ type: 'varchar', length: 10, name: 'query_formulation_model', default: 'haiku' })
+  queryFormulationModel: AiModelTier;
+
   @Column({ type: 'varchar', length: 10, name: 'classifier_model', default: 'sonnet' })
   classifierModel: AiModelTier;
 

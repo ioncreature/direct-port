@@ -3,11 +3,13 @@
 import api from '@/lib/api';
 import { useCallback, useEffect, useState } from 'react';
 
-export type AiModelTier = 'opus' | 'sonnet' | 'haiku';
+export const AI_MODEL_TIERS = ['opus', 'sonnet', 'haiku'] as const;
+export type AiModelTier = (typeof AI_MODEL_TIERS)[number];
 
 export interface AiConfig {
   id: number;
   parserModel: AiModelTier;
+  queryFormulationModel: AiModelTier;
   classifierModel: AiModelTier;
   interpreterModel: AiModelTier;
   updatedAt: string;
@@ -33,7 +35,7 @@ export function useAiConfig() {
   }, []);
 
   const save = useCallback(
-    async (values: Partial<Pick<AiConfig, 'parserModel' | 'classifierModel' | 'interpreterModel'>>) => {
+    async (values: Partial<Pick<AiConfig, 'parserModel' | 'queryFormulationModel' | 'classifierModel' | 'interpreterModel'>>) => {
       setSaving(true);
       setError(null);
       try {

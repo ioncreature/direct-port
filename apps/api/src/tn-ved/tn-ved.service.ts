@@ -159,7 +159,7 @@ export class TnVedService {
     if (!this.anthropic) return query;
     if (this.isCyrillic(query)) return query;
 
-    const model = 'claude-haiku-4-5';
+    const model = 'claude-sonnet-4-6';
     try {
       const response = await this.anthropic.messages.create(
         {

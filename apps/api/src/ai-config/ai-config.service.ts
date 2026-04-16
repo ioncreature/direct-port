@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { AiConfig, type AiModelTier } from '../database/entities/ai-config.entity';
 
 const MODEL_IDS: Record<AiModelTier, string> = {
-  opus: 'claude-opus-4-6',
+  opus: 'claude-opus-4-7',
   sonnet: 'claude-sonnet-4-6',
   haiku: 'claude-haiku-4-5-20251001',
 };
@@ -36,6 +36,7 @@ export class AiConfigService {
     const created = await this.repo.save(
       this.repo.create({
         parserModel: 'sonnet',
+        queryFormulationModel: 'haiku',
         classifierModel: 'sonnet',
         interpreterModel: 'sonnet',
       }),
@@ -47,18 +48,20 @@ export class AiConfigService {
 
   async update(dto: {
     parserModel?: AiModelTier;
+    queryFormulationModel?: AiModelTier;
     classifierModel?: AiModelTier;
     interpreterModel?: AiModelTier;
   }): Promise<AiConfig> {
     const config = await this.get();
     if (dto.parserModel !== undefined) config.parserModel = dto.parserModel;
+    if (dto.queryFormulationModel !== undefined) config.queryFormulationModel = dto.queryFormulationModel;
     if (dto.classifierModel !== undefined) config.classifierModel = dto.classifierModel;
     if (dto.interpreterModel !== undefined) config.interpreterModel = dto.interpreterModel;
     const saved = await this.repo.save(config);
     this.cached = saved;
     this.cachedAt = Date.now();
     this.logger.log(
-      `AI config updated: parser=${saved.parserModel}, classifier=${saved.classifierModel}, interpreter=${saved.interpreterModel}`,
+      `AI config updated: parser=${saved.parserModel}, queryFormulation=${saved.queryFormulationModel}, classifier=${saved.classifierModel}, interpreter=${saved.interpreterModel}`,
     );
     return saved;
   }
@@ -67,6 +70,12 @@ export class AiConfigService {
   async getParserModel(): Promise<string> {
     const config = await this.get();
     return MODEL_IDS[config.parserModel] ?? MODEL_IDS.sonnet;
+  }
+
+  /** Возвращает model ID для формулировки поисковых запросов в TKS. */
+  async getQueryFormulationModel(): Promise<string> {
+    const config = await this.get();
+    return MODEL_IDS[config.queryFormulationModel] ?? MODEL_IDS.haiku;
   }
 
   /** Возвращает model ID для классификатора. */

@@ -6,6 +6,7 @@ export function fmt(n: number): string {
 
 /** Per-model config: pricing ($/1M tokens) + display label */
 export const MODEL_CONFIG: Record<string, { label: string; input: number; output: number }> = {
+  'claude-opus-4-7': { label: 'Opus', input: 5, output: 25 },
   'claude-sonnet-4-6': { label: 'Sonnet', input: 3, output: 15 },
   'claude-haiku-4-5': { label: 'Haiku', input: 1, output: 5 },
 };

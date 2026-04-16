@@ -91,6 +91,7 @@ function createService(opts: {
 
   const aiConfig = {
     getClassifierModel: jest.fn().mockResolvedValue('claude-sonnet-4-20250514'),
+    getQueryFormulationModel: jest.fn().mockResolvedValue('claude-haiku-4-5-20251001'),
   };
 
   const service = new ClassifierService(tksApi as any, anthropic as any, aiConfig as any);

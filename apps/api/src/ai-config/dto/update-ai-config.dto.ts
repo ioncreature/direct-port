@@ -1,17 +1,22 @@
 import { IsIn, IsOptional } from 'class-validator';
+import type { AiModelTier } from '../../database/entities/ai-config.entity';
 
 const TIERS = ['opus', 'sonnet', 'haiku'] as const;
 
 export class UpdateAiConfigDto {
   @IsOptional()
   @IsIn(TIERS)
-  parserModel?: 'opus' | 'sonnet' | 'haiku';
+  parserModel?: AiModelTier;
 
   @IsOptional()
   @IsIn(TIERS)
-  classifierModel?: 'opus' | 'sonnet' | 'haiku';
+  queryFormulationModel?: AiModelTier;
 
   @IsOptional()
   @IsIn(TIERS)
-  interpreterModel?: 'opus' | 'sonnet' | 'haiku';
+  classifierModel?: AiModelTier;
+
+  @IsOptional()
+  @IsIn(TIERS)
+  interpreterModel?: AiModelTier;
 }

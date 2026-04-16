@@ -83,7 +83,6 @@ interface ClassifyItem {
   hsCodeValid?: boolean;
 }
 
-const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
 const SEARCH_CONCURRENCY = 5;
 const CLAUDE_BATCH_SIZE = 20;
 const CLAUDE_CONCURRENCY = 2;
@@ -376,10 +375,12 @@ export class ClassifierService {
       ...(p.rawContext ? { context: p.rawContext } : {}),
     }));
 
+    const model = await this.aiConfig.getQueryFormulationModel();
+
     try {
       const response = await this.anthropic.messages.create(
         {
-          model: HAIKU_MODEL,
+          model,
           max_tokens: 16384,
           system: systemPrompt(QUERY_FORMULATION_SYSTEM),
           messages: [{ role: 'user', content: JSON.stringify(items) }],
@@ -396,9 +397,9 @@ export class ClassifierService {
       const queries = products.map((p, i) => queryMap.get(i) ?? [p.description]);
 
       this.logger.log(
-        `Formulated ${queryMap.size}×${QUERIES_PER_PRODUCT} search queries via Haiku`,
+        `Formulated ${queryMap.size}×${QUERIES_PER_PRODUCT} search queries via ${model}`,
       );
-      return { queries, tokenUsage: tokenUsageFromResponse(HAIKU_MODEL, response.usage) };
+      return { queries, tokenUsage: tokenUsageFromResponse(model, response.usage) };
     } catch (err) {
       this.logger.warn(`Query formulation failed, using raw descriptions: ${errMsg(err)}`);
       return { queries: products.map((p) => [p.description]), tokenUsage: emptyTokenUsageMap() };
