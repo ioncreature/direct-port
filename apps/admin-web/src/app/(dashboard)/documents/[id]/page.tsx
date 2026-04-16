@@ -62,7 +62,7 @@ const smEdges: { d: string; type: SmEdgeType }[] = [
 function DocumentStateMachine({ status }: { status: DocumentStatus }) {
   return (
     <div style={{ marginBottom: 24, border: '1px solid #e5e7eb', borderRadius: 8, padding: '16px 12px 12px', background: '#fafafa', overflowX: 'auto' }}>
-      <svg viewBox="0 0 660 225" style={{ width: '100%', minWidth: 500, display: 'block' }}>
+      <svg viewBox="0 0 660 225" width={660} height={225} style={{ display: 'block', maxWidth: '100%' }}>
         <defs>
           <marker id="sm-arr" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="7" markerHeight="5" orient="auto-start-reverse">
             <path d="M0,0.5 L9,3.5 L0,6.5" fill="#aaa" />
