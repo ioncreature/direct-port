@@ -28,6 +28,8 @@ import { AddProcessedWithErrorsStatus1776600000000 } from './migrations/17766000
 import { AddExchangeRates1776700000000 } from './migrations/1776700000000-AddExchangeRates';
 import { AddSendResultFile1776800000000 } from './migrations/1776800000000-AddSendResultFile';
 import { AddAiUsageLog1776900000000 } from './migrations/1776900000000-AddAiUsageLog';
+import { AddQueryFormulationModel1777000000000 } from './migrations/1777000000000-AddQueryFormulationModel';
+import { AddCodeReviewRequiredStatus1777100000000 } from './migrations/1777100000000-AddCodeReviewRequiredStatus';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -68,6 +70,8 @@ import { SeedService } from './seeds/seed.service';
           AddExchangeRates1776700000000,
           AddSendResultFile1776800000000,
           AddAiUsageLog1776900000000,
+          AddQueryFormulationModel1777000000000,
+          AddCodeReviewRequiredStatus1777100000000,
         ],
         migrationsRun: true,
       }),
