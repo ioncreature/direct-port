@@ -1,7 +1,7 @@
-import { IsString, MinLength } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 export class RejectDocumentDto {
+  @IsOptional()
   @IsString()
-  @MinLength(1)
-  reason: string;
+  reason?: string;
 }

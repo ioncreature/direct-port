@@ -85,6 +85,11 @@ notif-processed-with-errors =
 
     无法发送文件。
     请联系操作员或上传修正后的文件。
+notif-code-review-required =
+    🔎 您的文档已转交操作员审核。
+
+    部分商品编码（ТН ВЭД）的匹配置信度较低。
+    审核完成后您将收到结果或拒绝通知。
 
 # /language
 language-prompt = 请选择语言：
@@ -98,6 +103,7 @@ status-processed = 已处理
 status-processed_with_errors = 处理有错误
 status-failed = 错误
 status-requires_review = 需要审核
+status-code_review_required = 需要审核编码
 status-rejected = 已拒绝
 
 # API 错误代码

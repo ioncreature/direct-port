@@ -326,17 +326,17 @@ describe('CalculatorService', () => {
   });
 
   describe('VerificationStatus', () => {
-    it('exact при matched=true и confidence >= 0.7', () => {
+    it('exact при matched=true и confidence >= дефолтного порога 0.8', () => {
       const result = service.calculate(
-        [makeProduct({ matched: true, matchConfidence: 0.7 })],
+        [makeProduct({ matched: true, matchConfidence: 0.8 })],
         ZERO_COMMISSION,
       );
       expect(result.items[0].verificationStatus).toBe('exact');
     });
 
-    it('review при confidence < 0.7', () => {
+    it('review при confidence < дефолтного порога 0.8', () => {
       const result = service.calculate(
-        [makeProduct({ matched: true, matchConfidence: 0.69 })],
+        [makeProduct({ matched: true, matchConfidence: 0.79 })],
         ZERO_COMMISSION,
       );
       expect(result.items[0].verificationStatus).toBe('review');
@@ -344,8 +344,26 @@ describe('CalculatorService', () => {
 
     it('review при matched=false', () => {
       const result = service.calculate(
-        [makeProduct({ matched: false, matchConfidence: 0.9 })],
+        [makeProduct({ matched: false, matchConfidence: 0.95 })],
         ZERO_COMMISSION,
+      );
+      expect(result.items[0].verificationStatus).toBe('review');
+    });
+
+    it('использует переданный порог вместо дефолтного', () => {
+      const result = service.calculate(
+        [makeProduct({ matched: true, matchConfidence: 0.75 })],
+        ZERO_COMMISSION,
+        { confidenceThreshold: 0.7 },
+      );
+      expect(result.items[0].verificationStatus).toBe('exact');
+    });
+
+    it('review при confidence ниже переданного порога', () => {
+      const result = service.calculate(
+        [makeProduct({ matched: true, matchConfidence: 0.85 })],
+        ZERO_COMMISSION,
+        { confidenceThreshold: 0.9 },
       );
       expect(result.items[0].verificationStatus).toBe('review');
     });

@@ -12,6 +12,7 @@ import { CreateDocumentDto } from './dto/create-document.dto';
 import { FindDocumentsQueryDto } from './dto/find-documents-query.dto';
 import { RejectDocumentDto } from './dto/reject-document.dto';
 import { ReviewDocumentDto } from './dto/review-document.dto';
+import { buildDocumentNotificationPayload, type DocumentNotification } from './notification';
 
 @Injectable()
 export class DocumentsService {
@@ -23,6 +24,7 @@ export class DocumentsService {
     @InjectRepository(AiUsageLog) private aiUsageLogRepo: Repository<AiUsageLog>,
     @InjectQueue('document-parsing') private parsingQueue: Queue,
     @InjectQueue('document-processing') private processingQueue: Queue,
+    @InjectQueue('document-notifications') private notificationsQueue: Queue,
   ) {}
 
   async create(dto: CreateDocumentDto): Promise<Document> {
@@ -153,18 +155,72 @@ export class DocumentsService {
   }
 
   async reject(id: string, dto: RejectDocumentDto): Promise<Document> {
-    this.logger.log(`Rejecting document ${id}: ${dto.reason}`);
+    this.logger.log(`Rejecting document ${id}: ${dto.reason ?? '(no reason)'}`);
     const doc = await this.findOne(id);
-    if (doc.status !== DocumentStatus.REQUIRES_REVIEW) {
+
+    if (
+      doc.status !== DocumentStatus.REQUIRES_REVIEW &&
+      doc.status !== DocumentStatus.CODE_REVIEW_REQUIRED
+    ) {
       throw new BadRequestException({
         code: ErrorCode.INVALID_STATUS_FOR_REJECT,
-        message: 'Only requires_review documents can be rejected',
+        message: 'Only requires_review or code_review_required documents can be rejected',
       });
     }
 
-    doc.status = DocumentStatus.FAILED;
-    doc.errorMessage = dto.reason;
-    return this.repo.save(doc);
+    const operatorComment = dto.reason?.trim();
+    const autoReasons = doc.rejectionReasons ?? [];
+    const reasons = operatorComment
+      ? [`Комментарий оператора: ${operatorComment}`, ...autoReasons]
+      : autoReasons;
+
+    if (doc.status === DocumentStatus.REQUIRES_REVIEW) {
+      doc.status = DocumentStatus.FAILED;
+      doc.errorMessage = operatorComment ?? null;
+      if (reasons.length > 0) doc.rejectionReasons = reasons;
+      const saved = await this.repo.save(doc);
+      await this.enqueueNotification(saved, 'failed', {
+        errorMessage: operatorComment,
+      });
+      return saved;
+    }
+
+    doc.status = DocumentStatus.REJECTED;
+    doc.rejectionReasons = reasons;
+    const saved = await this.repo.save(doc);
+    await this.enqueueNotification(saved, 'rejected', { rejectionReasons: reasons });
+    return saved;
+  }
+
+  async approve(id: string): Promise<Document> {
+    this.logger.log(`Approving document ${id} as-is`);
+    const doc = await this.findOne(id);
+
+    if (doc.status !== DocumentStatus.CODE_REVIEW_REQUIRED) {
+      throw new BadRequestException({
+        code: ErrorCode.INVALID_STATUS_FOR_APPROVE,
+        message: 'Only code_review_required documents can be approved',
+      });
+    }
+
+    doc.status = DocumentStatus.PROCESSED;
+    doc.rejectionReasons = null;
+    const saved = await this.repo.save(doc);
+    await this.enqueueNotification(saved, 'processed');
+    return saved;
+  }
+
+  private async enqueueNotification(
+    doc: Document,
+    status: DocumentNotification['status'],
+    extra: { errorMessage?: string; rejectionReasons?: string[] } = {},
+  ): Promise<void> {
+    const payload = buildDocumentNotificationPayload(doc, status, extra);
+    if (!payload) return;
+
+    await this.notificationsQueue
+      .add('document-ready', payload)
+      .catch((err) => this.logger.warn(`Failed to enqueue notification for ${doc.id}`, err));
   }
 
   async getTokenStats(model?: string) {

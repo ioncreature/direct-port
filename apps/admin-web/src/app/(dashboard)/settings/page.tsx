@@ -12,6 +12,7 @@ export default function SettingsPage() {
     <div>
       <h1 style={{ marginBottom: 24 }}>Настройки</h1>
       <NotificationSection {...calcConfig} />
+      <ConfidenceSection {...calcConfig} />
       <CommissionSection {...calcConfig} />
       <AiModelsSection />
     </div>
@@ -68,6 +69,112 @@ function NotificationSection({ config, loading, saving, error, save }: CalcConfi
       {success && <p style={{ color: '#16a34a', marginBottom: 12 }}>Сохранено!</p>}
 
       <button onClick={handleSave} disabled={saving || !hasChanges} style={btnStyle(saving || !hasChanges)}>
+        {saving ? 'Сохранение...' : 'Сохранить'}
+      </button>
+    </div>
+  );
+}
+
+// --- Секция: Классификация ТН ВЭД ---
+
+function ConfidenceSection({ config, loading, saving, error, save }: CalcConfigProps) {
+  const [threshold, setThreshold] = useState('');
+  const [action, setAction] = useState<'review' | 'reject'>('review');
+  const [success, setSuccess] = useState(false);
+
+  useEffect(() => {
+    if (config) {
+      setThreshold(String(config.confidenceThreshold));
+      setAction(config.lowConfidenceAction);
+    }
+  }, [config]);
+
+  if (loading) return <p>Загрузка...</p>;
+
+  const thresholdNum = Number(threshold);
+  const thresholdValid = Number.isFinite(thresholdNum) && thresholdNum >= 0 && thresholdNum <= 1;
+  const hasChanges =
+    config &&
+    (thresholdNum !== config.confidenceThreshold || action !== config.lowConfidenceAction);
+
+  const handleSave = async () => {
+    if (!thresholdValid) return;
+    setSuccess(false);
+    await save({ confidenceThreshold: thresholdNum, lowConfidenceAction: action });
+    setSuccess(true);
+    setTimeout(() => setSuccess(false), 3000);
+  };
+
+  return (
+    <div style={{ maxWidth: 500, padding: 24, border: '1px solid #ddd', borderRadius: 8, marginBottom: 32 }}>
+      <h3 style={{ marginBottom: 8 }}>Классификация ТН ВЭД</h3>
+      <p style={{ fontSize: 14, color: '#666', marginBottom: 20, lineHeight: 1.5 }}>
+        Если ИИ подобрал код ТН ВЭД с уверенностью ниже порога — документ не будет обработан
+        автоматически.
+      </p>
+
+      <div style={{ marginBottom: 16 }}>
+        <label style={labelStyle}>Порог уверенности (0–1)</label>
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          max="1"
+          value={threshold}
+          onChange={(e) => setThreshold(e.target.value)}
+          style={inputStyle}
+        />
+        {!thresholdValid && threshold !== '' && (
+          <p style={{ fontSize: 12, color: '#dc2626', marginTop: 4 }}>
+            Значение должно быть от 0 до 1
+          </p>
+        )}
+      </div>
+
+      <div style={{ marginBottom: 20 }}>
+        <label style={labelStyle}>Действие при низкой уверенности</label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+            <input
+              type="radio"
+              name="low-confidence-action"
+              checked={action === 'review'}
+              onChange={() => setAction('review')}
+              style={{ marginTop: 3 }}
+            />
+            <div>
+              <div style={{ fontWeight: 500, fontSize: 14 }}>Отправить на проверку оператору</div>
+              <div style={{ fontSize: 13, color: '#666', marginTop: 2 }}>
+                Документ получит статус «Проверка кодов». Оператор примет его как есть или отклонит.
+              </div>
+            </div>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+            <input
+              type="radio"
+              name="low-confidence-action"
+              checked={action === 'reject'}
+              onChange={() => setAction('reject')}
+              style={{ marginTop: 3 }}
+            />
+            <div>
+              <div style={{ fontWeight: 500, fontSize: 14 }}>Сразу отклонять</div>
+              <div style={{ fontSize: 13, color: '#666', marginTop: 2 }}>
+                Пользователь получит сообщение с перечислением сомнительных строк.
+              </div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      {error && <p style={{ color: '#dc2626', marginBottom: 12 }}>{error}</p>}
+      {success && <p style={{ color: '#16a34a', marginBottom: 12 }}>Сохранено!</p>}
+
+      <button
+        onClick={handleSave}
+        disabled={saving || !hasChanges || !thresholdValid}
+        style={btnStyle(saving || !hasChanges || !thresholdValid)}
+      >
         {saving ? 'Сохранение...' : 'Сохранить'}
       </button>
     </div>

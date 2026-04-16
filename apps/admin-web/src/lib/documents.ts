@@ -10,6 +10,7 @@ export const statusLabels: Record<DocumentStatus, string> = {
   failed: 'Ошибка',
   rejected: 'Отклонён',
   requires_review: 'На проверку',
+  code_review_required: 'Проверка кодов',
 };
 
 export const statusColors: Record<DocumentStatus, string> = {
@@ -21,6 +22,7 @@ export const statusColors: Record<DocumentStatus, string> = {
   failed: '#dc2626',
   rejected: '#ea580c',
   requires_review: '#ca8a04',
+  code_review_required: '#ca8a04',
 };
 
 export async function downloadDocument(id: string) {

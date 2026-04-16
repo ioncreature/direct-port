@@ -1,4 +1,5 @@
-import { IsBoolean, IsNumber, IsOptional, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsNumber, IsOptional, Max, Min } from 'class-validator';
+import type { LowConfidenceAction } from '../../database/entities/calculation-config.entity';
 
 export class UpdateCalculationConfigDto {
   @IsOptional()
@@ -20,4 +21,14 @@ export class UpdateCalculationConfigDto {
   @IsOptional()
   @IsBoolean()
   sendResultFile?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  confidenceThreshold?: number;
+
+  @IsOptional()
+  @IsIn(['review', 'reject'])
+  lowConfidenceAction?: LowConfidenceAction;
 }

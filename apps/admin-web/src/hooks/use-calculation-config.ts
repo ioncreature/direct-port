@@ -9,6 +9,8 @@ export interface CalculationConfig {
   weightRate: number;
   fixedFee: number;
   sendResultFile: boolean;
+  confidenceThreshold: number;
+  lowConfidenceAction: 'review' | 'reject';
   updatedAt: string;
 }
 
@@ -33,7 +35,7 @@ export function useCalculationConfig() {
 
   const save = useCallback(
     async (
-      values: Partial<Pick<CalculationConfig, 'pricePercent' | 'weightRate' | 'fixedFee' | 'sendResultFile'>>,
+      values: Partial<Pick<CalculationConfig, 'pricePercent' | 'weightRate' | 'fixedFee' | 'sendResultFile' | 'confidenceThreshold' | 'lowConfidenceAction'>>,
     ) => {
       setSaving(true);
       setError(null);

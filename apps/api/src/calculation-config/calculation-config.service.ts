@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { CalculationConfig } from '../database/entities/calculation-config.entity';
+import { CalculationConfig, type LowConfidenceAction } from '../database/entities/calculation-config.entity';
 
 @Injectable()
 export class CalculationConfigService {
@@ -22,7 +22,13 @@ export class CalculationConfigService {
     }
 
     const created = await this.repo.save(
-      this.repo.create({ pricePercent: 5, weightRate: 0, fixedFee: 0 }),
+      this.repo.create({
+        pricePercent: 5,
+        weightRate: 0,
+        fixedFee: 0,
+        confidenceThreshold: 0.8,
+        lowConfidenceAction: 'review',
+      }),
     );
     this.cached = created;
     return created;
@@ -33,12 +39,18 @@ export class CalculationConfigService {
     weightRate?: number;
     fixedFee?: number;
     sendResultFile?: boolean;
+    confidenceThreshold?: number;
+    lowConfidenceAction?: LowConfidenceAction;
   }): Promise<CalculationConfig> {
     const config = await this.get();
     if (dto.pricePercent !== undefined) config.pricePercent = dto.pricePercent;
     if (dto.weightRate !== undefined) config.weightRate = dto.weightRate;
     if (dto.fixedFee !== undefined) config.fixedFee = dto.fixedFee;
     if (dto.sendResultFile !== undefined) config.sendResultFile = dto.sendResultFile;
+    if (dto.confidenceThreshold !== undefined)
+      config.confidenceThreshold = dto.confidenceThreshold;
+    if (dto.lowConfidenceAction !== undefined)
+      config.lowConfidenceAction = dto.lowConfidenceAction;
     const saved = await this.repo.save(config);
     this.cached = saved;
     return saved;

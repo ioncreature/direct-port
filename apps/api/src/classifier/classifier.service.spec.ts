@@ -160,7 +160,7 @@ describe('ClassifierService', () => {
   });
 
   describe('Notes (заметки классификатора)', () => {
-    it('добавляет warning при низкой уверенности (< 0.7)', async () => {
+    it('добавляет warning при низкой уверенности (ниже порога)', async () => {
       const { service } = createService({
         searchResults: { 'Сомнительный товар': makeSearchResult('1111111111', 'Что-то', 50) },
         tnvedCodes: { '1111111111': makeTnvedCode('1111111111') },
@@ -188,6 +188,35 @@ describe('ClassifierService', () => {
       );
       expect(infos).toHaveLength(1);
       expect(infos[0].message).toContain('Точное совпадение');
+    });
+
+    it('не добавляет warning при confidence выше переданного порога', async () => {
+      const { service } = createService({
+        searchResults: { 'Товар': makeSearchResult('7777777777', 'Товар') },
+        tnvedCodes: { '7777777777': makeTnvedCode('7777777777') },
+        claudeResponse: [makeClaudeSelection({ tnVedCode: '7777777777', confidence: 0.75, comment: 'ok' })],
+      });
+
+      const result = await service.classify([makeProduct('Товар')], undefined, 0.7);
+      const warnings = result.products[0].notes.filter(
+        (n) => n.severity === 'warning' && n.field === 'code',
+      );
+      expect(warnings).toHaveLength(0);
+    });
+
+    it('добавляет warning при confidence ниже переданного порога', async () => {
+      const { service } = createService({
+        searchResults: { 'Товар': makeSearchResult('8888888888', 'Товар') },
+        tnvedCodes: { '8888888888': makeTnvedCode('8888888888') },
+        claudeResponse: [makeClaudeSelection({ tnVedCode: '8888888888', confidence: 0.85, comment: 'средне' })],
+      });
+
+      const result = await service.classify([makeProduct('Товар')], undefined, 0.9);
+      const warnings = result.products[0].notes.filter(
+        (n) => n.severity === 'warning' && n.field === 'code',
+      );
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0].message).toContain('0.85');
     });
 
     it('добавляет warning при отсутствии Claude (TKS-only)', async () => {

@@ -85,6 +85,11 @@ notif-processed-with-errors =
 
     Файл не может быть отправлен.
     Обратитесь к оператору или загрузите исправленный файл.
+notif-code-review-required =
+    🔎 Документ передан оператору на проверку.
+
+    Коды ТН ВЭД по некоторым строкам подобраны с низкой уверенностью.
+    После проверки вы получите результат или сообщение об отклонении.
 
 # /language
 language-prompt = Выберите язык:
@@ -98,6 +103,7 @@ status-processed = Обработан
 status-processed_with_errors = Обработан с ошибками
 status-failed = Ошибка
 status-requires_review = Требует проверки
+status-code_review_required = Требует проверки кодов
 status-rejected = Отклонён
 
 # Коды ошибок API

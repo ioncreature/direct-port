@@ -42,6 +42,7 @@ const smNodes: { id: DocumentStatus; label: string; cx: number; cy: number }[] =
   { id: 'failed', label: 'Ошибка', cx: 355, cy: 140 },
   { id: 'processed_with_errors', label: 'С ошибками', cx: 540, cy: 140 },
   { id: 'rejected', label: 'Отклонён', cx: 85, cy: 210 },
+  { id: 'code_review_required', label: 'Проверка кодов', cx: 245, cy: 210 },
 ];
 
 type SmEdgeType = 'main' | 'branch' | 'return';
@@ -127,7 +128,7 @@ function resolveStatus(row: DocumentResultRow): CalculationStatus {
 
 export default function DocumentDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { document: doc, loading, error, reprocess, saveParsedData, reject } = useDocument(id);
+  const { document: doc, loading, error, reprocess, saveParsedData, reject, approve } = useDocument(id);
 
   const [reprocessing, setReprocessing] = useState(false);
   const [approving, setApproving] = useState(false);
@@ -150,6 +151,7 @@ export default function DocumentDetailPage() {
   }, []);
 
   const isReview = doc?.status === 'requires_review';
+  const isCodeReview = doc?.status === 'code_review_required';
   const docCurrency = doc?.currency || 'USD';
   const activeCurrency = displayCurrency || docCurrency;
 
@@ -236,14 +238,24 @@ export default function DocumentDetailPage() {
   };
 
   const handleReject = async () => {
-    if (!rejectReason.trim()) return;
+    const trimmed = rejectReason.trim();
+    if (isReview && !trimmed) return;
     setRejecting(true);
     try {
-      await reject(rejectReason.trim());
+      await reject(trimmed);
       setShowRejectForm(false);
       setRejectReason('');
     } finally {
       setRejecting(false);
+    }
+  };
+
+  const handleAcceptAsIs = async () => {
+    setApproving(true);
+    try {
+      await approve();
+    } finally {
+      setApproving(false);
     }
   };
 
@@ -268,36 +280,31 @@ export default function DocumentDetailPage() {
         <h1 style={{ margin: 0 }}>{doc.originalFileName}</h1>
         <div style={{ display: 'flex', gap: 8 }}>
           {isReview && (
-            <>
-              <button
-                onClick={handleApprove}
-                disabled={approving || editableRows.length === 0}
-                style={{
-                  padding: '8px 16px',
-                  background: '#16a34a',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 4,
-                  cursor: 'pointer',
-                }}
-              >
-                {approving ? 'Сохранение...' : 'Подтвердить и обработать'}
-              </button>
-              <button
-                onClick={() => setShowRejectForm(!showRejectForm)}
-                disabled={rejecting}
-                style={{
-                  padding: '8px 16px',
-                  background: '#fff',
-                  color: '#dc2626',
-                  border: '1px solid #dc2626',
-                  borderRadius: 4,
-                  cursor: 'pointer',
-                }}
-              >
-                Отклонить
-              </button>
-            </>
+            <button
+              onClick={handleApprove}
+              disabled={approving || editableRows.length === 0}
+              style={primaryBtnStyle}
+            >
+              {approving ? 'Сохранение...' : 'Подтвердить и обработать'}
+            </button>
+          )}
+          {isCodeReview && (
+            <button
+              onClick={handleAcceptAsIs}
+              disabled={approving}
+              style={primaryBtnStyle}
+            >
+              {approving ? 'Обработка...' : 'Принять как есть'}
+            </button>
+          )}
+          {(isReview || isCodeReview) && (
+            <button
+              onClick={() => setShowRejectForm(!showRejectForm)}
+              disabled={rejecting}
+              style={dangerOutlineBtnStyle}
+            >
+              Отклонить
+            </button>
           )}
           {(doc.status === 'failed' || doc.status === 'processed_with_errors') && (
             <button
@@ -361,7 +368,7 @@ export default function DocumentDetailPage() {
             type="text"
             value={rejectReason}
             onChange={(e) => setRejectReason(e.target.value)}
-            placeholder="Укажите причину отклонения"
+            placeholder={isCodeReview ? 'Комментарий (опционально)' : 'Укажите причину отклонения'}
             style={{
               flex: 1,
               padding: '6px 10px',
@@ -373,7 +380,7 @@ export default function DocumentDetailPage() {
           />
           <button
             onClick={handleReject}
-            disabled={rejecting || !rejectReason.trim()}
+            disabled={rejecting || (isReview && !rejectReason.trim())}
             style={{
               padding: '6px 14px',
               background: '#dc2626',
@@ -478,7 +485,9 @@ export default function DocumentDetailPage() {
             marginBottom: 24,
           }}
         >
-          <strong style={{ color: '#c2410c' }}>Причины отклонения:</strong>
+          <strong style={{ color: '#c2410c' }}>
+            {isCodeReview ? 'Строки с низкой уверенностью:' : 'Причины отклонения:'}
+          </strong>
           <ol style={{ margin: '8px 0 0', paddingLeft: 20, color: '#9a3412' }}>
             {doc.rejectionReasons.map((reason, i) => (
               <li key={i} style={{ marginBottom: 4, fontSize: 14 }}>{reason}</li>
@@ -982,6 +991,24 @@ function CalcLine({ label, value, note }: { label: string; value: string; note?:
     </div>
   );
 }
+
+const primaryBtnStyle: React.CSSProperties = {
+  padding: '8px 16px',
+  background: '#16a34a',
+  color: '#fff',
+  border: 'none',
+  borderRadius: 4,
+  cursor: 'pointer',
+};
+
+const dangerOutlineBtnStyle: React.CSSProperties = {
+  padding: '8px 16px',
+  background: '#fff',
+  color: '#dc2626',
+  border: '1px solid #dc2626',
+  borderRadius: 4,
+  cursor: 'pointer',
+};
 
 const th: React.CSSProperties = {
   textAlign: 'left',

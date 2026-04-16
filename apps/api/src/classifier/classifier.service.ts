@@ -8,6 +8,7 @@ import {
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
 import { extractToolInput, systemPrompt } from '../common/claude';
+import { DEFAULT_CONFIDENCE_THRESHOLD } from '../common/confidence';
 import { errMsg } from '../common/errors';
 import { normalizeImpediUnit } from '../common/normalize-impedi';
 import { getStaticNoteTranslation } from '../common/note-translations';
@@ -88,7 +89,6 @@ const CLAUDE_BATCH_SIZE = 20;
 const CLAUDE_CONCURRENCY = 2;
 const MAX_CANDIDATES = 5;
 const QUERIES_PER_PRODUCT = 5;
-const LOW_CONFIDENCE_THRESHOLD = 0.7;
 const CLASSIFICATION_CACHE_TTL = 86_400_000; // 24 hours
 const CLASSIFICATION_CACHE_MAX = 1000;
 
@@ -200,9 +200,10 @@ export class ClassifierService {
   async classify(
     products: ProductRow[],
     language?: string,
+    confidenceThreshold: number = DEFAULT_CONFIDENCE_THRESHOLD,
   ): Promise<{ products: ClassifiedProduct[]; tokenUsage: TokenUsageMap }> {
     this.logger.log(
-      `Classifying ${products.length} products${language ? `, language=${language}` : ''}`,
+      `Classifying ${products.length} products${language ? `, language=${language}` : ''}, threshold=${confidenceThreshold}`,
     );
     // Deduplication: classify unique descriptions+context only, map results back
     const dedupMap = new Map<string, number>();
@@ -313,6 +314,7 @@ export class ClassifierService {
       selections,
       tnvedByCode,
       language,
+      confidenceThreshold,
     );
     const matched = assembled.filter((p) => p.matched).length;
     this.logger.log(
@@ -578,7 +580,8 @@ export class ClassifierService {
     candidatesByProduct: TksCandidate[][],
     selections: (ClaudeSelection | null)[],
     tnvedByCode: Map<string, TnvedCode>,
-    language?: string,
+    language: string | undefined,
+    confidenceThreshold: number,
   ): ClassifiedProduct[] {
     return products.map((product, i) => {
       const sel = selections[i];
@@ -608,7 +611,7 @@ export class ClassifierService {
             'AI-классификация недоступна, код выбран только по справочнику TKS. Рекомендуется проверка.',
           messageLocalized: getStaticNoteTranslation('verification-disabled', language),
         });
-      } else if (confidence < LOW_CONFIDENCE_THRESHOLD) {
+      } else if (confidence < confidenceThreshold) {
         notes.push({
           stage: 'classify',
           severity: 'warning',

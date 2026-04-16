@@ -70,7 +70,8 @@ export function useDocument(id: string) {
   const reject = useCallback(
     async (reason: string) => {
       try {
-        await api.post(`/documents/${id}/reject`, { reason });
+        const body = reason.trim() ? { reason } : {};
+        await api.post(`/documents/${id}/reject`, body);
         await fetch();
       } catch {
         setError('Не удалось отклонить документ');
@@ -79,5 +80,14 @@ export function useDocument(id: string) {
     [id, fetch],
   );
 
-  return { document, loading, error, refetch: fetch, reprocess, saveParsedData, reject };
+  const approve = useCallback(async () => {
+    try {
+      await api.post(`/documents/${id}/approve`);
+      await fetch();
+    } catch {
+      setError('Не удалось принять документ');
+    }
+  }, [id, fetch]);
+
+  return { document, loading, error, refetch: fetch, reprocess, saveParsedData, reject, approve };
 }

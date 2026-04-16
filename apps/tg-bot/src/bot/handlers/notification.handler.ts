@@ -9,7 +9,7 @@ import { i18n } from '../i18n';
 interface DocumentNotification {
   documentId: string;
   telegramUserId: string;
-  status: 'processed' | 'processed_with_errors' | 'failed' | 'rejected';
+  status: 'processed' | 'processed_with_errors' | 'failed' | 'rejected' | 'code_review_required';
   errorMessage?: string;
   rejectionReasons?: string[];
   language?: string;
@@ -78,6 +78,15 @@ export class NotificationHandler extends WorkerHost {
         .sendMessage(chatId, this.t(language, 'notif-processed-with-errors'))
         .catch((err) =>
           this.logger.error(`Failed to send partial-error notification to ${chatId}`, err),
+        );
+      return;
+    }
+
+    if (status === 'code_review_required') {
+      await this.tgApi
+        .sendMessage(chatId, this.t(language, 'notif-code-review-required'))
+        .catch((err) =>
+          this.logger.error(`Failed to send code-review notification to ${chatId}`, err),
         );
       return;
     }

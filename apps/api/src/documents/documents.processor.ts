@@ -8,23 +8,17 @@ import { CalculationLogsService } from '../calculation-logs/calculation-logs.ser
 import { CalculatorService } from '../calculator/calculator.service';
 import { ClassifierService, type ProductRow } from '../classifier/classifier.service';
 import { errMsg } from '../common/errors';
-import { buildOutputFileName, getDocumentClientName } from '../common/output-filename';
 import { addStageUsage } from '../common/token-usage';
 import { CurrencyService } from '../currency/currency.service';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { DutyInterpreterService } from '../duty-interpreter/duty-interpreter.service';
 import type { Dimension } from '../duty-interpreter/interfaces';
+import {
+  buildDocumentNotificationPayload,
+  type DocumentNotification,
+} from './notification';
 
-export interface DocumentNotification {
-  documentId: string;
-  telegramUserId: string;
-  status: 'processed' | 'processed_with_errors' | 'failed' | 'rejected';
-  errorMessage?: string;
-  rejectionReasons?: string[];
-  language?: string;
-  outputFileName?: string;
-  sendResultFile?: boolean;
-}
+export type { DocumentNotification };
 
 @Processor('document-processing')
 export class DocumentsProcessor extends WorkerHost {
@@ -73,13 +67,20 @@ export class DocumentsProcessor extends WorkerHost {
 
       this.logger.log(`Document ${documentId}: ${rows.length} rows, currency=${doc.currency || 'USD'}`);
 
-      const { pricePercent, weightRate, fixedFee, sendResultFile } = await this.configService.get();
+      const {
+        pricePercent,
+        weightRate,
+        fixedFee,
+        sendResultFile,
+        confidenceThreshold,
+        lowConfidenceAction,
+      } = await this.configService.get();
       const commission = { pricePercent, weightRate, fixedFee };
 
       const language = doc.language ?? doc.telegramUser?.language;
 
       const t0 = Date.now();
-      const classifyResult = await this.classifier.classify(rows, language);
+      const classifyResult = await this.classifier.classify(rows, language, confidenceThreshold);
       const classified = classifyResult.products;
       doc.tokenUsage = addStageUsage(doc.tokenUsage ?? {}, 'classifier', classifyResult.tokenUsage);
       this.logger.log(`Document ${documentId}: classification done in ${Date.now() - t0}ms`);
@@ -101,7 +102,10 @@ export class DocumentsProcessor extends WorkerHost {
       this.logger.log(`Document ${documentId}: eurToDoc=${eurToDoc.toFixed(4)}, currency=${currency}`);
 
       const t2 = Date.now();
-      const summary = this.calculator.calculate(interpreted, commission, { eurToDoc });
+      const summary = this.calculator.calculate(interpreted, commission, {
+        eurToDoc,
+        confidenceThreshold,
+      });
       this.logger.log(`Document ${documentId}: calculation done in ${Date.now() - t2}ms`);
 
       const needsConversion = currency !== 'RUB';
@@ -161,15 +165,38 @@ export class DocumentsProcessor extends WorkerHost {
           exchangeRate,
         };
       });
-      const hasRowErrors = summary.items.some(
-        (item) => item.calculationStatus === 'error',
-      );
-      doc.status = hasRowErrors
-        ? DocumentStatus.PROCESSED_WITH_ERRORS
-        : DocumentStatus.PROCESSED;
-      await this.repo.save(doc);
+      let hasRowErrors = false;
+      const lowConfidenceReasons: string[] = [];
+      for (let i = 0; i < summary.items.length; i++) {
+        const item = summary.items[i];
+        if (item.calculationStatus === 'error') hasRowErrors = true;
+        if (!item.matched || item.matchConfidence < confidenceThreshold) {
+          lowConfidenceReasons.push(this.formatLowConfidenceReason(i, item, confidenceThreshold));
+        }
+      }
 
-      await this.notify({ doc, status: hasRowErrors ? 'processed_with_errors' : 'processed', sendResultFile });
+      if (lowConfidenceReasons.length > 0) {
+        doc.rejectionReasons = lowConfidenceReasons;
+        if (lowConfidenceAction === 'reject') {
+          doc.status = DocumentStatus.REJECTED;
+          await this.repo.save(doc);
+          await this.notify({ doc, status: 'rejected', rejectionReasons: lowConfidenceReasons });
+        } else {
+          doc.status = DocumentStatus.CODE_REVIEW_REQUIRED;
+          await this.repo.save(doc);
+          await this.notify({ doc, status: 'code_review_required' });
+        }
+      } else {
+        doc.status = hasRowErrors
+          ? DocumentStatus.PROCESSED_WITH_ERRORS
+          : DocumentStatus.PROCESSED;
+        await this.repo.save(doc);
+        await this.notify({
+          doc,
+          status: hasRowErrors ? 'processed_with_errors' : 'processed',
+          sendResultFile,
+        });
+      }
 
       this.calculationLogs
         .create({
@@ -223,26 +250,35 @@ export class DocumentsProcessor extends WorkerHost {
 
   private async notify(opts: {
     doc: Document;
-    status: 'processed' | 'processed_with_errors' | 'failed';
+    status: DocumentNotification['status'];
     errorMessage?: string;
     sendResultFile?: boolean;
+    rejectionReasons?: string[];
   }): Promise<void> {
-    const telegramId = opts.doc.telegramUser?.telegramId;
-    if (!telegramId) return;
-
-    const clientName = getDocumentClientName(opts.doc);
-    const payload: DocumentNotification = {
-      documentId: opts.doc.id,
-      telegramUserId: telegramId,
-      status: opts.status,
+    const payload = buildDocumentNotificationPayload(opts.doc, opts.status, {
       errorMessage: opts.errorMessage,
-      language: opts.doc.language ?? opts.doc.telegramUser?.language,
-      outputFileName: buildOutputFileName(opts.doc.createdAt, clientName),
+      rejectionReasons: opts.rejectionReasons,
       sendResultFile: opts.sendResultFile,
-    };
+    });
+    if (!payload) return;
 
     await this.notificationQueue.add('document-ready', payload).catch((err) => {
       this.logger.warn(`Failed to send notification for ${opts.doc.id}`, err);
     });
+  }
+
+  private formatLowConfidenceReason(
+    idx: number,
+    item: { description: string; tnVedCode?: string; matchConfidence: number; matched: boolean },
+    threshold: number,
+  ): string {
+    const row = idx + 1;
+    const desc = item.description || '—';
+    if (!item.matched) {
+      return `Строка ${row}: «${desc}» — код ТН ВЭД не определён (ниже порога ${threshold.toFixed(2)}).`;
+    }
+    const code = item.tnVedCode || '—';
+    const conf = item.matchConfidence.toFixed(2);
+    return `Строка ${row}: «${desc}» — код ${code}, уверенность ${conf} (ниже порога ${threshold.toFixed(2)}).`;
   }
 }

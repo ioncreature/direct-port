@@ -129,6 +129,12 @@ export class DocumentsController {
     return this.service.reject(id, dto);
   }
 
+  @Post(':id/approve')
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  approve(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.approve(id);
+  }
+
   @Post(':id/reprocess')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   reprocess(@Param('id', ParseUUIDPipe) id: string) {

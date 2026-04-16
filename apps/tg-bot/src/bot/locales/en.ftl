@@ -85,6 +85,11 @@ notif-processed-with-errors =
 
     The file cannot be sent.
     Contact an operator or upload a corrected file.
+notif-code-review-required =
+    🔎 Your document was sent to an operator for review.
+
+    Some TN VED codes were matched with low confidence.
+    After the review you will receive the result or a rejection notice.
 
 # /language
 language-prompt = Choose your language:
@@ -98,6 +103,7 @@ status-processed = Processed
 status-processed_with_errors = Processed with errors
 status-failed = Error
 status-requires_review = Requires review
+status-code_review_required = Code review required
 status-rejected = Rejected
 
 # API error codes

@@ -19,6 +19,7 @@ export enum DocumentStatus {
   PROCESSED_WITH_ERRORS = 'processed_with_errors',
   FAILED = 'failed',
   REQUIRES_REVIEW = 'requires_review',
+  CODE_REVIEW_REQUIRED = 'code_review_required',
   REJECTED = 'rejected',
 }
 
@@ -30,6 +31,7 @@ export const documentStatusLabels: Record<DocumentStatus, string> = {
   [DocumentStatus.PROCESSED_WITH_ERRORS]: 'Обработан с ошибками',
   [DocumentStatus.FAILED]: 'Ошибка',
   [DocumentStatus.REQUIRES_REVIEW]: 'Требует проверки',
+  [DocumentStatus.CODE_REVIEW_REQUIRED]: 'Требует проверки кодов',
   [DocumentStatus.REJECTED]: 'Отклонён',
 };
 

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { ClassifiedProduct } from '../classifier/classifier.service';
+import { DEFAULT_CONFIDENCE_THRESHOLD } from '../common/confidence';
 import {
   resolveCalculationStatus,
   type CalculationStatus,
@@ -61,8 +62,6 @@ const DEFAULT_COMMISSION: CommissionConfig = {
   weightRate: 0,
   fixedFee: 0,
 };
-
-const CONFIDENCE_THRESHOLD = 0.7;
 
 /**
  * Приводит единицу измерения из TKS API (кг / шт / м2 / л / м3 / …)
@@ -131,10 +130,14 @@ export class CalculatorService {
   calculate(
     products: CalculatorInput[],
     commission: CommissionConfig = DEFAULT_COMMISSION,
-    currencyRates?: { eurToDoc: number },
+    options?: { eurToDoc?: number; confidenceThreshold?: number },
   ): CalculationSummary {
-    this.logger.log(`Calculating ${products.length} products, commission: ${JSON.stringify(commission)}, eurToDoc=${currencyRates?.eurToDoc ?? 1}`);
-    const items = products.map((p) => this.calculateOne(p, commission, currencyRates));
+    const threshold = options?.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
+    const currencyRates = { eurToDoc: options?.eurToDoc ?? 1 };
+    this.logger.log(
+      `Calculating ${products.length} products, commission: ${JSON.stringify(commission)}, eurToDoc=${currencyRates.eurToDoc}, confidenceThreshold=${threshold}`,
+    );
+    const items = products.map((p) => this.calculateOne(p, commission, currencyRates, threshold));
     const summary = this.summarize(items);
     this.logger.log(`Calculation done: grandTotal=${summary.grandTotal.toFixed(2)}, duty=${summary.totalDuty.toFixed(2)}, vat=${summary.totalVat.toFixed(2)}`);
     return summary;
@@ -154,7 +157,8 @@ export class CalculatorService {
   private calculateOne(
     p: CalculatorInput,
     commission: CommissionConfig,
-    currencyRates?: { eurToDoc: number },
+    currencyRates: { eurToDoc: number },
+    confidenceThreshold: number,
   ): CalculatedProduct {
     const notes: ProductNote[] = [...p.notes];
     const totalPrice = p.price * p.quantity;
@@ -215,7 +219,7 @@ export class CalculatorService {
     const totalCost = totalPrice + dutyAmount + vatAmount + exciseAmount + logisticsCommission;
 
     const verificationStatus: 'exact' | 'review' =
-      p.matched && p.matchConfidence >= CONFIDENCE_THRESHOLD ? 'exact' : 'review';
+      p.matched && p.matchConfidence >= confidenceThreshold ? 'exact' : 'review';
 
     const calculationStatus = resolveCalculationStatus(notes);
 

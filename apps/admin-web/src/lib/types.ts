@@ -77,7 +77,8 @@ export type DocumentStatus =
   | 'processed_with_errors'
   | 'failed'
   | 'rejected'
-  | 'requires_review';
+  | 'requires_review'
+  | 'code_review_required';
 
 export interface ParsedDataRow {
   description: string;
