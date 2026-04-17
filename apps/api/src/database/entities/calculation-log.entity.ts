@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -13,6 +14,7 @@ export class CalculationLog {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Index('IDX_calculation_logs_document_id')
   @Column({ type: 'uuid', name: 'document_id', nullable: true })
   documentId: string | null;
 

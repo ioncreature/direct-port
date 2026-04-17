@@ -30,6 +30,7 @@ import { AddSendResultFile1776800000000 } from './migrations/1776800000000-AddSe
 import { AddAiUsageLog1776900000000 } from './migrations/1776900000000-AddAiUsageLog';
 import { AddQueryFormulationModel1777000000000 } from './migrations/1777000000000-AddQueryFormulationModel';
 import { AddCodeReviewRequiredStatus1777100000000 } from './migrations/1777100000000-AddCodeReviewRequiredStatus';
+import { AddCalculationLogDocumentIdIndex1777200000000 } from './migrations/1777200000000-AddCalculationLogDocumentIdIndex';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -72,6 +73,7 @@ import { SeedService } from './seeds/seed.service';
           AddAiUsageLog1776900000000,
           AddQueryFormulationModel1777000000000,
           AddCodeReviewRequiredStatus1777100000000,
+          AddCalculationLogDocumentIdIndex1777200000000,
         ],
         migrationsRun: true,
       }),

@@ -1,6 +1,7 @@
 'use client';
 
 import { InfoCard } from '@/components/info-card';
+import { useCalculationHistory } from '@/hooks/use-calculation-history';
 import { useDocument } from '@/hooks/use-document';
 import { downloadDocument, statusColors, statusLabels } from '@/lib/documents';
 import { calcAiCostFromMap, calcAiCostFromStages, fmt, fmtCost, fmtTokens, modelLabel, stageLabel } from '@/lib/format';
@@ -129,6 +130,7 @@ function resolveStatus(row: DocumentResultRow): CalculationStatus {
 export default function DocumentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { document: doc, loading, error, reprocess, saveParsedData, reject, approve } = useDocument(id);
+  const history = useCalculationHistory(id, doc?.updatedAt);
 
   const [reprocessing, setReprocessing] = useState(false);
   const [approving, setApproving] = useState(false);
@@ -739,6 +741,38 @@ export default function DocumentDetailPage() {
 
       {(doc.status === 'processed' || doc.status === 'processed_with_errors') && rows.length === 0 && (
         <p style={{ color: '#888' }}>Нет данных результата</p>
+      )}
+
+      {history.length >= 2 && (
+        <>
+          <h3 style={{ marginTop: 32, marginBottom: 12 }}>История расчётов</h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr>
+                  <th style={th}>Дата</th>
+                  <th style={thR}>Товаров</th>
+                  <th style={thR}>Итого</th>
+                  <th style={thR}>Пошлина</th>
+                  <th style={thR}>НДС</th>
+                  <th style={th}>Валюта</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((log) => (
+                  <tr key={log.id}>
+                    <td style={td}>{new Date(log.createdAt).toLocaleString('ru')}</td>
+                    <td style={tdR}>{log.itemsCount}</td>
+                    <td style={tdR}>{log.resultSummary ? fmt(log.resultSummary.grandTotal) : '—'}</td>
+                    <td style={tdR}>{log.resultSummary ? fmt(log.resultSummary.totalDuty) : '—'}</td>
+                    <td style={tdR}>{log.resultSummary ? fmt(log.resultSummary.totalVat) : '—'}</td>
+                    <td style={td}>{log.resultSummary?.currency ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

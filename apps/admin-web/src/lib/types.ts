@@ -207,10 +207,6 @@ export interface CalculationLogSummary {
 
 export interface CalculationLog {
   id: string;
-  documentId: string | null;
-  telegramUserId: string | null;
-  telegramUsername: string | null;
-  fileName: string | null;
   itemsCount: number;
   resultSummary: CalculationLogSummary | null;
   createdAt: string;

@@ -17,6 +17,7 @@ import type { MulterOptions } from '@nestjs/platform-express/multer/interfaces/m
 import { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { CalculationLogsService } from '../calculation-logs/calculation-logs.service';
 import { ErrorCode } from '../common/error-codes';
 import { buildOutputFileName, getDocumentClientName } from '../common/output-filename';
 import { DocumentStatus } from '../database/entities/document.entity';
@@ -50,6 +51,7 @@ export class DocumentsController {
   constructor(
     private service: DocumentsService,
     private excelExport: ExcelExportService,
+    private calculationLogs: CalculationLogsService,
   ) {}
 
   @Post()
@@ -145,6 +147,12 @@ export class DocumentsController {
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.findOne(id);
+  }
+
+  @Get(':id/calculation-history')
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  calculationHistory(@Param('id', ParseUUIDPipe) id: string) {
+    return this.calculationLogs.findByDocumentId(id);
   }
 
   @Get(':id/download')
