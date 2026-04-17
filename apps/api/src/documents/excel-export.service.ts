@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import * as ExcelJS from 'exceljs';
+import { humanizeUnit } from '../calculator/calculator.service';
 import type { CalculationStatus, ProductNote } from '../common/product-notes';
 import { Document } from '../database/entities/document.entity';
 
@@ -11,6 +12,7 @@ interface ResultRow {
   tnVedCode: string;
   tnVedDescription: string;
   dutyRate: number;
+  dutyRateDisplay?: string;
   vatRate: number;
   exciseRate: number;
   totalPrice: number;
@@ -56,7 +58,7 @@ function buildColumns(currency: string, hasRub: boolean, language?: string | nul
     { header: 'Вес (кг)', key: 'weight', width: 12, numFmt: '#,##0.00' },
     { header: 'Код ТН ВЭД', key: 'tnVedCode', width: 16 },
     { header: 'Описание ТН ВЭД', key: 'tnVedDescription', width: 35 },
-    { header: 'Ставка пошлины (%)', key: 'dutyRate', width: 18, numFmt: '0.00' },
+    { header: 'Ставка пошлины', key: 'dutyRateDisplay', width: 20 },
     { header: 'Ставка НДС (%)', key: 'vatRate', width: 16, numFmt: '0.00' },
     { header: `Сумма (${currency})`, key: 'totalPrice', width: 16, numFmt: '#,##0.00' },
     { header: `Пошлина (${currency})`, key: 'dutyAmount', width: 16, numFmt: '#,##0.00' },
@@ -92,21 +94,6 @@ function buildColumns(currency: string, hasRub: boolean, language?: string | nul
   }
 
   return columns;
-}
-
-const BASE_LABELS: Record<string, string> = {
-  kg: 'кг',
-  g: 'г',
-  t: 'т',
-  pcs: 'шт',
-  m2: 'м²',
-  m3: 'м³',
-  l: 'л',
-};
-
-function humanizeBase(per: string | null | undefined): string {
-  if (!per) return '—';
-  return BASE_LABELS[per] ?? per;
 }
 
 const STATUS_LABELS: Record<CalculationStatus, string> = {
@@ -215,11 +202,11 @@ export class ExcelExportService {
         weight: row.weight,
         tnVedCode: row.tnVedCode || '—',
         tnVedDescription: row.tnVedDescription || '—',
-        dutyRate: row.dutyRate,
+        dutyRateDisplay: row.dutyRateDisplay ?? (row.dutyRate ? `${row.dutyRate}%` : '—'),
         vatRate: row.vatRate,
         totalPrice: row.totalPrice,
         dutyAmount: row.dutyAmount,
-        dutyBase: humanizeBase(row.dutyBase),
+        dutyBase: humanizeUnit(row.dutyBase),
         dutyFormula: row.dutyFormula ?? '',
         vatAmount: row.vatAmount,
         exciseAmount: row.exciseAmount,

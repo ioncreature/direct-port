@@ -5,9 +5,10 @@ import { Job, Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 import { CalculationConfigService } from '../calculation-config/calculation-config.service';
 import { CalculationLogsService } from '../calculation-logs/calculation-logs.service';
-import { CalculatorService } from '../calculator/calculator.service';
+import { CalculatorService, type CalculatedProduct } from '../calculator/calculator.service';
 import { ClassifierService, type ProductRow } from '../classifier/classifier.service';
 import { errMsg } from '../common/errors';
+import type { ProductNote } from '../common/product-notes';
 import { addStageUsage } from '../common/token-usage';
 import { CurrencyService } from '../currency/currency.service';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
@@ -126,6 +127,7 @@ export class DocumentsProcessor extends WorkerHost {
       doc.exchangeRates = ratesMap;
 
       doc.resultData = summary.items.map((item, i) => {
+        item.notes.push(this.buildBreakdownNote(item, currency, needsConversion ? exchangeRate : null));
         const base = {
           description: item.description,
           quantity: item.quantity,
@@ -135,6 +137,7 @@ export class DocumentsProcessor extends WorkerHost {
           tnVedCode: item.tnVedCode,
           tnVedDescription: item.tnVedDescription,
           dutyRate: item.dutyRate,
+          dutyRateDisplay: item.dutyRateDisplay,
           vatRate: item.vatRate,
           exciseRate: item.exciseRate,
           totalPrice: item.totalPrice,
@@ -230,6 +233,44 @@ export class DocumentsProcessor extends WorkerHost {
         err instanceof Error ? err.stack : err,
       );
     }
+  }
+
+  private buildBreakdownNote(
+    item: CalculatedProduct,
+    currency: string,
+    exchangeRate: number | null,
+  ): ProductNote {
+    const fmt = (v: number) => `${v.toFixed(2)} ${currency}`;
+    const parts: string[] = [`${fmt(item.totalPrice)} (сумма)`];
+
+    if (item.dutyAmount > 0 || item.dutyAmountIsEstimate) {
+      const rateLabel = item.dutyRateDisplay && item.dutyRateDisplay !== '—' ? `, ${item.dutyRateDisplay}` : '';
+      parts.push(`${fmt(item.dutyAmount)} (пошлина${rateLabel})`);
+    }
+
+    if (item.exciseAmount > 0) {
+      parts.push(`${fmt(item.exciseAmount)} (акциз ${item.exciseRate}%)`);
+    }
+
+    if (item.vatAmount > 0) {
+      parts.push(`${fmt(item.vatAmount)} (НДС ${item.vatRate}%)`);
+    }
+
+    if (item.logisticsCommission > 0) {
+      parts.push(`${fmt(item.logisticsCommission)} (комиссия)`);
+    }
+
+    let message = `Расчёт: ${parts.join(' + ')} = ${fmt(item.totalCost)}`;
+    if (exchangeRate && exchangeRate !== 1) {
+      message += ` → ${(item.totalCost * exchangeRate).toFixed(2)} RUB (курс ×${exchangeRate.toFixed(2)})`;
+    }
+
+    return {
+      stage: 'calculate',
+      severity: 'info',
+      field: 'total',
+      message,
+    };
   }
 
   private extractDimensions(row: Record<string, unknown>): Dimension[] | undefined {

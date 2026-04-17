@@ -32,6 +32,8 @@ export interface CalculatedProduct extends ClassifiedProduct {
   dutyFormula: string | null;
   /** Каноническая единица базы специфической пошлины: 'kg' | 'm2' | 'pcs' | 'l' | 'm3' | null */
   dutyBase: string | null;
+  /** Человекочитаемая ставка пошлины: "10%", "0.34 €/пара", "10% ≥ 0.34 €/пара" */
+  dutyRateDisplay: string;
   vatAmount: number;
   exciseAmount: number;
   logisticsCommission: number;
@@ -106,6 +108,63 @@ export function normalizePer(raw: string | null | undefined): string {
 
 function describeQuantity(normalizedPer: string): string {
   return UNITS[normalizedPer]?.label ?? normalizedPer ?? '—';
+}
+
+const SHORT_UNIT_LABELS: Record<string, string> = {
+  kg: 'кг',
+  g: 'г',
+  t: 'т',
+  ct: 'кар',
+  pair: 'пара',
+  pcs: 'шт',
+  kpcs: '1000 шт',
+  m: 'м',
+  m2: 'м²',
+  m3: 'м³',
+  km3: '1000 м³',
+  l: 'л',
+  kl: '1000 л',
+  cm3: 'см³',
+  kw: 'кВт',
+  hp: 'л.с.',
+};
+
+/** Короткая человекочитаемая метка единицы: 'kg' → 'кг', null → '—'. */
+export function humanizeUnit(per: string | null | undefined): string {
+  if (!per) return '—';
+  const canonical = normalizePer(per);
+  return SHORT_UNIT_LABELS[canonical] ?? canonical;
+}
+
+function trimNumber(n: number): string {
+  const s = n.toFixed(4);
+  return s.replace(/\.?0+$/, '');
+}
+
+function formatMethod(method: ChargeMethod): string {
+  switch (method.kind) {
+    case 'ad_valorem':
+    case 'fixed_rate':
+      return `${trimNumber(method.rate)}%`;
+    case 'specific':
+      return `${trimNumber(method.amount)} €/${humanizeUnit(method.per)}`;
+    case 'combined_min':
+      return `${trimNumber(method.rate)}% ≥ ${trimNumber(method.specificAmount)} €/${humanizeUnit(method.per)}`;
+    case 'combined_max':
+      return `${trimNumber(method.rate)}% ≤ ${trimNumber(method.specificAmount)} €/${humanizeUnit(method.per)}`;
+  }
+}
+
+/**
+ * Человекочитаемое описание ставки пошлины для отображения в Excel/UI.
+ * Берёт все import_duty/antidumping/compensatory/temp_duty charges и соединяет их " + ".
+ */
+export function formatDutyRate(charges: DutyChargeRule[]): string {
+  const dutyCharges = charges.filter(
+    (c) => c.type === 'import_duty' || c.type === 'antidumping' || c.type === 'compensatory' || c.type === 'temp_duty',
+  );
+  if (dutyCharges.length === 0) return '—';
+  return dutyCharges.map((c) => formatMethod(c.method)).join(' + ');
 }
 
 interface MethodResult {
@@ -241,6 +300,7 @@ export class CalculatorService {
       p.matched && p.matchConfidence >= confidenceThreshold ? 'exact' : 'review';
 
     const calculationStatus = resolveCalculationStatus(notes);
+    const dutyRateDisplay = formatDutyRate(charges);
 
     return {
       ...p,
@@ -249,6 +309,7 @@ export class CalculatorService {
       dutyAmountIsEstimate,
       dutyFormula,
       dutyBase,
+      dutyRateDisplay,
       vatAmount,
       exciseAmount,
       logisticsCommission,

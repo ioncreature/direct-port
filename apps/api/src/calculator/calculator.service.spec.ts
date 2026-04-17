@@ -1,4 +1,4 @@
-import { CalculatorService, normalizePer } from './calculator.service';
+import { CalculatorService, formatDutyRate, normalizePer } from './calculator.service';
 import type { CalculatorInput, CommissionConfig, CalculatedProduct } from './calculator.service';
 import type { DutyInterpretation, DutyChargeRule } from '../duty-interpreter/interfaces';
 import type { ProductNote } from '../common/product-notes';
@@ -84,6 +84,65 @@ describe('normalizePer', () => {
   });
 });
 
+describe('formatDutyRate', () => {
+  const charge = (method: DutyChargeRule['method']): DutyChargeRule => ({
+    type: 'import_duty',
+    label: 'Ввозная',
+    method,
+    base: 'customs_value',
+  });
+
+  it('ad_valorem → "10%"', () => {
+    expect(formatDutyRate([charge({ kind: 'ad_valorem', rate: 10 })])).toBe('10%');
+  });
+
+  it('specific EUR/pair → "0.34 €/пара"', () => {
+    expect(
+      formatDutyRate([charge({ kind: 'specific', amount: 0.34, unit: 'EUR', per: 'pair' })]),
+    ).toBe('0.34 €/пара');
+  });
+
+  it('combined_min → "10% ≥ 0.34 €/пара"', () => {
+    expect(
+      formatDutyRate([
+        charge({ kind: 'combined_min', rate: 10, specificAmount: 0.34, unit: 'EUR', per: 'pair' }),
+      ]),
+    ).toBe('10% ≥ 0.34 €/пара');
+  });
+
+  it('combined_max → "10% ≤ 0.34 €/пара"', () => {
+    expect(
+      formatDutyRate([
+        charge({ kind: 'combined_max', rate: 10, specificAmount: 0.34, unit: 'EUR', per: 'pair' }),
+      ]),
+    ).toBe('10% ≤ 0.34 €/пара');
+  });
+
+  it('несколько duty-charges соединяются через " + "', () => {
+    expect(
+      formatDutyRate([
+        charge({ kind: 'ad_valorem', rate: 5 }),
+        { ...charge({ kind: 'ad_valorem', rate: 3 }), type: 'antidumping' },
+      ]),
+    ).toBe('5% + 3%');
+  });
+
+  it('только НДС → "—"', () => {
+    expect(
+      formatDutyRate([
+        { ...charge({ kind: 'ad_valorem', rate: 20 }), type: 'vat' },
+      ]),
+    ).toBe('—');
+  });
+
+  it('обрезает trailing zeros: 0.5 → "0.5", 10 → "10"', () => {
+    expect(formatDutyRate([charge({ kind: 'ad_valorem', rate: 10 })])).toBe('10%');
+    expect(
+      formatDutyRate([charge({ kind: 'specific', amount: 0.5, unit: 'EUR', per: 'kg' })]),
+    ).toBe('0.5 €/кг');
+  });
+});
+
 describe('CalculatorService', () => {
   let service: CalculatorService;
 
@@ -108,6 +167,7 @@ describe('CalculatorService', () => {
       expect(item.totalCost).toBeCloseTo(1290);
       expect(item.dutyAmountIsEstimate).toBe(false);
       expect(item.dutyFormula).toBeNull();
+      expect(item.dutyRateDisplay).toBe('7.5%');
     });
 
     it('рассчитывает с акцизом', () => {
