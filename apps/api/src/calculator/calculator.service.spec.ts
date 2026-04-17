@@ -329,8 +329,8 @@ describe('CalculatorService', () => {
       expect(result.items[0].dutyAmountIsEstimate).toBe(false);
     });
 
-    it('dual-specific (IMP+IMP2 обе specific) → применяет IMP и пушит blocker', () => {
-      // Fallback не умеет совмещать две specific-составляющие, применяет только IMP.
+    it('две specific IMP+IMP2 "но не менее" → max из обеих частей (combined_specific_min)', () => {
+      // IMP=0.5 EUR/пар (0.5*90*10=450), IMP2=2 EUR/кг (2*90*20=3600), IMPSIGN='>' → max=3600
       const product = makeProduct({
         quantity: 10,
         dutyRate: 0.5,
@@ -341,12 +341,21 @@ describe('CalculatorService', () => {
       });
       const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
       const item = result.items[0];
-      expect(item.dutyAmount).toBe(450);
-      const blocker = item.notes.find(
-        (n) => n.severity === 'blocker' && n.field === 'duty' && /двумя специфическими/.test(n.message),
-      );
-      expect(blocker).toBeDefined();
-      expect(item.calculationStatus).toBe('needs_info');
+      expect(item.dutyAmount).toBe(3600);
+      expect(item.dutyAmountIsEstimate).toBe(false);
+    });
+
+    it('две specific "но не более" → min из обеих частей (combined_specific_max)', () => {
+      const product = makeProduct({
+        quantity: 10,
+        dutyRate: 0.5,
+        dutyRateUnit: 'EUR/пар',
+        dutySign: '<',
+        dutyMin: 2,
+        dutyMinUnit: 'EUR/кг',
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      expect(result.items[0].dutyAmount).toBe(450); // min(450, 3600)
     });
   });
 
@@ -633,6 +642,265 @@ describe('CalculatorService', () => {
         (n) => n.stage === 'calculate' && n.severity === 'blocker',
       );
       expect(blockerNotes.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Мультивалютность specific-ставок', () => {
+    it('specific в USD: берёт курс USD из currencyToDoc', () => {
+      // IMPEDI=166D → "USD/кг". 0.5 USD/кг × 75 × 20кг = 750
+      const product = makeProduct({
+        dutyRate: 0.5,
+        dutyRateUnit: 'USD/кг',
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, {
+        currencyToDoc: { USD: 75, EUR: 90 },
+      });
+      expect(result.items[0].dutyAmount).toBe(750);
+      expect(result.items[0].dutyAmountIsEstimate).toBe(false);
+    });
+
+    it('specific в RUB при документе в USD: берёт курс RUB', () => {
+      const product = makeProduct({
+        dutyRate: 10,
+        dutyRateUnit: 'RUB/кг',
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, {
+        currencyToDoc: { USD: 1, RUB: 0.0125, EUR: 1.1 },
+      });
+      // 10 RUB/кг × 0.0125 × 20кг = 2.5 USD
+      expect(result.items[0].dutyAmount).toBeCloseTo(2.5);
+    });
+
+    it('BYR нормализуется в BYN при получении курса', () => {
+      const product = makeProduct({
+        dutyRate: 1,
+        dutyRateUnit: 'BYR/кг',
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, {
+        currencyToDoc: { BYN: 30, EUR: 90 },
+      });
+      expect(result.items[0].dutyAmount).toBe(600); // 1 × 30 × 20
+    });
+
+    it('отсутствие курса валюты → estimate с blocker', () => {
+      const product = makeProduct({
+        dutyRate: 1,
+        dutyRateUnit: 'AMD/кг',
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, {
+        currencyToDoc: { EUR: 90 }, // нет AMD
+      });
+      const item = result.items[0];
+      expect(item.dutyAmount).toBe(0);
+      expect(item.dutyAmountIsEstimate).toBe(true);
+      const blocker = item.notes.find(
+        (n) => n.severity === 'blocker' && /курс AMD/.test(n.message),
+      );
+      expect(blocker).toBeDefined();
+    });
+
+    it('eurToDoc + currencyToDoc: currencyToDoc приоритетнее', () => {
+      const product = makeProduct({
+        dutyRate: 1,
+        dutyRateUnit: 'EUR/кг',
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, {
+        eurToDoc: 50, // игнорируется
+        currencyToDoc: { EUR: 100 },
+      });
+      expect(result.items[0].dutyAmount).toBe(2000); // 1 × 100 × 20
+    });
+  });
+
+  describe('Редкие единицы OKEI', () => {
+    it('акциз в EUR/л 100% спирта считается по dimensions[ethanol_l]', () => {
+      // Бутылка 0.5 л алкоголя крепостью 40% → 0.2 л чистого спирта на штуку.
+      // 5 штук → 1.0 л суммарно. Акциз 10 EUR/л 100% спирта × 90 × 1.0 = 900.
+      const product = makeProduct({
+        dutyRate: 0,
+        vatRate: 0,
+        exciseRate: 10,
+        dutyRateUnit: null,
+        quantity: 5,
+        dutyInterpretation: {
+          tnvedCode: '2208',
+          reasoning: 'Акциз на этиловый спирт',
+          charges: [
+            {
+              type: 'excise',
+              label: 'Акциз',
+              method: { kind: 'specific', amount: 10, unit: 'EUR', per: 'ethanol_l' },
+              base: 'customs_value',
+            },
+          ],
+        },
+        dimensions: [{ name: 'ethanol', value: 0.2, unit: 'л 100% спирта' }],
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      expect(result.items[0].exciseAmount).toBe(900);
+    });
+
+    it('пошлина в EUR/т п массы через dimensions', () => {
+      const product = makeProduct({
+        quantity: 1,
+        dutyRate: 100,
+        dutyRateUnit: 'EUR/т п массы',
+        dimensions: [{ name: 'gross_mass', value: 5, unit: 'т п массы' }],
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      // 100 × 90 × 5 = 45000
+      expect(result.items[0].dutyAmount).toBe(45000);
+      expect(result.items[0].dutyBase).toBe('gross_mass_t');
+    });
+
+    it('пошлина в EUR/т грузоподъёмности через dimensions', () => {
+      const product = makeProduct({
+        quantity: 1,
+        dutyRate: 50,
+        dutyRateUnit: 'EUR/т грп',
+        dimensions: [{ name: 'load_capacity', value: 10, unit: 'т грп' }],
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      expect(result.items[0].dutyAmount).toBe(45000); // 50 × 90 × 10
+      expect(result.items[0].dutyBase).toBe('load_capacity_t');
+    });
+  });
+
+  describe('combined_specific_min через AI-интерпретацию', () => {
+    const charge = (method: DutyChargeRule['method']): DutyChargeRule => ({
+      type: 'import_duty',
+      label: 'Ввозная',
+      method,
+      base: 'customs_value',
+    });
+
+    it('combined_specific_min в разных валютах: max из двух посчитанных', () => {
+      // 0.5 EUR/пара (0.5*90*10 = 450) ≥ 1 USD/кг (1*75*20 = 1500) → max=1500
+      const product = makeProduct({
+        quantity: 10,
+        dutyInterpretation: {
+          tnvedCode: '6402',
+          reasoning: 'test',
+          charges: [
+            charge({
+              kind: 'combined_specific_min',
+              primary: { amount: 0.5, unit: 'EUR', per: 'pair' },
+              fallback: { amount: 1, unit: 'USD', per: 'kg' },
+            }),
+          ],
+        },
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, {
+        currencyToDoc: { EUR: 90, USD: 75 },
+      });
+      expect(result.items[0].dutyAmount).toBe(1500);
+    });
+
+    it('combined_specific_max: берёт min', () => {
+      const product = makeProduct({
+        quantity: 10,
+        dutyInterpretation: {
+          tnvedCode: '6402',
+          reasoning: 'test',
+          charges: [
+            charge({
+              kind: 'combined_specific_max',
+              primary: { amount: 0.5, unit: 'EUR', per: 'pair' },
+              fallback: { amount: 1, unit: 'EUR', per: 'kg' },
+            }),
+          ],
+        },
+      });
+      // p1=0.5*90*10=450, p2=1*90*20=1800, min=450
+      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      expect(result.items[0].dutyAmount).toBe(450);
+    });
+
+    it('combined_specific_min: одна часть не рассчитана → estimate по другой', () => {
+      const product = makeProduct({
+        quantity: 10,
+        dutyInterpretation: {
+          tnvedCode: '6402',
+          reasoning: 'test',
+          charges: [
+            charge({
+              kind: 'combined_specific_min',
+              primary: { amount: 0.5, unit: 'EUR', per: 'pair' }, // 450
+              fallback: { amount: 1, unit: 'EUR', per: 'm2' },   // нет dimensions
+            }),
+          ],
+        },
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      expect(result.items[0].dutyAmount).toBe(450);
+      expect(result.items[0].dutyAmountIsEstimate).toBe(true);
+      // dutyBase должен указывать на фактически посчитанную составляющую (pair), не primary.
+      expect(result.items[0].dutyBase).toBe('pair');
+    });
+
+    it('dutyBase берётся от fallback, когда primary не рассчиталась', () => {
+      const product = makeProduct({
+        quantity: 10,
+        dutyInterpretation: {
+          tnvedCode: '6402',
+          reasoning: 'test',
+          charges: [
+            charge({
+              kind: 'combined_specific_min',
+              primary: { amount: 0.5, unit: 'EUR', per: 'm2' },   // нет dimensions → ошибка
+              fallback: { amount: 1, unit: 'EUR', per: 'pair' },  // 900
+            }),
+          ],
+        },
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      expect(result.items[0].dutyAmount).toBe(900); // 1*90*10
+      expect(result.items[0].dutyBase).toBe('pair'); // а не 'm2'
+    });
+
+    it('malformed AI-ответ (без primary/fallback) → estimate с blocker, без TypeError', () => {
+      const product = makeProduct({
+        quantity: 10,
+        dutyInterpretation: {
+          tnvedCode: '6402',
+          reasoning: 'malformed',
+          // primary/fallback отсутствуют в ответе LLM
+          charges: [charge({ kind: 'combined_specific_min' } as any)],
+        },
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      expect(result.items[0].dutyAmount).toBe(0);
+      expect(result.items[0].dutyAmountIsEstimate).toBe(true);
+      const blocker = result.items[0].notes.find(
+        (n) => n.severity === 'blocker' && /неполные данные/.test(n.message),
+      );
+      expect(blocker).toBeDefined();
+    });
+  });
+
+  describe('Pure-currency IMPEDI (500/643 — flat-ставка)', () => {
+    it('RUB без знаменателя трактуется как specific за штуку, не ad_valorem 500%', () => {
+      const product = makeProduct({
+        quantity: 3,
+        dutyRate: 500,
+        dutyRateUnit: 'RUB', // IMPEDI=643 после нормализации
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, {
+        currencyToDoc: { RUB: 1, EUR: 90 },
+      });
+      // 500 RUB × 3 = 1500, а НЕ 500% × 300 = 1500000
+      expect(result.items[0].dutyAmount).toBe(1500);
+      expect(result.items[0].dutyBase).toBe('pcs');
+    });
+
+    it('EUR без знаменателя (IMPEDI=500) считается как specific за штуку', () => {
+      const product = makeProduct({
+        quantity: 2,
+        dutyRate: 10,
+        dutyRateUnit: 'EUR',
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      expect(result.items[0].dutyAmount).toBe(1800); // 10 × 90 × 2
     });
   });
 });

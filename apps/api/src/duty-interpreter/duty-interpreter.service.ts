@@ -4,6 +4,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
 import { extractToolInput, systemPrompt } from '../common/claude';
 import { errMsg } from '../common/errors';
+import { isFlatCurrencyUnit } from '../common/normalize-impedi';
 import { getStaticNoteTranslation } from '../common/note-translations';
 import type { ProductNote } from '../common/product-notes';
 import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, tokenUsageFromResponse } from '../common/token-usage';
@@ -29,13 +30,18 @@ const SYSTEM_PROMPT = `Ты — эксперт по таможенному ре�
 Правила интерпретации:
 1. IMP + IMPEDI — первая составляющая ввозной пошлины (адвалорная или специфическая по IMPEDI)
 2. IMP2 + IMPEDI2 — вторая составляющая (обычно специфическая часть комбинированной ставки)
-3. IMPSIGN: '>' = "но не менее" (max из IMP и IMP2), '<' = "но не более" (min). Если IMPSIGN пустой и есть только IMP — это просто чистая IMP-ставка (адвалорная или специфическая — зависит от IMPEDI)
-4. Никогда не домысливай: значение IMP берётся как есть. IMP=0.34 означает 0.34 (а не 34). Если IMPEDI указывает "%" — это 0.34%; если IMPEDI — единица — это 0.34 EUR/единицу
-5. AKC + AKCEDI — акциз. Та же логика: AKCEDI указывает единицу (адвалорный % при AKCEDI="1"/"2"/"%"; специфический при AKCEDI — единица)
-6. NDS — НДС в процентах напрямую (NDS=22 → 22%, NDS=20 → 20%, NDS=10 → 10%). Бери значение NDS как есть. С 2026-01-01 (ФЗ N 425-ФЗ от 28.11.2025) стандартная ставка НДС в РФ = 22%. Поля NDSEDI/NDS_PR — справочные коды (льготы, признаки), ставку из них НЕ пересчитывай
-7. IMPTMP — временная пошлина, IMPDEMP — антидемпинговая, IMPCOMP — компенсационная. Та же логика IMP*/IMPEDI*. Добавляй как отдельные charges если ненулевые
-8. База: ввозная пошлина/акциз от customs_value; НДС от customs_value_plus_duty_plus_excise
-9. В поле "per" указывай каноническую единицу специфической ставки: kg, g, t, pair, pcs, m2, m3, l и т. д.
+3. IMP3 + IMPEDI3 — редкая третья составляющая. Если присутствует — добавь как отдельный charge того же типа 'import_duty'
+4. IMPSIGN: '>' = "но не менее", '<' = "но не более". Интерпретация зависит от типов IMP и IMP2:
+   - IMP адвалорная + IMP2 специфическая → kind='combined_min' (для '>') или 'combined_max' (для '<'); в поле 'rate' адвалорная часть, в 'specificAmount' специфическая
+   - IMP специфическая + IMP2 специфическая (обе с IMPEDI-единицей, возможно в разных единицах/валютах) → kind='combined_specific_min' (для '>') или 'combined_specific_max' (для '<'); primary = {amount:IMP, unit, per из IMPEDI}, fallback = {amount:IMP2, unit, per из IMPEDI2}
+   - Если IMPSIGN пустой и есть только IMP — это просто чистая IMP-ставка
+5. Никогда не домысливай: значение IMP берётся как есть. IMP=0.34 означает 0.34 (а не 34). Если IMPEDI указывает "%" — это 0.34%; если IMPEDI — единица — это 0.34 EUR/единицу
+6. Валюта specific-ставки определяется по суффиксу IMPEDI: D=USD, Р=RUB, A=AMD, B=BYR, C=KGS, K=KZT, E=EUR (по умолчанию EUR). В поле 'unit' указывай код валюты (USD, RUB, EUR и т. д.), НЕ символ.
+7. AKC + AKCEDI — акциз. Та же логика: AKCEDI указывает единицу (адвалорный % при AKCEDI="1"/"2"/"%"; специфический при AKCEDI — единица). Для кода 831 ("л 100% спирта", встречается в AKCEDI) в поле 'per' используй 'ethanol_l'
+8. NDS — НДС в процентах напрямую (NDS=22 → 22%, NDS=20 → 20%, NDS=10 → 10%). Бери значение NDS как есть. С 2026-01-01 (ФЗ N 425-ФЗ от 28.11.2025) стандартная ставка НДС в РФ = 22%. Поля NDSEDI/NDS_PR — справочные коды (льготы, признаки), ставку из них НЕ пересчитывай
+9. IMPTMP — временная пошлина, IMPDEMP — антидемпинговая, IMPCOMP — компенсационная. Та же логика IMP*/IMPEDI*. Добавляй как отдельные charges если ненулевые
+10. База: ввозная пошлина/акциз от customs_value; НДС от customs_value_plus_duty_plus_excise
+11. В поле "per" указывай каноническую единицу специфической ставки: kg, g, t, pair, pcs, m2, m3, l, km3, kl, cm3, kw, hp, ct, ethanol_l, gross_mass_t, load_capacity_t, capacity_m3.
 
 `;
 
@@ -63,16 +69,48 @@ const INTERPRET_TOOL: Anthropic.Messages.Tool = {
                   label: { type: 'string' },
                   method: {
                     type: 'object',
+                    description:
+                      'Требуемые поля зависят от kind: ad_valorem/fixed_rate — {rate}; ' +
+                      'specific — {amount, unit, per}; combined_min/combined_max — {rate, specificAmount, unit, per}; ' +
+                      'combined_specific_min/combined_specific_max — {primary:{amount,unit,per}, fallback:{amount,unit,per}}.',
                     properties: {
                       kind: {
                         type: 'string',
-                        enum: ['ad_valorem', 'specific', 'combined_min', 'combined_max', 'fixed_rate'],
+                        enum: [
+                          'ad_valorem',
+                          'specific',
+                          'combined_min',
+                          'combined_max',
+                          'combined_specific_min',
+                          'combined_specific_max',
+                          'fixed_rate',
+                        ],
                       },
-                      rate: { type: 'number', description: 'Ставка в процентах (для ad_valorem, combined_*, fixed_rate)' },
+                      rate: { type: 'number', description: 'Ставка в процентах (для ad_valorem, combined_min/max, fixed_rate)' },
                       amount: { type: 'number', description: 'Сумма (для specific)' },
-                      specificAmount: { type: 'number', description: 'Специфическая сумма (для combined_*)' },
-                      unit: { type: 'string', description: 'Валюта (EUR)' },
-                      per: { type: 'string', description: 'Единица: kg, m2, l, pcs, m3' },
+                      specificAmount: { type: 'number', description: 'Специфическая сумма (для combined_min/max)' },
+                      unit: { type: 'string', description: 'Код валюты: EUR, USD, RUB, BYN, AMD, KGS, KZT' },
+                      per: { type: 'string', description: 'Каноническая единица: kg, g, t, ct, pair, pcs, kpcs, m, m2, m3, km3, l, kl, cm3, kw, hp, ethanol_l, gross_mass_t, load_capacity_t, capacity_m3' },
+                      primary: {
+                        type: 'object',
+                        description: 'Первая specific-составляющая (для combined_specific_min/max)',
+                        properties: {
+                          amount: { type: 'number' },
+                          unit: { type: 'string' },
+                          per: { type: 'string' },
+                        },
+                        required: ['amount', 'unit', 'per'],
+                      },
+                      fallback: {
+                        type: 'object',
+                        description: 'Вторая specific-составляющая (для combined_specific_min/max)',
+                        properties: {
+                          amount: { type: 'number' },
+                          unit: { type: 'string' },
+                          per: { type: 'string' },
+                        },
+                        required: ['amount', 'unit', 'per'],
+                      },
                     },
                     required: ['kind'],
                   },
@@ -264,12 +302,15 @@ export class DutyInterpreterService {
    */
   private hasNonTrivialRates(p: VerifiedProduct): boolean {
     const rates = p.tnvedRaw?.TNVED;
+    // Чисто-валютная IMPEDI (500 EUR, 643 RUB) — фиксированная сумма, fallback
+    // не знает, как её применять, поэтому всегда дергаем AI-интерпретатор.
+    const flatCurrency = isFlatCurrencyUnit(p.dutyRateUnit);
     if (!rates) {
-      // Работаем по denormalized полям
       return (
         (p.dutyMin != null && p.dutyMin > 0) ||
         !!p.dutySign ||
-        (p.exciseRate != null && p.exciseRate > 0)
+        (p.exciseRate != null && p.exciseRate > 0) ||
+        flatCurrency
       );
     }
     return (
@@ -278,7 +319,8 @@ export class DutyInterpreterService {
       (rates.AKC != null && rates.AKC > 0) ||
       (rates.IMPTMP != null && rates.IMPTMP > 0) ||
       (rates.IMPDEMP != null && rates.IMPDEMP > 0) ||
-      (rates.IMPCOMP != null && rates.IMPCOMP > 0)
+      (rates.IMPCOMP != null && rates.IMPCOMP > 0) ||
+      flatCurrency
     );
   }
 

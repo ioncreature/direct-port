@@ -92,19 +92,16 @@ export class DocumentsProcessor extends WorkerHost {
       doc.tokenUsage = addStageUsage(doc.tokenUsage, 'interpreter', interpretResult.tokenUsage);
       this.logger.log(`Document ${documentId}: interpretation done in ${Date.now() - t1}ms`);
 
-      // EUR→doc rate for specific duty amounts (EUR/kg, EUR/m2, etc.)
-      const currency = doc.currency || 'USD';
-      let eurToDoc = 1;
-      if (currency !== 'EUR') {
-        const eurRate = await this.currencyService.getRate('EUR');
-        const docRate = currency === 'RUB' ? 1 : await this.currencyService.getRate(currency);
-        eurToDoc = eurRate / docRate;
-      }
-      this.logger.log(`Document ${documentId}: eurToDoc=${eurToDoc.toFixed(4)}, currency=${currency}`);
+      // Карта курсов «1 единица валюты → валюта документа» для всех валют, которыми
+      // TKS может выразить specific-пошлину (суффиксы D/Р/A/B/C/K/E → USD/RUB/AMD/BYN/KGS/KZT/EUR).
+      // BYR — legacy-обозначение, использовавшееся до деноминации 2016 г.; курс берём по BYN.
+      const currency = (doc.currency || 'USD').toUpperCase();
+      const currencyToDoc = await this.buildCurrencyToDocRates(currency);
+      this.logger.log(`Document ${documentId}: currency=${currency}, currencyToDoc=${JSON.stringify(currencyToDoc)}`);
 
       const t2 = Date.now();
       const summary = this.calculator.calculate(interpreted, commission, {
-        eurToDoc,
+        currencyToDoc,
         confidenceThreshold,
       });
       this.logger.log(`Document ${documentId}: calculation done in ${Date.now() - t2}ms`);
@@ -233,6 +230,38 @@ export class DocumentsProcessor extends WorkerHost {
         err instanceof Error ? err.stack : err,
       );
     }
+  }
+
+  /**
+   * Собирает курсы всех валют, в которых TKS выдаёт specific-ставки,
+   * выраженные в единицах валюты документа. Недоступные в ЦБ РФ валюты пропускаются —
+   * для них ставки будут помечены estimated с blocker-note.
+   */
+  private async buildCurrencyToDocRates(docCurrency: string): Promise<Record<string, number>> {
+    const rates: Record<string, number> = { [docCurrency]: 1 };
+    const docInRub = docCurrency === 'RUB' ? 1 : await this.currencyService.getRate(docCurrency).catch(() => null);
+    if (docInRub == null) {
+      this.logger.warn(`Rate for document currency ${docCurrency} unavailable — only ad valorem duties will be exact`);
+      return rates;
+    }
+
+    const targets = ['EUR', 'USD', 'RUB', 'BYN', 'AMD', 'KGS', 'KZT', 'CNY'];
+    const fetched = await Promise.all(
+      targets
+        .filter((c) => c !== docCurrency)
+        .map(async (c) => {
+          try {
+            const rub = c === 'RUB' ? 1 : await this.currencyService.getRate(c);
+            return [c, rub / docInRub] as const;
+          } catch {
+            return [c, null] as const;
+          }
+        }),
+    );
+    for (const [c, r] of fetched) {
+      if (r != null && Number.isFinite(r) && r > 0) rates[c] = r;
+    }
+    return rates;
   }
 
   private buildBreakdownNote(

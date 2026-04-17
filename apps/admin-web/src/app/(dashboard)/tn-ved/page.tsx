@@ -185,8 +185,13 @@ interface DimensionInfo {
   label: string;
 }
 
+const FLAT_CURRENCIES = new Set(['EUR', 'USD', 'RUB', 'BYR', 'BYN', 'AMD', 'KGS', 'KZT', 'CNY']);
+
 function isSpecificUnit(unit: string | null | undefined): boolean {
-  return !!unit && unit !== '%' && unit.includes('/');
+  if (!unit || unit === '%') return false;
+  if (unit.includes('/')) return true;
+  // Pure-currency IMPEDI (500→EUR, 643→RUB): абсолютная сумма в валюте за штуку.
+  return FLAT_CURRENCIES.has(unit.toUpperCase());
 }
 
 // null — доп. поле ввода не требуется, пошлина считается по qty (шт/пар/1000шт обрабатываются в DutyCalculator).
@@ -220,6 +225,11 @@ const DUTY_DIMENSION_MAP: Record<string, DimensionInfo | null> = {
   'пара': null,
   'pair': null,
   '1000шт': { unit: 'тыс. шт', label: 'Количество (тыс.)' },
+  'л 100% спирта': { unit: 'л', label: 'Объём чистого спирта' },
+  'т п массы': { unit: 'т', label: 'Полная масса' },
+  'т грп': { unit: 'т', label: 'Грузоподъёмность' },
+  'м³вок': { unit: 'м³', label: 'Вместимость' },
+  'м3вок': { unit: 'м³', label: 'Вместимость' },
 };
 
 function parseDutyUnit(unit: string | null | undefined): DimensionInfo | null {

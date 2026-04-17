@@ -1,4 +1,9 @@
-import { isSpecificDutyUnit, normalizeImpediUnit } from './normalize-impedi';
+import {
+  extractCurrency,
+  isFlatCurrencyUnit,
+  isSpecificDutyUnit,
+  normalizeImpediUnit,
+} from './normalize-impedi';
 
 describe('normalizeImpediUnit', () => {
   it('возвращает null для пустых значений', () => {
@@ -66,6 +71,54 @@ describe('normalizeImpediUnit', () => {
   it('возвращает raw для неизвестного кода', () => {
     expect(normalizeImpediUnit('999')).toBe('999');
     expect(normalizeImpediUnit('unknown')).toBe('unknown');
+  });
+
+  it.each([
+    ['55', 'EUR/м²'],
+    ['6', 'EUR/м'],
+    ['55Р', 'RUB/м²'],
+  ])('дополняет ведущие нули: %s → %s', (input, expected) => {
+    expect(normalizeImpediUnit(input)).toBe(expected);
+  });
+
+  it.each([
+    ['643', 'RUB'],
+  ])('код чистой валюты ОКВ %s → %s', (input, expected) => {
+    expect(normalizeImpediUnit(input)).toBe(expected);
+  });
+});
+
+describe('isFlatCurrencyUnit', () => {
+  it.each([
+    ['EUR', true],
+    ['RUB', true],
+    ['USD', true],
+    ['BYR', true],
+    ['EUR/кг', false],
+    ['%', false],
+    [null, false],
+    [undefined, false],
+    ['', false],
+    ['м2', false],
+    ['999', false],
+  ])('isFlatCurrencyUnit(%j) → %j', (input, expected) => {
+    expect(isFlatCurrencyUnit(input as string | null | undefined)).toBe(expected);
+  });
+});
+
+describe('extractCurrency', () => {
+  it.each([
+    ['EUR/кг', 'EUR'],
+    ['USD/т', 'USD'],
+    ['RUB/шт', 'RUB'],
+    ['EUR', 'EUR'],
+    ['RUB', 'RUB'],
+    ['%', null],
+    [null, null],
+    [undefined, null],
+    ['', null],
+  ])('extractCurrency(%j) → %j', (input, expected) => {
+    expect(extractCurrency(input)).toBe(expected);
   });
 });
 

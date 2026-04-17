@@ -37,13 +37,39 @@ const OKEI_BASE_TO_UNIT: Record<string, string> = {
   '006': 'м',
 };
 
+// Коды чистой валюты без единицы измерения (ОКВ). У TKS встречаются в IMPEDI для
+// фиксированных абсолютных ставок, например 643 = RUB.
+const OKEI_CURRENCY_ONLY: Record<string, string> = {
+  '643': 'RUB',
+};
+
+// Некоторые источники возвращают код без ведущих нулей ("55" вместо "055").
+// Нормализуем до 3-значного представления, если такой известен.
+function padToKnown(code: string): string {
+  if (code.length >= 3) return code;
+  for (let n = 3 - code.length; n > 0; n--) {
+    const padded = '0'.repeat(n) + code;
+    if (OKEI_BASE_TO_UNIT[padded] !== undefined || OKEI_CURRENCY_ONLY[padded] !== undefined) {
+      return padded;
+    }
+  }
+  return code;
+}
+
 function parseCode(trimmed: string): { currency: string; unit: string } | null {
-  const directUnit = OKEI_BASE_TO_UNIT[trimmed];
+  const padded = padToKnown(trimmed);
+
+  if (OKEI_CURRENCY_ONLY[padded] !== undefined) {
+    return { currency: OKEI_CURRENCY_ONLY[padded], unit: '' };
+  }
+
+  const directUnit = OKEI_BASE_TO_UNIT[padded];
   if (directUnit !== undefined) return { currency: 'EUR', unit: directUnit };
 
-  const currency = CURRENCY_BY_SUFFIX[trimmed.slice(-1)];
+  const currency = CURRENCY_BY_SUFFIX[padded.slice(-1)];
   if (!currency) return null;
-  const unit = OKEI_BASE_TO_UNIT[trimmed.slice(0, -1)];
+  const basePart = padToKnown(padded.slice(0, -1));
+  const unit = OKEI_BASE_TO_UNIT[basePart];
   return unit !== undefined ? { currency, unit } : null;
 }
 
@@ -65,4 +91,27 @@ export function normalizeImpediUnit(raw: string | undefined | null): string | nu
 
 export function isSpecificDutyUnit(normalized: string | null | undefined): boolean {
   return !!normalized && normalized !== '%' && normalized.includes('/');
+}
+
+/**
+ * Чисто валютная ставка — фиксированная сумма в валюте без знаменателя (IMPEDI=500 "EUR" или 643 "RUB").
+ * Семантически: абсолютная сумма X валюты за штуку/декларацию — редкое, но валидное значение TKS.
+ */
+export function isFlatCurrencyUnit(normalized: string | null | undefined): boolean {
+  if (!normalized || normalized === '%' || normalized.includes('/')) return false;
+  return KNOWN_CURRENCIES.has(normalized.toUpperCase());
+}
+
+const KNOWN_CURRENCIES = new Set(['EUR', 'USD', 'RUB', 'BYR', 'BYN', 'AMD', 'KGS', 'KZT', 'CNY']);
+
+/**
+ * Извлекает валюту из нормализованной строки IMPEDI.
+ * "EUR/кг" → "EUR", "RUB" → "RUB", "%" → null, "м2" (единица без валюты) → null.
+ */
+export function extractCurrency(normalized: string | null | undefined): string | null {
+  if (!normalized || normalized === '%') return null;
+  const slash = normalized.indexOf('/');
+  if (slash >= 0) return normalized.slice(0, slash);
+  const upper = normalized.toUpperCase();
+  return KNOWN_CURRENCIES.has(upper) ? upper : null;
 }
