@@ -37,6 +37,8 @@ export interface TnVedCode {
 
 export interface TnVedRateInfo {
   dutyRate: number;
+  /** Единица IMP: null или "%" → dutyRate это адвалорный процент; "EUR/..." → специфическая ставка за единицу */
+  dutyRateUnit: string | null;
   dutySign: string | null;
   dutyMin: number | null;
   dutyMinUnit: string | null;

@@ -40,6 +40,8 @@ export interface ClassifiedProduct extends ProductRow {
   tnVedCode: string;
   tnVedDescription: string;
   dutyRate: number;
+  /** Единица IMP: null/"%" → dutyRate адвалорный процент; "EUR/..." → специфическая ставка EUR за единицу */
+  dutyRateUnit: string | null;
   dutySign: string | null;
   dutyMin: number | null;
   dutyMinUnit: string | null;
@@ -640,6 +642,7 @@ export class ClassifierService {
         tnVedCode: tnved.CODE,
         tnVedDescription: tnved.KR_NAIM,
         dutyRate: rates.IMP ?? 0,
+        dutyRateUnit: normalizeImpediUnit(rates.IMPEDI),
         dutySign: rates.IMPSIGN ?? null,
         dutyMin: rates.IMP2 ?? null,
         dutyMinUnit: normalizeImpediUnit(rates.IMPEDI2),
@@ -673,6 +676,7 @@ export class ClassifierService {
       tnVedCode: '',
       tnVedDescription: 'Не найден',
       dutyRate: 0,
+      dutyRateUnit: null,
       dutySign: null,
       dutyMin: null,
       dutyMinUnit: null,

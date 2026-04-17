@@ -185,9 +185,18 @@ interface DimensionInfo {
   label: string;
 }
 
-function parseDutyUnit(dutyMinUnit: string | null): DimensionInfo | null {
-  if (!dutyMinUnit) return null;
-  const raw = dutyMinUnit.split('/')[1]?.trim();
+/** Ставка специфическая если единица не "%" и не null (т.е. "EUR/..." и т.п.). */
+function isSpecificUnit(unit: string | null | undefined): boolean {
+  return !!unit && unit !== '%' && unit.includes('/');
+}
+
+/**
+ * Разбирает единицу специфической ставки (EUR/кг → "Вес, кг"; EUR/пар → qty).
+ * null в map значит «отдельного ввода не нужно, берём qty напрямую».
+ */
+function parseDutyUnit(unit: string | null | undefined): DimensionInfo | null {
+  if (!unit) return null;
+  const raw = unit.split('/')[1]?.trim();
   if (!raw) return null;
   const map: Record<string, DimensionInfo | null> = {
     'кг': { unit: 'кг', label: 'Вес' },
@@ -204,6 +213,10 @@ function parseDutyUnit(dutyMinUnit: string | null): DimensionInfo | null {
     'm3': { unit: 'м³', label: 'Объём' },
     'шт': null,
     'pcs': null,
+    'пар': null,
+    'пара': null,
+    'pair': null,
+    '1000шт': { unit: 'тыс. шт', label: 'Количество (тыс.)' },
   };
   const info = map[raw.toLowerCase()];
   return info === undefined ? { unit: raw, label: raw } : info;
@@ -214,8 +227,15 @@ function DutyCalculator({ rates }: { rates: TnVedRateInfo }) {
   const [qty, setQty] = useState('');
   const [dim, setDim] = useState('');
 
-  const dimInfo = parseDutyUnit(rates.dutyMinUnit);
-  const hasSpecific = rates.dutyMin != null && rates.dutyMin > 0 && !!rates.dutyMinUnit;
+  // IMP может быть адвалорной (%) либо специфической (EUR/пар, EUR/кг и т.п.) — смотрим dutyRateUnit
+  const impIsSpecific = isSpecificUnit(rates.dutyRateUnit);
+  const impDimInfo = impIsSpecific ? parseDutyUnit(rates.dutyRateUnit) : null;
+  // IMP2 — вторая составляющая комбинированной ставки (всегда специфическая)
+  const hasImp2Specific = rates.dutyMin != null && rates.dutyMin > 0 && !!rates.dutyMinUnit;
+  const imp2DimInfo = hasImp2Specific ? parseDutyUnit(rates.dutyMinUnit) : null;
+
+  // Единое поле ввода доп. размерности: IMP-specific > IMP2-specific
+  const activeDimInfo = impDimInfo ?? imp2DimInfo;
 
   const p = parseFloat(price) || 0;
   const q = parseFloat(qty) || 0;
@@ -224,28 +244,38 @@ function DutyCalculator({ rates }: { rates: TnVedRateInfo }) {
   const totalPrice = p * q;
   const canCalc = totalPrice > 0;
 
+  const specificCurrency = (unit: string | null | undefined) => unit?.split('/')[0] || 'EUR';
+
   let dutyAmount = 0;
-  let specificAmount: number | null = null;
+  let dutyFormula: string | null = null;
+  let dutyCurrency = 'RUB'; // для адвалорной — та же валюта, что и цена; для specific — EUR/USD/...
 
   if (canCalc) {
-    const adValorem = totalPrice * (rates.dutyRate / 100);
-
-    if (hasSpecific) {
-      const dimValue = dimInfo ? d : q;
-      specificAmount = rates.dutyMin! * dimValue;
-      if (rates.dutySign === '>') {
-        dutyAmount = Math.max(adValorem, specificAmount);
-      } else if (rates.dutySign === '<') {
-        dutyAmount = Math.min(adValorem, specificAmount);
+    if (impIsSpecific) {
+      // IMP это специфическая ставка за единицу (EUR/пар, EUR/кг и т. п.)
+      const impQty = impDimInfo ? d : q;
+      dutyAmount = rates.dutyRate * impQty;
+      dutyCurrency = specificCurrency(rates.dutyRateUnit);
+      dutyFormula = `${rates.dutyRate} ${rates.dutyRateUnit} × ${impQty}`;
+    } else {
+      const adValorem = totalPrice * (rates.dutyRate / 100);
+      if (hasImp2Specific) {
+        // Классическая комбинированная: IMP адвалорная + IMP2 specific
+        const imp2Qty = imp2DimInfo ? d : q;
+        const specificAmount = rates.dutyMin! * imp2Qty;
+        dutyCurrency = specificCurrency(rates.dutyMinUnit);
+        dutyFormula =
+          `adv: ${fmt(adValorem)} vs spec: ${rates.dutyMin} ${rates.dutyMinUnit} × ${imp2Qty} = ${fmt(specificAmount)} ${dutyCurrency}`;
+        // Без курса EUR→RUB корректно сравнить адвалорную и специфическую части нельзя — показываем адвалорную как приближение
+        dutyAmount = adValorem;
       } else {
         dutyAmount = adValorem;
       }
-    } else {
-      dutyAmount = adValorem;
     }
   }
 
   const exciseAmount = canCalc ? totalPrice * (rates.exciseRate / 100) : 0;
+  // Примечание: при specific-пошлине в валюте, отличной от валюты цены, НДС тут — приближённый
   const vatAmount = canCalc ? (totalPrice + dutyAmount + exciseAmount) * (rates.vatRate / 100) : 0;
   const total = totalPrice + dutyAmount + vatAmount + exciseAmount;
 
@@ -256,25 +286,29 @@ function DutyCalculator({ rates }: { rates: TnVedRateInfo }) {
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <CalcInput label="Цена за ед." value={price} onChange={setPrice} />
         <CalcInput label="Количество" value={qty} onChange={setQty} />
-        {dimInfo && (
-          <CalcInput label={`${dimInfo.label}, ${dimInfo.unit}`} value={dim} onChange={setDim} />
+        {activeDimInfo && (
+          <CalcInput label={`${activeDimInfo.label}, ${activeDimInfo.unit}`} value={dim} onChange={setDim} />
         )}
       </div>
 
       {canCalc && (
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: 14 }}>
           <div><span style={labelStyle}>Стоимость:</span> {fmt(totalPrice)}</div>
-          <div><span style={labelStyle}>Пошлина:</span> {fmt(dutyAmount)}</div>
+          <div>
+            <span style={labelStyle}>Пошлина:</span> {fmt(dutyAmount)}
+            {impIsSpecific && ` ${dutyCurrency}`}
+          </div>
           {exciseAmount > 0 && <div><span style={labelStyle}>Акциз:</span> {fmt(exciseAmount)}</div>}
           <div><span style={labelStyle}>НДС:</span> {fmt(vatAmount)}</div>
           <div style={{ fontWeight: 600 }}><span style={labelStyle}>Итого:</span> {fmt(total)}</div>
         </div>
       )}
 
-      {canCalc && hasSpecific && specificAmount != null && (
+      {canCalc && dutyFormula && (
         <p style={{ fontSize: 12, color: '#888', marginTop: 8 }}>
-          Специфическая ставка: {fmt(specificAmount)} {rates.dutyMinUnit?.split('/')[0] || 'EUR'}.
-          {' '}Для точного сравнения с адвалорной частью необходим курс валют.
+          {impIsSpecific ? 'Специфическая пошлина: ' : 'Формула: '}
+          {dutyFormula}
+          {(impIsSpecific || hasImp2Specific) && ' — для сравнения/конвертации в валюту цены необходим курс.'}
         </p>
       )}
     </div>
@@ -355,9 +389,15 @@ function ResultsTable({
 
 function formatDutyRate(rates: TnVedRateInfo): string {
   if (!rates.dutyRate && !rates.dutyMin) return '0%';
-  let text = `${rates.dutyRate}%`;
+  // Первая составляющая: если IMPEDI — единица, IMP это специфическая ставка (0.34 EUR/пар),
+  // иначе — адвалорная в процентах.
+  const impPart = isSpecificUnit(rates.dutyRateUnit)
+    ? `${rates.dutyRate} ${rates.dutyRateUnit}`
+    : `${rates.dutyRate}%`;
+  let text = impPart;
   if (rates.dutySign && rates.dutyMin) {
-    text += ` но не менее ${rates.dutyMin} ${rates.dutyMinUnit || 'EUR/кг'}`;
+    const op = rates.dutySign === '<' ? 'но не более' : 'но не менее';
+    text += ` ${op} ${rates.dutyMin} ${rates.dutyMinUnit || 'EUR/кг'}`;
   }
   return text;
 }

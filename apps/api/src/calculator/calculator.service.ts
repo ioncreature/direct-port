@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { ClassifiedProduct } from '../classifier/classifier.service';
 import { DEFAULT_CONFIDENCE_THRESHOLD } from '../common/confidence';
+import { isSpecificDutyUnit } from '../common/normalize-impedi';
 import {
   resolveCalculationStatus,
   type CalculationStatus,
@@ -75,6 +76,11 @@ export function normalizePer(raw: string | null | undefined): string {
   if (u === 'kg' || u === 'кг') return 'kg';
   if (u === 'g' || u === 'г' || u === 'gram' || u === 'грамм') return 'g';
   if (u === 't' || u === 'т' || u === 'ton' || u === 'тонна') return 't';
+  if (u === 'pair' || u === 'pairs' || u === 'пара' || u === 'пар' || u === 'пары')
+    return 'pair';
+  // 1000шт — ставка за тысячу штук (ОКЕИ 798, типично для табачных изделий)
+  if (u === '1000шт' || u === '1000pcs' || u === 'kpcs' || u === 'тысшт')
+    return 'kpcs';
   if (u === 'pcs' || u === 'unit' || u === 'шт' || u === 'штук' || u === 'штука' || u === 'штуки')
     return 'pcs';
   if (u === 'm2' || u === 'м2' || u === 'm²' || u === 'м²' || u === 'квм' || u === 'squaremeter')
@@ -98,8 +104,12 @@ function describeQuantity(normalizedPer: string): string {
       return 'вес (г)';
     case 't':
       return 'вес (т)';
+    case 'pair':
+      return 'количество (пар)';
     case 'pcs':
       return 'количество (шт)';
+    case 'kpcs':
+      return 'количество (тыс. шт)';
     case 'm2':
       return 'площадь (м²)';
     case 'm3':
@@ -163,10 +173,32 @@ export class CalculatorService {
     const notes: ProductNote[] = [...p.notes];
     const totalPrice = p.price * p.quantity;
 
-    // Источник правил: AI-интерпретация либо детерминистический fallback из полей TKS
-    const charges: DutyChargeRule[] = p.dutyInterpretation?.charges.length
-      ? p.dutyInterpretation.charges
-      : this.buildChargesFromRates(p);
+    // Источник правил: AI-интерпретация либо детерминистический fallback из полей TKS.
+    // НДС всегда синхронизируется с rates.NDS (AI-интерпретация может быть неверной,
+    // например, после повышения стандартной ставки в РФ до 22% с 2026 г.).
+    const usingFallback = !p.dutyInterpretation?.charges.length;
+    const charges: DutyChargeRule[] = this.ensureAuthoritativeVatRate(
+      usingFallback ? this.buildChargesFromRates(p) : p.dutyInterpretation!.charges,
+      p.vatRate,
+    );
+
+    // Fallback не умеет совмещать две specific-составляющие (например, IMP=0.5 EUR/пар + IMP2=2 EUR/кг).
+    // Берём только IMP и помечаем результат как неполный — иначе IMP2 тихо теряется.
+    if (
+      usingFallback &&
+      isSpecificDutyUnit(p.dutyRateUnit) &&
+      p.dutyMin != null &&
+      p.dutyMin > 0 &&
+      !!p.dutyMinUnit
+    ) {
+      notes.push({
+        stage: 'interpret',
+        severity: 'blocker',
+        field: 'duty',
+        message:
+          `Комбинированная ставка с двумя специфическими составляющими (${p.dutyRate} ${p.dutyRateUnit} ${p.dutySign ?? ''} ${p.dutyMin} ${p.dutyMinUnit}) не поддерживается детерминистическим расчётом. Учтена только первая часть; для корректного расчёта требуется AI-интерпретатор.`.trim(),
+      });
+    }
 
     let dutyAmount = 0;
     let exciseAmount = 0;
@@ -245,19 +277,25 @@ export class CalculatorService {
    * когда AI-интерпретация недоступна. Работает для простых ставок (чисто адвалорных,
    * чисто специфических и комбинированных с явным IMPSIGN). Результат ВСЕГДА проходит
    * через resolveMethod, поэтому к нему применяются те же проверки размеров и заметки.
+   *
+   * IMPEDI определяет тип IMP:
+   * - null/"%" → IMP это адвалорная ставка в %
+   * - "EUR/X" (кг, пар, м² и т.п.) → IMP это специфическая ставка EUR за единицу
    */
   private buildChargesFromRates(p: ClassifiedProduct): DutyChargeRule[] {
     const charges: DutyChargeRule[] = [];
 
-    const hasRate = p.dutyRate > 0;
-    const hasSpec = p.dutyMin != null && p.dutyMin > 0 && !!p.dutyMinUnit;
+    const impIsSpecific = isSpecificDutyUnit(p.dutyRateUnit);
+    const hasAdValorem = !impIsSpecific && p.dutyRate > 0;
+    const hasImpSpecific = impIsSpecific && p.dutyRate > 0 && !!p.dutyRateUnit;
+    const hasImp2Spec = p.dutyMin != null && p.dutyMin > 0 && !!p.dutyMinUnit;
 
-    if (hasRate || hasSpec) {
-      const per = hasSpec ? normalizePer(p.dutyMinUnit!) : 'kg';
+    if (hasAdValorem || hasImpSpecific || hasImp2Spec) {
       let method: ChargeMethod;
 
-      if (hasRate && hasSpec) {
-        // Комбинированная ставка: адвалорная % + минимум/максимум в EUR за per
+      if (hasAdValorem && hasImp2Spec) {
+        // IMP — адвалорная + IMP2 — специфическая (классическая комбинированная ставка)
+        const per = normalizePer(p.dutyMinUnit!);
         if (p.dutySign === '<') {
           method = {
             kind: 'combined_max',
@@ -276,10 +314,24 @@ export class CalculatorService {
             per,
           };
         }
-      } else if (hasSpec) {
-        // Только специфическая часть (IMP=0, IMP2=x, IMPEDI2=unit) — это наш случай ковров
-        method = { kind: 'specific', amount: p.dutyMin!, unit: 'EUR', per };
+      } else if (hasImpSpecific) {
+        // IMP с единицей (IMPEDI=715/166/...) — чистая специфическая ставка (случай обуви: 0.34 EUR/пар)
+        method = {
+          kind: 'specific',
+          amount: p.dutyRate,
+          unit: 'EUR',
+          per: normalizePer(p.dutyRateUnit!),
+        };
+      } else if (hasImp2Spec) {
+        // Только IMP2 (IMP=0, IMP2=x, IMPEDI2=unit) — случай ковров
+        method = {
+          kind: 'specific',
+          amount: p.dutyMin!,
+          unit: 'EUR',
+          per: normalizePer(p.dutyMinUnit!),
+        };
       } else {
+        // Только IMP с процентной единицей (или без неё) — чисто адвалорная
         method = { kind: 'ad_valorem', rate: p.dutyRate };
       }
 
@@ -310,6 +362,26 @@ export class CalculatorService {
     }
 
     return charges;
+  }
+
+  /**
+   * Подменяет ставку НДС в charges на rates.NDS из TKS, чтобы не зависеть от
+   * эвристик AI-интерпретатора. NDS в TKS — это непосредственная процентная ставка
+   * (после реформы 2026 г. стандартная ставка = 22%).
+   */
+  private ensureAuthoritativeVatRate(
+    charges: DutyChargeRule[],
+    vatRate: number,
+  ): DutyChargeRule[] {
+    if (vatRate <= 0) return charges;
+    return charges.map((charge) => {
+      if (charge.type !== 'vat' || charge.method.kind !== 'ad_valorem') return charge;
+      if (charge.method.rate === vatRate) return charge;
+      return {
+        ...charge,
+        method: { ...charge.method, rate: vatRate },
+      };
+    });
   }
 
   private resolveBase(base: BaseType, totalPrice: number, duty: number, excise: number): number {
@@ -408,8 +480,14 @@ export class CalculatorService {
       }
       return { qty: 0, found: false };
     }
-    if (normalizedPer === 'pcs') {
+    if (normalizedPer === 'pcs' || normalizedPer === 'pair') {
+      // «пара» для обуви считается по количеству (одна пара = одна единица товара в декларации)
       if (product.quantity > 0) return { qty: product.quantity, found: true };
+      return { qty: 0, found: false };
+    }
+    if (normalizedPer === 'kpcs') {
+      // Ставка указана за 1000 шт — делим количество на 1000
+      if (product.quantity > 0) return { qty: product.quantity / 1000, found: true };
       return { qty: 0, found: false };
     }
 

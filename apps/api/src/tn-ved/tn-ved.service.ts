@@ -16,6 +16,8 @@ import { TnVedCode } from '../database/entities/tn-ved-code.entity';
 
 export interface TnVedRateInfo {
   dutyRate: number;
+  /** Единица IMP: null или "%" → dutyRate это адвалорный процент; "EUR/..." → специфическая ставка за единицу */
+  dutyRateUnit: string | null;
   dutySign: string | null;
   dutyMin: number | null;
   dutyMinUnit: string | null;
@@ -168,9 +170,9 @@ export class TnVedService {
         code: tnved.CODE,
         description: tnved.KR_NAIM,
         rates: this.extractRates(tnved),
-        dateBegin: tnved.DBEGIN,
-        dateEnd: tnved.DEND,
-        notes: tnved.PRIM,
+        dateBegin: tnved.DBEGIN ?? undefined,
+        dateEnd: tnved.DEND ?? undefined,
+        notes: tnved.PRIM != null ? String(tnved.PRIM) : undefined,
       },
       results: examples,
       totalFound: examples.length,
@@ -251,6 +253,7 @@ export class TnVedService {
               count: item.CNT,
               rates: {
                 dutyRate: 0,
+                dutyRateUnit: null,
                 dutySign: null,
                 dutyMin: null,
                 dutyMinUnit: null,
@@ -273,6 +276,7 @@ export class TnVedService {
     const rates = tnved.TNVED ?? {};
     return {
       dutyRate: rates.IMP ?? 0,
+      dutyRateUnit: normalizeImpediUnit(rates.IMPEDI),
       dutySign: rates.IMPSIGN ?? null,
       dutyMin: rates.IMP2 ?? null,
       dutyMinUnit: normalizeImpediUnit(rates.IMPEDI2),

@@ -13,6 +13,7 @@ function makeProduct(overrides: Partial<CalculatorInput> = {}): CalculatorInput 
     tnVedCode: '8516101000',
     tnVedDescription: 'Чайники электрические',
     dutyRate: 7.5,
+    dutyRateUnit: null,
     dutySign: null,
     dutyMin: null,
     dutyMinUnit: null,
@@ -56,6 +57,10 @@ describe('normalizePer', () => {
     ['ton', 't'],
     ['EUR/кг', 'kg'],
     ['EUR/л', 'l'],
+    ['EUR/пар', 'pair'],
+    ['пара', 'pair'],
+    ['EUR/1000шт', 'kpcs'],
+    ['1000шт', 'kpcs'],
     [null, ''],
     [undefined, ''],
     ['', ''],
@@ -172,6 +177,71 @@ describe('CalculatorService', () => {
       // 2 EUR * eurToDoc(1) * 10шт = 20
       const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 1 });
       expect(result.items[0].dutyAmount).toBe(20);
+    });
+
+    it('IMP с IMPEDI единицей (0.34 EUR/пар) → specific не адвалорный', () => {
+      // Реальный случай для обуви 6402999100: TKS возвращает IMP=0.34, IMPEDI=715.
+      // Раньше это считалось как 34% адвалорной → 34% * totalPrice. Теперь — 0.34 EUR/пар * qty.
+      // qty=60, eurToDoc=10 → 0.34 * 10 * 60 = 204 (вместо 1000 * 34% = 340)
+      const product = makeProduct({
+        quantity: 60,
+        price: 23.5,
+        dutyRate: 0.34,
+        dutyRateUnit: 'EUR/пар',
+        dutyMin: null,
+        dutyMinUnit: null,
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 10 });
+      expect(result.items[0].dutyAmount).toBeCloseTo(204);
+      expect(result.items[0].dutyAmountIsEstimate).toBe(false);
+      expect(result.items[0].dutyBase).toBe('pair');
+    });
+
+    it('IMP с IMPEDI="%" (или без IMPEDI) остаётся адвалорным', () => {
+      // IMP=10, IMPEDI='%' → 10% адвалорная пошлина
+      const product = makeProduct({
+        dutyRate: 10,
+        dutyRateUnit: '%',
+      });
+      // totalPrice=1000, duty=10% от 1000=100
+      const result = service.calculate([product], ZERO_COMMISSION);
+      expect(result.items[0].dutyAmount).toBe(100);
+    });
+
+    it('рассчитывает specific пошлину в EUR/1000шт (ОКЕИ 798)', () => {
+      // IMP=6 EUR/1000шт, qty=500 → 6 * 500/1000 = 3 EUR
+      // eurToDoc=100 → 3 * 100 = 300
+      const product = makeProduct({
+        quantity: 500,
+        dutyRate: 6,
+        dutyRateUnit: 'EUR/1000шт',
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 100 });
+      expect(result.items[0].dutyAmount).toBe(300);
+      expect(result.items[0].dutyBase).toBe('kpcs');
+      expect(result.items[0].dutyAmountIsEstimate).toBe(false);
+    });
+
+    it('dual-specific (IMP+IMP2 обе specific) → blocker note в fallback', () => {
+      // IMP=0.5 EUR/пар + IMP2=2 EUR/кг — fallback берёт только IMP, но пушит blocker
+      const product = makeProduct({
+        quantity: 10,
+        dutyRate: 0.5,
+        dutyRateUnit: 'EUR/пар',
+        dutySign: '>',
+        dutyMin: 2,
+        dutyMinUnit: 'EUR/кг',
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const item = result.items[0];
+      // IMP применена: 0.5 * 90 * 10 = 450
+      expect(item.dutyAmount).toBe(450);
+      // И добавлена блокирующая заметка
+      const blocker = item.notes.find(
+        (n) => n.severity === 'blocker' && n.field === 'duty' && /двумя специфическими/.test(n.message),
+      );
+      expect(blocker).toBeDefined();
+      expect(item.calculationStatus).toBe('needs_info');
     });
   });
 

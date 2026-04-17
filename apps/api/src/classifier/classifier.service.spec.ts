@@ -355,6 +355,27 @@ describe('ClassifierService', () => {
       expect(p.vatRate).toBe(20);
       expect(p.exciseRate).toBe(5);
     });
+
+    it('извлекает IMPEDI как dutyRateUnit (специфическая IMP: обувь с IMP=0.34, IMPEDI=715)', async () => {
+      const { service } = createService({
+        searchResults: { 'Ботинки': makeSearchResult('6402999100', 'Обувь') },
+        tnvedCodes: {
+          '6402999100': makeTnvedCode('6402999100', {
+            IMP: 0.34,
+            IMPEDI: '715',
+            NDS: 22,
+          }),
+        },
+        claudeResponse: [makeClaudeSelection({ tnVedCode: '6402999100', comment: 'Обувь' })],
+      });
+
+      const result = await service.classify([makeProduct('Ботинки')]);
+      const p = result.products[0];
+      expect(p.dutyRate).toBe(0.34);
+      expect(p.dutyRateUnit).toBe('EUR/пар');
+      expect(p.dutyMin).toBeNull();
+      expect(p.vatRate).toBe(22);
+    });
   });
 
   describe('Fallback на лучший TKS-кандидат без Claude', () => {

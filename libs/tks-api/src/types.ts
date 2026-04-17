@@ -131,23 +131,24 @@ export interface TnvedRates {
 
 export interface TnvedallEntry {
   PRIZNAK?: number;
-  CODEMIN?: string;
-  CODEMAX?: string;
-  MIN?: number;
-  MAX?: number;
-  MIN2?: number;
-  TYPEMIN?: string;
-  TYPEMAX?: string;
-  TYPEMIN2?: string;
-  SIGN?: string;
-  SIGN2?: string;
-  PREF?: string;
-  DOC_N?: string;
-  DOC_D?: string;
-  NOTE?: string;
-  CU?: string;
-  DBEGIN?: string;
-  DEND?: string;
+  CODEMIN?: string | null;
+  CODEMAX?: string | null;
+  MIN?: number | null;
+  MAX?: number | null;
+  MIN2?: number | null;
+  TYPEMIN?: string | null;
+  TYPEMAX?: string | null;
+  TYPEMIN2?: string | null;
+  SIGN?: string | null;
+  SIGN2?: string | null;
+  PREF?: string | null;
+  PRIM?: number | null;
+  DOC_N?: string | null;
+  DOC_D?: string | null;
+  NOTE?: string | null;
+  CU?: string | null;
+  DBEGIN?: string | null;
+  DEND?: string | null;
 }
 
 export interface TnvedccEntry {
@@ -168,12 +169,20 @@ export interface TnvedccEntry {
 export interface TnvedCode {
   CODE: string;
   KR_NAIM: string;
-  DBEGIN?: string;
-  DEND?: string;
-  PRIM?: string;
+  DBEGIN?: string | null;
+  DEND?: string | null;
+  PRIM?: string | number | null;
+  PRIM2?: string | number | null;
   TNVED?: TnvedRates;
-  Tnvedall?: Record<string, TnvedallEntry[]>;
+  /**
+   * Условия применения ставок и нетарифных мер, сгруппированные по PRIZNAK
+   * (1 = ввозная пошлина, 3 = НДС, 2 = акциз, 16 = временная, 19 = антидемпинговая, 20 = компенсационная и т. д.).
+   * В поле TYPEMIN/TYPEMAX указан ОКЕИ-код единицы измерения (см. tnvlook.json).
+   */
+  TNVEDALL?: Record<string, TnvedallEntry[]>;
   TNVEDCC?: TnvedccEntry[];
+  VERSION?: number;
+  API_VERSION?: string;
 }
 
 export interface TnvedVersion {
