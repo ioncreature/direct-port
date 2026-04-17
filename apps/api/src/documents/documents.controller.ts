@@ -30,8 +30,10 @@ import { ReviewDocumentDto } from './dto/review-document.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { ExcelExportService } from './excel-export.service';
 
-const SPREADSHEET_UPLOAD: MulterOptions = {
+const SPREADSHEET_UPLOAD: MulterOptions & { defParamCharset?: string } = {
   limits: { fileSize: 15 * 1024 * 1024 },
+  // Иначе busboy парсит filename= как latin1 — не-ASCII имена становятся mojibake.
+  defParamCharset: 'utf8',
   fileFilter: (_req, file, cb) => {
     const ext = file.originalname.split('.').pop()?.toLowerCase();
     if (ext === 'xlsx' || ext === 'csv') cb(null, true);
