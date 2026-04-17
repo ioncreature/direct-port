@@ -2,15 +2,30 @@
 // (tkssoft/api.tks.ru-docs). Базовый ОКЕИ-код без суффикса — ставка в евро;
 // последний символ может быть валютным суффиксом (D=USD, Р=RUB и т. д.).
 
-const CURRENCY_BY_SUFFIX: Record<string, string> = {
+// BYR — legacy-обозначение белорусского рубля (до деноминации 2016), TKS всё ещё
+// использует этот суффикс. В современных курсах ЦБ РФ это BYN.
+const SUFFIX_TO_CURRENCY: Record<string, string> = {
   D: 'USD',
   Р: 'RUB',
   A: 'AMD',
-  B: 'BYR',
+  B: 'BYN',
   C: 'KGS',
   K: 'KZT',
   E: 'EUR',
 };
+
+export const KNOWN_CURRENCIES: readonly string[] = [
+  'EUR',
+  'USD',
+  'RUB',
+  'BYN',
+  'AMD',
+  'KGS',
+  'KZT',
+  'CNY',
+];
+
+const KNOWN_CURRENCIES_SET = new Set(KNOWN_CURRENCIES);
 
 const OKEI_BASE_TO_UNIT: Record<string, string> = {
   '055': 'м²',
@@ -66,7 +81,7 @@ function parseCode(trimmed: string): { currency: string; unit: string } | null {
   const directUnit = OKEI_BASE_TO_UNIT[padded];
   if (directUnit !== undefined) return { currency: 'EUR', unit: directUnit };
 
-  const currency = CURRENCY_BY_SUFFIX[padded.slice(-1)];
+  const currency = SUFFIX_TO_CURRENCY[padded.slice(-1)];
   if (!currency) return null;
   const basePart = padToKnown(padded.slice(0, -1));
   const unit = OKEI_BASE_TO_UNIT[basePart];
@@ -99,10 +114,8 @@ export function isSpecificDutyUnit(normalized: string | null | undefined): boole
  */
 export function isFlatCurrencyUnit(normalized: string | null | undefined): boolean {
   if (!normalized || normalized === '%' || normalized.includes('/')) return false;
-  return KNOWN_CURRENCIES.has(normalized.toUpperCase());
+  return KNOWN_CURRENCIES_SET.has(normalized.toUpperCase());
 }
-
-const KNOWN_CURRENCIES = new Set(['EUR', 'USD', 'RUB', 'BYR', 'BYN', 'AMD', 'KGS', 'KZT', 'CNY']);
 
 /**
  * Извлекает валюту из нормализованной строки IMPEDI.
@@ -113,5 +126,5 @@ export function extractCurrency(normalized: string | null | undefined): string |
   const slash = normalized.indexOf('/');
   if (slash >= 0) return normalized.slice(0, slash);
   const upper = normalized.toUpperCase();
-  return KNOWN_CURRENCIES.has(upper) ? upper : null;
+  return KNOWN_CURRENCIES_SET.has(upper) ? upper : null;
 }

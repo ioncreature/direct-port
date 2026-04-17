@@ -671,10 +671,10 @@ describe('CalculatorService', () => {
       expect(result.items[0].dutyAmount).toBeCloseTo(2.5);
     });
 
-    it('BYR нормализуется в BYN при получении курса', () => {
+    it('BYN (после нормализации из BYR-суффикса TKS) считается по курсу BYN', () => {
       const product = makeProduct({
         dutyRate: 1,
-        dutyRateUnit: 'BYR/кг',
+        dutyRateUnit: 'BYN/кг',
       });
       const result = service.calculate([product], ZERO_COMMISSION, {
         currencyToDoc: { BYN: 30, EUR: 90 },

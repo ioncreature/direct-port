@@ -12,6 +12,7 @@ import type {
   ChargeMethod,
   DutyChargeRule,
   DutyInterpretation,
+  SpecificPart,
 } from '../duty-interpreter/interfaces';
 
 /**
@@ -165,7 +166,7 @@ function trimNumber(n: number): string {
   return s.replace(/\.?0+$/, '');
 }
 
-function formatSpecific(part: { amount: number; unit: string; per: string } | undefined | null): string {
+function formatSpecific(part: SpecificPart | undefined | null): string {
   if (!part) return '—';
   const cur = part.unit === 'EUR' ? '€' : part.unit;
   return `${trimNumber(part.amount)} ${cur}/${humanizeUnit(part.per)}`;
@@ -372,8 +373,6 @@ export class CalculatorService {
 
     const impIsSpecific = isSpecificDutyUnit(p.dutyRateUnit);
     const impIsFlatCurrency = isFlatCurrencyUnit(p.dutyRateUnit);
-    // Чисто валютная IMPEDI (500/643) — это абсолютная сумма в валюте "за штуку",
-    // не процент. Не попадает в ad_valorem-ветку.
     const hasAdValorem = !impIsSpecific && !impIsFlatCurrency && p.dutyRate > 0;
     const hasImpSpecific = impIsSpecific && p.dutyRate > 0;
     const hasImpFlat = impIsFlatCurrency && p.dutyRate > 0;
@@ -499,12 +498,9 @@ export class CalculatorService {
   /**
    * Возвращает курс «1 единица валюты ставки → валюта документа». null — курс неизвестен,
    * конвертация невозможна, ставка должна быть помечена estimated с blocker-note.
-   * TKS использует legacy-суффикс 'B' → 'BYR' для белорусского рубля; на практике
-   * это BYN (после деноминации 2016 г.), поэтому подменяем.
    */
   private rateFor(unit: string | undefined, rates: Record<string, number>): number | null {
-    const raw = (unit ?? 'EUR').toUpperCase();
-    const currency = raw === 'BYR' ? 'BYN' : raw;
+    const currency = (unit ?? 'EUR').toUpperCase();
     const rate = rates[currency];
     if (rate == null || !Number.isFinite(rate) || rate <= 0) return null;
     return rate;
@@ -550,50 +546,48 @@ export class CalculatorService {
         };
       }
 
-      case 'combined_min': {
-        const adValorem = baseValue * (method.rate / 100);
-        const per = normalizePer(method.per);
-        const rate = this.rateFor(method.unit, currencyRates);
-        const qty = this.resolveQuantity(per, product);
-        if (rate != null && qty.found) {
-          const specific = method.specificAmount * rate * qty.qty;
-          return { amount: Math.max(adValorem, specific), base: per, estimated: false };
-        }
-        const rateNote = rate == null ? ` (курс ${method.unit} в валюте документа отсутствует)` : '';
-        const rateForFormula = rate ?? 0;
-        return {
-          amount: adValorem, // применяем хотя бы адвалорную часть как нижнюю оценку
-          base: per,
-          estimated: true,
-          formula: `max(${adValorem.toFixed(2)}; ${describeQuantity(per)} × ${method.specificAmount} ${method.unit} × ${rateForFormula.toFixed(4)})`,
-          blockerMessage: `Комбинированная ставка: ${method.rate}% ИЛИ ${method.specificAmount} ${method.unit}/${describeQuantity(per)} (что больше). Применена только адвалорная часть${rateNote || `; не хватает ${describeQuantity(per)}`} — реальная пошлина может быть выше.`,
-        };
-      }
-
-      case 'combined_max': {
-        const adValorem = baseValue * (method.rate / 100);
-        const per = normalizePer(method.per);
-        const rate = this.rateFor(method.unit, currencyRates);
-        const qty = this.resolveQuantity(per, product);
-        if (rate != null && qty.found) {
-          const specific = method.specificAmount * rate * qty.qty;
-          return { amount: Math.min(adValorem, specific), base: per, estimated: false };
-        }
-        const rateNote = rate == null ? ` (курс ${method.unit} в валюте документа отсутствует)` : '';
-        const rateForFormula = rate ?? 0;
-        return {
-          amount: adValorem, // верхняя граница — адвалорная часть (specific могла бы её уменьшить)
-          base: per,
-          estimated: true,
-          formula: `min(${adValorem.toFixed(2)}; ${describeQuantity(per)} × ${method.specificAmount} ${method.unit} × ${rateForFormula.toFixed(4)})`,
-          blockerMessage: `Комбинированная ставка: ${method.rate}% ИЛИ ${method.specificAmount} ${method.unit}/${describeQuantity(per)} (что меньше). Применена адвалорная часть как верхняя граница${rateNote || `; не хватает ${describeQuantity(per)}`}.`,
-        };
-      }
+      case 'combined_min':
+      case 'combined_max':
+        return this.resolveCombinedAdValoremSpecific(method, baseValue, product, currencyRates);
 
       case 'combined_specific_min':
       case 'combined_specific_max':
         return this.resolveCombinedSpecific(method, product, currencyRates);
     }
+  }
+
+  /** Ad valorem + specific с выбором max/min. '>'/combined_min — max, '<'/combined_max — min. */
+  private resolveCombinedAdValoremSpecific(
+    method: Extract<ChargeMethod, { kind: 'combined_min' | 'combined_max' }>,
+    baseValue: number,
+    product: CalculatorInput,
+    currencyRates: Record<string, number>,
+  ): MethodResult {
+    const isMin = method.kind === 'combined_min';
+    const adValorem = baseValue * (method.rate / 100);
+    const per = normalizePer(method.per);
+    const rate = this.rateFor(method.unit, currencyRates);
+    const qty = this.resolveQuantity(per, product);
+
+    if (rate != null && qty.found) {
+      const specific = method.specificAmount * rate * qty.qty;
+      const amount = isMin ? Math.max(adValorem, specific) : Math.min(adValorem, specific);
+      return { amount, base: per, estimated: false };
+    }
+
+    const op = isMin ? 'max' : 'min';
+    const compare = isMin ? 'больше' : 'меньше';
+    const boundary = isMin ? 'только адвалорная часть — реальная пошлина может быть выше' : 'адвалорная часть как верхняя граница';
+    const rateNote = rate == null ? ` (курс ${method.unit} в валюте документа отсутствует)` : '';
+    const rateForFormula = rate ?? 0;
+
+    return {
+      amount: adValorem,
+      base: per,
+      estimated: true,
+      formula: `${op}(${adValorem.toFixed(2)}; ${describeQuantity(per)} × ${method.specificAmount} ${method.unit} × ${rateForFormula.toFixed(4)})`,
+      blockerMessage: `Комбинированная ставка: ${method.rate}% ИЛИ ${method.specificAmount} ${method.unit}/${describeQuantity(per)} (что ${compare}). Применена ${boundary}${rateNote || `; не хватает ${describeQuantity(per)}`}.`,
+    };
   }
 
   /** Две specific-составляющие в разных единицах: выбираем max/min после конвертации в валюту документа. */
@@ -603,39 +597,36 @@ export class CalculatorService {
     rates: Record<string, number>,
   ): MethodResult {
     const isMin = method.kind === 'combined_specific_min';
+    const primaryPer = normalizePer(method.primary?.per ?? '');
+    const fallbackPer = normalizePer(method.fallback?.per ?? '');
     const p1 = this.evalSpecific(method.primary, product, rates);
     const p2 = this.evalSpecific(method.fallback, product, rates);
 
     if (p1.ok && p2.ok) {
       const amount = isMin ? Math.max(p1.amount, p2.amount) : Math.min(p1.amount, p2.amount);
-      return { amount, base: normalizePer(method.primary.per), estimated: false };
+      return { amount, base: primaryPer, estimated: false };
     }
 
-    // Хотя бы одна составляющая не рассчиталась — применяем ту, которая посчитана,
-    // как нижнюю/верхнюю оценку; если обе не посчитались — 0 с blocker.
-    const fallbackAmount = p1.ok ? p1.amount : p2.ok ? p2.amount : 0;
     // base должна отражать единицу *фактически применённой* составляющей, иначе
     // Excel/UI покажут базу пошлины, не соответствующую посчитанной сумме.
-    const appliedPer = p1.ok
-      ? normalizePer(method.primary.per)
-      : p2.ok
-        ? normalizePer(method.fallback.per)
-        : normalizePer(method.primary?.per ?? method.fallback?.per ?? '');
+    const fallbackAmount = p1.ok ? p1.amount : p2.ok ? p2.amount : 0;
+    const appliedPer = p1.ok ? primaryPer : p2.ok ? fallbackPer : primaryPer || fallbackPer;
     const missing: string[] = [];
     if (!p1.ok) missing.push(`${formatSpecific(method.primary)} (${p1.reason})`);
     if (!p2.ok) missing.push(`${formatSpecific(method.fallback)} (${p2.reason})`);
     const op = isMin ? 'но не менее' : 'но не более';
+    const display = `${formatSpecific(method.primary)} ${op} ${formatSpecific(method.fallback)}`;
     return {
       amount: fallbackAmount,
       base: appliedPer,
       estimated: true,
-      formula: `${formatSpecific(method.primary)} ${op} ${formatSpecific(method.fallback)}`,
-      blockerMessage: `Комбинированная ставка из двух специфических составляющих (${formatSpecific(method.primary)} ${op} ${formatSpecific(method.fallback)}) не посчитана точно: ${missing.join(', ')}.`,
+      formula: display,
+      blockerMessage: `Комбинированная ставка из двух специфических составляющих (${display}) не посчитана точно: ${missing.join(', ')}.`,
     };
   }
 
   private evalSpecific(
-    part: { amount: number; unit: string; per: string } | undefined,
+    part: SpecificPart | undefined,
     product: CalculatorInput,
     rates: Record<string, number>,
   ): { ok: true; amount: number } | { ok: false; reason: string } {

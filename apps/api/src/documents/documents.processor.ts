@@ -11,6 +11,7 @@ import { errMsg } from '../common/errors';
 import type { ProductNote } from '../common/product-notes';
 import { addStageUsage } from '../common/token-usage';
 import { CurrencyService } from '../currency/currency.service';
+import { KNOWN_CURRENCIES } from '../common/normalize-impedi';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { DutyInterpreterService } from '../duty-interpreter/duty-interpreter.service';
 import type { Dimension } from '../duty-interpreter/interfaces';
@@ -92,9 +93,6 @@ export class DocumentsProcessor extends WorkerHost {
       doc.tokenUsage = addStageUsage(doc.tokenUsage, 'interpreter', interpretResult.tokenUsage);
       this.logger.log(`Document ${documentId}: interpretation done in ${Date.now() - t1}ms`);
 
-      // Карта курсов «1 единица валюты → валюта документа» для всех валют, которыми
-      // TKS может выразить specific-пошлину (суффиксы D/Р/A/B/C/K/E → USD/RUB/AMD/BYN/KGS/KZT/EUR).
-      // BYR — legacy-обозначение, использовавшееся до деноминации 2016 г.; курс берём по BYN.
       const currency = (doc.currency || 'USD').toUpperCase();
       const currencyToDoc = await this.buildCurrencyToDocRates(currency);
       this.logger.log(`Document ${documentId}: currency=${currency}, currencyToDoc=${JSON.stringify(currencyToDoc)}`);
@@ -238,28 +236,30 @@ export class DocumentsProcessor extends WorkerHost {
    * для них ставки будут помечены estimated с blocker-note.
    */
   private async buildCurrencyToDocRates(docCurrency: string): Promise<Record<string, number>> {
-    const rates: Record<string, number> = { [docCurrency]: 1 };
-    const docInRub = docCurrency === 'RUB' ? 1 : await this.currencyService.getRate(docCurrency).catch(() => null);
+    const targets = Array.from(new Set([docCurrency, ...KNOWN_CURRENCIES]));
+    const fetched = await Promise.all(
+      targets.map(async (c) => {
+        if (c === 'RUB') return [c, 1] as const;
+        try {
+          return [c, await this.currencyService.getRate(c)] as const;
+        } catch {
+          return [c, null] as const;
+        }
+      }),
+    );
+    const rubPerUnit = Object.fromEntries(fetched.filter((e) => e[1] != null)) as Record<string, number>;
+
+    const docInRub = rubPerUnit[docCurrency];
     if (docInRub == null) {
       this.logger.warn(`Rate for document currency ${docCurrency} unavailable — only ad valorem duties will be exact`);
-      return rates;
+      return { [docCurrency]: 1 };
     }
 
-    const targets = ['EUR', 'USD', 'RUB', 'BYN', 'AMD', 'KGS', 'KZT', 'CNY'];
-    const fetched = await Promise.all(
-      targets
-        .filter((c) => c !== docCurrency)
-        .map(async (c) => {
-          try {
-            const rub = c === 'RUB' ? 1 : await this.currencyService.getRate(c);
-            return [c, rub / docInRub] as const;
-          } catch {
-            return [c, null] as const;
-          }
-        }),
-    );
-    for (const [c, r] of fetched) {
-      if (r != null && Number.isFinite(r) && r > 0) rates[c] = r;
+    const rates: Record<string, number> = { [docCurrency]: 1 };
+    for (const [c, rub] of Object.entries(rubPerUnit)) {
+      if (c === docCurrency) continue;
+      const r = rub / docInRub;
+      if (Number.isFinite(r) && r > 0) rates[c] = r;
     }
     return rates;
   }

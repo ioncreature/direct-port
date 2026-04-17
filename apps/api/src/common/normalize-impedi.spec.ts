@@ -57,7 +57,7 @@ describe('normalizeImpediUnit', () => {
     ['166Р', 'RUB/кг'],
     ['796Р', 'RUB/шт'],
     ['112K', 'KZT/л'],
-    ['166B', 'BYR/кг'],
+    ['166B', 'BYN/кг'],
     ['168A', 'AMD/т'],
     ['112C', 'KGS/л'],
   ])('ОКЕИ с валютным суффиксом: %s → %s', (input, expected) => {
@@ -93,7 +93,7 @@ describe('isFlatCurrencyUnit', () => {
     ['EUR', true],
     ['RUB', true],
     ['USD', true],
-    ['BYR', true],
+    ['BYN', true],
     ['EUR/кг', false],
     ['%', false],
     [null, false],
