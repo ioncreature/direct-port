@@ -61,6 +61,21 @@ describe('normalizePer', () => {
     ['пара', 'pair'],
     ['EUR/1000шт', 'kpcs'],
     ['1000шт', 'kpcs'],
+    ['EUR/см³', 'cm3'],
+    ['см3', 'cm3'],
+    ['cc', 'cm3'],
+    ['EUR/КВТ', 'kw'],
+    ['kw', 'kw'],
+    ['EUR/Л.С.', 'hp'],
+    ['л.с.', 'hp'],
+    ['hp', 'hp'],
+    ['EUR/кар', 'ct'],
+    ['ct', 'ct'],
+    ['EUR/м', 'm'],
+    ['EUR/1000м³', 'km3'],
+    ['1000м3', 'km3'],
+    ['EUR/1000л', 'kl'],
+    ['1000л', 'kl'],
     [null, ''],
     [undefined, ''],
     ['', ''],
@@ -179,10 +194,8 @@ describe('CalculatorService', () => {
       expect(result.items[0].dutyAmount).toBe(20);
     });
 
-    it('IMP с IMPEDI единицей (0.34 EUR/пар) → specific не адвалорный', () => {
-      // Реальный случай для обуви 6402999100: TKS возвращает IMP=0.34, IMPEDI=715.
-      // Раньше это считалось как 34% адвалорной → 34% * totalPrice. Теперь — 0.34 EUR/пар * qty.
-      // qty=60, eurToDoc=10 → 0.34 * 10 * 60 = 204 (вместо 1000 * 34% = 340)
+    it('IMP с IMPEDI единицей (0.34 EUR/пар) → specific, не адвалорная', () => {
+      // Обувь 6402999100: TKS возвращает IMP=0.34, IMPEDI=715. До фикса считалось как 34%.
       const product = makeProduct({
         quantity: 60,
         price: 23.5,
@@ -197,33 +210,67 @@ describe('CalculatorService', () => {
       expect(result.items[0].dutyBase).toBe('pair');
     });
 
-    it('IMP с IMPEDI="%" (или без IMPEDI) остаётся адвалорным', () => {
-      // IMP=10, IMPEDI='%' → 10% адвалорная пошлина
-      const product = makeProduct({
-        dutyRate: 10,
-        dutyRateUnit: '%',
-      });
-      // totalPrice=1000, duty=10% от 1000=100
+    it('IMP с IMPEDI="%" остаётся адвалорным', () => {
+      const product = makeProduct({ dutyRate: 10, dutyRateUnit: '%' });
       const result = service.calculate([product], ZERO_COMMISSION);
       expect(result.items[0].dutyAmount).toBe(100);
     });
 
     it('рассчитывает specific пошлину в EUR/1000шт (ОКЕИ 798)', () => {
-      // IMP=6 EUR/1000шт, qty=500 → 6 * 500/1000 = 3 EUR
-      // eurToDoc=100 → 3 * 100 = 300
-      const product = makeProduct({
-        quantity: 500,
-        dutyRate: 6,
-        dutyRateUnit: 'EUR/1000шт',
-      });
+      const product = makeProduct({ quantity: 500, dutyRate: 6, dutyRateUnit: 'EUR/1000шт' });
       const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 100 });
       expect(result.items[0].dutyAmount).toBe(300);
       expect(result.items[0].dutyBase).toBe('kpcs');
       expect(result.items[0].dutyAmountIsEstimate).toBe(false);
     });
 
-    it('dual-specific (IMP+IMP2 обе specific) → blocker note в fallback', () => {
-      // IMP=0.5 EUR/пар + IMP2=2 EUR/кг — fallback берёт только IMP, но пушит blocker
+    it('рассчитывает specific пошлину в EUR/г через weight', () => {
+      const product = makeProduct({
+        weight: 2,
+        quantity: 10,
+        dutyRate: 0.2,
+        dutyRateUnit: 'EUR/г',
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      expect(result.items[0].dutyAmount).toBe(360000);
+      expect(result.items[0].dutyBase).toBe('g');
+    });
+
+    it('рассчитывает specific пошлину в EUR/т через weight', () => {
+      const product = makeProduct({
+        weight: 2,
+        quantity: 10,
+        dutyRate: 500,
+        dutyRateUnit: 'EUR/т',
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 100 });
+      expect(result.items[0].dutyAmount).toBe(1000);
+      expect(result.items[0].dutyBase).toBe('t');
+    });
+
+    it('specific пошлина в EUR/см³ без dimensions → estimate+blocker', () => {
+      const product = makeProduct({ dutyRate: 0.5, dutyRateUnit: 'EUR/см³' });
+      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      expect(result.items[0].dutyAmount).toBe(0);
+      expect(result.items[0].dutyAmountIsEstimate).toBe(true);
+      expect(result.items[0].dutyBase).toBe('cm3');
+      expect(result.items[0].dutyFormula).toMatch(/см³/);
+    });
+
+    it('specific пошлина EUR/см³ с dimensions', () => {
+      const product = makeProduct({
+        quantity: 5,
+        dutyRate: 0.5,
+        dutyRateUnit: 'EUR/см³',
+        dimensions: [{ name: 'engine', value: 2000, unit: 'см³' }],
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      expect(result.items[0].dutyAmount).toBe(450000);
+      expect(result.items[0].dutyAmountIsEstimate).toBe(false);
+    });
+
+    it('dual-specific (IMP+IMP2 обе specific) → применяет IMP и пушит blocker', () => {
+      // Fallback не умеет совмещать две specific-составляющие, применяет только IMP.
       const product = makeProduct({
         quantity: 10,
         dutyRate: 0.5,
@@ -234,9 +281,7 @@ describe('CalculatorService', () => {
       });
       const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
       const item = result.items[0];
-      // IMP применена: 0.5 * 90 * 10 = 450
       expect(item.dutyAmount).toBe(450);
-      // И добавлена блокирующая заметка
       const blocker = item.notes.find(
         (n) => n.severity === 'blocker' && n.field === 'duty' && /двумя специфическими/.test(n.message),
       );

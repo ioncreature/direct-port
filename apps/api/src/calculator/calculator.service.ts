@@ -65,60 +65,47 @@ const DEFAULT_COMMISSION: CommissionConfig = {
 };
 
 /**
- * Приводит единицу измерения из TKS API (кг / шт / м2 / л / м3 / …)
- * или из ответа Claude (kg / pcs / m2 / l / m3 / …) к канонической форме.
+ * Таблица единиц: canonical → [человекочитаемое_описание, aliases...].
+ * Aliases нормализуются из TKS (кг, шт, 1000шт, см³) и Claude (kg, pcs, cc).
+ * k-префикс означает «за тысячу» (kpcs=1000шт, kl=1000л, km3=1000м³).
  */
+const UNITS: Record<string, { label: string; aliases: string[] }> = {
+  kg: { label: 'вес (кг)', aliases: ['kg', 'кг'] },
+  g: { label: 'вес (г)', aliases: ['g', 'г', 'gram', 'грамм'] },
+  t: { label: 'вес (т)', aliases: ['t', 'т', 'ton', 'тонна'] },
+  ct: { label: 'вес (кар)', aliases: ['кар', 'ct', 'carat', 'карат'] },
+  pair: { label: 'количество (пар)', aliases: ['pair', 'pairs', 'пара', 'пар', 'пары'] },
+  pcs: { label: 'количество (шт)', aliases: ['pcs', 'unit', 'шт', 'штук', 'штука', 'штуки'] },
+  kpcs: { label: 'количество (тыс. шт)', aliases: ['1000шт', '1000pcs', 'kpcs', 'тысшт'] },
+  m: { label: 'длина (м)', aliases: ['m', 'м', 'meter', 'metr', 'метр'] },
+  m2: { label: 'площадь (м²)', aliases: ['m2', 'м2', 'm²', 'м²', 'квм', 'squaremeter'] },
+  m3: { label: 'объём (м³)', aliases: ['m3', 'м3', 'm³', 'м³', 'кубм', 'cubicmeter'] },
+  km3: { label: 'объём (тыс. м³)', aliases: ['1000м³', '1000м3', '1000m3', 'km3'] },
+  l: { label: 'объём (л)', aliases: ['l', 'л', 'litr', 'litre', 'liter', 'литр'] },
+  kl: { label: 'объём (тыс. л)', aliases: ['1000л', '1000l', 'kl'] },
+  cm3: { label: 'объём двигателя (см³)', aliases: ['cm3', 'см3', 'см³', 'cc'] },
+  kw: { label: 'мощность (кВт)', aliases: ['квт', 'kw', 'kwatt', 'киловатт'] },
+  hp: { label: 'мощность (л. с.)', aliases: ['лс', 'л.с', 'hp', 'horsepower', 'лошсила'] },
+};
+
+const ALIAS_TO_CANONICAL: Record<string, string> = (() => {
+  const map: Record<string, string> = {};
+  for (const [canonical, { aliases }] of Object.entries(UNITS)) {
+    for (const alias of aliases) map[alias] = canonical;
+  }
+  return map;
+})();
+
 export function normalizePer(raw: string | null | undefined): string {
   if (!raw) return '';
   let u = raw.toLowerCase().trim().replace(/[.\s]/g, '');
   const slash = u.indexOf('/');
   if (slash >= 0) u = u.substring(slash + 1);
-  if (u === 'kg' || u === 'кг') return 'kg';
-  if (u === 'g' || u === 'г' || u === 'gram' || u === 'грамм') return 'g';
-  if (u === 't' || u === 'т' || u === 'ton' || u === 'тонна') return 't';
-  if (u === 'pair' || u === 'pairs' || u === 'пара' || u === 'пар' || u === 'пары')
-    return 'pair';
-  // 1000шт — ставка за тысячу штук (ОКЕИ 798, типично для табачных изделий)
-  if (u === '1000шт' || u === '1000pcs' || u === 'kpcs' || u === 'тысшт')
-    return 'kpcs';
-  if (u === 'pcs' || u === 'unit' || u === 'шт' || u === 'штук' || u === 'штука' || u === 'штуки')
-    return 'pcs';
-  if (u === 'm2' || u === 'м2' || u === 'm²' || u === 'м²' || u === 'квм' || u === 'squaremeter')
-    return 'm2';
-  if (u === 'm3' || u === 'м3' || u === 'm³' || u === 'м³' || u === 'кубм' || u === 'cubicmeter')
-    return 'm3';
-  if (u === 'l' || u === 'л' || u === 'litr' || u === 'litre' || u === 'liter' || u === 'литр')
-    return 'l';
-  return u;
+  return ALIAS_TO_CANONICAL[u] ?? u;
 }
 
-/**
- * Человекочитаемое название количества для формулы и заметок.
- * Принимает УЖЕ нормализованную единицу (после normalizePer).
- */
 function describeQuantity(normalizedPer: string): string {
-  switch (normalizedPer) {
-    case 'kg':
-      return 'вес (кг)';
-    case 'g':
-      return 'вес (г)';
-    case 't':
-      return 'вес (т)';
-    case 'pair':
-      return 'количество (пар)';
-    case 'pcs':
-      return 'количество (шт)';
-    case 'kpcs':
-      return 'количество (тыс. шт)';
-    case 'm2':
-      return 'площадь (м²)';
-    case 'm3':
-      return 'объём (м³)';
-    case 'l':
-      return 'объём (л)';
-    default:
-      return normalizedPer || '—';
-  }
+  return UNITS[normalizedPer]?.label ?? normalizedPer ?? '—';
 }
 
 interface MethodResult {
@@ -287,35 +274,23 @@ export class CalculatorService {
 
     const impIsSpecific = isSpecificDutyUnit(p.dutyRateUnit);
     const hasAdValorem = !impIsSpecific && p.dutyRate > 0;
-    const hasImpSpecific = impIsSpecific && p.dutyRate > 0 && !!p.dutyRateUnit;
+    const hasImpSpecific = impIsSpecific && p.dutyRate > 0;
     const hasImp2Spec = p.dutyMin != null && p.dutyMin > 0 && !!p.dutyMinUnit;
 
     if (hasAdValorem || hasImpSpecific || hasImp2Spec) {
       let method: ChargeMethod;
 
       if (hasAdValorem && hasImp2Spec) {
-        // IMP — адвалорная + IMP2 — специфическая (классическая комбинированная ставка)
         const per = normalizePer(p.dutyMinUnit!);
-        if (p.dutySign === '<') {
-          method = {
-            kind: 'combined_max',
-            rate: p.dutyRate,
-            specificAmount: p.dutyMin!,
-            unit: 'EUR',
-            per,
-          };
-        } else {
-          // Пустой или '>' — консервативно берём combined_min ("но не менее")
-          method = {
-            kind: 'combined_min',
-            rate: p.dutyRate,
-            specificAmount: p.dutyMin!,
-            unit: 'EUR',
-            per,
-          };
-        }
+        // Пустой IMPSIGN или '>' трактуем как combined_min ("но не менее")
+        method = {
+          kind: p.dutySign === '<' ? 'combined_max' : 'combined_min',
+          rate: p.dutyRate,
+          specificAmount: p.dutyMin!,
+          unit: 'EUR',
+          per,
+        };
       } else if (hasImpSpecific) {
-        // IMP с единицей (IMPEDI=715/166/...) — чистая специфическая ставка (случай обуви: 0.34 EUR/пар)
         method = {
           kind: 'specific',
           amount: p.dutyRate,
@@ -323,7 +298,6 @@ export class CalculatorService {
           per: normalizePer(p.dutyRateUnit!),
         };
       } else if (hasImp2Spec) {
-        // Только IMP2 (IMP=0, IMP2=x, IMPEDI2=unit) — случай ковров
         method = {
           kind: 'specific',
           amount: p.dutyMin!,
@@ -331,7 +305,6 @@ export class CalculatorService {
           per: normalizePer(p.dutyMinUnit!),
         };
       } else {
-        // Только IMP с процентной единицей (или без неё) — чисто адвалорная
         method = { kind: 'ad_valorem', rate: p.dutyRate };
       }
 
@@ -464,36 +437,30 @@ export class CalculatorService {
   }
 
   /**
-   * Находит нужный размер товара для специфической части ставки.
-   * Никогда не подставляет вес, если ставка не в кг — это раньше приводило к ошибке
-   * "пошлина 0,38 EUR/м² × вес" вместо "0,38 EUR/м² × площадь".
-   *
-   * `normalizedPer` должен быть уже канонизирован (результат normalizePer).
+   * Находит количество/размер товара для указанной канонической единицы. Никогда не
+   * подменяет одну размерность другой — иначе ставка "0,38 EUR/м² × вес" считалась бы
+   * по весу вместо площади.
    */
   private resolveQuantity(
     normalizedPer: string,
     product: CalculatorInput,
   ): { qty: number; found: true } | { qty: 0; found: false } {
-    if (normalizedPer === 'kg') {
-      if (product.weight > 0) {
-        return { qty: product.weight * product.quantity, found: true };
-      }
-      return { qty: 0, found: false };
-    }
-    if (normalizedPer === 'pcs' || normalizedPer === 'pair') {
-      // «пара» для обуви считается по количеству (одна пара = одна единица товара в декларации)
-      if (product.quantity > 0) return { qty: product.quantity, found: true };
-      return { qty: 0, found: false };
-    }
-    if (normalizedPer === 'kpcs') {
-      // Ставка указана за 1000 шт — делим количество на 1000
-      if (product.quantity > 0) return { qty: product.quantity / 1000, found: true };
-      return { qty: 0, found: false };
-    }
+    const { weight, quantity } = product;
 
+    // Вес: product.weight хранится в кг — конвертируем в нужную единицу
+    if (normalizedPer === 'kg' && weight > 0) return { qty: weight * quantity, found: true };
+    if (normalizedPer === 'g' && weight > 0) return { qty: weight * 1000 * quantity, found: true };
+    if (normalizedPer === 't' && weight > 0) return { qty: (weight / 1000) * quantity, found: true };
+
+    // Количество: «пара» и «шт» эквивалентны в декларации; 1000шт — делим на 1000
+    if ((normalizedPer === 'pcs' || normalizedPer === 'pair') && quantity > 0)
+      return { qty: quantity, found: true };
+    if (normalizedPer === 'kpcs' && quantity > 0) return { qty: quantity / 1000, found: true };
+
+    // Размеры (m, m2, m3, l, cm3, kw, hp, ct, ...): из dimensions
     const dim = product.dimensions?.find((d) => normalizePer(d.unit) === normalizedPer);
     if (dim && Number.isFinite(dim.value) && dim.value > 0) {
-      return { qty: dim.value * product.quantity, found: true };
+      return { qty: dim.value * quantity, found: true };
     }
     return { qty: 0, found: false };
   }

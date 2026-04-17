@@ -15,6 +15,7 @@ describe('normalizeImpediUnit', () => {
 
   it.each([
     ['1', '%'],
+    ['2', '%'],
     ['%', '%'],
   ])('адвалорная ставка %s → %s', (input, expected) => {
     expect(normalizeImpediUnit(input)).toBe(expected);
@@ -32,8 +33,15 @@ describe('normalizeImpediUnit', () => {
     ['715', 'EUR/пар'],
     ['798', 'EUR/1000шт'],
     ['111', 'EUR/см³'],
+    ['114', 'EUR/1000м³'],
+    ['130', 'EUR/1000л'],
+    ['133', 'EUR/кг'],
     ['162', 'EUR/кар'],
+    ['185', 'EUR/т грп'],
     ['214', 'EUR/КВТ'],
+    ['251', 'EUR/Л.С.'],
+    ['831', 'EUR/л 100% спирта'],
+    ['500', 'EUR'],
   ])('конвертирует ОКЕИ %s → %s (EUR)', (input, expected) => {
     expect(normalizeImpediUnit(input)).toBe(expected);
   });
