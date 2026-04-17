@@ -1,5 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { TksApiClient, type GoodsItem, type TnvedCode } from '@direct-port/tks-api';
+import {
+  TksApiClient,
+  type GoodsItem,
+  type GoodsSearchResponse,
+  type TnvedCode,
+} from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -34,6 +39,13 @@ export interface TnVedCodeDetail {
   notes?: string;
 }
 
+export interface TnVedRawTks {
+  search?: GoodsSearchResponse;
+  code?: TnvedCode;
+  related?: GoodsSearchResponse;
+  codes: Record<string, TnvedCode>;
+}
+
 export interface TnVedSearchResponse {
   mode: 'code_lookup' | 'text_search';
   query: string;
@@ -41,6 +53,7 @@ export interface TnVedSearchResponse {
   codeDetail?: TnVedCodeDetail;
   results: TnVedSearchResultItem[];
   totalFound: number;
+  rawTks?: TnVedRawTks;
 }
 
 const ENRICH_CONCURRENCY = 5;
@@ -105,6 +118,9 @@ export class TnVedService {
     const translatedQuery = await this.translateToRussian(query);
     const searchResult = await this.tksApi.searchGoodsGrouped(translatedQuery);
 
+    const rawCodes: Record<string, TnvedCode> = {};
+    const rawTks: TnVedRawTks = { search: searchResult, codes: rawCodes };
+
     if (!searchResult.data.length) {
       return {
         mode: 'text_search',
@@ -112,10 +128,11 @@ export class TnVedService {
         translatedQuery: translatedQuery !== query ? translatedQuery : undefined,
         results: [],
         totalFound: 0,
+        rawTks,
       };
     }
 
-    const results = await this.enrichWithRates(searchResult.data);
+    const results = await this.enrichWithRates(searchResult.data, rawCodes);
 
     return {
       mode: 'text_search',
@@ -123,6 +140,7 @@ export class TnVedService {
       translatedQuery: translatedQuery !== query ? translatedQuery : undefined,
       results,
       totalFound: searchResult.hm,
+      rawTks,
     };
   }
 
@@ -130,11 +148,15 @@ export class TnVedService {
     const code = this.normalizeCode(query);
     const tnved = await this.tksApi.getTnvedCode(code);
 
+    const rawCodes: Record<string, TnvedCode> = {};
+    const rawTks: TnVedRawTks = { code: tnved, codes: rawCodes };
+
     let examples: TnVedSearchResultItem[] = [];
     try {
       const related = await this.tksApi.searchGoodsGrouped(tnved.KR_NAIM);
+      rawTks.related = related;
       const filtered = related.data.filter((item) => item.CODE !== code).slice(0, 10);
-      examples = await this.enrichWithRates(filtered);
+      examples = await this.enrichWithRates(filtered, rawCodes);
     } catch {
       // Примеры — не критично
     }
@@ -152,6 +174,7 @@ export class TnVedService {
       },
       results: examples,
       totalFound: examples.length,
+      rawTks,
     };
   }
 
@@ -202,7 +225,10 @@ export class TnVedService {
     return cyrillic / letters.length > 0.5;
   }
 
-  private async enrichWithRates(items: GoodsItem[]): Promise<TnVedSearchResultItem[]> {
+  private async enrichWithRates(
+    items: GoodsItem[],
+    rawCodes: Record<string, TnvedCode>,
+  ): Promise<TnVedSearchResultItem[]> {
     const results: TnVedSearchResultItem[] = new Array(items.length);
 
     for (let i = 0; i < items.length; i += ENRICH_CONCURRENCY) {
@@ -211,6 +237,7 @@ export class TnVedService {
         batch.map(async (item) => {
           try {
             const tnved = await this.tksApi.getTnvedCode(item.CODE);
+            rawCodes[item.CODE] = tnved;
             return {
               code: item.CODE,
               description: item.KR_NAIM,
