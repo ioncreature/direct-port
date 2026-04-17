@@ -4,6 +4,8 @@ import { formatUser } from '../format-user';
 import { type BotContext, mapTelegramLocale } from '../i18n';
 import { ConversationStateService } from '../state/conversation-state.service';
 
+const MAX_FILE_SIZE = 15 * 1024 * 1024;
+
 @Injectable()
 export class FileUploadHandler {
   private logger = new Logger(FileUploadHandler.name);
@@ -24,6 +26,14 @@ export class FileUploadHandler {
     if (ext !== 'xlsx' && ext !== 'csv') {
       this.logger.warn(`Rejected unsupported file "${fileName}" (ext=${ext}) from ${user}`);
       await ctx.reply(ctx.t('unsupported-format'));
+      return;
+    }
+
+    if ((document.file_size ?? 0) > MAX_FILE_SIZE) {
+      this.logger.warn(
+        `Rejected oversized file "${fileName}" (${document.file_size}B) from ${user}`,
+      );
+      await ctx.reply(ctx.t('file-too-large'));
       return;
     }
 
