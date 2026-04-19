@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { TksApiClient, TnvedCode } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
-import { extractToolInput, systemPrompt } from '../common/claude';
+import { cacheTools, extractToolInput, systemPrompt } from '../common/claude';
 import { errMsg } from '../common/errors';
 import { isFlatCurrencyUnit } from '../common/normalize-impedi';
 import { getStaticNoteTranslation } from '../common/note-translations';
@@ -347,14 +347,13 @@ export class DutyInterpreterService {
 ${JSON.stringify(codesData, null, 2)}
 </codes>${localizedInstruction}`;
 
-    const system = systemPrompt(SYSTEM_PROMPT, useCache);
     const response = await this.anthropic!.messages.create(
       {
         model,
         max_tokens: 2048,
-        system,
+        system: systemPrompt(SYSTEM_PROMPT),
         messages: [{ role: 'user', content: userPrompt }],
-        tools: [INTERPRET_TOOL],
+        tools: cacheTools([INTERPRET_TOOL], useCache),
         tool_choice: { type: 'any' },
       },
       { timeout: 30_000 },

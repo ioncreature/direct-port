@@ -7,7 +7,7 @@ import {
 } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
-import { extractToolInput, systemPrompt } from '../common/claude';
+import { cacheTools, extractToolInput, systemPrompt } from '../common/claude';
 import { DEFAULT_CONFIDENCE_THRESHOLD } from '../common/confidence';
 import { errMsg } from '../common/errors';
 import { normalizeImpediUnit } from '../common/normalize-impedi';
@@ -536,14 +536,13 @@ export class ClassifierService {
 
     const userPrompt = `Классифицируй товары по ТН ВЭД: ${JSON.stringify(items, null, 2)}${localizedInstruction}`;
 
-    const system = systemPrompt(SYSTEM_PROMPT, useCache);
     const response = await this.anthropic!.messages.create(
       {
         model,
         max_tokens: 4096,
-        system,
+        system: systemPrompt(SYSTEM_PROMPT),
         messages: [{ role: 'user', content: userPrompt }],
-        tools: [CLASSIFY_TOOL],
+        tools: cacheTools([CLASSIFY_TOOL], useCache),
         tool_choice: { type: 'any' },
       },
       { timeout: 30_000 },

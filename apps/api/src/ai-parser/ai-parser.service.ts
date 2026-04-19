@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
-import { extractToolInput, systemPrompt } from '../common/claude';
+import { cacheTools, extractToolInput, systemPrompt } from '../common/claude';
 import { errMsg } from '../common/errors';
 import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, tokenUsageFromResponse } from '../common/token-usage';
 import type { Dimension } from '../duty-interpreter/interfaces';
@@ -68,6 +68,7 @@ const SAMPLE_ROWS = 5;
 const MAX_ATTEMPTS = 2;
 /** Максимальный размер TSV-данных в символах (~50K токенов). Защита от вредоносных файлов с огромным текстом в ячейках. */
 const MAX_TSV_LENGTH = 200_000;
+const MAX_RAW_CONTEXT_CELL_CHARS = 500;
 
 const VALIDATION_OK_PHRASES = [
   'ошибки нет', 'ошибок нет', 'значение верно', 'значение верное',
@@ -113,7 +114,6 @@ const SYSTEM_PROMPT = `Ты — эксперт по парсингу комме�
 12. Каждая строка таблицы — отдельная товарная позиция. НЕ объединяй и НЕ дедуплицируй строки, даже если они имеют одинаковое наименование, цену или другие параметры. Количество извлечённых товаров должно точно совпадать с количеством товарных строк в таблице
 13. Числовые значения (вес, цена, количество) округляй до 4 знаков после запятой
 14. Если в таблице есть колонка с кодами ТН ВЭД / HS (海关编码, HS编码, код ТН ВЭД, HS code — 6-10 цифр) — извлеки код в поле hsCode (только цифры, без точек и пробелов). Если такой колонки нет — не включай поле
-15. Для каждого товара собери ВСЕ оставшиеся данные строки в поле rawContext: материал, состав, назначение, технические характеристики, артикул, бренд, упаковка — всё что не вошло в description, price, weight, quantity. Объедини через "; ". Если дополнительных данных нет — не включай поле
 
 `;
 
@@ -220,10 +220,6 @@ const PRODUCT_ITEMS_SCHEMA: Anthropic.Messages.Tool['input_schema'] = {
     hsCode: {
       type: 'string',
       description: 'Код ТН ВЭД / HS code если указан автором (6-10 цифр, только цифры). Пропусти если нет',
-    },
-    rawContext: {
-      type: 'string',
-      description: 'ВСЕ остальные данные строки через "; " (материал, назначение, характеристики, артикул, бренд и т.д.). НЕ включай description/price/weight/quantity. Пропусти если доп. данных нет',
     },
   },
   required: ['description', 'price', 'weight', 'quantity'],
@@ -353,6 +349,11 @@ export class AiParserService {
       if (structure) {
         lastResult.currency = structure.currency;
         lastResult.columnMapping = structure.columnMapping;
+        lastResult.products = this.enrichRawContext(
+          lastResult.products,
+          structure.dataRows.map((i) => data.rows[i]),
+          structure.columnMapping,
+        );
       }
 
       const detIssues = this.checkDeterministic(result, data, expectedCount);
@@ -429,6 +430,11 @@ export class AiParserService {
       if (structure) {
         firstResult.currency = structure.currency;
         firstResult.columnMapping = structure.columnMapping;
+        firstResult.products = this.enrichRawContext(
+          firstResult.products,
+          chunks[0],
+          structure.columnMapping,
+        );
       }
 
       const issues = this.checkDeterministic(
@@ -475,7 +481,9 @@ export class AiParserService {
         const r = results[j];
         if (r) {
           totalUsage = mergeTokenUsage(totalUsage, r.tokenUsage);
-          allProducts.push(...r.products);
+          const chunk = group[j];
+          const enriched = this.enrichRawContext(r.products, chunk, columnMapping);
+          allProducts.push(...enriched);
           this.logger.log(`Chunk ${g + j + 1}: parsed ${r.products.length} products`);
         } else {
           failedChunks++;
@@ -630,14 +638,13 @@ export class AiParserService {
     const model = await this.aiConfig.getParserModel();
     let tokenUsage: TokenUsageMap = emptyTokenUsageMap();
     try {
-      const system = systemPrompt(sysPrompt, useCache);
       const response = await this.anthropic!.messages.create(
         {
           model,
           max_tokens: opts?.maxTokens ?? 16384,
-          system,
+          system: systemPrompt(sysPrompt),
           messages: [{ role: 'user', content: prompt }],
-          tools: [tool],
+          tools: cacheTools([tool], useCache),
           tool_choice: { type: 'any' },
         },
         { timeout: opts?.timeout ?? 90_000 },
@@ -798,6 +805,40 @@ ${mappingInfo}
     return rows.map((row, i) => [String(i), ...row].join('\t')).join('\n');
   }
 
+  private enrichRawContext(
+    products: ParsedProduct[],
+    rows: string[][],
+    columnMapping: Record<string, number> | undefined,
+  ): ParsedProduct[] {
+    if (!columnMapping) return products;
+    if (products.length !== rows.length) {
+      this.logger.warn(
+        `enrichRawContext skipped: ${products.length} products vs ${rows.length} rows`,
+      );
+      return products;
+    }
+
+    const mainCols = new Set<number>();
+    for (const key of ['description', 'price', 'weight', 'quantity'] as const) {
+      const idx = columnMapping[key];
+      if (typeof idx === 'number') mainCols.add(idx);
+    }
+
+    return products.map((p, i) => {
+      const row = rows[i];
+      if (!row) return p;
+      const extras: string[] = [];
+      for (let c = 0; c < row.length; c++) {
+        if (mainCols.has(c)) continue;
+        // Cap per-cell length: xlsx may contain embedded images or abnormally large text
+        const cell = String(row[c] ?? '').trim().slice(0, MAX_RAW_CONTEXT_CELL_CHARS);
+        if (cell) extras.push(cell);
+      }
+      const rawContext = extras.join('; ');
+      return rawContext ? { ...p, rawContext } : p;
+    });
+  }
+
   private buildUserPrompt(
     tsv: string,
     structure?: DocumentStructure | null,
@@ -908,7 +949,6 @@ ${tsv}
       if (isNaN(price) || isNaN(quantity)) continue;
 
       const hsCodeRaw = typeof p.hsCode === 'string' ? p.hsCode.replace(/\D/g, '') : undefined;
-      const rawContext = typeof p.rawContext === 'string' ? p.rawContext.trim() : undefined;
 
       products.push({
         description,
@@ -916,7 +956,6 @@ ${tsv}
         weight: round4(isNaN(weight) ? 0 : Math.max(0, weight)),
         quantity: Math.max(1, quantity),
         ...(hsCodeRaw && hsCodeRaw.length >= 6 ? { hsCode: hsCodeRaw } : {}),
-        ...(rawContext ? { rawContext } : {}),
       });
     }
 

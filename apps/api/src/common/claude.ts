@@ -68,3 +68,17 @@ export function systemPrompt(text: string, cache = false) {
     ? [{ type: 'text' as const, text, cache_control: { type: 'ephemeral' as const } }]
     : [{ type: 'text' as const, text }];
 }
+
+/**
+ * При cache=true добавляет cache_control: ephemeral на последний tool.
+ * Кэширует весь префикс (system + tools) целиком — это даёт больший cache-hit
+ * чем cache_control на system, т.к. tool schemas обычно крупнее system prompt'а.
+ */
+export function cacheTools<T extends Anthropic.Messages.Tool>(tools: T[], cache = false): T[] {
+  if (!cache || tools.length === 0) return tools;
+  const last = tools[tools.length - 1];
+  return [
+    ...tools.slice(0, -1),
+    { ...last, cache_control: { type: 'ephemeral' as const } },
+  ];
+}

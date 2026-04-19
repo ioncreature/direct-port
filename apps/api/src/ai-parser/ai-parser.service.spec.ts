@@ -350,7 +350,7 @@ describe('AiParserService', () => {
   });
 
   describe('hsCode и rawContext', () => {
-    it('извлекает hsCode и rawContext из ответа Claude', async () => {
+    it('извлекает hsCode из ответа Claude', async () => {
       const { service } = createService({
         spreadsheetData: makeSpreadsheetData(2),
         claudeResponses: [
@@ -359,8 +359,8 @@ describe('AiParserService', () => {
             currency: 'CNY',
             columnMapping: { description: 0, price: 1, weight: 2, quantity: 3 },
             products: [
-              { description: 'Игрушка', price: 100, weight: 1, quantity: 10, hsCode: '9503005500', rawContext: 'АБС-пластик; батарейка' },
-              { description: 'Чайник', price: 200, weight: 2, quantity: 5, rawContext: 'нержавеющая сталь; 1500 Вт' },
+              { description: 'Игрушка', price: 100, weight: 1, quantity: 10, hsCode: '9503005500' },
+              { description: 'Чайник', price: 200, weight: 2, quantity: 5 },
             ],
           },
           VALIDATION_OK,
@@ -369,9 +369,44 @@ describe('AiParserService', () => {
 
       const result = await service.parse(Buffer.from(''), 'test.xlsx');
       expect(result.products[0].hsCode).toBe('9503005500');
-      expect(result.products[0].rawContext).toBe('АБС-пластик; батарейка');
       expect(result.products[1].hsCode).toBeUndefined();
-      expect(result.products[1].rawContext).toBe('нержавеющая сталь; 1500 Вт');
+    });
+
+    it('собирает rawContext из колонок вне columnMapping при наличии structure', async () => {
+      const header = ['Наименование', 'Цена', 'Вес', 'Количество', 'Материал', 'Артикул'];
+      const data = {
+        rows: [
+          header,
+          ['Игрушка', '100', '1', '10', 'АБС-пластик', 'ART-1'],
+          ['Чайник', '200', '2', '5', 'нержавеющая сталь', 'ART-2'],
+        ],
+        columnCount: 6,
+      };
+      const { service } = createService({
+        spreadsheetData: data,
+        claudeResponses: [
+          {
+            headerRows: [0],
+            dataRows: [1, 2],
+            columnMapping: { description: 0, price: 1, weight: 2, quantity: 3 },
+            currency: 'CNY',
+            weightNote: 'per_unit',
+          },
+          {
+            currency: 'CNY',
+            columnMapping: { description: 0, price: 1, weight: 2, quantity: 3 },
+            products: [
+              { description: 'Игрушка', price: 100, weight: 1, quantity: 10 },
+              { description: 'Чайник', price: 200, weight: 2, quantity: 5 },
+            ],
+          },
+          VALIDATION_OK,
+        ],
+      });
+
+      const result = await service.parse(Buffer.from(''), 'test.xlsx');
+      expect(result.products[0].rawContext).toBe('АБС-пластик; ART-1');
+      expect(result.products[1].rawContext).toBe('нержавеющая сталь; ART-2');
     });
 
     it('нормализует hsCode — убирает не-цифры', async () => {
