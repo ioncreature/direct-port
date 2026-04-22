@@ -5,12 +5,14 @@ import { AiParserService } from '../src/ai-parser/ai-parser.service';
 import { Document, DocumentStatus } from '../src/database/entities/document.entity';
 import { DocumentsParsingProcessor } from '../src/documents/documents-parsing.processor';
 import {
+  closeTestApp,
   createTestApp,
   INTERNAL_KEY_HEADER,
   loginAsAdmin,
   seedAdmin,
   seedCalculationConfig,
   seedTelegramUser,
+  waitQueueIdle,
 } from './helpers';
 
 describe('Document parsing (e2e)', () => {
@@ -37,7 +39,7 @@ describe('Document parsing (e2e)', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    await closeTestApp(app);
   });
 
   beforeEach(() => {
@@ -114,6 +116,13 @@ describe('Document parsing (e2e)', () => {
   // --- Parsing processor ---
 
   describe('DocumentsParsingProcessor', () => {
+    // Дожидаемся, пока background-worker обработает всё, что накидали
+    // предыдущие upload-тесты — иначе он съест mockResolvedValueOnce ниже.
+    beforeEach(async () => {
+      await waitQueueIdle(app, 'document-parsing');
+      (aiParser.parse as jest.Mock).mockClear();
+    });
+
     function createFakeJob(documentId: string) {
       return { data: { documentId } } as any;
     }

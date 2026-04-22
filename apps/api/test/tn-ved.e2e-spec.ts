@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
-import { createTestApp, loginAsAdmin, seedAdmin, seedTnVed } from './helpers';
+import { closeTestApp, createTestApp, loginAsAdmin, seedAdmin, seedTnVed } from './helpers';
 
 describe('TN VED (e2e)', () => {
   let app: INestApplication;
@@ -14,7 +14,7 @@ describe('TN VED (e2e)', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    await closeTestApp(app);
   });
 
   const auth = () => ({ Authorization: `Bearer ${accessToken}` });

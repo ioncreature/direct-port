@@ -1,6 +1,12 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
-import { createTestApp, INTERNAL_KEY_HEADER, loginAsAdmin, seedAdmin } from './helpers';
+import {
+  closeTestApp,
+  createTestApp,
+  INTERNAL_KEY_HEADER,
+  loginAsAdmin,
+  seedAdmin,
+} from './helpers';
 
 describe('CalculationConfig (e2e)', () => {
   let app: INestApplication;
@@ -14,7 +20,7 @@ describe('CalculationConfig (e2e)', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    await closeTestApp(app);
   });
 
   describe('GET /api/calculation-config', () => {

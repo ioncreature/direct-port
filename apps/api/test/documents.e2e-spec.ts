@@ -6,6 +6,7 @@ import { ClassifierService } from '../src/classifier/classifier.service';
 import { Document, DocumentStatus } from '../src/database/entities/document.entity';
 import { ExcelExportService } from '../src/documents/excel-export.service';
 import {
+  closeTestApp,
   createTestApp,
   INTERNAL_KEY_HEADER,
   loginAsAdmin,
@@ -30,7 +31,7 @@ describe('Documents (e2e)', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    await closeTestApp(app);
   });
 
   const sampleParsedData = [

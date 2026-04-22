@@ -1,11 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { TksApiClient } from '@direct-port/tks-api';
-import { BullModule } from '@nestjs/bullmq';
+import { BullModule, getQueueToken } from '@nestjs/bullmq';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { Queue } from 'bullmq';
+import { randomBytes } from 'crypto';
 import * as request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AiParserService } from '../src/ai-parser/ai-parser.service';
@@ -14,6 +16,8 @@ import { AiParserService } from '../src/ai-parser/ai-parser.service';
 import { AuthModule } from '../src/auth/auth.module';
 import { CalculationConfigModule } from '../src/calculation-config/calculation-config.module';
 import { DocumentsModule } from '../src/documents/documents.module';
+import { DocumentsParsingProcessor } from '../src/documents/documents-parsing.processor';
+import { DocumentsProcessor } from '../src/documents/documents.processor';
 import { TelegramUsersModule } from '../src/telegram-users/telegram-users.module';
 import { TnVedModule } from '../src/tn-ved/tn-ved.module';
 import { UsersModule } from '../src/users/users.module';
@@ -41,6 +45,39 @@ const TEST_DB_URL =
   'postgresql://directport:directport@localhost:5434/directport_test';
 
 process.env.API_INTERNAL_KEY = 'test-internal-key';
+
+// Каждый e2e-suite использует свою Postgres schema и свой префикс ключей BullMQ.
+// Why: иначе suite'ы пересекаются через shared БД (dropSchema одного затирает
+// данные другого) и через shared Redis (воркер из предыдущего suite подхватывает
+// job, пока следующий суит только стартует). При --runInBand jest запускает
+// suite'ы последовательно, но async teardown Redis/Postgres уже в следующем
+// процессе не завершён — и возникает flaky.
+function uniqueSuffix(): string {
+  return `${process.pid}_${Date.now()}_${randomBytes(3).toString('hex')}`;
+}
+
+async function withRawDataSource(fn: (ds: DataSource) => Promise<void>): Promise<void> {
+  const ds = new DataSource({ type: 'postgres', url: TEST_DB_URL, entities: [] });
+  await ds.initialize();
+  try {
+    await fn(ds);
+  } finally {
+    await ds.destroy();
+  }
+}
+
+async function ensureSchema(schema: string): Promise<void> {
+  await withRawDataSource(async (ds) => {
+    await ds.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    await ds.query(`CREATE SCHEMA "${schema}"`);
+  });
+}
+
+async function dropSchemaSafely(schema: string): Promise<void> {
+  await withRawDataSource(async (ds) => {
+    await ds.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+  });
+}
 
 // --- Mock TKS API ---
 
@@ -89,9 +126,17 @@ export function createMockTksApi(): Partial<TksApiClient> {
 
 // --- App factory ---
 
+const APP_SCHEMA_KEY = Symbol('testSchema');
+
 export async function createTestApp(): Promise<INestApplication> {
   const mockTksApi = createMockTksApi();
   const mockAiParser = createMockAiParser();
+
+  const suffix = uniqueSuffix();
+  const schema = `test_${suffix}`;
+  const prefix = `tbull_${suffix}`;
+
+  await ensureSchema(schema);
 
   const moduleRef = await Test.createTestingModule({
     imports: [
@@ -113,6 +158,7 @@ export async function createTestApp(): Promise<INestApplication> {
       TypeOrmModule.forRoot({
         type: 'postgres',
         url: TEST_DB_URL,
+        schema,
         entities: [
           AiConfig,
           User,
@@ -125,9 +171,8 @@ export async function createTestApp(): Promise<INestApplication> {
           TksCache,
         ],
         synchronize: true,
-        dropSchema: true,
       }),
-      BullModule.forRoot({ connection: { host: 'localhost', port: 6380 } }),
+      BullModule.forRoot({ connection: { host: 'localhost', port: 6380 }, prefix }),
       AuthModule,
       UsersModule,
       TnVedModule,
@@ -154,7 +199,71 @@ export async function createTestApp(): Promise<INestApplication> {
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   await app.init();
 
+  (app as unknown as Record<symbol, string>)[APP_SCHEMA_KEY] = schema;
+
   return app;
+}
+
+// Закрывает BullMQ workers и queues до app.close(), чтобы Redis не падал
+// на unhandled "Connection is closed" при teardown. После этого дропает
+// схему БД — чтобы suite'ы не пересекались через shared Postgres.
+// Why: NestJS зовёт shutdown hooks в порядке провайдеров, и queue может закрыть
+// свою connection раньше, чем worker успеет завершиться — даёт unhandled error.
+export async function closeTestApp(app: INestApplication): Promise<void> {
+  const queueNames = ['document-parsing', 'document-processing', 'document-notifications'];
+
+  const processorClasses = [DocumentsProcessor, DocumentsParsingProcessor];
+  for (const ProcessorClass of processorClasses) {
+    try {
+      const instance = app.get(ProcessorClass, { strict: false });
+      if (instance?.worker) {
+        await instance.worker.close();
+      }
+    } catch {
+      // Не зарегистрирован в этом тесте
+    }
+  }
+
+  for (const name of queueNames) {
+    try {
+      const queue = app.get<Queue>(getQueueToken(name), { strict: false });
+      await queue.close();
+    } catch {
+      // Не зарегистрирован
+    }
+  }
+
+  await app.close();
+
+  const schema = (app as unknown as Record<symbol, string>)[APP_SCHEMA_KEY];
+  if (schema) {
+    try {
+      await dropSchemaSafely(schema);
+    } catch {
+      // Не критично: временная схема, следующий suite получит свою
+    }
+  }
+}
+
+/**
+ * Ждёт, пока все активные/waiting/delayed задачи BullMQ-очереди обработаются.
+ * Нужно перед тестами, которые ставят `mockResolvedValueOnce` на сервис,
+ * вызываемый из worker'а — иначе background-обработка из предыдущего it-блока
+ * может съесть мок.
+ */
+export async function waitQueueIdle(
+  app: INestApplication,
+  queueName: string,
+  timeoutMs = 5000,
+): Promise<void> {
+  const queue = app.get<Queue>(getQueueToken(queueName), { strict: false });
+  if (!queue) return;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const counts = await queue.getJobCounts('active', 'waiting', 'delayed');
+    if ((counts.active ?? 0) + (counts.waiting ?? 0) + (counts.delayed ?? 0) === 0) return;
+    await new Promise((r) => setTimeout(r, 50));
+  }
 }
 
 // --- Seeders ---

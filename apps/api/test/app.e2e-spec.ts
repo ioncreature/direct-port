@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
-import { createTestApp } from './helpers';
+import { closeTestApp, createTestApp } from './helpers';
 
 describe('App (e2e)', () => {
   let app: INestApplication;
@@ -10,7 +10,7 @@ describe('App (e2e)', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    await closeTestApp(app);
   });
 
   describe('GET /api', () => {

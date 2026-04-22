@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
-import { createTestApp, seedAdmin } from './helpers';
+import { closeTestApp, createTestApp, seedAdmin } from './helpers';
 
 describe('Auth (e2e)', () => {
   let app: INestApplication;
@@ -11,7 +11,7 @@ describe('Auth (e2e)', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    await closeTestApp(app);
   });
 
   describe('POST /api/auth/login', () => {

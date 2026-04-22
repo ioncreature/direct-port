@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
-import { createTestApp, INTERNAL_KEY_HEADER } from './helpers';
+import { closeTestApp, createTestApp, INTERNAL_KEY_HEADER } from './helpers';
 
 describe('TelegramUsers (e2e)', () => {
   let app: INestApplication;
@@ -10,7 +10,7 @@ describe('TelegramUsers (e2e)', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    await closeTestApp(app);
   });
 
   describe('POST /api/telegram-users/register', () => {
