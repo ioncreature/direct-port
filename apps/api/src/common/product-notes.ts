@@ -31,6 +31,17 @@ export interface ProductNote {
  */
 export type CalculationStatus = 'exact' | 'partial' | 'needs_info' | 'error';
 
+export function defaultCountryWarningNote(): ProductNote {
+  return {
+    stage: 'calculate',
+    severity: 'warning',
+    field: 'country',
+    message:
+      'Страна происхождения не определена по документу — применён Китай по умолчанию. ' +
+      'Если страна другая, измените её на странице документа и нажмите «Пересчитать».',
+  };
+}
+
 /**
  * Вычисление итогового статуса расчёта из списка заметок.
  * - error  — если есть blocker с field='code' (не смогли классифицировать)

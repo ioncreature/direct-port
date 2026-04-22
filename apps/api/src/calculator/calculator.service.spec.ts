@@ -490,6 +490,124 @@ describe('CalculatorService', () => {
     });
   });
 
+  describe('Фильтрация charges по стране происхождения', () => {
+    const baseCharges = (): DutyChargeRule[] => [
+      {
+        type: 'import_duty',
+        label: 'Ввозная',
+        method: { kind: 'ad_valorem', rate: 5 },
+        base: 'customs_value',
+      },
+      {
+        type: 'antidumping',
+        label: 'Антидемпинг (Китай)',
+        method: { kind: 'ad_valorem', rate: 33.69 },
+        base: 'customs_value',
+        appliesWhen: { country: '156', conditions: 'Только литые диски 13-20″' },
+      },
+      {
+        type: 'antidumping',
+        label: 'Антидемпинг (Турция)',
+        method: { kind: 'ad_valorem', rate: 35.29 },
+        base: 'customs_value',
+        appliesWhen: { country: '792', conditions: 'Турция' },
+      },
+      {
+        type: 'vat',
+        label: 'НДС',
+        method: { kind: 'ad_valorem', rate: 20 },
+        base: 'customs_value_plus_duty_plus_excise',
+      },
+    ];
+
+    it('countryOfOrigin=156 (Китай): применяется только китайская антидемпинговая', () => {
+      const product = makeProduct({
+        dutyInterpretation: { tnvedCode: '8708705009', charges: baseCharges(), reasoning: '' },
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { countryOfOrigin: '156' });
+      // duty = 5% + 33.69% от 1000 = 50 + 336.9 = 386.9
+      expect(result.items[0].dutyAmount).toBeCloseTo(386.9);
+    });
+
+    it('countryOfOrigin=392 (Япония, нет совпадения): антидемпинговые не применяются', () => {
+      const product = makeProduct({
+        dutyInterpretation: { tnvedCode: '8708705009', charges: baseCharges(), reasoning: '' },
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { countryOfOrigin: '392' });
+      // duty = только 5% от 1000 = 50
+      expect(result.items[0].dutyAmount).toBe(50);
+    });
+
+    it('countryOfOrigin не указан: ни одна страновая ставка не применяется', () => {
+      const product = makeProduct({
+        dutyInterpretation: { tnvedCode: '8708705009', charges: baseCharges(), reasoning: '' },
+      });
+      const result = service.calculate([product], ZERO_COMMISSION);
+      expect(result.items[0].dutyAmount).toBe(50);
+    });
+
+    it('код страны с ведущим нулём нормализуется (12 → "012")', () => {
+      const charges: DutyChargeRule[] = [
+        {
+          type: 'antidumping',
+          label: 'Пример',
+          method: { kind: 'ad_valorem', rate: 10 },
+          base: 'customs_value',
+          appliesWhen: { country: '012' },
+        },
+      ];
+      const product = makeProduct({
+        dutyRate: 0,
+        vatRate: 0,
+        dutyInterpretation: { tnvedCode: 'x', charges, reasoning: '' },
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { countryOfOrigin: '12' });
+      expect(result.items[0].dutyAmount).toBe(100);
+    });
+
+    it('антидемпинговая с conditions добавляет warning-note с текстом условий', () => {
+      const product = makeProduct({
+        dutyInterpretation: { tnvedCode: '8708705009', charges: baseCharges(), reasoning: '' },
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { countryOfOrigin: '156' });
+      const warning = result.items[0].notes.find(
+        (n) => n.severity === 'warning' && n.field === 'antidumping',
+      );
+      expect(warning).toBeDefined();
+      expect(warning!.message).toMatch(/литые диски 13-20/);
+    });
+
+    it('преференциальная ставка по стране (import_duty+country) вытесняет базовую', () => {
+      const charges: DutyChargeRule[] = [
+        {
+          type: 'import_duty',
+          label: 'Ввозная',
+          method: { kind: 'ad_valorem', rate: 5 },
+          base: 'customs_value',
+        },
+        {
+          type: 'import_duty',
+          label: 'Льгота (Вьетнам)',
+          method: { kind: 'ad_valorem', rate: 0 },
+          base: 'customs_value',
+          appliesWhen: { country: '704', conditions: 'Соглашение с Вьетнамом' },
+        },
+      ];
+      const product = makeProduct({
+        vatRate: 0,
+        dutyInterpretation: { tnvedCode: 'x', charges, reasoning: '' },
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { countryOfOrigin: '704' });
+      // Осталась только преференциальная 0% — duty=0
+      expect(result.items[0].dutyAmount).toBe(0);
+      const info = result.items[0].notes.find(
+        (n) => n.severity === 'info' && n.field === 'import_duty',
+      );
+      expect(info).toBeDefined();
+      expect(info!.message).toMatch(/преференциальная/i);
+    });
+  });
+
   describe('Комиссия за логистику', () => {
     it('рассчитывает комиссию: pricePercent + weightRate + fixedFee', () => {
       const commission: CommissionConfig = {

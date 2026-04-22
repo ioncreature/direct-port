@@ -5,6 +5,7 @@ import { Queue } from 'bullmq';
 import { FindOptionsWhere, Repository } from 'typeorm';
 import { ErrorCode } from '../common/error-codes';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
+import { normalizeOksmtCode } from '../common/oksmt';
 import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
@@ -98,6 +99,37 @@ export class DocumentsService {
     });
 
     return paginate(data, total, query.page, query.limit);
+  }
+
+  /**
+   * Быстрый пересчёт: обновляет countryOfOrigin (если передан) и ставит в очередь
+   * recalculate-job. Calculator переиспользует сохранённый dutyInterpretation,
+   * классификация+интерпретация не запускаются. Источник страны = 'manual', потому что
+   * операция инициирована человеком.
+   */
+  async recalculate(id: string, dto: { countryOfOrigin?: string }): Promise<Document> {
+    this.logger.log(`Recalculating document ${id} with country=${dto.countryOfOrigin ?? '(unchanged)'}`);
+    const doc = await this.findOne(id);
+
+    if (!doc.resultData || doc.resultData.length === 0) {
+      throw new BadRequestException({
+        code: ErrorCode.INVALID_STATUS_FOR_REPROCESS,
+        message: 'Document has no result data to recalculate. Use /reprocess instead.',
+      });
+    }
+
+    const normalized = normalizeOksmtCode(dto.countryOfOrigin);
+    if (normalized) {
+      doc.countryOfOrigin = normalized;
+      doc.countryOriginSource = 'manual';
+      doc.countryDetectionReason = null;
+    }
+
+    doc.status = DocumentStatus.PENDING;
+    doc.errorMessage = null;
+    const saved = await this.repo.save(doc);
+    await this.processingQueue.add('recalculate-document', { documentId: saved.id });
+    return saved;
   }
 
   async reprocess(id: string): Promise<Document> {

@@ -51,7 +51,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
     this.logger.log(`Document ${documentId}: file="${doc.originalFileName}", buffer=${doc.fileBuffer.length} bytes`);
 
     try {
-      const { products, currency, columnMapping, feasibility, rejectionReasons, tokenUsage } =
+      const { products, currency, columnMapping, feasibility, rejectionReasons, tokenUsage, countrySuggestion } =
         await this.aiParser.parse(doc.fileBuffer, doc.originalFileName);
 
       doc.parsedData = products;
@@ -60,6 +60,13 @@ export class DocumentsParsingProcessor extends WorkerHost {
       doc.rowCount = products.length;
       doc.tokenUsage = addStageUsage(doc.tokenUsage ?? {}, 'parser', tokenUsage);
       doc.fileBuffer = null;
+
+      // Manual-значение не затираем при reparse.
+      if (doc.countryOriginSource !== 'manual' && countrySuggestion) {
+        doc.countryOfOrigin = countrySuggestion.code;
+        doc.countryOriginSource = countrySuggestion.source;
+        doc.countryDetectionReason = countrySuggestion.reason;
+      }
 
       if (feasibility === 'rejected') {
         doc.status = DocumentStatus.REJECTED;

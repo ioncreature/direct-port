@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { ClassifiedProduct } from '../classifier/classifier.service';
 import { DEFAULT_CONFIDENCE_THRESHOLD } from '../common/confidence';
 import { extractCurrency, isFlatCurrencyUnit, isSpecificDutyUnit } from '../common/normalize-impedi';
+import { normalizeOksmtCode } from '../common/oksmt';
 import {
   resolveCalculationStatus,
   type CalculationStatus,
@@ -227,14 +228,18 @@ export class CalculatorService {
        *  Если указан currencyToDoc['EUR'], он используется вместо eurToDoc. */
       currencyToDoc?: Record<string, number>;
       confidenceThreshold?: number;
+      /** OKSMT-код страны происхождения товаров в документе.
+       *  Используется для фильтрации charges с appliesWhen.country. */
+      countryOfOrigin?: string | null;
     },
   ): CalculationSummary {
     const threshold = options?.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
     const currencyRates = this.buildCurrencyRates(options);
+    const countryOfOrigin = options?.countryOfOrigin ?? null;
     this.logger.log(
-      `Calculating ${products.length} products, commission: ${JSON.stringify(commission)}, rates=${JSON.stringify(currencyRates)}, confidenceThreshold=${threshold}`,
+      `Calculating ${products.length} products, commission: ${JSON.stringify(commission)}, rates=${JSON.stringify(currencyRates)}, confidenceThreshold=${threshold}, country=${countryOfOrigin ?? '—'}`,
     );
-    const items = products.map((p) => this.calculateOne(p, commission, currencyRates, threshold));
+    const items = products.map((p) => this.calculateOne(p, commission, currencyRates, threshold, countryOfOrigin));
     const summary = this.summarize(items);
     this.logger.log(`Calculation done: grandTotal=${summary.grandTotal.toFixed(2)}, duty=${summary.totalDuty.toFixed(2)}, vat=${summary.totalVat.toFixed(2)}`);
     return summary;
@@ -271,6 +276,7 @@ export class CalculatorService {
     commission: CommissionConfig,
     currencyRates: Record<string, number>,
     confidenceThreshold: number,
+    countryOfOrigin: string | null,
   ): CalculatedProduct {
     const notes: ProductNote[] = [...p.notes];
     const totalPrice = p.price * p.quantity;
@@ -279,10 +285,11 @@ export class CalculatorService {
     // НДС всегда синхронизируется с rates.NDS (AI-интерпретация может быть неверной,
     // например, после повышения стандартной ставки в РФ до 22% с 2026 г.).
     const usingFallback = !p.dutyInterpretation?.charges.length;
-    const charges: DutyChargeRule[] = this.ensureAuthoritativeVatRate(
+    const rawCharges: DutyChargeRule[] = this.ensureAuthoritativeVatRate(
       usingFallback ? this.buildChargesFromRates(p) : p.dutyInterpretation!.charges,
       p.vatRate,
     );
+    const charges = this.filterChargesByCountry(rawCharges, countryOfOrigin, notes);
 
     let dutyAmount = 0;
     let exciseAmount = 0;
@@ -316,6 +323,20 @@ export class CalculatorService {
               dutyAmountIsEstimate = true;
               if (result.formula) dutyFormula = result.formula;
             }
+          }
+          // Для условных ставок (антидемпинговых/компенсационных) показываем условия
+          // как warning, чтобы оператор проверил соответствие товара параметрам решения.
+          if (
+            (charge.type === 'antidumping' || charge.type === 'compensatory') &&
+            charge.appliesWhen?.conditions
+          ) {
+            const label = charge.type === 'antidumping' ? 'антидемпинговая' : 'компенсационная';
+            notes.push({
+              stage: 'calculate',
+              severity: 'warning',
+              field: charge.type,
+              message: `Применена ${label} пошлина ${formatMethod(charge.method)}. Проверьте соответствие условиям: ${charge.appliesWhen.conditions}`,
+            });
           }
           break;
         case 'excise':
@@ -462,6 +483,53 @@ export class CalculatorService {
     }
 
     return charges;
+  }
+
+  /**
+   * Фильтрует charges по стране происхождения документа. Правила:
+   *   - charges без appliesWhen.country применяются всегда;
+   *   - charges с appliesWhen.country применяются только если страна совпадает;
+   *   - если появляется льготная ставка (type='import_duty' с appliesWhen.country),
+   *     она заменяет базовую безусловную ввозную пошлину (CU-пошлина по стране
+   *     происхождения вытесняет обычную IMP).
+   */
+  private filterChargesByCountry(
+    charges: DutyChargeRule[],
+    countryOfOrigin: string | null,
+    notes: ProductNote[],
+  ): DutyChargeRule[] {
+    const normalizedCountry = normalizeOksmtCode(countryOfOrigin);
+    const matching: DutyChargeRule[] = [];
+    for (const charge of charges) {
+      const chargeCountry = charge.appliesWhen?.country;
+      if (!chargeCountry) {
+        matching.push(charge);
+        continue;
+      }
+      if (normalizeOksmtCode(chargeCountry) === normalizedCountry) {
+        matching.push(charge);
+      }
+    }
+
+    // Льготная ставка по стране (PRIZNAK=30) вытесняет общую адвалорную IMP.
+    // Эвристика: если остались несколько 'import_duty', оставляем условную (с country).
+    const importDuties = matching.filter((c) => c.type === 'import_duty');
+    if (importDuties.length > 1) {
+      const preferential = importDuties.find((c) => c.appliesWhen?.country);
+      if (preferential) {
+        const filtered = matching.filter(
+          (c) => c.type !== 'import_duty' || c === preferential,
+        );
+        notes.push({
+          stage: 'calculate',
+          severity: 'info',
+          field: 'import_duty',
+          message: `Применена преференциальная ставка по стране происхождения вместо общей.${preferential.appliesWhen?.conditions ? ` Условия: ${preferential.appliesWhen.conditions}` : ''}`,
+        });
+        return filtered;
+      }
+    }
+    return matching;
   }
 
   /**

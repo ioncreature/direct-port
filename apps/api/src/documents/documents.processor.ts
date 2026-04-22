@@ -5,14 +5,14 @@ import { Job, Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 import { CalculationConfigService } from '../calculation-config/calculation-config.service';
 import { CalculationLogsService } from '../calculation-logs/calculation-logs.service';
-import { CalculatorService, type CalculatedProduct } from '../calculator/calculator.service';
+import { CalculatorService, type CalculatedProduct, type CalculatorInput } from '../calculator/calculator.service';
 import { ClassifierService, type ProductRow } from '../classifier/classifier.service';
 import { errMsg } from '../common/errors';
-import type { ProductNote } from '../common/product-notes';
+import { defaultCountryWarningNote, type ProductNote } from '../common/product-notes';
 import { addStageUsage } from '../common/token-usage';
 import { CurrencyService } from '../currency/currency.service';
 import { KNOWN_CURRENCIES } from '../common/normalize-impedi';
-import { Document, DocumentStatus } from '../database/entities/document.entity';
+import { DEFAULT_COUNTRY_OF_ORIGIN, Document, DocumentStatus } from '../database/entities/document.entity';
 import { DutyInterpreterService } from '../duty-interpreter/duty-interpreter.service';
 import type { Dimension } from '../duty-interpreter/interfaces';
 import {
@@ -40,6 +40,10 @@ export class DocumentsProcessor extends WorkerHost {
   }
 
   async process(job: Job<{ documentId: string }>): Promise<void> {
+    if (job.name === 'recalculate-document') {
+      return this.recalculate(job.data.documentId);
+    }
+
     const { documentId } = job.data;
     this.logger.log(`Processing document ${documentId}`);
 
@@ -69,6 +73,11 @@ export class DocumentsProcessor extends WorkerHost {
 
       this.logger.log(`Document ${documentId}: ${rows.length} rows, currency=${doc.currency || 'USD'}`);
 
+      const currency = (doc.currency || 'USD').toUpperCase();
+      const [config, currencyToDoc] = await Promise.all([
+        this.configService.get(),
+        this.buildCurrencyToDocRates(currency),
+      ]);
       const {
         pricePercent,
         weightRate,
@@ -76,8 +85,9 @@ export class DocumentsProcessor extends WorkerHost {
         sendResultFile,
         confidenceThreshold,
         lowConfidenceAction,
-      } = await this.configService.get();
+      } = config;
       const commission = { pricePercent, weightRate, fixedFee };
+      this.logger.log(`Document ${documentId}: currency=${currency}, currencyToDoc=${JSON.stringify(currencyToDoc)}`);
 
       const language = doc.language ?? doc.telegramUser?.language;
 
@@ -93,14 +103,20 @@ export class DocumentsProcessor extends WorkerHost {
       doc.tokenUsage = addStageUsage(doc.tokenUsage, 'interpreter', interpretResult.tokenUsage);
       this.logger.log(`Document ${documentId}: interpretation done in ${Date.now() - t1}ms`);
 
-      const currency = (doc.currency || 'USD').toUpperCase();
-      const currencyToDoc = await this.buildCurrencyToDocRates(currency);
-      this.logger.log(`Document ${documentId}: currency=${currency}, currencyToDoc=${JSON.stringify(currencyToDoc)}`);
+      if (!doc.countryOfOrigin) {
+        doc.countryOfOrigin = DEFAULT_COUNTRY_OF_ORIGIN;
+        doc.countryOriginSource = 'default';
+        doc.countryDetectionReason = 'Страна происхождения не определена, применён Китай по умолчанию';
+      }
+      if (doc.countryOriginSource === 'default') {
+        for (const p of interpreted) p.notes.push(defaultCountryWarningNote());
+      }
 
       const t2 = Date.now();
       const summary = this.calculator.calculate(interpreted, commission, {
         currencyToDoc,
         confidenceThreshold,
+        countryOfOrigin: doc.countryOfOrigin,
       });
       this.logger.log(`Document ${documentId}: calculation done in ${Date.now() - t2}ms`);
 
@@ -132,9 +148,17 @@ export class DocumentsProcessor extends WorkerHost {
           tnVedCode: item.tnVedCode,
           tnVedDescription: item.tnVedDescription,
           dutyRate: item.dutyRate,
+          dutyRateUnit: item.dutyRateUnit,
+          dutySign: item.dutySign,
+          dutyMin: item.dutyMin,
+          dutyMinUnit: item.dutyMinUnit,
           dutyRateDisplay: item.dutyRateDisplay,
           vatRate: item.vatRate,
           exciseRate: item.exciseRate,
+          matched: item.matched,
+          suggestedCode: item.suggestedCode,
+          // Сохраняем, чтобы recalculate мог пересчитать с другой страной без Claude.
+          dutyInterpretation: interpreted[i]?.dutyInterpretation ?? null,
           totalPrice: item.totalPrice,
           dutyAmount: item.dutyAmount,
           dutyAmountIsEstimate: item.dutyAmountIsEstimate,
@@ -225,6 +249,159 @@ export class DocumentsProcessor extends WorkerHost {
       await this.notify({ doc, status: 'failed', errorMessage: doc.errorMessage ?? undefined });
       this.logger.error(
         `Document ${documentId} processing failed: ${doc.errorMessage}`,
+        err instanceof Error ? err.stack : err,
+      );
+    }
+  }
+
+  /**
+   * Быстрый пересчёт уже обработанного документа с актуальной страной происхождения.
+   * Переиспользует сохранённые charges (dutyInterpretation из resultData) — AI не зовётся.
+   * Если в resultData нет dutyInterpretation (старые документы), просто пересчитывает
+   * по базовым полям TKS, которые тоже сохранены.
+   */
+  async recalculate(documentId: string): Promise<void> {
+    this.logger.log(`Recalculating document ${documentId}`);
+    const doc = await this.repo.findOne({
+      where: { id: documentId },
+      relations: ['telegramUser'],
+    });
+    if (!doc) {
+      this.logger.warn(`Document ${documentId} not found`);
+      return;
+    }
+    if (!doc.resultData || doc.resultData.length === 0) {
+      this.logger.warn(`Document ${documentId}: no resultData, can't recalculate — run full reprocess`);
+      return;
+    }
+
+    doc.status = DocumentStatus.PROCESSING;
+    await this.repo.save(doc);
+
+    try {
+      const currency = (doc.currency || 'USD').toUpperCase();
+      const [config, currencyToDoc] = await Promise.all([
+        this.configService.get(),
+        this.buildCurrencyToDocRates(currency),
+      ]);
+      const { pricePercent, weightRate, fixedFee, sendResultFile, confidenceThreshold } = config;
+      const commission = { pricePercent, weightRate, fixedFee };
+
+      // Сохраняем classify/interpret notes — они стабильны при смене страны; calculate
+      // notes пересоздадим (breakdown, warning про default) ниже.
+      const inputs: CalculatorInput[] = doc.resultData.map((r) => {
+        const row = r as Record<string, unknown>;
+        const notes = Array.isArray(row.notes)
+          ? (row.notes as ProductNote[]).filter((n) => n.stage !== 'calculate')
+          : [];
+        return {
+          description: String(row.description ?? ''),
+          quantity: Number(row.quantity) || 1,
+          price: Number(row.price) || 0,
+          weight: Number(row.weight) || 0,
+          dimensions: (row.dimensions as Dimension[] | null) ?? undefined,
+          tnVedCode: String(row.tnVedCode ?? ''),
+          tnVedDescription: String(row.tnVedDescription ?? ''),
+          dutyRate: Number(row.dutyRate) || 0,
+          dutyRateUnit: (row.dutyRateUnit as string | null) ?? null,
+          dutySign: (row.dutySign as string | null) ?? null,
+          dutyMin: (row.dutyMin as number | null) ?? null,
+          dutyMinUnit: (row.dutyMinUnit as string | null) ?? null,
+          vatRate: Number(row.vatRate) || 0,
+          exciseRate: Number(row.exciseRate) || 0,
+          matchConfidence: Number(row.matchConfidence) || 0,
+          matched: Boolean(row.matched ?? true),
+          verified: Boolean(row.verified ?? false),
+          suggestedCode: (row.suggestedCode as string | null) ?? null,
+          verificationComment: String(row.verificationComment ?? ''),
+          notes,
+          dutyInterpretation: (row.dutyInterpretation as CalculatorInput['dutyInterpretation']) ?? null,
+        };
+      });
+
+      if (doc.countryOriginSource === 'default') {
+        for (const p of inputs) p.notes.push(defaultCountryWarningNote());
+      }
+
+      const summary = this.calculator.calculate(inputs, commission, {
+        currencyToDoc,
+        confidenceThreshold,
+        countryOfOrigin: doc.countryOfOrigin,
+      });
+
+      const needsConversion = currency !== 'RUB';
+      let exchangeRate = 1;
+      if (needsConversion) exchangeRate = await this.currencyService.getRate(currency);
+      const toRub = (v: number) => this.currencyService.toRubSync(v, exchangeRate);
+
+      doc.resultData = summary.items.map((item, i) => {
+        item.notes.push(this.buildBreakdownNote(item, currency, needsConversion ? exchangeRate : null));
+        const prev = doc.resultData![i] as Record<string, unknown>;
+        const base = {
+          ...prev,
+          dutyRate: item.dutyRate,
+          dutyRateDisplay: item.dutyRateDisplay,
+          totalPrice: item.totalPrice,
+          dutyAmount: item.dutyAmount,
+          dutyAmountIsEstimate: item.dutyAmountIsEstimate,
+          dutyFormula: item.dutyFormula,
+          dutyBase: item.dutyBase,
+          vatAmount: item.vatAmount,
+          exciseAmount: item.exciseAmount,
+          logisticsCommission: item.logisticsCommission,
+          totalCost: item.totalCost,
+          verificationStatus: item.verificationStatus,
+          calculationStatus: item.calculationStatus,
+          notes: item.notes,
+        };
+        if (!needsConversion) return base;
+        return {
+          ...base,
+          totalPriceRub: toRub(item.totalPrice),
+          dutyAmountRub: toRub(item.dutyAmount),
+          vatAmountRub: toRub(item.vatAmount),
+          exciseAmountRub: toRub(item.exciseAmount),
+          logisticsCommissionRub: toRub(item.logisticsCommission),
+          totalCostRub: toRub(item.totalCost),
+          exchangeRate,
+        };
+      });
+
+      const hasRowErrors = summary.items.some((i) => i.calculationStatus === 'error');
+      doc.status = hasRowErrors ? DocumentStatus.PROCESSED_WITH_ERRORS : DocumentStatus.PROCESSED;
+      await this.repo.save(doc);
+      await this.notify({
+        doc,
+        status: hasRowErrors ? 'processed_with_errors' : 'processed',
+        sendResultFile,
+      });
+
+      this.calculationLogs
+        .create({
+          documentId: doc.id,
+          telegramUserId: doc.telegramUser?.telegramId ?? null,
+          telegramUsername: doc.telegramUser?.username ?? null,
+          fileName: doc.originalFileName,
+          itemsCount: inputs.length,
+          resultSummary: {
+            grandTotal: summary.grandTotal,
+            totalDuty: summary.totalDuty,
+            totalVat: summary.totalVat,
+            totalExcise: summary.totalExcise,
+            totalLogistics: summary.totalLogistics,
+            currency,
+          },
+        })
+        .catch((err) => this.logger.warn(`Failed to write calculation log for ${documentId}`, err));
+      this.logger.log(
+        `Document ${documentId} recalculated: ${inputs.length} rows, grandTotal=${summary.grandTotal}, country=${doc.countryOfOrigin}`,
+      );
+    } catch (err) {
+      doc.status = DocumentStatus.FAILED;
+      doc.errorMessage = errMsg(err) || 'Recalculation error';
+      await this.repo.save(doc);
+      this.logger.error(
+        `Document ${documentId} recalculation failed: ${doc.errorMessage}`,
         err instanceof Error ? err.stack : err,
       );
     }

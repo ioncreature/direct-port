@@ -3,6 +3,7 @@ import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nest
 import { AiConfigService } from '../ai-config/ai-config.service';
 import { cacheTools, extractToolInput, systemPrompt } from '../common/claude';
 import { errMsg } from '../common/errors';
+import { normalizeOksmtCode } from '../common/oksmt';
 import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, tokenUsageFromResponse } from '../common/token-usage';
 import type { Dimension } from '../duty-interpreter/interfaces';
 import { SpreadsheetData, SpreadsheetReaderService } from './spreadsheet-reader.service';
@@ -20,6 +21,17 @@ export interface ParsedProduct {
 
 export type ParseFeasibility = 'ok' | 'review' | 'rejected';
 
+/** Источник предположения о стране происхождения. */
+export type CountryDetectionSource = 'ai_explicit' | 'ai_language' | 'ai_currency';
+
+export interface CountrySuggestion {
+  /** OKSMT-код (3 цифры). */
+  code: string;
+  source: CountryDetectionSource;
+  /** Объяснение на русском: почему выбрана именно эта страна. */
+  reason: string;
+}
+
 export interface AiParseResult {
   products: ParsedProduct[];
   currency: string;
@@ -28,10 +40,14 @@ export interface AiParseResult {
   feasibility: ParseFeasibility;
   /** Причины отклонения (при rejected) или замечания (при review). Пустой для ok. */
   rejectionReasons: string[];
+  /** Предположение AI о стране происхождения товара. null — не удалось определить. */
+  countrySuggestion: CountrySuggestion | null;
   tokenUsage: TokenUsageMap;
 }
 
-type RawParseResult = Omit<AiParseResult, 'feasibility' | 'rejectionReasons' | 'tokenUsage'>;
+type RawParseResult = Omit<AiParseResult, 'feasibility' | 'rejectionReasons' | 'tokenUsage' | 'countrySuggestion'> & {
+  countrySuggestion?: CountrySuggestion | null;
+};
 
 interface ValidationResult {
   valid: boolean;
@@ -93,6 +109,7 @@ interface DocumentStructure {
   columnMapping: Record<string, number>;
   currency: string;
   weightNote: string;
+  countrySuggestion?: CountrySuggestion | null;
 }
 
 const SYSTEM_PROMPT = `Ты — эксперт по парсингу коммерческих документов для импорта товаров.
@@ -157,7 +174,12 @@ const STRUCTURE_ANALYSIS_PROMPT = `Ты — эксперт по анализу �
    - Цена: колонка с ценой за ЕДИНИЦУ товара (не стоимость партии).
    - Количество: колонка с ИТОГОВЫМ количеством (если есть коробки × штук/коробку — бери итог).
    - Вес: укажи колонку и опиши что в ней (за единицу, за коробку, общий).
-4. Валюту: по символам (¥/$€/₽) или контексту.`;
+4. Валюту: по символам (¥/$€/₽) или контексту.
+5. Предполагаемую страну происхождения товара (опционально, countrySuggestion):
+   - Код в формате OKSMT (3 цифры): 156=Китай, 792=Турция, 392=Япония, 764=Таиланд, 458=Малайзия, 410=Корея, 704=Вьетнам, 356=Индия, 840=США, 276=Германия и т.п.
+   - source: 'ai_explicit' если страна прямо указана в документе (надпись "Made in ...", "Страна: ...", "Origin: ...", "产地: ..."), 'ai_language' если выводится из языка описания товара (китайский → Китай, турецкий → Турция), 'ai_currency' если только по валюте (CNY → Китай, TRY → Турция, KRW → Корея и т.п.).
+   - reason: краткое объяснение (1 фраза на русском), например "Прямое упоминание «Made in China»" или "Описания на китайском языке".
+   - Если нельзя уверенно определить — countrySuggestion не возвращай (оставь поле пустым).`;
 
 const ANALYZE_STRUCTURE_TOOL: Anthropic.Messages.Tool = {
   name: 'analyze_structure',
@@ -192,6 +214,26 @@ const ANALYZE_STRUCTURE_TOOL: Anthropic.Messages.Tool = {
       weightNote: {
         type: 'string',
         description: 'Что содержит колонка веса: "per_unit" (за единицу товара), "per_box" (за коробку), "total" (общий вес позиции)',
+      },
+      countrySuggestion: {
+        type: 'object',
+        description: 'Предполагаемая страна происхождения товара. Пропусти поле, если нельзя уверенно определить.',
+        properties: {
+          code: {
+            type: 'string',
+            description: 'OKSMT-код страны, 3 цифры (156=Китай, 792=Турция, 392=Япония, 764=Таиланд, 458=Малайзия, 410=Корея, 704=Вьетнам, 356=Индия, 840=США, 276=Германия).',
+          },
+          source: {
+            type: 'string',
+            enum: ['ai_explicit', 'ai_language', 'ai_currency'],
+            description: 'ai_explicit = прямое упоминание в документе; ai_language = по языку описания; ai_currency = только по валюте.',
+          },
+          reason: {
+            type: 'string',
+            description: 'Краткое объяснение (1 фраза на русском).',
+          },
+        },
+        required: ['code', 'source', 'reason'],
       },
     },
     required: ['headerRows', 'dataRows', 'columnMapping', 'currency', 'weightNote'],
@@ -323,6 +365,8 @@ export class AiParserService {
       result = await this.parseChunked(data, structure);
     }
     result.tokenUsage = mergeTokenUsage(analysisUsage, result.tokenUsage);
+    // Страна определяется из структуры, не зависит от успеха построчного парсинга.
+    result.countrySuggestion = structure?.countrySuggestion ?? null;
     return result;
   }
 
@@ -374,7 +418,7 @@ export class AiParserService {
         this.logger.log(
           `Parsed ${result.products.length} products, currency=${result.currency} (attempt ${attempt})`,
         );
-        return { ...result, feasibility: 'ok', rejectionReasons: [], tokenUsage: totalUsage };
+        return { ...result, feasibility: 'ok', rejectionReasons: [], countrySuggestion: null, tokenUsage: totalUsage };
       }
 
       this.logger.warn(`Attempt ${attempt}: AI validation issues: ${validation.issues.join('; ')}`);
@@ -518,7 +562,7 @@ export class AiParserService {
     }
 
     this.logger.log(`Parsed ${allProducts.length} products in ${chunks.length} chunks, currency=${currency}`);
-    return { ...fullResult, feasibility: 'ok', rejectionReasons: [], tokenUsage: totalUsage };
+    return { ...fullResult, feasibility: 'ok', rejectionReasons: [], countrySuggestion: null, tokenUsage: totalUsage };
   }
 
   private async analyzeStructure(
@@ -557,9 +601,13 @@ export class AiParserService {
       }
 
       const structure = result as unknown as DocumentStructure;
+      structure.countrySuggestion = this.normalizeCountrySuggestion(result.countrySuggestion);
       this.logger.log(
         `Structure: headers=${JSON.stringify(structure.headerRows)}, dataRows=${structure.dataRows.length}, ` +
-          `currency=${structure.currency}, weight=${structure.weightNote}`,
+          `currency=${structure.currency}, weight=${structure.weightNote}` +
+          (structure.countrySuggestion
+            ? `, country=${structure.countrySuggestion.code} (${structure.countrySuggestion.source})`
+            : ''),
       );
 
       return { structure, tokenUsage };
@@ -610,11 +658,11 @@ export class AiParserService {
 
     if (reasons.length > 0) {
       this.logger.warn(`Document rejected (${total} products): ${reasons.join('; ')}`);
-      return { ...result, feasibility: 'rejected', rejectionReasons: reasons };
+      return { ...result, feasibility: 'rejected', rejectionReasons: reasons, countrySuggestion: null };
     }
 
     this.logger.log(`Document needs review (${total} products): ${issues.join('; ')}`);
-    return { ...result, feasibility: 'review', rejectionReasons: issues };
+    return { ...result, feasibility: 'review', rejectionReasons: issues, countrySuggestion: null };
   }
 
   private rejected(reasons: string[]): AiParseResult {
@@ -624,8 +672,23 @@ export class AiParserService {
       columnMapping: {},
       feasibility: 'rejected',
       rejectionReasons: reasons,
+      countrySuggestion: null,
       tokenUsage: emptyTokenUsageMap(),
     };
+  }
+
+  private normalizeCountrySuggestion(raw: unknown): CountrySuggestion | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const obj = raw as Record<string, unknown>;
+    const code = normalizeOksmtCode(typeof obj.code === 'string' ? obj.code : null);
+    if (!code) return null;
+    const source = obj.source;
+    if (source !== 'ai_explicit' && source !== 'ai_language' && source !== 'ai_currency') {
+      return null;
+    }
+    const reason = typeof obj.reason === 'string' ? obj.reason.trim() : '';
+    if (!reason) return null;
+    return { code, source, reason };
   }
 
   private async callClaudeRaw(

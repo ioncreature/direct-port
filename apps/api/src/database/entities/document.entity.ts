@@ -35,6 +35,22 @@ export const documentStatusLabels: Record<DocumentStatus, string> = {
   [DocumentStatus.REJECTED]: 'Отклонён',
 };
 
+/** Источник страны происхождения для документа.
+ *  - ai_explicit  — AI нашёл явное упоминание страны в тексте
+ *  - ai_language  — определено по языку описания
+ *  - ai_currency  — определено по валюте документа
+ *  - manual       — указано оператором в админке
+ *  - default      — ничего не определили, применён Китай как дефолт
+ */
+export type CountryOriginSource =
+  | 'ai_explicit'
+  | 'ai_language'
+  | 'ai_currency'
+  | 'manual'
+  | 'default';
+
+export const DEFAULT_COUNTRY_OF_ORIGIN = '156'; // Китай (OKSMT)
+
 @Entity('documents')
 export class Document {
   @PrimaryGeneratedColumn('uuid')
@@ -66,6 +82,15 @@ export class Document {
 
   @Column({ type: 'varchar', length: 5, nullable: true })
   language: string | null;
+
+  @Column({ type: 'varchar', length: 3, name: 'country_of_origin', nullable: true })
+  countryOfOrigin: string | null;
+
+  @Column({ type: 'varchar', length: 16, name: 'country_origin_source', nullable: true })
+  countryOriginSource: CountryOriginSource | null;
+
+  @Column({ type: 'text', name: 'country_detection_reason', nullable: true })
+  countryDetectionReason: string | null;
 
   @Column({ type: 'jsonb', name: 'parsed_data', nullable: true })
   parsedData: Record<string, unknown>[] | null;

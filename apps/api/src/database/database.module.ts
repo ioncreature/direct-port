@@ -5,6 +5,7 @@ import { AiConfig } from './entities/ai-config.entity';
 import { AiUsageLog } from './entities/ai-usage-log.entity';
 import { CalculationConfig } from './entities/calculation-config.entity';
 import { CalculationLog } from './entities/calculation-log.entity';
+import { Country } from './entities/country.entity';
 import { Document } from './entities/document.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { TelegramUser } from './entities/telegram-user.entity';
@@ -31,6 +32,7 @@ import { AddAiUsageLog1776900000000 } from './migrations/1776900000000-AddAiUsag
 import { AddQueryFormulationModel1777000000000 } from './migrations/1777000000000-AddQueryFormulationModel';
 import { AddCodeReviewRequiredStatus1777100000000 } from './migrations/1777100000000-AddCodeReviewRequiredStatus';
 import { AddCalculationLogDocumentIdIndex1777200000000 } from './migrations/1777200000000-AddCalculationLogDocumentIdIndex';
+import { AddDocumentCountryAndCountriesCache1777300000000 } from './migrations/1777300000000-AddDocumentCountryAndCountriesCache';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -51,6 +53,7 @@ import { SeedService } from './seeds/seed.service';
           AiConfig,
           TksCache,
           AiUsageLog,
+          Country,
         ],
         synchronize: false,
         migrations: [
@@ -74,6 +77,7 @@ import { SeedService } from './seeds/seed.service';
           AddQueryFormulationModel1777000000000,
           AddCodeReviewRequiredStatus1777100000000,
           AddCalculationLogDocumentIdIndex1777200000000,
+          AddDocumentCountryAndCountriesCache1777300000000,
         ],
         migrationsRun: true,
       }),

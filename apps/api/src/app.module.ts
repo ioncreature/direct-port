@@ -8,6 +8,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { AiConfigModule } from './ai-config/ai-config.module';
 import { CalculationConfigModule } from './calculation-config/calculation-config.module';
+import { CountriesModule } from './countries/countries.module';
 import { DatabaseModule } from './database/database.module';
 import { DocumentsModule } from './documents/documents.module';
 import { TelegramUsersModule } from './telegram-users/telegram-users.module';
@@ -33,6 +34,7 @@ import { UsersModule } from './users/users.module';
     DocumentsModule,
     CalculationConfigModule,
     AiConfigModule,
+    CountriesModule,
   ],
   controllers: [AppController],
   providers: [

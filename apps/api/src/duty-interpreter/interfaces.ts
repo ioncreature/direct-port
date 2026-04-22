@@ -30,12 +30,28 @@ export type ChargeMethod =
   | { kind: 'combined_specific_max'; primary: SpecificPart; fallback: SpecificPart }
   | { kind: 'fixed_rate'; rate: number };
 
+/**
+ * Условия применения charge. Сейчас используется для антидемпинговых / компенсационных /
+ * преференциальных ставок (PRIZNAK=19/20/30), где ставка зависит от страны происхождения.
+ * Calculator сверяет appliesWhen.country с countryOfOrigin документа и применяет только
+ * совпадающие charges. conditions — человекочитаемое описание из NOTE (производители,
+ * размеры, действие во времени), выводится оператору как warning-note.
+ */
+export interface ChargeApplicability {
+  /** OKSMT-код страны происхождения (3 цифры). Если указан — charge применяется
+   *  только к товарам из этой страны. */
+  country?: string;
+  /** Краткое резюме условий из NOTE (одна-две фразы, с ссылкой на документ). */
+  conditions?: string;
+}
+
 export interface DutyChargeRule {
   type: ChargeType;
   label: string;
   method: ChargeMethod;
   base: BaseType;
   currency?: string;
+  appliesWhen?: ChargeApplicability;
 }
 
 export interface DutyInterpretation {

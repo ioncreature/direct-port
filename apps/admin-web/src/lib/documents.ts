@@ -1,5 +1,13 @@
 import api from './api';
-import type { DocumentStatus } from './types';
+import type { CountryOriginSource, DocumentStatus } from './types';
+
+export const countryOriginSourceLabels: Record<CountryOriginSource, string> = {
+  ai_explicit: 'AI нашёл прямое упоминание в документе',
+  ai_language: 'AI определил по языку описания',
+  ai_currency: 'AI определил по валюте',
+  manual: 'выбрано оператором',
+  default: 'не определено, применён Китай по умолчанию',
+};
 
 export const statusLabels: Record<DocumentStatus, string> = {
   parsing: 'Распознавание...',

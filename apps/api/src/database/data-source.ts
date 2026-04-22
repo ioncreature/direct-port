@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { AiUsageLog } from './entities/ai-usage-log.entity';
 import { CalculationConfig } from './entities/calculation-config.entity';
 import { CalculationLog } from './entities/calculation-log.entity';
+import { Country } from './entities/country.entity';
 import { Document } from './entities/document.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { TelegramUser } from './entities/telegram-user.entity';
@@ -26,6 +27,7 @@ export default new DataSource({
     CalculationConfig,
     TksCache,
     AiUsageLog,
+    Country,
   ],
   migrations: ['src/database/migrations/*{.ts,.js}'],
 });

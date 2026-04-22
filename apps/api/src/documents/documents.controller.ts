@@ -25,6 +25,7 @@ import { UserRole } from '../database/entities/user.entity';
 import { DocumentsService } from './documents.service';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { FindDocumentsQueryDto } from './dto/find-documents-query.dto';
+import { RecalculateDocumentDto } from './dto/recalculate-document.dto';
 import { RejectDocumentDto } from './dto/reject-document.dto';
 import { ReviewDocumentDto } from './dto/review-document.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
@@ -143,6 +144,15 @@ export class DocumentsController {
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   reprocess(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.reprocess(id);
+  }
+
+  @Post(':id/recalculate')
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  recalculate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RecalculateDocumentDto,
+  ) {
+    return this.service.recalculate(id, dto);
   }
 
   @Get(':id')

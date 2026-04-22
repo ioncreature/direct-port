@@ -54,6 +54,19 @@ export function useDocument(id: string) {
     }
   }, [id, fetch]);
 
+  const recalculate = useCallback(
+    async (countryOfOrigin?: string) => {
+      try {
+        await api.post(`/documents/${id}/recalculate`, countryOfOrigin ? { countryOfOrigin } : {});
+        await fetch();
+      } catch {
+        setError('Не удалось пересчитать документ');
+        throw new Error('recalculate failed');
+      }
+    },
+    [id, fetch],
+  );
+
   const saveParsedData = useCallback(
     async (parsedData: ParsedDataRow[], currency?: string) => {
       try {
@@ -89,5 +102,5 @@ export function useDocument(id: string) {
     }
   }, [id, fetch]);
 
-  return { document, loading, error, refetch: fetch, reprocess, saveParsedData, reject, approve };
+  return { document, loading, error, refetch: fetch, reprocess, recalculate, saveParsedData, reject, approve };
 }

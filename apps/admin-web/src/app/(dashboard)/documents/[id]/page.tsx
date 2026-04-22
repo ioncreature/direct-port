@@ -2,15 +2,16 @@
 
 import { InfoCard } from '@/components/info-card';
 import { useCalculationHistory } from '@/hooks/use-calculation-history';
+import { useCountries } from '@/hooks/use-countries';
 import { useDocument } from '@/hooks/use-document';
-import { downloadDocument, statusColors, statusLabels } from '@/lib/documents';
+import { countryOriginSourceLabels, downloadDocument, statusColors, statusLabels } from '@/lib/documents';
 import { calcAiCostFromMap, calcAiCostFromStages, fmt, fmtCost, fmtTokens, modelLabel, stageLabel } from '@/lib/format';
 import { btnOutline } from '@/lib/table-styles';
 import { getDocumentUploaderName } from '@/lib/telegram';
 import type { CalculationStatus, DocumentResultRow, DocumentStatus, ParsedDataRow, ProductNoteSeverity } from '@/lib/types';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const calcStatusConfig: Record<CalculationStatus, { label: string; color: string; bg: string }> = {
   exact: { label: 'Точное', color: '#16a34a', bg: '#dcfce7' },
@@ -33,82 +34,161 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
 };
 
 const SM_W = 124, SM_HW = 62, SM_H = 30, SM_HH = 15, SM_R = 6;
+const SM_W_C = 80, SM_HW_C = 40, SM_H_C = 24, SM_HH_C = 12;
 
-const smNodes: { id: DocumentStatus; label: string; cx: number; cy: number }[] = [
-  { id: 'parsing', label: 'Распознавание', cx: 85, cy: 55 },
-  { id: 'pending', label: 'Ожидает', cx: 245, cy: 55 },
-  { id: 'processing', label: 'Обработка', cx: 405, cy: 55 },
-  { id: 'processed', label: 'Обработан', cx: 580, cy: 55 },
-  { id: 'requires_review', label: 'На проверку', cx: 85, cy: 140 },
-  { id: 'failed', label: 'Ошибка', cx: 355, cy: 140 },
-  { id: 'processed_with_errors', label: 'С ошибками', cx: 540, cy: 140 },
-  { id: 'rejected', label: 'Отклонён', cx: 85, cy: 210 },
-  { id: 'code_review_required', label: 'Проверка кодов', cx: 245, cy: 210 },
+const smLanes: { y: number; h: number; fill: string; label: string }[] = [
+  { y: 0, h: 95, fill: '#f0f7ff', label: 'Авто' },
+  { y: 95, h: 90, fill: '#fefce8', label: 'Проверка' },
+  { y: 185, h: 90, fill: '#f8f9fa', label: 'Исход' },
 ];
 
-type SmEdgeType = 'main' | 'branch' | 'return';
-const smEdges: { d: string; type: SmEdgeType }[] = [
-  { d: 'M147,55 L183,55', type: 'main' },
-  { d: 'M307,55 L343,55', type: 'main' },
-  { d: 'M467,55 L518,55', type: 'main' },
-  { d: 'M85,70 L85,125', type: 'branch' },
-  { d: 'M395,70 L365,125', type: 'branch' },
-  { d: 'M415,70 L540,125', type: 'branch' },
-  { d: 'M85,155 L85,195', type: 'branch' },
-  { d: 'M147,140 Q200,100 245,70', type: 'return' },
-  { d: 'M355,125 C355,15 85,15 85,40', type: 'return' },
-  { d: 'M540,125 C540,10 245,10 245,40', type: 'return' },
+const smNodes: { id: DocumentStatus; label: string; cx: number; cy: number; compact?: boolean }[] = [
+  { id: 'parsing', label: 'Распознавание', cx: 100, cy: 50 },
+  { id: 'pending', label: 'Ожидает', cx: 260, cy: 50, compact: true },
+  { id: 'processing', label: 'Обработка', cx: 420, cy: 50 },
+  { id: 'processed', label: 'Обработан', cx: 580, cy: 50 },
+  { id: 'requires_review', label: 'На проверку', cx: 100, cy: 140 },
+  { id: 'code_review_required', label: 'Проверка кодов', cx: 420, cy: 140 },
+  { id: 'failed', label: 'Ошибка', cx: 260, cy: 230 },
+  { id: 'processed_with_errors', label: 'С ошибками', cx: 420, cy: 230 },
+  { id: 'rejected', label: 'Отклонён', cx: 580, cy: 230 },
 ];
+
+type SmEdgeType = 'main' | 'branch' | 'manual' | 'reprocess';
+const smEdges: { d: string; type: SmEdgeType; label?: { x: number; y: number; text: string } }[] = [
+  // Основной автопоток
+  { d: 'M162,50 L220,50', type: 'main' },
+  { d: 'M300,50 L358,50', type: 'main' },
+  { d: 'M482,50 L518,50', type: 'main' },
+
+  // Авто-ветки в «Проверка»
+  { d: 'M100,65 L100,125', type: 'branch' },
+  { d: 'M420,65 L420,125', type: 'branch' },
+
+  // Авто-ветки в «Исход»
+  { d: 'M395,65 C340,120 300,180 280,215', type: 'branch' },
+  { d: 'M420,65 C510,100 510,180 420,215', type: 'branch' },
+  { d: 'M445,65 C540,120 560,180 570,215', type: 'branch' },
+  { d: 'M140,35 C280,-10 590,-10 590,215', type: 'branch' },
+
+  // Ручные действия оператора
+  { d: 'M162,140 Q220,100 235,62', type: 'manual', label: { x: 205, y: 93, text: 'утвердить' } },
+  { d: 'M125,155 L235,215', type: 'manual', label: { x: 170, y: 193, text: 'отклонить' } },
+  { d: 'M482,140 Q535,100 545,65', type: 'manual', label: { x: 520, y: 93, text: 'принять' } },
+  { d: 'M482,140 Q535,180 545,215', type: 'manual', label: { x: 520, y: 193, text: 'отклонить' } },
+
+  // Переобработка / пересчёт
+  { d: 'M290,215 C200,170 230,100 245,62', type: 'reprocess', label: { x: 225, y: 132, text: 'переобработка' } },
+  { d: 'M395,215 C320,160 260,100 270,62', type: 'reprocess' },
+  { d: 'M555,35 Q510,15 470,35', type: 'reprocess', label: { x: 515, y: 20, text: 'пересчёт' } },
+];
+
+const smEdgeStyle: Record<SmEdgeType, { width: number; dash?: string; opacity?: number }> = {
+  main: { width: 2 },
+  branch: { width: 1, opacity: 0.9 },
+  manual: { width: 1, dash: '4 3' },
+  reprocess: { width: 1, dash: '1 3', opacity: 0.8 },
+};
 
 function DocumentStateMachine({ status }: { status: DocumentStatus }) {
   return (
-    <div style={{ marginBottom: 24, border: '1px solid #e5e7eb', borderRadius: 8, padding: '16px 12px 12px', background: '#fafafa', overflowX: 'auto' }}>
-      <svg viewBox="0 0 660 225" width={660} height={225} style={{ display: 'block', maxWidth: '100%' }}>
+    <div style={{ marginBottom: 24, border: '1px solid #e5e7eb', borderRadius: 8, padding: 12, background: '#fff', overflowX: 'auto' }}>
+      <svg viewBox="0 -15 680 290" width={680} height={290} style={{ display: 'block', maxWidth: '100%' }}>
         <defs>
           <marker id="sm-arr" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="7" markerHeight="5" orient="auto-start-reverse">
-            <path d="M0,0.5 L9,3.5 L0,6.5" fill="#aaa" />
+            <path d="M0,0.5 L9,3.5 L0,6.5" fill="#9ca3af" />
           </marker>
         </defs>
 
-        {smEdges.map((e, i) => (
-          <path
-            key={i}
-            d={e.d}
-            fill="none"
-            stroke="#aaa"
-            strokeWidth={e.type === 'main' ? 1.5 : 1}
-            strokeDasharray={e.type === 'return' ? '4 3' : undefined}
-            markerEnd="url(#sm-arr)"
-          />
+        {smLanes.map((lane, i) => (
+          <g key={`lane-${i}`}>
+            <rect x={0} y={lane.y} width={680} height={lane.h} fill={lane.fill} />
+            <text
+              x={10}
+              y={lane.y + 14}
+              fontSize={9}
+              fill="#9ca3af"
+              fontFamily="system-ui, sans-serif"
+              fontWeight={500}
+              style={{ letterSpacing: 0.6, textTransform: 'uppercase' }}
+            >
+              {lane.label}
+            </text>
+          </g>
         ))}
 
-        <text x={200} y={96} textAnchor="middle" fontSize={9} fill="#999" fontFamily="system-ui, sans-serif">утвердить</text>
-        <text x={300} y={12} textAnchor="middle" fontSize={9} fill="#999" fontFamily="system-ui, sans-serif">переобработка</text>
+        {smEdges.map((e, i) => {
+          const s = smEdgeStyle[e.type];
+          return (
+            <path
+              key={`edge-${i}`}
+              d={e.d}
+              fill="none"
+              stroke="#9ca3af"
+              strokeWidth={s.width}
+              strokeDasharray={s.dash}
+              opacity={s.opacity ?? 1}
+              markerEnd="url(#sm-arr)"
+            />
+          );
+        })}
+
+        {smEdges.map((e, i) =>
+          e.label ? (
+            <text
+              key={`lbl-${i}`}
+              x={e.label.x}
+              y={e.label.y}
+              textAnchor="middle"
+              fontSize={9}
+              fill="#6b7280"
+              fontFamily="system-ui, sans-serif"
+              style={{ paintOrder: 'stroke', stroke: '#fff', strokeWidth: 3, strokeLinejoin: 'round' }}
+            >
+              {e.label.text}
+            </text>
+          ) : null,
+        )}
 
         {smNodes.map((n) => {
           const active = n.id === status;
           const color = statusColors[n.id];
+          const w = n.compact ? SM_W_C : SM_W;
+          const hw = n.compact ? SM_HW_C : SM_HW;
+          const h = n.compact ? SM_H_C : SM_H;
+          const hh = n.compact ? SM_HH_C : SM_HH;
+          const r = n.compact ? SM_R - 1 : SM_R;
+          const fs = n.compact ? 10 : 11;
           return (
             <g key={n.id}>
               {active && (
                 <rect
-                  x={n.cx - SM_HW - 3} y={n.cy - SM_HH - 3}
-                  width={SM_W + 6} height={SM_H + 6}
-                  rx={SM_R + 2} fill={color} opacity={0.15}
+                  x={n.cx - hw - 3}
+                  y={n.cy - hh - 3}
+                  width={w + 6}
+                  height={h + 6}
+                  rx={r + 2}
+                  fill={color}
+                  opacity={0.15}
                 />
               )}
               <rect
-                x={n.cx - SM_HW} y={n.cy - SM_HH}
-                width={SM_W} height={SM_H} rx={SM_R}
+                x={n.cx - hw}
+                y={n.cy - hh}
+                width={w}
+                height={h}
+                rx={r}
                 fill={active ? color : '#fff'}
                 stroke={active ? color : '#d1d5db'}
                 strokeWidth={active ? 2 : 1}
               />
               <text
-                x={n.cx} y={n.cy + 1}
-                textAnchor="middle" dominantBaseline="central"
+                x={n.cx}
+                y={n.cy + 1}
+                textAnchor="middle"
+                dominantBaseline="central"
                 fill={active ? '#fff' : '#6b7280'}
-                fontSize={11}
+                fontSize={fs}
                 fontWeight={active ? 600 : 400}
                 fontFamily="system-ui, sans-serif"
               >
@@ -129,12 +209,37 @@ function resolveStatus(row: DocumentResultRow): CalculationStatus {
 
 export default function DocumentDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { document: doc, loading, error, reprocess, saveParsedData, reject, approve } = useDocument(id);
+  const { document: doc, loading, error, reprocess, recalculate, saveParsedData, reject, approve } = useDocument(id);
   const history = useCalculationHistory(id, doc?.updatedAt);
+  const { countries } = useCountries();
 
   const [reprocessing, setReprocessing] = useState(false);
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
+  const [recalculating, setRecalculating] = useState(false);
+  const [countryDraft, setCountryDraft] = useState<string>('');
+  // Серверное значение на момент прошлой синхронизации. Polling обновляет doc каждые 3с —
+  // без ref сохранённый draft оператора затирался бы серверным значением при каждом опросе.
+  const lastSyncedCountry = useRef<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    const server = doc?.countryOfOrigin ?? null;
+    if (lastSyncedCountry.current !== server) {
+      setCountryDraft(server ?? '');
+      lastSyncedCountry.current = server;
+    }
+  }, [doc?.countryOfOrigin]);
+
+  const handleRecalculate = useCallback(async () => {
+    setRecalculating(true);
+    try {
+      await recalculate(countryDraft || undefined);
+    } catch {
+      // error уже установлен в хуке
+    } finally {
+      setRecalculating(false);
+    }
+  }, [recalculate, countryDraft]);
 
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const toggleRow = useCallback(
@@ -667,6 +772,74 @@ export default function DocumentDetailPage() {
           </div>
         </>
       )}
+
+      {/* Country of origin selector */}
+      {rows.length > 0 && (() => {
+        const recalculateDisabled = recalculating || countryDraft === (doc.countryOfOrigin ?? '');
+        return (
+          <div
+            style={{
+              display: 'flex',
+              gap: 12,
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              padding: 12,
+              marginBottom: 16,
+              border: '1px solid #e5e7eb',
+              borderRadius: 8,
+              background: doc.countryOriginSource === 'default' ? '#fffbeb' : '#fafafa',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Страна происхождения</div>
+              <select
+                value={countryDraft}
+                onChange={(e) => setCountryDraft(e.target.value)}
+                style={{
+                  padding: '6px 10px',
+                  fontSize: 14,
+                  borderRadius: 4,
+                  border: '1px solid #ddd',
+                  background: '#fff',
+                  minWidth: 260,
+                }}
+              >
+                <option value="">— не указана —</option>
+                {countries.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.nameRu} ({c.code})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ flex: 1, minWidth: 200, fontSize: 12, color: '#6b7280' }}>
+              {doc.countryOriginSource && (
+                <div>
+                  Источник: <span style={{ color: '#374151' }}>{countryOriginSourceLabels[doc.countryOriginSource]}</span>
+                </div>
+              )}
+              {doc.countryDetectionReason && (
+                <div style={{ marginTop: 2, fontStyle: 'italic' }}>{doc.countryDetectionReason}</div>
+              )}
+            </div>
+            <button
+              onClick={handleRecalculate}
+              disabled={recalculateDisabled}
+              style={{
+                padding: '8px 16px',
+                background: recalculateDisabled ? '#9ca3af' : '#2563eb',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 4,
+                cursor: recalculateDisabled ? 'not-allowed' : 'pointer',
+                fontSize: 14,
+              }}
+            >
+              {recalculating ? 'Пересчёт...' : 'Пересчитать'}
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Result data table */}
       {rows.length > 0 && (

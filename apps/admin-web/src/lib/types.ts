@@ -135,6 +135,13 @@ export interface PaginatedResponse<T> {
   limit: number;
 }
 
+export type CountryOriginSource =
+  | 'ai_explicit'
+  | 'ai_language'
+  | 'ai_currency'
+  | 'manual'
+  | 'default';
+
 export interface Document {
   id: string;
   telegramUser: TelegramUser | null;
@@ -150,8 +157,20 @@ export interface Document {
   errorMessage: string | null;
   rejectionReasons: string[] | null;
   tokenUsage: TokenUsageByStage | null;
+  countryOfOrigin: string | null;
+  countryOriginSource: CountryOriginSource | null;
+  countryDetectionReason: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Country {
+  code: string;
+  alpha2: string | null;
+  alpha3: string | null;
+  nameRu: string;
+  nameFullRu: string | null;
+  nameEn: string | null;
 }
 
 export type TokenUsageMap = Record<string, {
