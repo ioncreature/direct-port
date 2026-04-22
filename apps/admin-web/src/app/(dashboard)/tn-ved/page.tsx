@@ -3,7 +3,14 @@
 import { useTnVed } from '@/hooks/use-tn-ved';
 import { fmt } from '@/lib/format';
 import { td, th } from '@/lib/table-styles';
-import type { TnVedCodeDetail, TnVedRateInfo, TnVedSearchResultItem } from '@/lib/types';
+import type {
+  TnVedCodeDetail,
+  TnVedCountryDuty,
+  TnVedDeclarationExample,
+  TnVedExtendedRates,
+  TnVedRateInfo,
+  TnVedSearchResultItem,
+} from '@/lib/types';
 import { useCallback, useState } from 'react';
 
 const thRight: React.CSSProperties = { ...th, textAlign: 'right' };
@@ -52,9 +59,17 @@ export default function TnVedPage() {
         <CodeDetailCard detail={result.codeDetail} />
       )}
 
+      {result?.mode === 'code_lookup' && result.codeDetail && result.codeDetail.countryDuties.length > 0 && (
+        <CountryDutiesSection duties={result.codeDetail.countryDuties} />
+      )}
+
+      {result?.mode === 'code_lookup' && result.codeDetail && result.codeDetail.declarations.length > 0 && (
+        <DeclarationsSection items={result.codeDetail.declarations} />
+      )}
+
       {result?.mode === 'code_lookup' && result.results.length > 0 && (
         <>
-          <h3 style={{ margin: '24px 0 12px' }}>Примеры деклараций</h3>
+          <h3 style={{ margin: '24px 0 12px' }}>Похожие коды ТН ВЭД</h3>
           <ResultsTable items={result.results} onCodeClick={onCodeClick} />
         </>
       )}
@@ -147,7 +162,7 @@ function CodeDetailCard({ detail }: { detail: TnVedCodeDetail }) {
         <span style={{ fontSize: 15 }}>{detail.description}</span>
       </div>
 
-      <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap', fontSize: 14 }}>
+      <div style={{ display: 'flex', gap: 32, rowGap: 8, flexWrap: 'wrap', fontSize: 14 }}>
         <div>
           <span style={labelStyle}>Пошлина:</span> {formatDutyRate(detail.rates)}
         </div>
@@ -159,6 +174,7 @@ function CodeDetailCard({ detail }: { detail: TnVedCodeDetail }) {
             <span style={labelStyle}>Акциз:</span> {detail.rates.exciseRate}%
           </div>
         )}
+        <ExtendedRatesInline rates={detail.extendedRates} />
         {detail.dateBegin && (
           <div>
             <span style={labelStyle}>Действует с:</span> {detail.dateBegin}
@@ -178,6 +194,47 @@ function CodeDetailCard({ detail }: { detail: TnVedCodeDetail }) {
       <DutyCalculator rates={detail.rates} />
     </div>
   );
+}
+
+function ExtendedRatesInline({ rates }: { rates: TnVedExtendedRates }) {
+  const parts: Array<{ label: string; value: string }> = [];
+  if (rates.tempDuty != null) {
+    parts.push({ label: 'Временная пошлина', value: formatRateValue(rates.tempDuty, rates.tempDutyUnit) });
+  }
+  if (rates.antidumpingDuty != null) {
+    parts.push({
+      label: 'Антидемпинговая',
+      value: formatRateValue(rates.antidumpingDuty, rates.antidumpingDutyUnit),
+    });
+  }
+  if (rates.compensatoryDuty != null) {
+    parts.push({
+      label: 'Компенсационная',
+      value: formatRateValue(rates.compensatoryDuty, rates.compensatoryDutyUnit),
+    });
+  }
+  if (rates.additionalDuty != null) {
+    parts.push({ label: 'Дополнительная', value: `${rates.additionalDuty}%` });
+  }
+  if (rates.additionalUnits.length > 0) {
+    parts.push({ label: 'Доп. единицы', value: rates.additionalUnits.join(', ') });
+  }
+
+  if (parts.length === 0) return null;
+  return (
+    <>
+      {parts.map((p) => (
+        <div key={p.label}>
+          <span style={labelStyle}>{p.label}:</span> {p.value}
+        </div>
+      ))}
+    </>
+  );
+}
+
+function formatRateValue(value: number, unit: string | null | undefined): string {
+  if (!unit || unit === '%') return `${value}%`;
+  return `${value} ${unit}`;
 }
 
 interface DimensionInfo {
@@ -395,6 +452,125 @@ function ResultsTable({
       </tbody>
     </table>
   );
+}
+
+const COUNTRY_DUTY_TITLES: Record<TnVedCountryDuty['kind'], string> = {
+  antidumping: 'Антидемпинговые пошлины по странам',
+  compensatory: 'Компенсационные пошлины по странам',
+  preferential: 'Преференциальные (льготные) ставки по странам',
+};
+
+function CountryDutiesSection({ duties }: { duties: TnVedCountryDuty[] }) {
+  const grouped = new Map<TnVedCountryDuty['kind'], TnVedCountryDuty[]>();
+  for (const d of duties) {
+    const arr = grouped.get(d.kind) ?? [];
+    arr.push(d);
+    grouped.set(d.kind, arr);
+  }
+
+  const order: TnVedCountryDuty['kind'][] = ['antidumping', 'compensatory', 'preferential'];
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      {order.map((kind) => {
+        const items = grouped.get(kind);
+        if (!items || items.length === 0) return null;
+        return (
+          <div key={kind} style={{ marginBottom: 20 }}>
+            <h3 style={{ margin: '0 0 12px' }}>{COUNTRY_DUTY_TITLES[kind]}</h3>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={{ ...th, width: '18%' }}>Страна</th>
+                  <th style={{ ...th, textAlign: 'right', width: 120 }}>Ставка</th>
+                  <th style={{ ...th, width: 180 }}>Период</th>
+                  <th style={{ ...th, width: 180 }}>Документ</th>
+                  <th style={th}>Условия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((d, idx) => (
+                  <tr key={`${d.countryCode ?? 'all'}-${idx}`}>
+                    <td style={td}>
+                      {d.countryName ? (
+                        <>
+                          <span style={{ fontWeight: 500 }}>{d.countryName}</span>
+                          {d.countryCode && (
+                            <code style={{ marginLeft: 6, color: '#888', fontSize: 12 }}>
+                              {d.countryCode}
+                            </code>
+                          )}
+                        </>
+                      ) : d.countryCode ? (
+                        <code style={{ color: '#888' }}>{d.countryCode}</code>
+                      ) : (
+                        <span style={{ color: '#888' }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ ...td, textAlign: 'right' }}>
+                      {d.rate != null ? formatRateValue(d.rate, d.rateUnit) : '—'}
+                    </td>
+                    <td style={{ ...td, fontSize: 13, color: '#555' }}>
+                      {formatPeriod(d.dateBegin, d.dateEnd)}
+                    </td>
+                    <td style={{ ...td, fontSize: 13, color: '#555' }}>
+                      {formatDocument(d.documentNumber, d.documentDate)}
+                    </td>
+                    <td style={{ ...td, fontSize: 13, color: '#555' }}>{d.note || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DeclarationsSection({ items }: { items: TnVedDeclarationExample[] }) {
+  return (
+    <div style={{ marginTop: 24 }}>
+      <h3 style={{ margin: '0 0 12px' }}>Примеры реальных деклараций</h3>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr>
+            <th style={th}>Наименование товара</th>
+            <th style={thRight}>Частота</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item, idx) => (
+            <tr key={`${idx}-${item.description}`}>
+              <td style={{ ...td, fontSize: 14 }}>{item.description}</td>
+              <td style={tdRight}>{item.count}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function formatPeriod(begin: string | null, end: string | null): string {
+  if (!begin && !end) return '—';
+  const beginStr = begin ? formatIsoDate(begin) : '—';
+  const endStr = end ? formatIsoDate(end) : '—';
+  return `${beginStr} … ${endStr}`;
+}
+
+function formatDocument(number: string | null, date: string | null): string {
+  if (!number && !date) return '—';
+  if (!number) return formatIsoDate(date!);
+  if (!date) return number;
+  return `${number} от ${formatIsoDate(date)}`;
+}
+
+function formatIsoDate(raw: string): string {
+  // TKS возвращает "YYYY-MM-DD" или уже форматированное "DD.MM.YYYY"
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  if (match) return `${match[3]}.${match[2]}.${match[1]}`;
+  return raw;
 }
 
 function formatDutyRate(rates: TnVedRateInfo): string {

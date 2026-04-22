@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { CountriesModule } from '../countries/countries.module';
 import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
 import { TnVedCode } from '../database/entities/tn-ved-code.entity';
 import { TksModule } from '../tks/tks.module';
@@ -9,7 +10,7 @@ import { TnVedController } from './tn-ved.controller';
 import { TnVedService } from './tn-ved.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([TnVedCode, AiUsageLog]), ConfigModule, TksModule],
+  imports: [TypeOrmModule.forFeature([TnVedCode, AiUsageLog]), ConfigModule, TksModule, CountriesModule],
   controllers: [TnVedController],
   providers: [
     {

@@ -46,6 +46,38 @@ export interface TnVedRateInfo {
   exciseRate: number;
 }
 
+export interface TnVedExtendedRates {
+  tempDuty: number | null;
+  tempDutyUnit: string | null;
+  antidumpingDuty: number | null;
+  antidumpingDutyUnit: string | null;
+  compensatoryDuty: number | null;
+  compensatoryDutyUnit: string | null;
+  additionalDuty: number | null;
+  additionalUnits: string[];
+}
+
+export type TnVedCountryDutyKind = 'antidumping' | 'compensatory' | 'preferential';
+
+export interface TnVedCountryDuty {
+  kind: TnVedCountryDutyKind;
+  countryCode: string | null;
+  countryName: string | null;
+  rate: number | null;
+  rateUnit: string | null;
+  sign: string | null;
+  dateBegin: string | null;
+  dateEnd: string | null;
+  documentNumber: string | null;
+  documentDate: string | null;
+  note: string | null;
+}
+
+export interface TnVedDeclarationExample {
+  description: string;
+  count: number;
+}
+
 export interface TnVedSearchResultItem {
   code: string;
   description: string;
@@ -57,6 +89,9 @@ export interface TnVedCodeDetail {
   code: string;
   description: string;
   rates: TnVedRateInfo;
+  extendedRates: TnVedExtendedRates;
+  countryDuties: TnVedCountryDuty[];
+  declarations: TnVedDeclarationExample[];
   dateBegin?: string;
   dateEnd?: string;
   notes?: string;

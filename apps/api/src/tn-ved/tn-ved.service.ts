@@ -1,16 +1,21 @@
 import Anthropic from '@anthropic-ai/sdk';
 import {
+  Priznak,
   TksApiClient,
   type GoodsItem,
   type GoodsSearchResponse,
   type TnvedCode,
+  type TnvedallEntry,
+  type TnvedRates,
 } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { extractClaudeText } from '../common/claude';
 import { normalizeImpediUnit } from '../common/normalize-impedi';
+import { normalizeOksmtCode } from '../common/oksmt';
 import { normalizeModelId } from '../common/token-usage';
+import { CountriesService } from '../countries/countries.service';
 import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
 import { TnVedCode } from '../database/entities/tn-ved-code.entity';
 
@@ -25,6 +30,52 @@ export interface TnVedRateInfo {
   exciseRate: number;
 }
 
+/**
+ * Дополнительные (не-основные) ставки пошлин из TNVED.
+ * Значения null если соответствующее поле отсутствует или равно 0.
+ */
+export interface TnVedExtendedRates {
+  /** Временная пошлина (IMPTMP/IMPTMPEDI) */
+  tempDuty: number | null;
+  tempDutyUnit: string | null;
+  /** Антидемпинговая (summary — обычно 0, если ставки дифференцированы по странам, см. countryDuties) */
+  antidumpingDuty: number | null;
+  antidumpingDutyUnit: string | null;
+  /** Компенсационная */
+  compensatoryDuty: number | null;
+  compensatoryDutyUnit: string | null;
+  /** Дополнительная импортная */
+  additionalDuty: number | null;
+  /** Дополнительные единицы измерения (EDI2, EDI3 нормализованные) */
+  additionalUnits: string[];
+}
+
+export type TnVedCountryDutyKind = 'antidumping' | 'compensatory' | 'preferential';
+
+/**
+ * Ставка, действующая только для определённой страны происхождения.
+ * Разворачивается из TNVEDALL с PRIZNAK=19 (антидемпинг), 20 (компенсационная), 30 (преференция по стране).
+ */
+export interface TnVedCountryDuty {
+  kind: TnVedCountryDutyKind;
+  countryCode: string | null;
+  countryName: string | null;
+  rate: number | null;
+  rateUnit: string | null;
+  sign: string | null;
+  dateBegin: string | null;
+  dateEnd: string | null;
+  documentNumber: string | null;
+  documentDate: string | null;
+  note: string | null;
+}
+
+/** Пример реальной декларации: конкретное наименование товара, задекларированного по этому коду. */
+export interface TnVedDeclarationExample {
+  description: string;
+  count: number;
+}
+
 export interface TnVedSearchResultItem {
   code: string;
   description: string;
@@ -36,6 +87,9 @@ export interface TnVedCodeDetail {
   code: string;
   description: string;
   rates: TnVedRateInfo;
+  extendedRates: TnVedExtendedRates;
+  countryDuties: TnVedCountryDuty[];
+  declarations: TnVedDeclarationExample[];
   dateBegin?: string;
   dateEnd?: string;
   notes?: string;
@@ -45,6 +99,7 @@ export interface TnVedRawTks {
   search?: GoodsSearchResponse;
   code?: TnvedCode;
   related?: GoodsSearchResponse;
+  declarations?: GoodsSearchResponse;
   codes: Record<string, TnvedCode>;
 }
 
@@ -68,6 +123,7 @@ export class TnVedService {
     @InjectRepository(TnVedCode) private tnVedRepo: Repository<TnVedCode>,
     @InjectRepository(AiUsageLog) private aiUsageLogRepo: Repository<AiUsageLog>,
     private tksApi: TksApiClient,
+    private countriesService: CountriesService,
     @Optional() @Inject(Anthropic) private anthropic: Anthropic | null,
   ) {}
 
@@ -153,14 +209,25 @@ export class TnVedService {
     const rawCodes: Record<string, TnvedCode> = {};
     const rawTks: TnVedRawTks = { code: tnved, codes: rawCodes };
 
+    const [related, declData, countryDuties] = await Promise.all([
+      this.tksApi.searchGoodsGrouped(tnved.KR_NAIM).catch(() => null),
+      this.tksApi.searchGoodsByCode(tnved.KR_NAIM, code).catch(() => null),
+      this.extractCountryDuties(tnved),
+    ]);
+
     let examples: TnVedSearchResultItem[] = [];
-    try {
-      const related = await this.tksApi.searchGoodsGrouped(tnved.KR_NAIM);
+    if (related) {
       rawTks.related = related;
       const filtered = related.data.filter((item) => item.CODE !== code).slice(0, 10);
       examples = await this.enrichWithRates(filtered, rawCodes);
-    } catch {
-      // Примеры — не критично
+    }
+
+    let declarations: TnVedDeclarationExample[] = [];
+    if (declData) {
+      rawTks.declarations = declData;
+      declarations = declData.data
+        .slice(0, 15)
+        .map((item) => ({ description: item.KR_NAIM, count: item.CNT }));
     }
 
     return {
@@ -170,6 +237,9 @@ export class TnVedService {
         code: tnved.CODE,
         description: tnved.KR_NAIM,
         rates: this.extractRates(tnved),
+        extendedRates: this.extractExtendedRates(tnved),
+        countryDuties,
+        declarations,
         dateBegin: tnved.DBEGIN ?? undefined,
         dateEnd: tnved.DEND ?? undefined,
         notes: tnved.PRIM != null ? String(tnved.PRIM) : undefined,
@@ -284,4 +354,99 @@ export class TnVedService {
       exciseRate: rates.AKC ?? 0,
     };
   }
+
+  private extractExtendedRates(tnved: TnvedCode): TnVedExtendedRates {
+    const rates: TnvedRates = tnved.TNVED ?? {};
+    const additionalUnits: string[] = [];
+    for (const raw of [rates.EDI2, rates.EDI3]) {
+      const normalized = normalizeImpediUnit(raw);
+      if (normalized && normalized !== '%' && !additionalUnits.includes(normalized)) {
+        additionalUnits.push(normalized);
+      }
+    }
+
+    return {
+      tempDuty: nonZero(rates.IMPTMP),
+      tempDutyUnit: normalizeImpediUnit(rates.IMPTMPEDI),
+      antidumpingDuty: nonZero(rates.IMPDEMP),
+      antidumpingDutyUnit: normalizeImpediUnit(rates.IMPDEMPEDI),
+      compensatoryDuty: nonZero(rates.IMPCOMP),
+      compensatoryDutyUnit: normalizeImpediUnit(rates.IMPCOMPEDI),
+      additionalDuty: nonZero(rates.IMPDOP),
+      additionalUnits,
+    };
+  }
+
+  /**
+   * Разворачивает TNVEDALL по PRIZNAK 19/20/30 в список ставок по странам.
+   * Резолвит CU (OKSMT-код) в название страны через CountriesService.
+   */
+  private async extractCountryDuties(tnved: TnvedCode): Promise<TnVedCountryDuty[]> {
+    const conditions = tnved.TNVEDALL;
+    if (!conditions) return [];
+
+    const groups: Array<{ kind: TnVedCountryDutyKind; entries: TnvedallEntry[] }> = [];
+    for (const [key, entries] of Object.entries(conditions)) {
+      if (!Array.isArray(entries) || entries.length === 0) continue;
+      const kind = priznakToCountryDutyKind(Number(key));
+      if (!kind) continue;
+      groups.push({ kind, entries });
+    }
+
+    if (groups.length === 0) return [];
+
+    const allCodes = new Set<string>();
+    for (const g of groups) {
+      for (const e of g.entries) {
+        const n = normalizeOksmtCode(e.CU);
+        if (n) allCodes.add(n);
+      }
+    }
+
+    const countryNames = new Map<string, string>();
+    await Promise.all(
+      Array.from(allCodes).map(async (c) => {
+        try {
+          const country = await this.countriesService.findByCode(c);
+          if (country) countryNames.set(c, country.nameRu);
+        } catch (err) {
+          this.logger.warn(`Country lookup failed for ${c}: ${err instanceof Error ? err.message : err}`);
+        }
+      }),
+    );
+
+    const result: TnVedCountryDuty[] = [];
+    for (const { kind, entries } of groups) {
+      for (const e of entries) {
+        const countryCode = normalizeOksmtCode(e.CU);
+        result.push({
+          kind,
+          countryCode,
+          countryName: countryCode ? countryNames.get(countryCode) ?? null : null,
+          rate: e.MIN ?? null,
+          rateUnit: normalizeImpediUnit(e.TYPEMIN) ?? '%',
+          sign: e.SIGN ?? null,
+          dateBegin: e.DBEGIN ?? null,
+          dateEnd: e.DEND ?? null,
+          documentNumber: e.DOC_N ?? null,
+          documentDate: e.DOC_D ?? null,
+          note: e.NOTE ?? null,
+        });
+      }
+    }
+
+    return result;
+  }
+}
+
+function nonZero(value: number | undefined | null): number | null {
+  if (value == null) return null;
+  return value === 0 ? null : value;
+}
+
+function priznakToCountryDutyKind(priznak: number): TnVedCountryDutyKind | null {
+  if (priznak === Priznak.AntidumpingDuty) return 'antidumping';
+  if (priznak === Priznak.CompensatoryDuty) return 'compensatory';
+  if (priznak === Priznak.CountryImportDuty) return 'preferential';
+  return null;
 }
