@@ -6,6 +6,7 @@ import { CalculationConfigModule } from '../calculation-config/calculation-confi
 import { CalculationLogsModule } from '../calculation-logs/calculation-logs.module';
 import { CalculatorModule } from '../calculator/calculator.module';
 import { ClassifierModule } from '../classifier/classifier.module';
+import { CountriesModule } from '../countries/countries.module';
 import { CurrencyModule } from '../currency/currency.module';
 import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
 import { Document } from '../database/entities/document.entity';
@@ -30,6 +31,7 @@ import { ExcelExportService } from './excel-export.service';
     CurrencyModule,
     DutyInterpreterModule,
     CalculationLogsModule,
+    CountriesModule,
   ],
   controllers: [DocumentsController],
   providers: [DocumentsService, DocumentsProcessor, DocumentsParsingProcessor, ExcelExportService],

@@ -924,6 +924,7 @@ export default function DocumentDetailPage() {
               <thead>
                 <tr>
                   <th style={th}>Дата</th>
+                  <th style={th}>Тип</th>
                   <th style={thR}>Товаров</th>
                   <th style={thR}>Итого</th>
                   <th style={thR}>Пошлина</th>
@@ -935,6 +936,7 @@ export default function DocumentDetailPage() {
                 {history.map((log) => (
                   <tr key={log.id}>
                     <td style={td}>{new Date(log.createdAt).toLocaleString('ru')}</td>
+                    <td style={td}>{log.trigger === 'recalculate' ? 'Пересчёт' : 'Полный'}</td>
                     <td style={tdR}>{log.itemsCount}</td>
                     <td style={tdR}>{log.resultSummary ? fmt(log.resultSummary.grandTotal) : '—'}</td>
                     <td style={tdR}>{log.resultSummary ? fmt(log.resultSummary.totalDuty) : '—'}</td>

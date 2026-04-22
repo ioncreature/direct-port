@@ -9,6 +9,9 @@ import {
 } from 'typeorm';
 import { Document } from './document.entity';
 
+/** Что именно запустило расчёт — full pipeline или быстрый пересчёт. */
+export type CalculationTrigger = 'full' | 'recalculate';
+
 @Entity('calculation_logs')
 export class CalculationLog {
   @PrimaryGeneratedColumn('uuid')
@@ -32,6 +35,9 @@ export class CalculationLog {
 
   @Column({ type: 'jsonb', name: 'result_summary', nullable: true })
   resultSummary: Record<string, unknown> | null;
+
+  @Column({ type: 'varchar', length: 16, default: 'full' })
+  trigger: CalculationTrigger;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

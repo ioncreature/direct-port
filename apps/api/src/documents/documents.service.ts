@@ -6,6 +6,7 @@ import { FindOptionsWhere, Repository } from 'typeorm';
 import { ErrorCode } from '../common/error-codes';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 import { normalizeOksmtCode } from '../common/oksmt';
+import { CountriesService } from '../countries/countries.service';
 import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
@@ -26,6 +27,7 @@ export class DocumentsService {
     @InjectQueue('document-parsing') private parsingQueue: Queue,
     @InjectQueue('document-processing') private processingQueue: Queue,
     @InjectQueue('document-notifications') private notificationsQueue: Queue,
+    private countriesService: CountriesService,
   ) {}
 
   async create(dto: CreateDocumentDto): Promise<Document> {
@@ -118,9 +120,19 @@ export class DocumentsService {
       });
     }
 
-    const normalized = normalizeOksmtCode(dto.countryOfOrigin);
-    if (normalized) {
-      doc.countryOfOrigin = normalized;
+    if (dto.countryOfOrigin !== undefined && dto.countryOfOrigin !== '') {
+      const normalized = normalizeOksmtCode(dto.countryOfOrigin);
+      // Сверяем со справочником — DTO проверяет только формат (1-3 цифры), но «999»
+      // или прочий мусор прошёл бы. Лучше отдать 400 сразу, чем молча применить
+      // несуществующий код и получить пустой результат фильтрации.
+      const country = normalized ? await this.countriesService.findByCode(normalized) : null;
+      if (!country) {
+        throw new BadRequestException({
+          code: ErrorCode.UNKNOWN_COUNTRY,
+          message: `Unknown country code: ${dto.countryOfOrigin}`,
+        });
+      }
+      doc.countryOfOrigin = country.code;
       doc.countryOriginSource = 'manual';
       doc.countryDetectionReason = null;
     }

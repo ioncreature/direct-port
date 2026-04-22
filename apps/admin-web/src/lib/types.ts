@@ -226,9 +226,12 @@ export interface CalculationLogSummary {
   currency: string;
 }
 
+export type CalculationTrigger = 'full' | 'recalculate';
+
 export interface CalculationLog {
   id: string;
   itemsCount: number;
   resultSummary: CalculationLogSummary | null;
+  trigger: CalculationTrigger;
   createdAt: string;
 }

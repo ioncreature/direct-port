@@ -227,6 +227,7 @@ export class DocumentsProcessor extends WorkerHost {
           telegramUsername: doc.telegramUser?.username ?? null,
           fileName: doc.originalFileName,
           itemsCount: rows.length,
+          trigger: 'full',
           resultSummary: {
             grandTotal: summary.grandTotal,
             totalDuty: summary.totalDuty,
@@ -383,6 +384,7 @@ export class DocumentsProcessor extends WorkerHost {
           telegramUsername: doc.telegramUser?.username ?? null,
           fileName: doc.originalFileName,
           itemsCount: inputs.length,
+          trigger: 'recalculate',
           resultSummary: {
             grandTotal: summary.grandTotal,
             totalDuty: summary.totalDuty,

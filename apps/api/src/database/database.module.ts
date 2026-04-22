@@ -33,6 +33,7 @@ import { AddQueryFormulationModel1777000000000 } from './migrations/177700000000
 import { AddCodeReviewRequiredStatus1777100000000 } from './migrations/1777100000000-AddCodeReviewRequiredStatus';
 import { AddCalculationLogDocumentIdIndex1777200000000 } from './migrations/1777200000000-AddCalculationLogDocumentIdIndex';
 import { AddDocumentCountryAndCountriesCache1777300000000 } from './migrations/1777300000000-AddDocumentCountryAndCountriesCache';
+import { AddCalculationLogTrigger1777400000000 } from './migrations/1777400000000-AddCalculationLogTrigger';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -78,6 +79,7 @@ import { SeedService } from './seeds/seed.service';
           AddCodeReviewRequiredStatus1777100000000,
           AddCalculationLogDocumentIdIndex1777200000000,
           AddDocumentCountryAndCountriesCache1777300000000,
+          AddCalculationLogTrigger1777400000000,
         ],
         migrationsRun: true,
       }),
