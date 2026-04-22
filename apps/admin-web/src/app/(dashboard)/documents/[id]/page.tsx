@@ -33,171 +33,167 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   RUB: '₽', USD: '$', EUR: '€', CNY: '¥', INR: '₹',
 };
 
-const SM_W = 124, SM_HW = 62, SM_H = 30, SM_HH = 15, SM_R = 6;
-const SM_W_C = 80, SM_HW_C = 40, SM_H_C = 24, SM_HH_C = 12;
+type StepperStageState = 'done' | 'active' | 'pending' | 'warning' | 'error' | 'success';
 
-const smLanes: { y: number; h: number; fill: string; label: string }[] = [
-  { y: 0, h: 95, fill: '#f0f7ff', label: 'Авто' },
-  { y: 95, h: 90, fill: '#fefce8', label: 'Проверка' },
-  { y: 185, h: 90, fill: '#f8f9fa', label: 'Исход' },
-];
+type StepperStage = { key: string; label: string; state: StepperStageState };
 
-const smNodes: { id: DocumentStatus; label: string; cx: number; cy: number; compact?: boolean }[] = [
-  { id: 'parsing', label: 'Распознавание', cx: 100, cy: 50 },
-  { id: 'pending', label: 'Ожидает', cx: 260, cy: 50, compact: true },
-  { id: 'processing', label: 'Обработка', cx: 420, cy: 50 },
-  { id: 'processed', label: 'Обработан', cx: 580, cy: 50 },
-  { id: 'requires_review', label: 'На проверку', cx: 100, cy: 140 },
-  { id: 'code_review_required', label: 'Проверка кодов', cx: 420, cy: 140 },
-  { id: 'failed', label: 'Ошибка', cx: 260, cy: 230 },
-  { id: 'processed_with_errors', label: 'С ошибками', cx: 420, cy: 230 },
-  { id: 'rejected', label: 'Отклонён', cx: 580, cy: 230 },
-];
-
-type SmEdgeType = 'main' | 'branch' | 'manual' | 'reprocess';
-const smEdges: { d: string; type: SmEdgeType; label?: { x: number; y: number; text: string } }[] = [
-  // Основной автопоток
-  { d: 'M162,50 L220,50', type: 'main' },
-  { d: 'M300,50 L358,50', type: 'main' },
-  { d: 'M482,50 L518,50', type: 'main' },
-
-  // Авто-ветки в «Проверка»
-  { d: 'M100,65 L100,125', type: 'branch' },
-  { d: 'M420,65 L420,125', type: 'branch' },
-
-  // Авто-ветки в «Исход»
-  { d: 'M395,65 C340,120 300,180 280,215', type: 'branch' },
-  { d: 'M420,65 C510,100 510,180 420,215', type: 'branch' },
-  { d: 'M445,65 C540,120 560,180 570,215', type: 'branch' },
-  { d: 'M140,35 C280,-10 590,-10 590,215', type: 'branch' },
-
-  // Ручные действия оператора
-  { d: 'M162,140 Q220,100 235,62', type: 'manual', label: { x: 205, y: 93, text: 'утвердить' } },
-  { d: 'M125,155 L235,215', type: 'manual', label: { x: 170, y: 193, text: 'отклонить' } },
-  { d: 'M482,140 Q535,100 545,65', type: 'manual', label: { x: 520, y: 93, text: 'принять' } },
-  { d: 'M482,140 Q535,180 545,215', type: 'manual', label: { x: 520, y: 193, text: 'отклонить' } },
-
-  // Переобработка / пересчёт
-  { d: 'M290,215 C200,170 230,100 245,62', type: 'reprocess', label: { x: 225, y: 132, text: 'переобработка' } },
-  { d: 'M395,215 C320,160 260,100 270,62', type: 'reprocess' },
-  { d: 'M555,35 Q510,15 470,35', type: 'reprocess', label: { x: 515, y: 20, text: 'пересчёт' } },
-];
-
-const smEdgeStyle: Record<SmEdgeType, { width: number; dash?: string; opacity?: number }> = {
-  main: { width: 2 },
-  branch: { width: 1, opacity: 0.9 },
-  manual: { width: 1, dash: '4 3' },
-  reprocess: { width: 1, dash: '1 3', opacity: 0.8 },
+const STAGE_COLORS: Record<StepperStageState, { fill: string; ring: string; text: string }> = {
+  done: { fill: '#16a34a', ring: '#16a34a', text: '#374151' },
+  active: { fill: '#2563eb', ring: '#2563eb', text: '#111827' },
+  pending: { fill: '#fff', ring: '#d1d5db', text: '#9ca3af' },
+  warning: { fill: '#ca8a04', ring: '#ca8a04', text: '#111827' },
+  error: { fill: '#dc2626', ring: '#dc2626', text: '#111827' },
+  success: { fill: '#16a34a', ring: '#16a34a', text: '#111827' },
 };
 
-function DocumentStateMachine({ status }: { status: DocumentStatus }) {
+const isCompleteStage = (s: StepperStageState) => s === 'done' || s === 'success';
+const isEmphasizedStage = (s: StepperStageState) => s === 'active' || s === 'warning' || s === 'error';
+
+function buildStepperStages(status: DocumentStatus): { stages: StepperStage[]; hint: string } {
+  const s = (k: string, label: string, state: StepperStageState): StepperStage => ({ key: k, label, state });
+
+  switch (status) {
+    case 'parsing':
+      return {
+        stages: [s('u', 'Загружен', 'done'), s('r', 'Распознавание', 'active'), s('p', 'Обработка', 'pending'), s('d', 'Готов', 'pending')],
+        hint: 'AI распознаёт структуру таблицы и переводит наименования',
+      };
+    case 'requires_review':
+      return {
+        stages: [s('u', 'Загружен', 'done'), s('r', 'Распознан', 'warning'), s('p', 'Обработка', 'pending'), s('d', 'Готов', 'pending')],
+        hint: 'Оператор должен проверить распознанные данные',
+      };
+    case 'pending':
+      return {
+        stages: [s('u', 'Загружен', 'done'), s('r', 'Распознан', 'done'), s('p', 'Обработка', 'active'), s('d', 'Готов', 'pending')],
+        hint: 'Документ в очереди на обработку',
+      };
+    case 'processing':
+      return {
+        stages: [s('u', 'Загружен', 'done'), s('r', 'Распознан', 'done'), s('p', 'Обработка', 'active'), s('d', 'Готов', 'pending')],
+        hint: 'Классификация ТН ВЭД и расчёт пошлин',
+      };
+    case 'code_review_required':
+      return {
+        stages: [s('u', 'Загружен', 'done'), s('r', 'Распознан', 'done'), s('p', 'Обработка', 'warning'), s('d', 'Готов', 'pending')],
+        hint: 'Оператор должен проверить предложенные коды ТН ВЭД',
+      };
+    case 'processed':
+      return {
+        stages: [s('u', 'Загружен', 'done'), s('r', 'Распознан', 'done'), s('p', 'Обработан', 'done'), s('d', 'Готов', 'success')],
+        hint: 'Документ готов, можно скачать Excel',
+      };
+    case 'processed_with_errors':
+      return {
+        stages: [s('u', 'Загружен', 'done'), s('r', 'Распознан', 'done'), s('p', 'Обработан', 'done'), s('d', 'Готов', 'warning')],
+        hint: 'Часть строк с ошибками классификации — см. замечания ниже',
+      };
+    case 'failed':
+      return {
+        stages: [s('u', 'Загружен', 'done'), s('r', 'Распознан', 'done'), s('p', 'Обработка', 'error'), s('d', 'Готов', 'pending')],
+        hint: 'Сбой обработки — см. сообщение об ошибке ниже',
+      };
+    case 'rejected':
+      return {
+        stages: [s('u', 'Загружен', 'done'), s('r', 'Распознан', 'done'), s('p', 'Обработка', 'error'), s('d', 'Готов', 'pending')],
+        hint: 'Документ отклонён оператором',
+      };
+  }
+}
+
+function DocumentStatusStepper({ status }: { status: DocumentStatus }) {
+  const { stages, hint } = buildStepperStages(status);
+
   return (
-    <div style={{ marginBottom: 24, border: '1px solid #e5e7eb', borderRadius: 8, padding: 12, background: '#fff', overflowX: 'auto' }}>
-      <svg viewBox="0 -15 680 290" width={680} height={290} style={{ display: 'block', maxWidth: '100%' }}>
-        <defs>
-          <marker id="sm-arr" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="7" markerHeight="5" orient="auto-start-reverse">
-            <path d="M0,0.5 L9,3.5 L0,6.5" fill="#9ca3af" />
-          </marker>
-        </defs>
-
-        {smLanes.map((lane, i) => (
-          <g key={`lane-${i}`}>
-            <rect x={0} y={lane.y} width={680} height={lane.h} fill={lane.fill} />
-            <text
-              x={10}
-              y={lane.y + 14}
-              fontSize={9}
-              fill="#9ca3af"
-              fontFamily="system-ui, sans-serif"
-              fontWeight={500}
-              style={{ letterSpacing: 0.6, textTransform: 'uppercase' }}
-            >
-              {lane.label}
-            </text>
-          </g>
-        ))}
-
-        {smEdges.map((e, i) => {
-          const s = smEdgeStyle[e.type];
+    <div
+      style={{
+        marginBottom: 24,
+        border: '1px solid #e5e7eb',
+        borderRadius: 8,
+        padding: '16px 20px',
+        background: '#fff',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        {stages.map((stage, i) => {
+          const colors = STAGE_COLORS[stage.state];
+          const isLast = i === stages.length - 1;
+          const isActive = stage.state === 'active';
+          const showInner = isCompleteStage(stage.state);
+          const nextDone = !isLast && isCompleteStage(stages[i + 1].state);
           return (
-            <path
-              key={`edge-${i}`}
-              d={e.d}
-              fill="none"
-              stroke="#9ca3af"
-              strokeWidth={s.width}
-              strokeDasharray={s.dash}
-              opacity={s.opacity ?? 1}
-              markerEnd="url(#sm-arr)"
-            />
-          );
-        })}
-
-        {smEdges.map((e, i) =>
-          e.label ? (
-            <text
-              key={`lbl-${i}`}
-              x={e.label.x}
-              y={e.label.y}
-              textAnchor="middle"
-              fontSize={9}
-              fill="#6b7280"
-              fontFamily="system-ui, sans-serif"
-              style={{ paintOrder: 'stroke', stroke: '#fff', strokeWidth: 3, strokeLinejoin: 'round' }}
-            >
-              {e.label.text}
-            </text>
-          ) : null,
-        )}
-
-        {smNodes.map((n) => {
-          const active = n.id === status;
-          const color = statusColors[n.id];
-          const w = n.compact ? SM_W_C : SM_W;
-          const hw = n.compact ? SM_HW_C : SM_HW;
-          const h = n.compact ? SM_H_C : SM_H;
-          const hh = n.compact ? SM_HH_C : SM_HH;
-          const r = n.compact ? SM_R - 1 : SM_R;
-          const fs = n.compact ? 10 : 11;
-          return (
-            <g key={n.id}>
-              {active && (
-                <rect
-                  x={n.cx - hw - 3}
-                  y={n.cy - hh - 3}
-                  width={w + 6}
-                  height={h + 6}
-                  rx={r + 2}
-                  fill={color}
-                  opacity={0.15}
+            <div key={stage.key} style={{ display: 'flex', alignItems: 'center', flex: isLast ? '0 0 auto' : '1 1 0', minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                <div
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: '50%',
+                    background: stage.state === 'pending' ? '#fff' : colors.fill,
+                    border: `2px solid ${colors.ring}`,
+                    flexShrink: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: isActive ? `0 0 0 4px ${colors.ring}1f` : undefined,
+                    position: 'relative',
+                  }}
+                >
+                  {showInner && (
+                    <svg width={12} height={12} viewBox="0 0 12 12" fill="none">
+                      <path d="M2.5 6.2 L5 8.5 L9.5 3.8" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                  {stage.state === 'error' && (
+                    <svg width={12} height={12} viewBox="0 0 12 12" fill="none">
+                      <path d="M3 3 L9 9 M9 3 L3 9" stroke="#fff" strokeWidth={2} strokeLinecap="round" />
+                    </svg>
+                  )}
+                  {stage.state === 'warning' && (
+                    <div style={{ width: 4, height: 4, background: '#fff', borderRadius: '50%' }} />
+                  )}
+                  {isActive && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        inset: -2,
+                        borderRadius: '50%',
+                        border: `2px solid ${colors.ring}`,
+                        opacity: 0.4,
+                        animation: 'dp-pulse 1.4s ease-in-out infinite',
+                      }}
+                    />
+                  )}
+                </div>
+                <span
+                  style={{
+                    fontSize: 13,
+                    color: colors.text,
+                    fontWeight: isEmphasizedStage(stage.state) ? 600 : 500,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {stage.label}
+                </span>
+              </div>
+              {!isLast && (
+                <div
+                  style={{
+                    flex: 1,
+                    height: 2,
+                    background: nextDone ? STAGE_COLORS.done.fill : '#e5e7eb',
+                    margin: '0 12px',
+                    minWidth: 16,
+                  }}
                 />
               )}
-              <rect
-                x={n.cx - hw}
-                y={n.cy - hh}
-                width={w}
-                height={h}
-                rx={r}
-                fill={active ? color : '#fff'}
-                stroke={active ? color : '#d1d5db'}
-                strokeWidth={active ? 2 : 1}
-              />
-              <text
-                x={n.cx}
-                y={n.cy + 1}
-                textAnchor="middle"
-                dominantBaseline="central"
-                fill={active ? '#fff' : '#6b7280'}
-                fontSize={fs}
-                fontWeight={active ? 600 : 400}
-                fontFamily="system-ui, sans-serif"
-              >
-                {n.label}
-              </text>
-            </g>
+            </div>
           );
         })}
-      </svg>
+      </div>
+      <div style={{ marginTop: 10, fontSize: 13, color: '#6b7280', paddingLeft: 34 }}>{hint}</div>
     </div>
   );
 }
@@ -454,7 +450,7 @@ export default function DocumentDetailPage() {
         </div>
       </div>
 
-      <DocumentStateMachine status={doc.status} />
+      <DocumentStatusStepper status={doc.status} />
 
       {/* Reject form */}
       {showRejectForm && (

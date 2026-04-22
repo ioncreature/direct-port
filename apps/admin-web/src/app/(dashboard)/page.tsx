@@ -50,8 +50,8 @@ export default function DashboardPage() {
         <StatCard label="Telegram" value={tgTotal} href="/telegram-users" />
         <StatCard label="Документы" value={docsTotal} href="/documents" />
         <StatCard label="Обработано" value={statusCounts['processed'] || 0} color="#16a34a" />
-        <StatCard label="С ошибками" value={statusCounts['processed_with_errors'] || 0} color="#d97706" />
-        <StatCard label="Ошибки" value={statusCounts['failed'] || 0} color="#dc2626" />
+        <StatCard label="Частично" value={statusCounts['processed_with_errors'] || 0} color="#d97706" />
+        <StatCard label="Сбои" value={statusCounts['failed'] || 0} color="#dc2626" />
         <StatCard
           label="AI за месяц"
           value={aiCost != null ? fmtCost(aiCost) : '...'}
