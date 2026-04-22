@@ -16,11 +16,11 @@ export class PinoNestLogger implements LoggerService {
 
   private emit(level: LogLevel, message: unknown, context?: string, trace?: string) {
     if (message instanceof Error) {
-      (this.logger[level] as Function)({ err: message, context, trace }, message.message);
+      (this.logger[level] as (...args: unknown[]) => void)({ err: message, context, trace }, message.message);
     } else if (typeof message === 'string') {
-      (this.logger[level] as Function)({ context, trace }, message);
+      (this.logger[level] as (...args: unknown[]) => void)({ context, trace }, message);
     } else {
-      (this.logger[level] as Function)({ context, trace, data: message }, '');
+      (this.logger[level] as (...args: unknown[]) => void)({ context, trace, data: message }, '');
     }
   }
 

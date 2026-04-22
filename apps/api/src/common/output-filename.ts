@@ -8,6 +8,7 @@ export function buildOutputFileName(createdAt: Date, clientName: string): string
   const dateTime = `${y}-${m}-${d}_${h}-${min}`;
 
   const sanitized = clientName
+    // eslint-disable-next-line no-control-regex -- santize filename: strip path separators and ASCII control chars
     .replace(/[/\\:*?"<>|\x00-\x1f]/g, '')
     .replace(/\s+/g, '_')
     .trim()

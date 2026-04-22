@@ -1,5 +1,5 @@
 import { CalculatorService, formatDutyRate, normalizePer } from './calculator.service';
-import type { CalculatorInput, CommissionConfig, CalculatedProduct } from './calculator.service';
+import type { CalculatorInput, CommissionConfig } from './calculator.service';
 import type { DutyInterpretation, DutyChargeRule } from '../duty-interpreter/interfaces';
 import type { ProductNote } from '../common/product-notes';
 

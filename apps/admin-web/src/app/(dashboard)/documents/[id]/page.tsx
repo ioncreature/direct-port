@@ -290,7 +290,7 @@ export default function DocumentDetailPage() {
     }
   }, [doc?.parsedData, doc?.currency]);
 
-  const rows = doc?.resultData ?? [];
+  const rows = useMemo(() => doc?.resultData ?? [], [doc?.resultData]);
   const totals = useMemo(
     () =>
       rows.reduce(

@@ -36,14 +36,15 @@ export function useDocument(id: string) {
     fetch();
   }, [fetch]);
 
+  const isInProgress =
+    !!document && IN_PROGRESS_STATUSES.includes(document.status);
   useEffect(() => {
-    if (!document) return;
-    if (!IN_PROGRESS_STATUSES.includes(document.status)) return;
+    if (!isInProgress) return;
     const interval = setInterval(() => {
       fetch(true);
     }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [document?.status, fetch]);
+  }, [isInProgress, fetch]);
 
   const reprocess = useCallback(async () => {
     try {

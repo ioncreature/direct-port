@@ -71,6 +71,7 @@ export class PgTksCacheStore implements TksCacheStore {
       .createQueryBuilder()
       .insert()
       .into(TksCache)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM QueryDeepPartialEntity rejects unknown for jsonb column
       .values({ key, category, value: value as any, fetchedAt: new Date() })
       .orUpdate(['value', 'category', 'fetched_at'], ['key'])
       .execute();

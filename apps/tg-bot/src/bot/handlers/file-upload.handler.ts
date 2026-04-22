@@ -77,7 +77,7 @@ export class FileUploadHandler {
       await ctx.reply(ctx.t('file-accepted', { fileName }));
     } catch (err) {
       this.logger.error(`File upload failed for "${fileName}" from ${user}: ${(err as Error).message}`);
-      const code = (err as any)?.response?.data?.code;
+      const code = (err as { response?: { data?: { code?: string } } })?.response?.data?.code;
       const msgKey = code ? `error-${code}` : 'upload-error';
       await ctx.reply(ctx.t(msgKey));
     }
