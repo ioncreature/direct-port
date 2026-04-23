@@ -17,7 +17,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "pnpm -r lint",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "read-doc": "pnpm --filter @direct-port/api read-doc --"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

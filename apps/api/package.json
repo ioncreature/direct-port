@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "test": "jest --runInBand",
     "test:e2e": "jest --config jest.config.ts --runInBand",
+    "read-doc": "tsx scripts/read-doc.ts",
     "typeorm": "tsx ./node_modules/typeorm/cli.js -d src/database/data-source.ts",
     "migration:generate": "pnpm typeorm migration:generate",
     "migration:run": "pnpm typeorm migration:run",
