@@ -35,42 +35,47 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 - JWT-авторизация (access + refresh tokens)
 - Роли: admin, customs
 - Глобальные guards: JwtAuthGuard (пропускает X-Internal-Key), RolesGuard
-- Модули:
+- Модули верхнего уровня (app.module.ts): Auth, Users, TnVed, TelegramUsers, Documents, CalculationConfig, AiConfig, Countries
   - Auth, Users — авторизация и управление пользователями
   - TnVed — справочник ТН ВЭД: поиск по TKS API (searchGoodsGrouped + getTnvedCode), перевод запросов через Claude, обогащение ставками
   - TelegramUsers — регистрация пользователей Telegram, детальный просмотр по UUID, PATCH :telegramId/language
-  - Documents — загрузка (Telegram + админка), обработка, переобработка, скачивание
-  - AiParser — AI-парсинг таблиц (Claude): определение валюты, перевод, извлечение данных. Retry + валидация
-  - Classifier — классификация товаров через TKS API (searchGoodsGrouped)
+  - Documents — загрузка (Telegram + админка), обработка, переобработка, скачивание, token-stats. Зонтичный модуль: агрегирует внутри AiParser/Classifier/Calculator/DutyInterpreter/Currency/CalculationLogs/Tks, они не импортируются на верхнем уровне
+  - CalculationConfig — настройки формулы комиссии, флага отправки Excel, порога уверенности классификатора (CRUD)
+  - AiConfig — CRUD для выбора моделей Claude (opus/sonnet/haiku) для 4 сценариев AI. См. `docs/AI_CONFIG.md`
+  - Countries — справочник стран (OKSMT), используется для страны происхождения товара
+- Вложенные модули (внутри DocumentsModule):
+  - AiParser — AI-парсинг таблиц (Claude): определение валюты, перевод, извлечение данных, автодетект страны происхождения. Retry + валидация
+  - Classifier — классификация+верификация ТН ВЭД: TKS search (батчи по 5) → Claude classify+verify (батчи по 10) → getTnvedCode
   - Calculator — расчёт пошлин, НДС, акцизов, комиссии за доставку
   - DutyInterpreter — AI-интерпретация правил расчёта пошлин из справочника ТН ВЭД (Claude)
-  - CalculationConfig — конфигурируемая формула комиссии (CRUD)
-  - CalculationLogs — аудит-лог расчётов (запись после обработки, просмотр в админке)
+  - CalculationLogs — аудит-лог расчётов (запись после обработки, доступ через GET /documents/:id/calculation-history)
   - Currency — курсы валют ЦБ РФ, конвертация в RUB
-  - Tks — shared-модуль TksApiClient + PgTksCacheStore (PostgreSQL-кэш TKS API)
-- Common: PaginationQueryDto, PaginatedResponse, ErrorCode (коды ошибок для i18n), ProductNote (messageLocalized), note-translations — shared инфраструктура
+  - Tks — shared-инфраструктура: TksApiClient + PgTksCacheStore (PostgreSQL-кэш TKS API)
+- Common: PaginationQueryDto, PaginatedResponse, ErrorCode (коды ошибок для i18n), ProductNote (messageLocalized), note-translations, token-usage (утилиты для TokenUsageByStage) — shared инфраструктура
 - Очереди BullMQ: document-parsing (AI-парсинг), document-processing (классификация/расчёт), document-notifications (уведомления в Telegram)
-- Entities: User, TnVedCode, RefreshToken, CalculationLog, TelegramUser (+ language), Document (+ language), CalculationConfig, TksCache
+- Entities: User, RefreshToken, TnVedCode, TelegramUser (+ language), Document (+ language, countryOfOrigin, tokenUsage), CalculationConfig, CalculationLog, TksCache, AiConfig, AiUsageLog
 - Миграции и seed через TypeORM CLI (tsx)
+- AI-учёт токенов: `Document.tokenUsage` (JSONB per-stage per-model) + таблица `ai_usage_log` (для translate вне pipeline). Агрегируется через endpoints `/documents/token-stats*`. См. `docs/AI_USAGE_TRACKING.md`
 
 ### apps/admin-web — Админ-панель (Next.js)
 
 - Страница логина, JWT-сессия
 - Дашборд: статистика, последние документы
 - Пользователи: список с пагинацией/фильтром по роли/сортировкой, создание, редактирование, удаление
-- Документы: список с пагинацией/фильтром по статусу/сортировкой, загрузка .xlsx/.csv, детали с таблицей результатов, скачивание Excel, переобработка failed-документов, ручная проверка requires_review (редактирование parsedData, подтверждение/отклонение)
+- Документы: список с пагинацией/фильтром по статусу/сортировкой, загрузка .xlsx/.csv, детали с таблицей результатов, скачивание Excel, переобработка failed-документов, ручная проверка requires_review (редактирование parsedData, подтверждение/отклонение/одобрение), пересчёт с другой страной (POST :id/recalculate), история расчётов
 - Telegram-пользователи: список с пагинацией/сортировкой, детальная страница с документами пользователя
-- Логи расчётов: таблица с пагинацией/сортировкой, ссылки на документы
-- Справочник ТН ВЭД: поиск по TKS API (текст/код), перевод запросов (Claude Haiku), кликабельные коды, копирование кода, калькулятор пошлин с учётом единиц измерения (кг/л/м²/м³/шт)
-- Настройки: формула комиссии за доставку (pricePercent, weightRate, fixedFee)
+- AI-расходы (`/ai-costs`, только ADMIN): сводка токенов и стоимости (Sonnet $3/$15, Haiku $1/$5 за 1M), фильтр по моделям, графики по дням, разбивка по пользователям и последние документы. См. `docs/AI_USAGE_TRACKING.md`
+- Справочник ТН ВЭД: поиск по TKS API (текст/код), перевод запросов через Claude (модель настраивается через AiConfig), кликабельные коды, копирование кода, калькулятор пошлин с учётом единиц измерения (кг/л/м²/м³/шт)
+- Настройки: формула комиссии (pricePercent, weightRate, fixedFee), порог уверенности классификатора (confidenceThreshold + lowConfidenceAction), отправка Excel пользователю бота (sendResultFile), выбор моделей Claude для 4 AI-сценариев
 - Shared: InfoCard, table-styles, format (fmt), хуки с серверной пагинацией
 - API-клиент с автообновлением токенов
+- Отдельной страницы «Логи расчётов» нет — история доступна на странице деталей документа (вкладка/секция «История расчётов»)
 
 ### apps/tg-bot — Telegram-бот
 
 - grammY, команды /start, /help, /language
 - Локализация: @grammyjs/i18n + Fluent (.ftl), 3 языка: ru, zh, en
-  - Locale файлы: `src/bot/locales/{ru,en,zh}.ftl` (27 ключей)
+  - Locale файлы: `src/bot/locales/{ru,en,zh}.ftl` (37 ключей в каждом)
   - BotContext = Context & I18nFlavor (типизированный контекст с ctx.t())
   - Автодетект языка из Telegram `language_code`, ручной выбор через /language
   - Язык сохраняется в TelegramUser.language (API) + ConversationState.language (Redis)
@@ -93,21 +98,61 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 ```
 Загрузка файла (Telegram-бот: POST /documents/upload, Админка: POST /documents/upload-admin)
 → Сохранение fileBuffer в БД, status=PARSING → BullMQ: document-parsing (ответ за 1-2с)
-→ [Воркер] AiParser (Claude): определение структуры, валюты, перевод, извлечение данных
+→ [Воркер] AiParser (Claude): определение структуры, валюты, перевод, извлечение данных, автодетект страны происхождения (countryOfOrigin + countryOriginSource: ai_explicit | ai_language | ai_currency | manual | default; дефолт — Китай 156)
 → Валидация (детерминистическая + AI), retry до 2 попыток
-→ Если confident → status=PENDING → BullMQ: document-processing
-→ Если не confident → status=REQUIRES_REVIEW → ручная проверка в админке (PATCH :id/review + POST :id/reprocess или POST :id/reject)
+→ Если confident → status=PENDING → BullMQ: document-processing → status=PROCESSING
+→ Если не confident → status=REQUIRES_REVIEW → ручная проверка в админке (PATCH :id/review + POST :id/reprocess, POST :id/approve или POST :id/reject)
 → [Воркер] Classifier+Verify (TKS API: searchGoodsGrouped → Claude classify+verify → getTnvedCode)
+→ Если все коды с низкой уверенностью и lowConfidenceAction='review' → status=CODE_REVIEW_REQUIRED
 → DutyInterpreter (Claude: интерпретация правил расчёта пошлин)
 → При language≠ru: Claude возвращает comment_localized / reasoning_localized для двуязычных замечаний
 → Calculator (пошлина + НДС + акциз + комиссия, конвертация валют → RUB)
-→ resultData + CalculationLog (аудит) → BullMQ: document-notifications
-→ Excel-экспорт → отправка пользователю (только для Telegram-загрузок)
+→ resultData + CalculationLog (аудит) + tokenUsage → BullMQ: document-notifications
+→ status=PROCESSED (или PROCESSED_WITH_ERRORS, если есть проблемные строки)
+→ Excel-экспорт → отправка пользователю Telegram (если CalculationConfig.sendResultFile=true)
 ```
 
 BullMQ очереди: `document-parsing` → `document-processing` → `document-notifications`
 
 Переобработка: `POST /documents/:id/reprocess` — если есть parsedData → document-processing, если нет (но есть fileBuffer) → document-parsing.
+
+Пересчёт: `POST /documents/:id/recalculate` — повторно прогнать классификатор/калькулятор с новыми параметрами (например, явно указать страну происхождения), не парся файл заново.
+
+### Статусы документа (`DocumentStatus`)
+
+| Статус | Когда устанавливается |
+|---|---|
+| `PARSING` | После загрузки файла, перед обработкой в `document-parsing` |
+| `PENDING` | Парсинг успешен, ожидает `document-processing` |
+| `PROCESSING` | Воркер processing забрал документ |
+| `PROCESSED` | Полный успех — доступна загрузка Excel |
+| `PROCESSED_WITH_ERRORS` | Обработан, но часть строк не классифицирована/посчитана |
+| `FAILED` | Невосстановимая ошибка в воркере |
+| `REQUIRES_REVIEW` | AI-парсер не уверен в распознанных данных — нужна ручная правка parsedData |
+| `CODE_REVIEW_REQUIRED` | Классификатор не нашёл уверенного кода ТН ВЭД (зависит от `confidenceThreshold` + `lowConfidenceAction`) |
+| `REJECTED` | Оператор отклонил документ через POST :id/reject |
+
+### Endpoints `DocumentsController` (`/documents`)
+
+| Метод | Путь | Роли | Назначение |
+|---|---|---|---|
+| POST | `/` | — | Создать документ из готового parsedData (служебный) |
+| POST | `/upload` | X-Internal-Key | Загрузка из Telegram-бота |
+| POST | `/upload-admin` | ADMIN, CUSTOMS | Загрузка из админки |
+| GET | `/` | ADMIN, CUSTOMS | Список с пагинацией/фильтром/сортировкой |
+| GET | `/status-counts` | ADMIN, CUSTOMS | Счётчики по статусам (для бейджей в UI) |
+| GET | `/token-stats` | ADMIN | Сводка AI-токенов (today/week/month/total + by user + recent) |
+| GET | `/token-stats/monthly` | ADMIN | Только месячные итоги |
+| GET | `/token-stats/daily` | ADMIN | По дням (`?days=30`, max 90, опц. `?model=`) |
+| PATCH | `/:id/review` | ADMIN, CUSTOMS | Сохранить отредактированный parsedData |
+| POST | `/:id/reject` | ADMIN, CUSTOMS | Отклонить документ с причиной |
+| POST | `/:id/approve` | ADMIN, CUSTOMS | Одобрить REQUIRES_REVIEW без правок и запустить processing |
+| POST | `/:id/reprocess` | ADMIN, CUSTOMS | Перезапустить с подходящего этапа |
+| POST | `/:id/recalculate` | ADMIN, CUSTOMS | Перезапустить classify+calc с новыми параметрами |
+| GET | `/:id` | ADMIN, CUSTOMS | Детали документа |
+| GET | `/:id/calculation-history` | ADMIN, CUSTOMS | Все CalculationLog по документу |
+| GET | `/:id/download` | ADMIN, CUSTOMS | Скачать Excel (только PROCESSED) |
+| GET | `/:id/download-internal` | X-Internal-Key | То же для бота |
 
 ### Форматы данных в pipeline
 
@@ -227,7 +272,7 @@ Docker compose (порты выбраны чтобы не конфликтова
 - [x] Упрощение запуска: миграции (migrationsRun: true) + seed (SeedService OnApplicationBootstrap) автоматически при старте API
 - [x] Загрузка документов через админку: POST /documents/upload-admin с JWT-авторизацией
 - [x] Пагинация, фильтры, сортировка: серверная пагинация для documents, users, telegram-users, calculation-logs
-- [x] Логи расчётов: CalculationLogsModule, аудит после обработки, страница в админке
+- [x] Логи расчётов: CalculationLogsModule, аудит после обработки, история на странице деталей документа (GET /documents/:id/calculation-history)
 - [x] Повторная обработка: POST /documents/:id/reprocess для failed/requires_review
 - [x] Детальная страница Telegram-пользователя: информация + документы пользователя
 - [x] AI-интерпретация пошлин: DutyInterpreterService (Claude) для расчёта комбинированных ставок
@@ -240,23 +285,27 @@ Docker compose (порты выбраны чтобы не конфликтова
 
 **Категории и TTL** (определяются по паттерну ключа):
 
-- `goods` — результаты searchGoodsGrouped, TTL 30 дней (`TKS_CACHE_TTL_GOODS_MS`)
+- `goods` — результаты searchGoodsGrouped, TTL 120 дней (`TKS_CACHE_TTL_GOODS_MS`)
 - `tnved` — коды getTnvedCode, TTL 7 дней (`TKS_CACHE_TTL_TNVED_MS`)
 - `reference` — справочники (страны, эк. зоны), TTL 7 дней (`TKS_CACHE_TTL_REFERENCE_MS`)
 - `other` — прочее, TTL 24 часа (`TKS_CACHE_TTL_OTHER_MS`)
 
 **Stale fallback:** При недоступности TKS API клиент вызывает `getStale()` — возвращает данные из БД независимо от возраста. Оптимизация: `get()` сохраняет stale-значение в памяти, `getStale()` использует его без повторного запроса к БД.
 
-**Очистка:** Вероятностная (1% при каждом `set()`), удаляет записи старше 3× максимального TTL (90 дней).
+**Очистка:** Вероятностная (1% при каждом `set()`), удаляет записи старше 3× максимального TTL (для goods это 360 дней).
 
 **Свежесть:** Определяется динамически из `fetched_at + categoryTtl`, без колонки `expires_at`. Позволяет менять TTL без обновления строк.
 
 ## Четыре точки применения AI (Claude)
 
-1. **Парсинг документов** (AiParserService) — анализ структуры таблицы, определение валюты, перевод наименований, извлечение данных. Детерминистическая + AI валидация, retry до 2 попыток
-2. **Классификация+верификация кодов ТН ВЭД** (ClassifierService) — объединённый classify+verify в одном запросе Claude. При language≠ru промпт запрашивает comment_localized для двуязычных замечаний
-3. **Интерпретация правил расчёта пошлин** (DutyInterpreterService) — анализ текстовых правил из справочника ТН ВЭД: комбинированные ставки, специфические пошлины (EUR/кг, EUR/л), акцизы. При language≠ru промпт запрашивает reasoning_localized
-4. **Перевод поисковых запросов** (TnVedService) — перевод запросов в справочнике ТН ВЭД с английского/китайского на русский для поиска в TKS API. Claude Haiku, max_tokens: 100, timeout: 10с. Graceful degradation: без API-ключа поиск работает без перевода
+Конкретная модель Claude для каждого сценария настраивается в БД (таблица `ai_config`) через `PUT /ai-config` (только ADMIN). По умолчанию: parser=sonnet, classifier=sonnet, interpreter=sonnet, queryFormulation=haiku. Подробнее — `docs/AI_CONFIG.md`.
+
+1. **Парсинг документов** (AiParserService, поле `parserModel`) — анализ структуры таблицы, определение валюты, перевод наименований, извлечение данных, автодетект страны происхождения. Детерминистическая + AI валидация, retry до 2 попыток
+2. **Классификация+верификация кодов ТН ВЭД** (ClassifierService, поле `classifierModel`) — объединённый classify+verify в одном запросе Claude. При language≠ru промпт запрашивает comment_localized для двуязычных замечаний
+3. **Интерпретация правил расчёта пошлин** (DutyInterpreterService, поле `interpreterModel`) — анализ текстовых правил из справочника ТН ВЭД: комбинированные ставки, специфические пошлины (EUR/кг, EUR/л), акцизы. При language≠ru промпт запрашивает reasoning_localized
+4. **Перевод поисковых запросов** (TnVedService, поле `queryFormulationModel`) — перевод запросов в справочнике ТН ВЭД с английского/китайского на русский для поиска в TKS API. max_tokens: 100, timeout: 10с. Graceful degradation: без API-ключа поиск работает без перевода. ⚠️ В коде модель сейчас захардкожена `claude-sonnet-4-6` (`tn-ved.service.ts:257`), хотя `AiConfigService.getQueryFormulationModel()` уже существует и должен использоваться — расхождение, требующее правки
+
+Все вызовы Claude учитываются: токены классификатора/интерпретатора/парсера записываются в `Document.tokenUsage` (per-stage per-model), вызовы перевода — в таблицу `ai_usage_log`. См. `docs/AI_USAGE_TRACKING.md`.
 
 ## Локализация бота (i18n)
 
@@ -267,9 +316,15 @@ Docker compose (порты выбраны чтобы не конфликтова
 - API: ErrorCode enum → бот маппит на локализованные строки (error-CODE ключи в .ftl)
 - AI-комментарии: Claude возвращает двуязычные comment/reasoning при language≠ru
 - ProductNote: `message` (всегда русский, для админки и логов) + `messageLocalized` (язык пользователя бота)
-- Статичные замечания: `common/note-translations.ts` (en/zh переводы для ~5 hardcoded нот)
+- Статичные замечания: `common/note-translations.ts` (5 hardcoded ключей × en/zh): `verification-disabled`, `verification-error`, `verification-no-result`, `interpreter-disabled`, `interpreter-failed`
 - Excel: заголовки всегда на русском, доп. колонка с переведёнными замечаниями только для не-ru пользователей бота
 - Язык пользователя: TelegramUser.language (DB) → Document.language (при загрузке) → pipeline → notification
+
+## Дополнительная документация
+
+- `docs/AI_USAGE_TRACKING.md` — учёт расхода токенов Claude (где хранится, как считается, как работает страница `/ai-costs`)
+- `docs/AI_CONFIG.md` — конфигурация моделей Claude для 4 AI-сценариев (CRUD, кэш, маппинг tier→model ID)
+- `docs/development.md`, `docs/infrastructure.md` — общая инфраструктура и dev-окружение
 
 ## Правила
 
