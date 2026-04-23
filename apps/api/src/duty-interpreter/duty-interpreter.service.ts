@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { TksApiClient, TnvedCode } from '@direct-port/tks-api';
+import { Priznak, TksApiClient, TnvedCode, TnvedallEntry } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
 import { cacheTools, extractToolInput, systemPrompt } from '../common/claude';
@@ -14,6 +14,56 @@ import { DutyInterpretation, InterpretedProduct } from './interfaces';
 const BATCH_SIZE = 5;
 const CONCURRENCY = 2;
 const CACHE_TTL = 3600_000; // 1 hour
+/** Коды с conditions тяжелее этого (символов JSON) отправляются в Claude поодиночке. */
+const HEAVY_CONDITIONS_THRESHOLD = 6000;
+/** Суммарный размер conditions батча; при превышении — батч закрывается. */
+const BATCH_PAYLOAD_LIMIT = 12000;
+
+/**
+ * PRIZNAK, влияющие на расчёт пошлин: ввозная, акциз, НДС, временная, антидемпинговая,
+ * компенсационная, страновая льгота. Остальные (лицензии, сертификация, санкции,
+ * маркировка, уведомления) к расчёту отношения не имеют — их отсекаем, чтобы ответ
+ * Claude не обрезался по max_tokens на крупных TNVEDALL (коды типа 8708705009).
+ */
+const RELEVANT_PRIZNAKS: ReadonlySet<string> = new Set(
+  [
+    Priznak.ImportDuty,
+    Priznak.Excise,
+    Priznak.Vat,
+    Priznak.TempSpecialDuty,
+    Priznak.AntidumpingDuty,
+    Priznak.CompensatoryDuty,
+    Priznak.CountryImportDuty,
+  ].map(String),
+);
+
+/** Ключи TNVEDALL, где сидят страновые условные ставки (антидемпинг/компенсационная/льгота). */
+const COUNTRY_CONDITION_PRIZNAKS: readonly string[] = [
+  String(Priznak.AntidumpingDuty),
+  String(Priznak.CompensatoryDuty),
+  String(Priznak.CountryImportDuty),
+];
+
+function filterRelevantConditions(
+  conditions: Record<string, TnvedallEntry[]> | undefined,
+): Record<string, TnvedallEntry[]> {
+  if (!conditions) return {};
+  const result: Record<string, TnvedallEntry[]> = {};
+  for (const [key, entries] of Object.entries(conditions)) {
+    if (RELEVANT_PRIZNAKS.has(key) && entries && entries.length > 0) {
+      result[key] = entries;
+    }
+  }
+  return result;
+}
+
+interface BatchItem {
+  code: string;
+  tnved: TnvedCode;
+  /** Отфильтрованные по RELEVANT_PRIZNAKS conditions — используются и для оценки
+   *  размера при упаковке батчей, и для payload в interpretBatch. */
+  conditions: Record<string, TnvedallEntry[]>;
+}
 
 const SYSTEM_PROMPT = `Ты — эксперт по таможенному регулированию ЕАЭС. Твоя задача — интерпретировать ставки пошлин, акцизов и НДС из справочника ТН ВЭД и выразить их как формализованные правила расчёта.
 
@@ -237,15 +287,41 @@ export class DutyInterpreterService {
     // Batch interpret via Claude
     let totalUsage = emptyTokenUsageMap();
     const validCodes = codesToInterpret.filter((c) => tnvedData.has(c));
-    // Pre-build batches
-    const codeBatches: Array<{ code: string; tnved: TnvedCode }>[] = [];
-    for (let i = 0; i < validCodes.length; i += BATCH_SIZE) {
-      codeBatches.push(
-        validCodes.slice(i, i + BATCH_SIZE).map((code) => ({
-          code,
-          tnved: tnvedData.get(code)!,
-        })),
-      );
+    // Адаптивная упаковка: тяжёлые коды идут поодиночке, лёгкие группируются
+    // до BATCH_SIZE и до общего лимита payload. Это защищает ответ Claude
+    // от обрезки по max_tokens на раздутых TNVEDALL. Отфильтрованные conditions
+    // кэшируются в BatchItem, чтобы interpretBatch не пересчитывал их повторно.
+    const codeBatches: BatchItem[][] = [];
+    {
+      let current: BatchItem[] = [];
+      let currentSize = 0;
+      const flush = () => {
+        if (current.length > 0) {
+          codeBatches.push(current);
+          current = [];
+          currentSize = 0;
+        }
+      };
+      for (const code of validCodes) {
+        const tnved = tnvedData.get(code)!;
+        const conditions = filterRelevantConditions(tnved.TNVEDALL);
+        const size = JSON.stringify(conditions).length;
+        const item: BatchItem = { code, tnved, conditions };
+        if (size >= HEAVY_CONDITIONS_THRESHOLD) {
+          flush();
+          codeBatches.push([item]);
+          continue;
+        }
+        if (
+          current.length >= BATCH_SIZE ||
+          (current.length > 0 && currentSize + size > BATCH_PAYLOAD_LIMIT)
+        ) {
+          flush();
+        }
+        current.push(item);
+        currentSize += size;
+      }
+      flush();
     }
 
     const useCache = codeBatches.length > 1;
@@ -324,20 +400,28 @@ export class DutyInterpreterService {
 
   /**
    * Есть ли у товара нетривиальные ставки, для корректной обработки которых нужен AI?
-   * Триггеры: специфическая часть (IMP2), комбинированная ставка (IMPSIGN), акциз не 0,
-   * антидемпинговая/компенсационная/временная пошлина.
+   * Триггеры:
+   *   - IMP2/IMPSIGN — комбинированная ставка;
+   *   - AKC/IMPTMP/IMPDEMP/IMPCOMP — акциз или отдельные пошлины;
+   *   - flat-currency IMPEDI — фиксированная сумма (500 EUR, 643 RUB);
+   *   - TNVEDALL[19/20/30] — страновые условные ставки, они в плоских rates не лежат,
+   *     но без AI fallback их не увидит; без warning оператор просто не узнает,
+   *     что расчёт неполный (как было с 8708705009 на stage).
    */
   private hasNonTrivialRates(p: VerifiedProduct): boolean {
     const rates = p.tnvedRaw?.TNVED;
-    // Чисто-валютная IMPEDI (500 EUR, 643 RUB) — фиксированная сумма, fallback
-    // не знает, как её применять, поэтому всегда дергаем AI-интерпретатор.
+    const conditions = p.tnvedRaw?.TNVEDALL;
+    const hasCountryConditions =
+      conditions != null &&
+      COUNTRY_CONDITION_PRIZNAKS.some((pk) => (conditions[pk]?.length ?? 0) > 0);
     const flatCurrency = isFlatCurrencyUnit(p.dutyRateUnit);
     if (!rates) {
       return (
         (p.dutyMin != null && p.dutyMin > 0) ||
         !!p.dutySign ||
         (p.exciseRate != null && p.exciseRate > 0) ||
-        flatCurrency
+        flatCurrency ||
+        hasCountryConditions
       );
     }
     return (
@@ -347,12 +431,13 @@ export class DutyInterpreterService {
       (rates.IMPTMP != null && rates.IMPTMP > 0) ||
       (rates.IMPDEMP != null && rates.IMPDEMP > 0) ||
       (rates.IMPCOMP != null && rates.IMPCOMP > 0) ||
-      flatCurrency
+      flatCurrency ||
+      hasCountryConditions
     );
   }
 
   private async interpretBatch(
-    items: Array<{ code: string; tnved: TnvedCode }>,
+    items: BatchItem[],
     language?: string,
     useCache = false,
   ): Promise<{ results: DutyInterpretation[]; tokenUsage: TokenUsageMap }> {
@@ -361,7 +446,7 @@ export class DutyInterpreterService {
       code: item.code,
       kr_naim: item.tnved.KR_NAIM,
       rates: item.tnved.TNVED ?? {},
-      conditions: item.tnved.TNVEDALL ?? {},
+      conditions: item.conditions,
     }));
 
     const localizedInstruction = language && language !== 'ru'
@@ -377,7 +462,7 @@ ${JSON.stringify(codesData, null, 2)}
     const response = await this.anthropic!.messages.create(
       {
         model,
-        max_tokens: 2048,
+        max_tokens: 8192,
         system: systemPrompt(SYSTEM_PROMPT),
         messages: [{ role: 'user', content: userPrompt }],
         tools: cacheTools([INTERPRET_TOOL], useCache),

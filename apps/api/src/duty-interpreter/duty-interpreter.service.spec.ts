@@ -1,9 +1,13 @@
-import type { TnvedCode } from '@direct-port/tks-api';
+import type { TnvedCode, TnvedallEntry } from '@direct-port/tks-api';
 import type { VerifiedProduct } from '../classifier/classifier.service';
 import { DutyInterpreterService } from './duty-interpreter.service';
 import type { DutyInterpretation } from './interfaces';
 
-function makeTnvedCode(code: string, rates: Partial<TnvedCode['TNVED']> = {}): TnvedCode {
+function makeTnvedCode(
+  code: string,
+  rates: Partial<TnvedCode['TNVED']> = {},
+  tnvedall?: TnvedCode['TNVEDALL'],
+): TnvedCode {
   return {
     CODE: code,
     KR_NAIM: `Описание ${code}`,
@@ -17,6 +21,7 @@ function makeTnvedCode(code: string, rates: Partial<TnvedCode['TNVED']> = {}): T
       AKC: 0,
       ...rates,
     } as any,
+    ...(tnvedall ? { TNVEDALL: tnvedall } : {}),
   };
 }
 
@@ -154,6 +159,37 @@ describe('DutyInterpreterService', () => {
     it('добавляет warning note для flat-currency ставки (dutyRateUnit=EUR без знаменателя)', async () => {
       const { service } = createService({ claudeEnabled: false });
       const product = makeProduct({ dutyRateUnit: 'EUR', tnvedRaw: undefined });
+
+      const { products } = await service.interpret([product]);
+
+      expect(products[0].notes).toHaveLength(1);
+      expect(products[0].notes[0].severity).toBe('warning');
+    });
+
+    it('добавляет warning note если есть TNVEDALL[19] (антидемпинг по стране)', async () => {
+      const { service } = createService({ claudeEnabled: false });
+      const product = makeProduct({
+        tnVedCode: '8708705009',
+        tnvedRaw: makeTnvedCode('8708705009', {}, {
+          '19': [{ CU: '156', MIN: 33.69, PRIZNAK: 19 } as TnvedallEntry],
+        }),
+      });
+
+      const { products } = await service.interpret([product]);
+
+      expect(products[0].notes).toHaveLength(1);
+      expect(products[0].notes[0].severity).toBe('warning');
+      expect(products[0].notes[0].stage).toBe('interpret');
+    });
+
+    it('добавляет warning note если есть TNVEDALL[30] (страновая льгота)', async () => {
+      const { service } = createService({ claudeEnabled: false });
+      const product = makeProduct({
+        tnVedCode: '1234567890',
+        tnvedRaw: makeTnvedCode('1234567890', {}, {
+          '30': [{ CU: '704', MIN: 0, PRIZNAK: 30 } as TnvedallEntry],
+        }),
+      });
 
       const { products } = await service.interpret([product]);
 
@@ -400,6 +436,85 @@ describe('DutyInterpreterService', () => {
       expect(modelUsage).toBeDefined();
       expect(modelUsage.inputTokens).toBe(500);
       expect(modelUsage.outputTokens).toBe(200);
+    });
+  });
+
+  describe('фильтрация conditions по PRIZNAK', () => {
+    it('в payload попадают только релевантные PRIZNAK (1,2,3,16,19,20,30)', async () => {
+      const { service, messagesCreate } = createService({
+        items: [makeInterpretation('8708705009')],
+      });
+      const tnvedall: Record<string, TnvedallEntry[]> = {
+        '1': [{ MIN: 5, PRIZNAK: 1 } as TnvedallEntry],
+        '3': [{ MIN: 22, PRIZNAK: 3 } as TnvedallEntry],
+        '15': [{ NOTE: 'Санкции-ограничение', PRIZNAK: 15 } as TnvedallEntry],
+        '19': [{ CU: '156', MIN: 33.69, PRIZNAK: 19 } as TnvedallEntry],
+        '28': [{ NOTE: 'Эксперимент-по-маркировке', PRIZNAK: 28 } as TnvedallEntry],
+        '34': [{ NOTE: 'Санкции-страны', PRIZNAK: 34 } as TnvedallEntry],
+      };
+      const product = makeProduct({
+        tnVedCode: '8708705009',
+        tnvedRaw: makeTnvedCode('8708705009', {}, tnvedall),
+      });
+
+      await service.interpret([product]);
+
+      const content = messagesCreate.mock.calls[0][0].messages[0].content as string;
+      expect(content).toContain('"1"');
+      expect(content).toContain('"3"');
+      expect(content).toContain('"19"');
+      expect(content).not.toContain('Санкции-ограничение');
+      expect(content).not.toContain('Эксперимент-по-маркировке');
+      expect(content).not.toContain('Санкции-страны');
+    });
+  });
+
+  describe('адаптивный батчинг', () => {
+    it('тяжёлый код с большим conditions уходит в отдельный батч', async () => {
+      // Conditions > HEAVY_CONDITIONS_THRESHOLD (6000 символов JSON).
+      const heavyEntries: TnvedallEntry[] = Array.from({ length: 20 }, (_, i) => ({
+        CU: String(100 + i),
+        MIN: 10 + i,
+        PRIZNAK: 19,
+        NOTE: 'Условие применения ставки для страны '.repeat(10),
+      })) as TnvedallEntry[];
+      const heavyTnved = makeTnvedCode('8708705009', {}, { '19': heavyEntries });
+      const lightTnved = makeTnvedCode('1234567890');
+
+      const { service, messagesCreate } = createService({
+        itemsByCall: [
+          [makeInterpretation('8708705009')],
+          [makeInterpretation('1234567890')],
+        ],
+      });
+      const products = [
+        makeProduct({ tnVedCode: '8708705009', tnvedRaw: heavyTnved }),
+        makeProduct({ tnVedCode: '1234567890', tnvedRaw: lightTnved }),
+      ];
+
+      await service.interpret(products);
+
+      expect(messagesCreate).toHaveBeenCalledTimes(2);
+      const first = messagesCreate.mock.calls[0][0].messages[0].content as string;
+      const second = messagesCreate.mock.calls[1][0].messages[0].content as string;
+      expect(first).toContain('8708705009');
+      expect(first).not.toContain('1234567890');
+      expect(second).toContain('1234567890');
+      expect(second).not.toContain('8708705009');
+    });
+
+    it('несколько лёгких кодов группируются в один батч', async () => {
+      const codes = ['1111111111', '2222222222', '3333333333'];
+      const { service, messagesCreate } = createService({
+        items: codes.map((c) => makeInterpretation(c)),
+      });
+      const products = codes.map((c) =>
+        makeProduct({ tnVedCode: c, tnvedRaw: makeTnvedCode(c) }),
+      );
+
+      await service.interpret(products);
+
+      expect(messagesCreate).toHaveBeenCalledTimes(1);
     });
   });
 
