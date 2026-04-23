@@ -11,6 +11,7 @@ import { randomBytes } from 'crypto';
 import * as request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AiParserService } from '../src/ai-parser/ai-parser.service';
+import { CurrencyService } from '../src/currency/currency.service';
 
 // Modules
 import { AuthModule } from '../src/auth/auth.module';
@@ -97,6 +98,25 @@ export function createMockAiParser(): Partial<AiParserService> {
   };
 }
 
+// CurrencyService в e2e заменяется заглушкой, иначе фоновые BullMQ-воркеры
+// (DocumentsProcessor → CurrencyService.getRate) стучат в живой cbr-xml-daily.ru.
+// Фетч таймаутит 10 секунд, jobs не успевают завершиться до afterAll/closeTestApp,
+// `worker.close()` виснет, `afterAll` ломается по 30-секундному Jest-хуку, и вслед
+// за упавшим suite'ом каскадом отваливаются остальные (Postgres-схема не дропается).
+// Курс 1 unit = 90 RUB — достаточно, чтобы пайплайн отработал детерминированно.
+export function createMockCurrencyService(): Partial<CurrencyService> {
+  const FIXED_RATE = 90;
+  return {
+    getRate: jest.fn().mockImplementation(async (from: string) => (from === 'RUB' ? 1 : FIXED_RATE)),
+    toRub: jest
+      .fn()
+      .mockImplementation(async (amount: number, from: string) =>
+        from === 'RUB' ? amount : Math.round(amount * FIXED_RATE * 100) / 100,
+      ),
+    toRubSync: (amount: number, rate: number) => Math.round(amount * rate * 100) / 100,
+  };
+}
+
 export function createMockTksApi(): Partial<TksApiClient> {
   return {
     searchGoodsGrouped: jest.fn().mockResolvedValue({
@@ -131,6 +151,7 @@ const APP_SCHEMA_KEY = Symbol('testSchema');
 export async function createTestApp(): Promise<INestApplication> {
   const mockTksApi = createMockTksApi();
   const mockAiParser = createMockAiParser();
+  const mockCurrency = createMockCurrencyService();
 
   const suffix = uniqueSuffix();
   const schema = `test_${suffix}`;
@@ -192,6 +213,8 @@ export async function createTestApp(): Promise<INestApplication> {
     .useValue(null)
     .overrideProvider(AiParserService)
     .useValue(mockAiParser)
+    .overrideProvider(CurrencyService)
+    .useValue(mockCurrency)
     .compile();
 
   const app = moduleRef.createNestApplication();
