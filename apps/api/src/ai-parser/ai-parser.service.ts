@@ -318,6 +318,16 @@ const PARSE_CHUNK_TOOL: Anthropic.Messages.Tool = {
   },
 };
 
+// Opus 4.7 периодически оборачивает tool_use input в лишний ключ `structure`,
+// несмотря на то что schema определяет поля на верхнем уровне. Разворачиваем,
+// чтобы валидация не отбрасывала корректный ответ (и вместе с ним countrySuggestion).
+function unwrapStructure(raw: Record<string, unknown>): Record<string, unknown> {
+  if (raw.headerRows === undefined && raw.structure && typeof raw.structure === 'object') {
+    return raw.structure as Record<string, unknown>;
+  }
+  return raw;
+}
+
 const VALIDATE_TOOL: Anthropic.Messages.Tool = {
   name: 'validate_parsing',
   description: 'Результат валидации парсинга коммерческого документа',
@@ -633,7 +643,7 @@ export class AiParserService {
           audit: { context: auditContext, purpose: 'parse_structure' },
         },
       );
-      const result = raw as Record<string, unknown>;
+      const result = unwrapStructure(raw as Record<string, unknown>);
 
       if (
         !Array.isArray(result.headerRows) ||

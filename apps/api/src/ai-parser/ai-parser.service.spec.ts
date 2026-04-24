@@ -482,6 +482,46 @@ describe('AiParserService', () => {
     });
   });
 
+  describe('analyzeStructure: распознавание страны происхождения', () => {
+    const suggestion = {
+      code: '156',
+      source: 'ai_currency',
+      reason: 'Цены в юанях (￥) и китайские заголовки',
+    };
+    const structureFields = {
+      headerRows: [0],
+      dataRows: [1, 2, 3, 4],
+      columnMapping: { description: 0, price: 1, weight: 2, quantity: 3 },
+      currency: 'CNY',
+      weightNote: 'per_unit',
+      countrySuggestion: suggestion,
+    };
+
+    it('countrySuggestion сохраняется когда поля на верхнем уровне', async () => {
+      const { service } = createService({
+        spreadsheetData: makeSpreadsheetData(4),
+        claudeResponses: [structureFields, makeClaudeParseResponse(4), VALIDATION_OK],
+      });
+
+      const result = await service.parse(Buffer.from(''), 'test.xlsx');
+      expect(result.countrySuggestion).toEqual(suggestion);
+    });
+
+    it('countrySuggestion сохраняется когда Opus оборачивает ответ в { structure: { ... } }', async () => {
+      const { service } = createService({
+        spreadsheetData: makeSpreadsheetData(4),
+        claudeResponses: [
+          { structure: structureFields },
+          makeClaudeParseResponse(4),
+          VALIDATION_OK,
+        ],
+      });
+
+      const result = await service.parse(Buffer.from(''), 'test.xlsx');
+      expect(result.countrySuggestion).toEqual(suggestion);
+    });
+  });
+
   describe('Token usage', () => {
     it('накапливает tokenUsage из всех вызовов Claude', async () => {
       const { service } = createService({
