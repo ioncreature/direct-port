@@ -152,6 +152,7 @@ function CopyButton({ text }: { text: string }) {
 }
 
 function CodeDetailCard({ detail }: { detail: TnVedCodeDetail }) {
+  const exciseRate = formatExciseRate(detail.rates);
   return (
     <div
       style={{
@@ -174,9 +175,9 @@ function CodeDetailCard({ detail }: { detail: TnVedCodeDetail }) {
         <div>
           <span style={labelStyle}>НДС:</span> {detail.rates.vatRate}%
         </div>
-        {formatExciseRate(detail.rates) && (
+        {exciseRate && (
           <div>
-            <span style={labelStyle}>Акциз:</span> {formatExciseRate(detail.rates)}
+            <span style={labelStyle}>Акциз:</span> {exciseRate}
           </div>
         )}
         <ExtendedRatesInline rates={detail.extendedRates} />
