@@ -53,15 +53,23 @@ export function calcAiCostFromStages(map: TokenUsageByStage | null | undefined):
   return cost;
 }
 
-/** Sum all tokens across stages and models.
+/** Sum all tokens across models in a per-model map.
  * inputTokens = non-cached input; cache tokens are counted separately. */
+export function totalTokensFromMap(map: TokenUsageMap | null | undefined): number {
+  if (!map) return 0;
+  let total = 0;
+  for (const usage of Object.values(map)) {
+    total += usage.inputTokens + (usage.cacheCreationTokens ?? 0) + (usage.cacheReadTokens ?? 0) + usage.outputTokens;
+  }
+  return total;
+}
+
+/** Sum all tokens across stages and models. */
 export function totalTokensFromStages(map: TokenUsageByStage | null | undefined): number {
   if (!map) return 0;
   let total = 0;
   for (const stageMap of Object.values(map)) {
-    for (const usage of Object.values(stageMap)) {
-      total += usage.inputTokens + (usage.cacheCreationTokens ?? 0) + (usage.cacheReadTokens ?? 0) + usage.outputTokens;
-    }
+    total += totalTokensFromMap(stageMap);
   }
   return total;
 }
@@ -80,4 +88,10 @@ export function fmtDateTime(date: string | Date): string {
   const d = typeof date === 'string' ? new Date(date) : date;
   const pad = (n: number) => n.toString().padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+export function fmtDuration(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined) return '—';
+  if (ms < 1000) return `${ms} мс`;
+  return `${(ms / 1000).toFixed(2)} с`;
 }

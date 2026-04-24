@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseIntPipe,
   ParseUUIDPipe,
   Patch,
   Post,
@@ -22,6 +23,7 @@ import { ErrorCode } from '../common/error-codes';
 import { buildOutputFileName, getDocumentClientName } from '../common/output-filename';
 import { DocumentStatus } from '../database/entities/document.entity';
 import { UserRole } from '../database/entities/user.entity';
+import { DiagnosticsService } from '../diagnostics/diagnostics.service';
 import { DocumentsService } from './documents.service';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { FindDocumentsQueryDto } from './dto/find-documents-query.dto';
@@ -55,6 +57,7 @@ export class DocumentsController {
     private service: DocumentsService,
     private excelExport: ExcelExportService,
     private calculationLogs: CalculationLogsService,
+    private diagnostics: DiagnosticsService,
   ) {}
 
   @Post()
@@ -169,6 +172,36 @@ export class DocumentsController {
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   calculationHistory(@Param('id', ParseUUIDPipe) id: string) {
     return this.calculationLogs.findByDocumentId(id);
+  }
+
+  @Get(':id/stage-runs')
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  stageRuns(@Param('id', ParseUUIDPipe) id: string) {
+    return this.diagnostics.findStageRunsByDocument(id);
+  }
+
+  @Get(':id/ai-calls/:callId')
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  aiCall(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('callId', ParseUUIDPipe) callId: string,
+  ) {
+    return this.diagnostics.findAiCallById(id, callId);
+  }
+
+  @Get(':id/versions')
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  versions(@Param('id', ParseUUIDPipe) id: string) {
+    return this.diagnostics.findVersionsByDocument(id);
+  }
+
+  @Get(':id/versions/:version')
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  version(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('version', ParseIntPipe) version: number,
+  ) {
+    return this.diagnostics.findVersionByNumber(id, version);
   }
 
   @Get(':id/download')

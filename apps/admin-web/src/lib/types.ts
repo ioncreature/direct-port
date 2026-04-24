@@ -287,3 +287,84 @@ export interface CalculationLog {
   trigger: CalculationTrigger;
   createdAt: string;
 }
+
+export type PipelineStage = 'parse' | 'classify' | 'interpret' | 'calculate';
+export type PipelineStageStatus = 'running' | 'ok' | 'failed';
+
+export type AiCallPurpose =
+  | 'parse_structure'
+  | 'parse_products'
+  | 'parse_chunk'
+  | 'parse_validate'
+  | 'classify_formulate_queries'
+  | 'classify'
+  | 'interpret'
+  | 'translate_query';
+
+export interface AiCallError {
+  message: string;
+  stack?: string;
+  code?: string;
+}
+
+export interface AiCallLite {
+  id: string;
+  stageRunId: string | null;
+  documentId: string | null;
+  purpose: AiCallPurpose;
+  model: string;
+  attempt: number;
+  error: AiCallError | null;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  latencyMs: number | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+export interface AiCall extends AiCallLite {
+  request: unknown;
+  response: unknown;
+}
+
+export interface PipelineStageRun {
+  id: string;
+  documentId: string;
+  stage: PipelineStage;
+  attempt: number;
+  status: PipelineStageStatus;
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  output: unknown;
+  error: AiCallError | null;
+  tokenUsage: TokenUsageMap | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+  aiCalls: AiCallLite[];
+}
+
+export type DocumentVersionReason = 'ai_parse' | 'manual_edit' | 'reprocess';
+export type DocumentVersionActorType = 'system' | 'user' | 'telegram';
+
+export interface DocumentVersionLite {
+  id: string;
+  documentId: string;
+  version: number;
+  reason: DocumentVersionReason;
+  actorType: DocumentVersionActorType | null;
+  actorId: string | null;
+  createdAt: string;
+}
+
+export interface DocumentVersionSnapshot {
+  parsedData: ParsedDataRow[] | null;
+  currency: string | null;
+  columnMapping: Record<string, number> | null;
+}
+
+export interface DocumentVersion extends DocumentVersionLite {
+  snapshot: DocumentVersionSnapshot;
+}

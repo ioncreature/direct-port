@@ -63,6 +63,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 - Дашборд: статистика, последние документы
 - Пользователи: список с пагинацией/фильтром по роли/сортировкой, создание, редактирование, удаление
 - Документы: список с пагинацией/фильтром по статусу/сортировкой, загрузка .xlsx/.csv, детали с таблицей результатов, скачивание Excel, переобработка failed-документов, ручная проверка requires_review (редактирование parsedData, подтверждение/отклонение/одобрение), пересчёт с другой страной (POST :id/recalculate), история расчётов
+- Вкладка «Диагностика» на странице деталей документа: этапы pipeline (parse/classify/interpret/calculate) с таймингами, ошибками и токенами; список AI-вызовов Claude per stage (модалка с полными request/response по клику); версии parsedData (модалка со snapshot). Ленивая загрузка — данные запрашиваются только при переходе на вкладку
 - Telegram-пользователи: список с пагинацией/сортировкой, детальная страница с документами пользователя
 - AI-расходы (`/ai-costs`, только ADMIN): сводка токенов и стоимости (Sonnet $3/$15, Haiku $1/$5 за 1M), фильтр по моделям, графики по дням, разбивка по пользователям и последние документы. См. `docs/AI_USAGE_TRACKING.md`
 - Справочник ТН ВЭД: поиск по TKS API (текст/код), перевод запросов через Claude (модель настраивается через AiConfig), кликабельные коды, копирование кода, калькулятор пошлин с учётом единиц измерения (кг/л/м²/м³/шт)
@@ -151,6 +152,10 @@ BullMQ очереди: `document-parsing` → `document-processing` → `documen
 | POST | `/:id/recalculate` | ADMIN, CUSTOMS | Перезапустить classify+calc с новыми параметрами |
 | GET | `/:id` | ADMIN, CUSTOMS | Детали документа |
 | GET | `/:id/calculation-history` | ADMIN, CUSTOMS | Все CalculationLog по документу |
+| GET | `/:id/stage-runs` | ADMIN, CUSTOMS | Этапы pipeline + lite-список AI-вызовов (для вкладки «Диагностика») |
+| GET | `/:id/ai-calls/:callId` | ADMIN, CUSTOMS | Полный request/response одного вызова Claude |
+| GET | `/:id/versions` | ADMIN, CUSTOMS | Список версий parsedData (без snapshot) |
+| GET | `/:id/versions/:version` | ADMIN, CUSTOMS | Snapshot конкретной версии parsedData |
 | GET | `/:id/download` | ADMIN, CUSTOMS | Скачать Excel (только PROCESSED) |
 | GET | `/:id/download-internal` | X-Internal-Key | То же для бота |
 

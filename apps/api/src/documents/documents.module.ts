@@ -11,6 +11,7 @@ import { CurrencyModule } from '../currency/currency.module';
 import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
 import { Document } from '../database/entities/document.entity';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
+import { DiagnosticsModule } from '../diagnostics/diagnostics.module';
 import { DutyInterpreterModule } from '../duty-interpreter/duty-interpreter.module';
 import { DocumentsParsingProcessor } from './documents-parsing.processor';
 import { DocumentsController } from './documents.controller';
@@ -32,6 +33,7 @@ import { ExcelExportService } from './excel-export.service';
     DutyInterpreterModule,
     CalculationLogsModule,
     CountriesModule,
+    DiagnosticsModule,
   ],
   controllers: [DocumentsController],
   providers: [DocumentsService, DocumentsProcessor, DocumentsParsingProcessor, ExcelExportService],

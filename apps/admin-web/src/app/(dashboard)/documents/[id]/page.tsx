@@ -4,6 +4,7 @@ import { InfoCard } from '@/components/info-card';
 import { useCalculationHistory } from '@/hooks/use-calculation-history';
 import { useCountries } from '@/hooks/use-countries';
 import { useDocument } from '@/hooks/use-document';
+import { DiagnosticsPanel } from './diagnostics-panel';
 import { countryOriginSourceLabels, downloadDocument, statusColors, statusLabels } from '@/lib/documents';
 import { calcAiCostFromMap, calcAiCostFromStages, fmt, fmtCost, fmtTokens, modelLabel, stageLabel } from '@/lib/format';
 import { btnOutline } from '@/lib/table-styles';
@@ -242,6 +243,7 @@ export default function DocumentDetailPage() {
     (i: number) => setExpandedRow((prev) => (prev === i ? null : i)),
     [],
   );
+  const [activeTab, setActiveTab] = useState<'main' | 'diagnostics'>('main');
   const [editableRows, setEditableRows] = useState<ParsedDataRow[]>([]);
   const [editableCurrency, setEditableCurrency] = useState('');
   const [showRejectForm, setShowRejectForm] = useState(false);
@@ -451,6 +453,44 @@ export default function DocumentDetailPage() {
       </div>
 
       <DocumentStatusStepper status={doc.status} />
+
+      <div
+        style={{
+          display: 'flex',
+          gap: 4,
+          borderBottom: '1px solid #e5e7eb',
+          marginBottom: 20,
+        }}
+      >
+        {(['main', 'diagnostics'] as const).map((tab) => {
+          const isActive = activeTab === tab;
+          return (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              style={{
+                padding: '10px 18px',
+                background: 'none',
+                border: 'none',
+                borderBottom: isActive ? '2px solid #2563eb' : '2px solid transparent',
+                marginBottom: -1,
+                cursor: 'pointer',
+                fontSize: 14,
+                fontWeight: isActive ? 600 : 400,
+                color: isActive ? '#2563eb' : '#6b7280',
+              }}
+            >
+              {tab === 'main' ? 'Основное' : 'Диагностика'}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeTab === 'diagnostics' ? (
+        <DiagnosticsPanel documentId={id} />
+      ) : (
+        <>
 
       {/* Reject form */}
       {showRejectForm && (
@@ -943,6 +983,8 @@ export default function DocumentDetailPage() {
               </tbody>
             </table>
           </div>
+        </>
+      )}
         </>
       )}
     </div>
