@@ -69,7 +69,8 @@ export default function UploadDocumentPage() {
                   width: progress.total
                     ? `${Math.min(100, (progress.loaded / progress.total) * 100)}%`
                     : '100%',
-                  transition: 'width 0.2s ease',
+                  transition: 'width 0.25s linear',
+                  willChange: 'width',
                 }}
               />
             </div>
