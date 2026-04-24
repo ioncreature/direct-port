@@ -45,6 +45,10 @@ const COUNTRY_CONDITION_PRIZNAKS: readonly string[] = [
   String(Priznak.CountryImportDuty),
 ];
 
+/** Ключ TNVEDALL с акцизными ставками (PRIZNAK=2). Там встречаются новые акцизы,
+ *  которых ещё нет в плоском TNVED.AKC — fallback должен об этом предупреждать. */
+const EXCISE_PRIZNAK = String(Priznak.Excise);
+
 function filterRelevantConditions(
   conditions: Record<string, TnvedallEntry[]> | undefined,
 ): Record<string, TnvedallEntry[]> {
@@ -89,6 +93,7 @@ const SYSTEM_PROMPT = `Ты — эксперт по таможенному ре�
 5. Никогда не домысливай: значение IMP берётся как есть. IMP=0.34 означает 0.34 (а не 34). Если IMPEDI указывает "%" — это 0.34%; если IMPEDI — единица — это 0.34 EUR/единицу
 6. Валюта specific-ставки определяется по суффиксу IMPEDI: D=USD, Р=RUB, A=AMD, B=BYR, C=KGS, K=KZT, E=EUR (по умолчанию EUR). В поле 'unit' указывай код валюты (USD, RUB, EUR и т. д.), НЕ символ.
 7. AKC + AKCEDI — акциз. Та же логика: AKCEDI указывает единицу (адвалорный % при AKCEDI="1"/"2"/"%"; специфический при AKCEDI — единица). Для кода 831 ("л 100% спирта", встречается в AKCEDI) в поле 'per' используй 'ethanol_l'
+7a. Если TNVED.AKC пуст/нулевой, дополнительно проверь conditions['2'] (TNVEDALL, PRIZNAK=2) — там лежат актуальные/новые акцизы, которые могли ещё не попасть в плоское поле AKC. Для КАЖДОЙ действующей записи (DBEGIN уже наступил или близко; DEND в будущем или null) создай отдельный charge type='excise'. Формат единицы из TYPEMIN: префикс = OKEI-код (112=л, 166=кг, 168=т, 796=шт, 798=тыс.шт, 055=м²), суффикс = код валюты (Р=RUB, Е или без суффикса=EUR, D=USD). Значение ставки бери из поля MIN (MAX у специфического акциза обычно null или 0). База — customs_value. Пример: TYPEMIN='112Р', MIN=11 → method={kind:'specific', amount:11, unit:'RUB', per:'l'}. В reasoning упомяни, что ставка взята из TNVEDALL[2] со ссылкой на DOC_N/DOC_D и период DBEGIN–DEND
 8. NDS — НДС в процентах напрямую (NDS=22 → 22%, NDS=20 → 20%, NDS=10 → 10%). Бери значение NDS как есть. С 2026-01-01 (ФЗ N 425-ФЗ от 28.11.2025) стандартная ставка НДС в РФ = 22%. Поля NDSEDI/NDS_PR — справочные коды (льготы, признаки), ставку из них НЕ пересчитывай
 9. IMPTMP — временная пошлина, IMPDEMP — антидемпинговая, IMPCOMP — компенсационная. Та же логика IMP*/IMPEDI*. Добавляй как отдельные charges если ненулевые
 10. База: ввозная пошлина/акциз от customs_value; НДС от customs_value_plus_duty_plus_excise
@@ -422,6 +427,9 @@ export class DutyInterpreterService {
     const hasCountryConditions =
       conditions != null &&
       COUNTRY_CONDITION_PRIZNAKS.some((pk) => (conditions[pk]?.length ?? 0) > 0);
+    const hasExciseConditions =
+      conditions != null &&
+      (conditions[EXCISE_PRIZNAK]?.some((e) => (e.MIN ?? 0) > 0) ?? false);
     const flatCurrency = isFlatCurrencyUnit(p.dutyRateUnit);
     if (!rates) {
       return (
@@ -429,7 +437,8 @@ export class DutyInterpreterService {
         !!p.dutySign ||
         (p.exciseRate != null && p.exciseRate > 0) ||
         flatCurrency ||
-        hasCountryConditions
+        hasCountryConditions ||
+        hasExciseConditions
       );
     }
     return (
@@ -440,7 +449,8 @@ export class DutyInterpreterService {
       (rates.IMPDEMP != null && rates.IMPDEMP > 0) ||
       (rates.IMPCOMP != null && rates.IMPCOMP > 0) ||
       flatCurrency ||
-      hasCountryConditions
+      hasCountryConditions ||
+      hasExciseConditions
     );
   }
 

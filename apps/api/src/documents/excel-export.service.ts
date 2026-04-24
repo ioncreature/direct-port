@@ -1,14 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import * as ExcelJS from 'exceljs';
-import { humanizeUnit } from '../calculator/calculator.service';
+import { humanizeUnit, normalizePer } from '../calculator/calculator.service';
 import type { CalculationStatus, ProductNote } from '../common/product-notes';
 import { Document } from '../database/entities/document.entity';
+import type { Dimension } from '../duty-interpreter/interfaces';
 
 interface ResultRow {
   description: string;
   quantity: number;
   price: number;
   weight: number;
+  dimensions?: Dimension[] | null;
   tnVedCode: string;
   tnVedDescription: string;
   dutyRate: number;
@@ -38,6 +40,19 @@ interface ResultRow {
   notes?: ProductNote[];
 }
 
+/** Находит объём за единицу товара (в литрах) среди dimensions строки.
+ *  Возвращает null, если в dimensions нет записи с unit='l'. */
+function rowVolumePerUnit(row: ResultRow): number | null {
+  const dims = row.dimensions;
+  if (!dims) return null;
+  for (const d of dims) {
+    if (normalizePer(d.unit) === 'l' && Number.isFinite(d.value) && d.value > 0) {
+      return d.value;
+    }
+  }
+  return null;
+}
+
 interface ColumnDef {
   header: string;
   key: string;
@@ -50,12 +65,20 @@ const LOCALIZED_NOTES_HEADERS: Record<string, string> = {
   en: 'Notes (translated)',
 };
 
-function buildColumns(currency: string, hasRub: boolean, language?: string | null): ColumnDef[] {
+function buildColumns(
+  currency: string,
+  hasRub: boolean,
+  hasVolume: boolean,
+  language?: string | null,
+): ColumnDef[] {
   const columns: ColumnDef[] = [
     { header: 'Наименование', key: 'description', width: 40 },
     { header: 'Количество', key: 'quantity', width: 12 },
     { header: `Цена (${currency})`, key: 'price', width: 14, numFmt: '#,##0.00' },
     { header: 'Вес (кг)', key: 'weight', width: 12, numFmt: '#,##0.00' },
+    ...(hasVolume
+      ? [{ header: 'Объём (л)', key: 'volume', width: 14, numFmt: '#,##0.0000' } as ColumnDef]
+      : []),
     { header: 'Код ТН ВЭД', key: 'tnVedCode', width: 16 },
     { header: 'Описание ТН ВЭД', key: 'tnVedDescription', width: 35 },
     { header: 'Ставка пошлины', key: 'dutyRateDisplay', width: 20 },
@@ -165,8 +188,10 @@ export class ExcelExportService {
 
     const currency = doc.currency || 'USD';
     const hasRub = currency !== 'RUB' && data.length > 0 && 'totalCostRub' in data[0];
+    const volumesPerUnit = data.map(rowVolumePerUnit);
+    const hasVolume = volumesPerUnit.some((v) => v != null);
     const language = doc.language || null;
-    const COLUMNS = buildColumns(currency, hasRub, language);
+    const COLUMNS = buildColumns(currency, hasRub, hasVolume, language);
     const hasLocalizedNotes = language != null && language !== 'ru';
 
     sheet.columns = COLUMNS.map((col) => ({
@@ -191,15 +216,20 @@ export class ExcelExportService {
     const notesColIdx = COLUMNS.findIndex((c) => c.key === 'notesText') + 1;
     const formulaColIdx = COLUMNS.findIndex((c) => c.key === 'dutyFormula') + 1;
 
-    for (const row of data) {
+    for (let rowIdx = 0; rowIdx < data.length; rowIdx++) {
+      const row = data[rowIdx];
       const status = resolveStatus(row);
       const notesText = formatNotes(row.notes);
 
+      const volumePerUnit = volumesPerUnit[rowIdx];
       const rowData: Record<string, unknown> = {
         description: row.description,
         quantity: row.quantity,
         price: row.price,
         weight: row.weight,
+        ...(hasVolume
+          ? { volume: volumePerUnit != null ? volumePerUnit * row.quantity : null }
+          : {}),
         tnVedCode: row.tnVedCode || '—',
         tnVedDescription: row.tnVedDescription || '—',
         dutyRateDisplay: row.dutyRateDisplay ?? (row.dutyRate ? `${row.dutyRate}%` : '—'),
