@@ -4,9 +4,14 @@ import { useUploadDocument } from '@/hooks/use-upload-document';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
 
+function formatSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
+  return `${(bytes / 1024).toFixed(1)} КБ`;
+}
+
 export default function UploadDocumentPage() {
   const router = useRouter();
-  const { upload, uploading, error } = useUploadDocument();
+  const { upload, uploading, error, progress } = useUploadDocument();
   const [file, setFile] = useState<File | null>(null);
 
   async function handleSubmit(e: FormEvent) {
@@ -46,10 +51,34 @@ export default function UploadDocumentPage() {
           </p>
         )}
         {error && <p style={{ color: 'red', marginBottom: 16 }}>{error}</p>}
-        {uploading && (
-          <p style={{ color: '#2563eb', marginBottom: 16 }}>
-            Файл загружается и обрабатывается AI-парсером. Это может занять до минуты...
-          </p>
+        {uploading && progress && (
+          <div style={{ marginBottom: 16 }}>
+            <div
+              style={{
+                height: 8,
+                backgroundColor: '#e5e7eb',
+                borderRadius: 4,
+                overflow: 'hidden',
+                marginBottom: 6,
+              }}
+            >
+              <div
+                style={{
+                  height: '100%',
+                  backgroundColor: '#2563eb',
+                  width: progress.total
+                    ? `${Math.min(100, (progress.loaded / progress.total) * 100)}%`
+                    : '100%',
+                  transition: 'width 0.2s ease',
+                }}
+              />
+            </div>
+            <p style={{ fontSize: 13, color: '#555', margin: 0 }}>
+              {progress.loaded < progress.total
+                ? `Загрузка: ${formatSize(progress.loaded)} из ${formatSize(progress.total)} (${Math.round((progress.loaded / progress.total) * 100)}%)`
+                : 'Файл загружен, обрабатывается на сервере...'}
+            </p>
+          </div>
         )}
         <button
           type="submit"
