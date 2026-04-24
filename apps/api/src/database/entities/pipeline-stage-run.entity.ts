@@ -14,7 +14,7 @@ import { Document } from './document.entity';
 
 export type PipelineStage = 'parse' | 'classify' | 'interpret' | 'calculate';
 
-export type PipelineStageStatus = 'running' | 'ok' | 'failed';
+export type PipelineStageStatus = 'running' | 'ok' | 'partial_ok' | 'failed';
 
 @Entity('pipeline_stage_run')
 @Index('idx_pipeline_stage_run_document', ['documentId', 'startedAt'])

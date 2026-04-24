@@ -40,6 +40,7 @@ const STATUS_CONFIG: Record<
   { label: string; color: string; bg: string }
 > = {
   ok: { label: 'Успех', color: '#16a34a', bg: '#dcfce7' },
+  partial_ok: { label: 'Частично (fallback)', color: '#c2410c', bg: '#fed7aa' },
   failed: { label: 'Ошибка', color: '#dc2626', bg: '#fee2e2' },
   running: { label: 'Выполняется', color: '#2563eb', bg: '#dbeafe' },
 };

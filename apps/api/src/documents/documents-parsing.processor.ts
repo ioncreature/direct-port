@@ -98,6 +98,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
           countrySuggestion,
         },
         tokenUsage,
+        partial: feasibility !== 'ok',
       });
       void this.audit.recordDocumentVersion({
         documentId,

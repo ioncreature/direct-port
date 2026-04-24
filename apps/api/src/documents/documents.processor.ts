@@ -120,6 +120,7 @@ export class DocumentsProcessor extends WorkerHost {
           selections: classifyResult.audit.selections,
         },
         tokenUsage: classifyResult.tokenUsage,
+        partial: classifyResult.usedFallback,
       });
       currentStageRunId = null;
 
@@ -149,6 +150,7 @@ export class DocumentsProcessor extends WorkerHost {
           ),
         },
         tokenUsage: interpretResult.tokenUsage,
+        partial: interpretResult.usedFallback,
       });
       currentStageRunId = null;
 
@@ -272,6 +274,7 @@ export class DocumentsProcessor extends WorkerHost {
           hasRowErrors,
           lowConfidenceReasons,
         },
+        partial: summary.usedFallback,
       });
       currentStageRunId = null;
 
@@ -471,6 +474,7 @@ export class DocumentsProcessor extends WorkerHost {
           exchangeRate: needsConversion ? exchangeRate : null,
           hasRowErrors,
         },
+        partial: summary.usedFallback,
       });
 
       doc.status = hasRowErrors ? DocumentStatus.PROCESSED_WITH_ERRORS : DocumentStatus.PROCESSED;

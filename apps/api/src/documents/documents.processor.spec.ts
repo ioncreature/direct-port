@@ -95,6 +95,7 @@ function makeSummary(items: CalculatedProduct[]): CalculationSummary {
     totalExcise: items.reduce((s, i) => s + i.exciseAmount, 0),
     totalLogistics: items.reduce((s, i) => s + i.logisticsCommission, 0),
     grandTotal: items.reduce((s, i) => s + i.totalCost, 0),
+    usedFallback: items.some((i) => i.dutyAmountIsEstimate || i.calculationStatus !== 'exact'),
   };
 }
 
@@ -106,7 +107,7 @@ interface Opts {
     audit?: { searchQueries: string[][]; tksCandidates: unknown[][]; selections: unknown[] };
   };
   classifyError?: Error;
-  interpretResult?: { products: ClassifiedProduct[]; tokenUsage: Record<string, unknown> };
+  interpretResult?: { products: ClassifiedProduct[]; tokenUsage: Record<string, unknown>; usedFallback?: boolean };
   interpretError?: Error;
   summary?: CalculationSummary;
   calculateError?: Error;
@@ -148,12 +149,14 @@ function createProcessor(opts: Opts = {}) {
         return Promise.resolve({
           ...opts.classifyResult,
           audit: opts.classifyResult.audit ?? makeDefaultAudit(opts.classifyResult.products),
+          usedFallback: opts.classifyResult.products.some((p) => !p.matched || !p.verified),
         });
       }
       return Promise.resolve({
         products: classified,
         tokenUsage: {},
         audit: makeDefaultAudit(classified),
+        usedFallback: classified.some((p) => !p.matched || !p.verified),
       });
     }),
   };
@@ -165,6 +168,7 @@ function createProcessor(opts: Opts = {}) {
         opts.interpretResult ?? {
           products: products.map((p) => ({ ...p, dutyInterpretation: null })),
           tokenUsage: {},
+          usedFallback: false,
         },
       );
     }),
@@ -907,5 +911,83 @@ describe('DocumentsProcessor.recalculate (job.name="recalculate-document")', () 
     const inputs = calculator.calculate.mock.calls[0][0] as Array<{ notes: ProductNote[] }>;
     expect(inputs[0].notes.map((n) => n.stage)).toEqual(['classify']);
     expect(inputs[0].notes.find((n) => n.message === 'drop')).toBeUndefined();
+  });
+});
+
+describe('DocumentsProcessor partial_ok flag', () => {
+  function findStageCall(audit: { completeStageRun: jest.Mock }, stageRunId: string) {
+    return audit.completeStageRun.mock.calls.find(([id]) => id === stageRunId);
+  }
+
+  it('все стадии ok → completeStageRun вызывается с partial=false (или без флага)', async () => {
+    const doc = makeDoc({ countryOfOrigin: '156', countryOriginSource: 'ai_explicit' });
+    const classified = [makeClassified()];
+    const { processor, audit } = createProcessor({
+      doc,
+      classifyResult: { products: classified, tokenUsage: {} },
+      interpretResult: { products: classified, tokenUsage: {}, usedFallback: false },
+      summary: makeSummary([makeCalculated()]),
+    });
+
+    await processor.process(fakeJob('doc-1'));
+
+    const calls = audit.completeStageRun.mock.calls;
+    for (const [, input] of calls) {
+      expect(input?.partial ?? false).toBe(false);
+    }
+  });
+
+  it('classify.usedFallback=true → стадия classify помечается partial=true', async () => {
+    const unmatched = makeClassified({ matched: false });
+    const { processor, audit } = createProcessor({
+      classifyResult: { products: [unmatched], tokenUsage: {} },
+      interpretResult: { products: [unmatched], tokenUsage: {}, usedFallback: false },
+      summary: makeSummary([makeCalculated({ matched: false })]),
+    });
+
+    await processor.process(fakeJob('doc-1'));
+
+    // Порядок вызовов: classify → interpret → calculate → далее notify
+    const partialFlags = audit.completeStageRun.mock.calls.map(([, input]) => input?.partial ?? false);
+    expect(partialFlags[0]).toBe(true); // classify
+  });
+
+  it('interpret.usedFallback=true → стадия interpret помечается partial=true', async () => {
+    const { processor, audit } = createProcessor({
+      interpretResult: {
+        products: [makeClassified({ matched: true, verified: true })],
+        tokenUsage: {},
+        usedFallback: true,
+      },
+    });
+
+    await processor.process(fakeJob('doc-1'));
+
+    const partialFlags = audit.completeStageRun.mock.calls.map(([, input]) => input?.partial ?? false);
+    expect(partialFlags[0]).toBe(false); // classify — по дефолту matched=true, verified=true
+    expect(partialFlags[1]).toBe(true); // interpret
+  });
+
+  it('calculate.usedFallback=true (estimate/non-exact) → стадия calculate помечается partial=true', async () => {
+    const { processor, audit } = createProcessor({
+      summary: makeSummary([makeCalculated({ dutyAmountIsEstimate: true, calculationStatus: 'needs_info' })]),
+    });
+
+    await processor.process(fakeJob('doc-1'));
+
+    const partialFlags = audit.completeStageRun.mock.calls.map(([, input]) => input?.partial ?? false);
+    expect(partialFlags[2]).toBe(true); // calculate
+  });
+
+  it('fallback-страна Китай (countryOriginSource=default) сама по себе НЕ делает calculate partial', async () => {
+    const doc = makeDoc({ countryOfOrigin: null, countryOriginSource: null });
+    const { processor, audit } = createProcessor({ doc });
+
+    await processor.process(fakeJob('doc-1'));
+
+    // После processor'а countryOriginSource станет 'default', но это не повод для partial.
+    expect(doc.countryOriginSource).toBe('default');
+    const partialFlags = audit.completeStageRun.mock.calls.map(([, input]) => input?.partial ?? false);
+    expect(partialFlags[2]).toBe(false); // calculate
   });
 });

@@ -233,9 +233,10 @@ export class DutyInterpreterService {
     products: VerifiedProduct[],
     language?: string,
     auditContext: AuditContext | null = null,
-  ): Promise<{ products: InterpretedProduct[]; tokenUsage: TokenUsageMap }> {
+  ): Promise<{ products: InterpretedProduct[]; tokenUsage: TokenUsageMap; usedFallback: boolean }> {
     this.logger.log(`Interpreting duties for ${products.length} products`);
     if (!this.anthropic) {
+      const usedFallback = products.some((p) => this.hasNonTrivialRates(p));
       return { products: products.map((p) => {
         const extraNotes: ProductNote[] = [];
         if (this.hasNonTrivialRates(p)) {
@@ -249,7 +250,7 @@ export class DutyInterpreterService {
           });
         }
         return { ...p, dutyInterpretation: null, notes: [...p.notes, ...extraNotes] };
-      }), tokenUsage: emptyTokenUsageMap() };
+      }), tokenUsage: emptyTokenUsageMap(), usedFallback };
     }
 
     // Group by unique TNVED code
@@ -375,8 +376,7 @@ export class DutyInterpreterService {
 
     this.logger.log(`Interpretation done: ${interpretations.size} codes interpreted, ${codesToInterpret.length - validCodes.length} codes skipped (no TNVED data)`);
 
-    // Apply interpretations to products
-    return { tokenUsage: totalUsage, products: products.map((p) => {
+    const resultProducts = products.map((p) => {
       const interpretation = interpretations.get(p.tnVedCode) ?? null;
       const extraNotes: ProductNote[] = [];
 
@@ -408,7 +408,15 @@ export class DutyInterpreterService {
         dutyInterpretation: interpretation,
         notes: [...p.notes, ...extraNotes],
       };
-    }) };
+    });
+
+    const usedFallback =
+      codesToInterpret.length > validCodes.length ||
+      resultProducts.some(
+        (p) => !p.dutyInterpretation && p.tnVedCode && this.hasNonTrivialRates(p),
+      );
+
+    return { tokenUsage: totalUsage, products: resultProducts, usedFallback };
   }
 
   /**

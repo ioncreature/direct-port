@@ -1021,4 +1021,26 @@ describe('CalculatorService', () => {
       expect(result.items[0].dutyAmount).toBe(1800); // 10 × 90 × 2
     });
   });
+
+  describe('usedFallback', () => {
+    it('false — все товары посчитаны точно (calculationStatus=exact, без estimate)', () => {
+      const result = service.calculate([makeProduct()], ZERO_COMMISSION);
+      expect(result.items[0].calculationStatus).toBe('exact');
+      expect(result.items[0].dutyAmountIsEstimate).toBe(false);
+      expect(result.usedFallback).toBe(false);
+    });
+
+    it('true — хотя бы один товар оценочный (dutyAmountIsEstimate=true)', () => {
+      // Specific duty в м² без dimensions → dutyAmountIsEstimate=true
+      const product = makeProduct({
+        dutyRate: 0,
+        dutyMin: 0.38,
+        dutyMinUnit: 'м2',
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      expect(result.items[0].dutyAmountIsEstimate).toBe(true);
+      expect(result.usedFallback).toBe(true);
+    });
+
+  });
 });

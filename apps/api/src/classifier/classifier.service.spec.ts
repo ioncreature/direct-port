@@ -556,4 +556,44 @@ describe('ClassifierService', () => {
       expect(tnvedCalls).toHaveLength(0);
     });
   });
+
+  describe('usedFallback', () => {
+    it('false — товар сопоставлен и верифицирован', async () => {
+      const { service } = createService({
+        searchResults: { 'Чайник': makeSearchResult('8516101000', 'Чайники') },
+        tnvedCodes: { '8516101000': makeTnvedCode('8516101000') },
+        claudeResponse: [makeClaudeSelection({ tnVedCode: '8516101000', confidence: 0.95 })],
+      });
+
+      const result = await service.classify([makeProduct('Чайник')]);
+      expect(result.products[0].matched).toBe(true);
+      expect(result.products[0].verified).toBe(true);
+      expect(result.usedFallback).toBe(false);
+    });
+
+    it('true — товар не сопоставлен (matched=false)', async () => {
+      const { service } = createService({
+        searchResults: { 'Неизвестный товар': { data: [], hm: 0 } },
+        claudeResponse: [makeClaudeSelection({ tnVedCode: '9999999999', confidence: 0.3, fromCandidates: false })],
+      });
+
+      const result = await service.classify([makeProduct('Неизвестный товар')]);
+      expect(result.products[0].matched).toBe(false);
+      expect(result.usedFallback).toBe(true);
+    });
+
+    it('true — товар сопоставлен без AI-верификации (verified=false)', async () => {
+      // Без ANTHROPIC_API_KEY classifier работает TKS-only → verified=false
+      const { service } = createService({
+        searchResults: { 'Чайник': makeSearchResult('8516101000', 'Чайники') },
+        tnvedCodes: { '8516101000': makeTnvedCode('8516101000') },
+        claudeEnabled: false,
+      });
+
+      const result = await service.classify([makeProduct('Чайник')]);
+      expect(result.products[0].matched).toBe(true);
+      expect(result.products[0].verified).toBe(false);
+      expect(result.usedFallback).toBe(true);
+    });
+  });
 });

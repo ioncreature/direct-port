@@ -561,4 +561,46 @@ describe('DutyInterpreterService', () => {
       expect(antidump.appliesWhen?.conditions).toContain('ЕЭК');
     });
   });
+
+  describe('usedFallback', () => {
+    it('false — Claude отключён и все ставки тривиальные (простой адвалор)', async () => {
+      const { service } = createService({ claudeEnabled: false });
+      const product = makeProduct({ dutyRate: 7.5, exciseRate: 0, dutySign: null, dutyMin: null });
+      const result = await service.interpret([product]);
+      expect(result.usedFallback).toBe(false);
+    });
+
+    it('true — Claude отключён, у товара нетривиальные ставки (комбинированная)', async () => {
+      const { service } = createService({ claudeEnabled: false });
+      const product = makeProduct({
+        tnvedRaw: makeTnvedCode('0000000000', { IMPSIGN: '>', IMP2: 0.5, IMPEDI2: 'EUR/кг' }),
+      });
+      const result = await service.interpret([product]);
+      expect(result.usedFallback).toBe(true);
+    });
+
+    it('true — Claude упал для всех батчей, интерпретация не получена', async () => {
+      const code = '2202100000';
+      const rawCode = makeTnvedCode(code, { IMP: 10, IMPSIGN: '>', IMP2: 0.08, IMPEDI2: 'EUR/л' });
+      const { service } = createService({
+        claudeError: new Error('Request timed out'),
+        tnvedByCode: { [code]: rawCode },
+      });
+      const product = makeProduct({ tnVedCode: code, tnvedRaw: rawCode });
+      const result = await service.interpret([product]);
+      expect(result.products[0].dutyInterpretation).toBeNull();
+      expect(result.usedFallback).toBe(true);
+    });
+
+    it('false — Claude вернул интерпретацию для всех запрошенных кодов', async () => {
+      const code = '8516101000';
+      const { service } = createService({
+        items: [makeInterpretation(code)],
+        tnvedByCode: { [code]: makeTnvedCode(code) },
+      });
+      const product = makeProduct({ tnVedCode: code });
+      const result = await service.interpret([product]);
+      expect(result.usedFallback).toBe(false);
+    });
+  });
 });

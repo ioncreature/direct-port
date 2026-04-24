@@ -289,7 +289,7 @@ export interface CalculationLog {
 }
 
 export type PipelineStage = 'parse' | 'classify' | 'interpret' | 'calculate';
-export type PipelineStageStatus = 'running' | 'ok' | 'failed';
+export type PipelineStageStatus = 'running' | 'ok' | 'partial_ok' | 'failed';
 
 export type AiCallPurpose =
   | 'parse_structure'

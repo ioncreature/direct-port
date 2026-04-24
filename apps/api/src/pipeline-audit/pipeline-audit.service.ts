@@ -27,6 +27,8 @@ export interface CompleteStageRunInput {
   output?: unknown;
   tokenUsage?: TokenUsageMap | null;
   metadata?: Record<string, unknown>;
+  /** true → стадия помечается как `partial_ok` (часть результата получена через fallback). */
+  partial?: boolean;
 }
 
 export interface AuditContext {
@@ -114,7 +116,8 @@ export class PipelineAuditService {
     input: CompleteStageRunInput = {},
   ): Promise<void> {
     if (!stageRunId) return;
-    await this.finishStageRun(stageRunId, 'ok', null, input.output, input.tokenUsage, input.metadata);
+    const status: 'ok' | 'partial_ok' = input.partial ? 'partial_ok' : 'ok';
+    await this.finishStageRun(stageRunId, status, null, input.output, input.tokenUsage, input.metadata);
   }
 
   async failStageRun(
@@ -140,7 +143,7 @@ export class PipelineAuditService {
    */
   private async finishStageRun(
     stageRunId: string,
-    status: 'ok' | 'failed',
+    status: 'ok' | 'partial_ok' | 'failed',
     error: unknown,
     output: unknown,
     tokenUsage: TokenUsageMap | null | undefined,

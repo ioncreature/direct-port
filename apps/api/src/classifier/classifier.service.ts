@@ -268,6 +268,7 @@ export class ClassifierService {
     products: ClassifiedProduct[];
     tokenUsage: TokenUsageMap;
     audit: ClassifierAudit;
+    usedFallback: boolean;
   }> {
     this.logger.log(
       `Classifying ${products.length} products${language ? `, language=${language}` : ''}, threshold=${confidenceThreshold}`,
@@ -389,6 +390,7 @@ export class ClassifierService {
     this.logger.log(
       `Classification done: ${matched}/${assembled.length} matched, ${codesToLoad.size} unique codes`,
     );
+    const usedFallback = assembled.some((p) => !p.matched || !p.verified);
     return {
       products: assembled,
       tokenUsage,
@@ -397,6 +399,7 @@ export class ClassifierService {
         tksCandidates: candidatesByProduct,
         selections,
       },
+      usedFallback,
     };
   }
 

@@ -54,6 +54,8 @@ export interface CalculationSummary {
   totalExcise: number;
   totalLogistics: number;
   grandTotal: number;
+  /** true → хотя бы один товар рассчитан через fallback (оценочная пошлина или неточный статус). */
+  usedFallback: boolean;
 }
 
 export interface CommissionConfig {
@@ -268,6 +270,7 @@ export class CalculatorService {
       totalExcise: items.reduce((s, i) => s + i.exciseAmount, 0),
       totalLogistics: items.reduce((s, i) => s + i.logisticsCommission, 0),
       grandTotal: items.reduce((s, i) => s + i.totalCost, 0),
+      usedFallback: items.some((i) => i.dutyAmountIsEstimate || i.calculationStatus !== 'exact'),
     };
   }
 
