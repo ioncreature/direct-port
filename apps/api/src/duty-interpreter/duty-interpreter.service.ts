@@ -503,7 +503,7 @@ ${JSON.stringify(codesData, null, 2)}
             tools: cacheTools([INTERPRET_TOOL], useCache),
             tool_choice: { type: 'any' },
           },
-          { timeout: 30_000 },
+          { timeout: 90_000 },
         ),
     );
 
