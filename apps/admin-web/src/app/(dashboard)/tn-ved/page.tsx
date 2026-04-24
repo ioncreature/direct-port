@@ -5,6 +5,7 @@ import { fmt } from '@/lib/format';
 import { td, th } from '@/lib/table-styles';
 import type {
   TnVedCodeDetail,
+  TnVedConditionalExcise,
   TnVedCountryDuty,
   TnVedDeclarationExample,
   TnVedExtendedRates,
@@ -57,6 +58,10 @@ export default function TnVedPage() {
 
       {result?.mode === 'code_lookup' && result.codeDetail && (
         <CodeDetailCard detail={result.codeDetail} />
+      )}
+
+      {result?.mode === 'code_lookup' && result.codeDetail && result.codeDetail.conditionalExcises.length > 0 && (
+        <ConditionalExcisesSection items={result.codeDetail.conditionalExcises} />
       )}
 
       {result?.mode === 'code_lookup' && result.codeDetail && result.codeDetail.countryDuties.length > 0 && (
@@ -169,9 +174,9 @@ function CodeDetailCard({ detail }: { detail: TnVedCodeDetail }) {
         <div>
           <span style={labelStyle}>НДС:</span> {detail.rates.vatRate}%
         </div>
-        {detail.rates.exciseRate > 0 && (
+        {formatExciseRate(detail.rates) && (
           <div>
-            <span style={labelStyle}>Акциз:</span> {detail.rates.exciseRate}%
+            <span style={labelStyle}>Акциз:</span> {formatExciseRate(detail.rates)}
           </div>
         )}
         <ExtendedRatesInline rates={detail.extendedRates} />
@@ -308,7 +313,9 @@ function DutyCalculator({ rates }: { rates: TnVedRateInfo }) {
   const impDimInfo = impIsSpecific ? parseDutyUnit(rates.dutyRateUnit) : null;
   const hasImp2Specific = rates.dutyMin != null && rates.dutyMin > 0 && !!rates.dutyMinUnit;
   const imp2DimInfo = hasImp2Specific ? parseDutyUnit(rates.dutyMinUnit) : null;
-  const activeDimInfo = impDimInfo ?? imp2DimInfo;
+  const exciseIsSpecific = isSpecificUnit(rates.exciseRateUnit);
+  const exciseDimInfo = exciseIsSpecific ? parseDutyUnit(rates.exciseRateUnit) : null;
+  const activeDimInfo = impDimInfo ?? imp2DimInfo ?? exciseDimInfo;
 
   const p = parseFloat(price) || 0;
   const q = parseFloat(qty) || 0;
@@ -341,8 +348,22 @@ function DutyCalculator({ rates }: { rates: TnVedRateInfo }) {
     }
   }
 
-  const exciseAmount = canCalc ? totalPrice * (rates.exciseRate / 100) : 0;
-  // Примечание: при specific-пошлине в валюте, отличной от валюты цены, НДС тут — приближённый
+  let exciseAmount = 0;
+  let exciseCurrency: string | null = null;
+  let exciseFormula: string | null = null;
+  if (canCalc) {
+    if (exciseIsSpecific) {
+      // Для специфического акциза в той же валюте, что и цена, сумма в валюте акциза.
+      // Если единица требует dimension (вес/объём) — используем d; иначе — qty.
+      const akcQty = exciseDimInfo ? d : q;
+      exciseAmount = rates.exciseRate * akcQty;
+      exciseCurrency = specificCurrency(rates.exciseRateUnit);
+      exciseFormula = `${rates.exciseRate} ${rates.exciseRateUnit} × ${akcQty}`;
+    } else {
+      exciseAmount = totalPrice * (rates.exciseRate / 100);
+    }
+  }
+  // Примечание: при specific-пошлине/акцизе в валюте, отличной от валюты цены, НДС тут — приближённый
   const vatAmount = canCalc ? (totalPrice + dutyAmount + exciseAmount) * (rates.vatRate / 100) : 0;
   const total = totalPrice + dutyAmount + vatAmount + exciseAmount;
 
@@ -365,7 +386,12 @@ function DutyCalculator({ rates }: { rates: TnVedRateInfo }) {
             <span style={labelStyle}>Пошлина:</span> {fmt(dutyAmount)}
             {dutyCurrency && impIsSpecific && ` ${dutyCurrency}`}
           </div>
-          {exciseAmount > 0 && <div><span style={labelStyle}>Акциз:</span> {fmt(exciseAmount)}</div>}
+          {exciseAmount > 0 && (
+            <div>
+              <span style={labelStyle}>Акциз:</span> {fmt(exciseAmount)}
+              {exciseCurrency && exciseIsSpecific && ` ${exciseCurrency}`}
+            </div>
+          )}
           <div><span style={labelStyle}>НДС:</span> {fmt(vatAmount)}</div>
           <div style={{ fontWeight: 600 }}><span style={labelStyle}>Итого:</span> {fmt(total)}</div>
         </div>
@@ -376,6 +402,14 @@ function DutyCalculator({ rates }: { rates: TnVedRateInfo }) {
           {impIsSpecific ? 'Специфическая пошлина: ' : 'Формула: '}
           {dutyFormula}
           {(impIsSpecific || hasImp2Specific) && ' — для сравнения/конвертации в валюту цены необходим курс.'}
+        </p>
+      )}
+
+      {canCalc && exciseFormula && (
+        <p style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+          Специфический акциз: {exciseFormula}
+          {exciseCurrency && ` ${exciseCurrency}`}
+          {' — для сравнения/конвертации в валюту цены необходим курс.'}
         </p>
       )}
     </div>
@@ -446,12 +480,52 @@ function ResultsTable({
             <td style={tdRight}>{item.count}</td>
             <td style={tdRight}>{formatDutyRate(item.rates)}</td>
             <td style={tdRight}>{item.rates.vatRate}%</td>
-            <td style={tdRight}>{item.rates.exciseRate > 0 ? `${item.rates.exciseRate}%` : '—'}</td>
+            <td style={tdRight}>{formatExciseRate(item.rates) ?? '—'}</td>
           </tr>
         ))}
       </tbody>
     </table>
   );
+}
+
+function ConditionalExcisesSection({ items }: { items: TnVedConditionalExcise[] }) {
+  return (
+    <div style={{ marginTop: 24 }}>
+      <h3 style={{ margin: '0 0 12px' }}>Условные ставки акциза</h3>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr>
+            <th style={{ ...th, textAlign: 'right', width: 140 }}>Ставка</th>
+            <th style={{ ...th, width: 180 }}>Период</th>
+            <th style={{ ...th, width: 200 }}>Документ</th>
+            <th style={th}>Условия</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((e, idx) => (
+            <tr key={`${e.dateBegin ?? ''}-${e.documentNumber ?? ''}-${idx}`}>
+              <td style={{ ...td, textAlign: 'right' }}>
+                {e.rate != null ? formatConditionalExciseRate(e) : '—'}
+              </td>
+              <td style={{ ...td, fontSize: 13, color: '#555' }}>
+                {formatPeriod(e.dateBegin, e.dateEnd)}
+              </td>
+              <td style={{ ...td, fontSize: 13, color: '#555' }}>
+                {formatDocument(e.documentNumber, e.documentDate)}
+              </td>
+              <td style={{ ...td, fontSize: 13, color: '#555' }}>{e.note || '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function formatConditionalExciseRate(e: TnVedConditionalExcise): string {
+  if (e.rate == null) return '—';
+  const sign = e.sign === '<' ? ' (не более)' : e.sign === '>' ? ' (не менее)' : '';
+  return `${formatRateValue(e.rate, e.rateUnit)}${sign}`;
 }
 
 const COUNTRY_DUTY_TITLES: Record<TnVedCountryDuty['kind'], string> = {
@@ -584,6 +658,23 @@ function formatDutyRate(rates: TnVedRateInfo): string {
   if (rates.dutySign && rates.dutyMin) {
     const op = rates.dutySign === '<' ? 'но не более' : 'но не менее';
     text += ` ${op} ${rates.dutyMin} ${rates.dutyMinUnit || 'EUR/кг'}`;
+  }
+  return text;
+}
+
+/**
+ * Форматирование акциза из TNVED: AKC/AKCEDI + AKCSIGN/AKC2/AKCEDI2.
+ * Возвращает null если ставка фактически нулевая — чтобы вызывающий код мог показать "—".
+ */
+function formatExciseRate(rates: TnVedRateInfo): string | null {
+  if (!rates.exciseRate && !rates.exciseMin) return null;
+  const akcPart = isSpecificUnit(rates.exciseRateUnit)
+    ? `${rates.exciseRate} ${rates.exciseRateUnit}`
+    : `${rates.exciseRate}%`;
+  let text = akcPart;
+  if (rates.exciseSign && rates.exciseMin) {
+    const op = rates.exciseSign === '<' ? 'но не более' : 'но не менее';
+    text += ` ${op} ${rates.exciseMin} ${rates.exciseMinUnit || 'EUR'}`;
   }
   return text;
 }

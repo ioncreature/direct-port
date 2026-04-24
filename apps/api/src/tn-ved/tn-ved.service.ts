@@ -28,6 +28,11 @@ export interface TnVedRateInfo {
   dutyMinUnit: string | null;
   vatRate: number;
   exciseRate: number;
+  /** Единица AKC: null/"%" → exciseRate адвалорный %; "RUB/л", "EUR/тыс.шт" → специфический акциз */
+  exciseRateUnit: string | null;
+  exciseSign: string | null;
+  exciseMin: number | null;
+  exciseMinUnit: string | null;
 }
 
 /**
@@ -70,6 +75,23 @@ export interface TnVedCountryDuty {
   note: string | null;
 }
 
+/**
+ * Условная акцизная ставка из TNVEDALL с PRIZNAK=2.
+ * Тут лежат актуальные/новые ставки, которые ещё не попали в плоское TNVED.AKC,
+ * а также ставки с периодами действия и ссылками на нормативные документы.
+ */
+export interface TnVedConditionalExcise {
+  rate: number | null;
+  /** Единица ставки — нормализованный TYPEMIN ("RUB/л", "EUR/тыс.шт", "%") */
+  rateUnit: string | null;
+  sign: string | null;
+  dateBegin: string | null;
+  dateEnd: string | null;
+  documentNumber: string | null;
+  documentDate: string | null;
+  note: string | null;
+}
+
 /** Пример реальной декларации: конкретное наименование товара, задекларированного по этому коду. */
 export interface TnVedDeclarationExample {
   description: string;
@@ -89,6 +111,7 @@ export interface TnVedCodeDetail {
   rates: TnVedRateInfo;
   extendedRates: TnVedExtendedRates;
   countryDuties: TnVedCountryDuty[];
+  conditionalExcises: TnVedConditionalExcise[];
   declarations: TnVedDeclarationExample[];
   dateBegin?: string;
   dateEnd?: string;
@@ -239,6 +262,7 @@ export class TnVedService {
         rates: this.extractRates(tnved),
         extendedRates: this.extractExtendedRates(tnved),
         countryDuties,
+        conditionalExcises: this.extractConditionalExcises(tnved),
         declarations,
         dateBegin: tnved.DBEGIN ?? undefined,
         dateEnd: tnved.DEND ?? undefined,
@@ -329,6 +353,10 @@ export class TnVedService {
                 dutyMinUnit: null,
                 vatRate: 20,
                 exciseRate: 0,
+                exciseRateUnit: null,
+                exciseSign: null,
+                exciseMin: null,
+                exciseMinUnit: null,
               },
             };
           }
@@ -352,6 +380,10 @@ export class TnVedService {
       dutyMinUnit: normalizeImpediUnit(rates.IMPEDI2),
       vatRate: rates.NDS ?? 20,
       exciseRate: rates.AKC ?? 0,
+      exciseRateUnit: normalizeImpediUnit(rates.AKCEDI),
+      exciseSign: rates.AKCSIGN ?? null,
+      exciseMin: rates.AKC2 ?? null,
+      exciseMinUnit: normalizeImpediUnit(rates.AKCEDI2),
     };
   }
 
@@ -436,6 +468,27 @@ export class TnVedService {
     }
 
     return result;
+  }
+
+  /**
+   * Разворачивает TNVEDALL[2] (PRIZNAK=2 — акциз) в список условных акцизных ставок.
+   * Там лежат актуальные/новые ставки с периодами действия (DBEGIN/DEND) и ссылками
+   * на нормативные документы, которые могут отсутствовать в плоском TNVED.AKC.
+   */
+  private extractConditionalExcises(tnved: TnvedCode): TnVedConditionalExcise[] {
+    const entries = tnved.TNVEDALL?.[String(Priznak.Excise)];
+    if (!entries || entries.length === 0) return [];
+
+    return entries.map((e) => ({
+      rate: e.MIN ?? null,
+      rateUnit: normalizeImpediUnit(e.TYPEMIN),
+      sign: e.SIGN ?? null,
+      dateBegin: e.DBEGIN ?? null,
+      dateEnd: e.DEND ?? null,
+      documentNumber: e.DOC_N ?? null,
+      documentDate: e.DOC_D ?? null,
+      note: e.NOTE ?? null,
+    }));
   }
 }
 

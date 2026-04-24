@@ -44,6 +44,11 @@ export interface TnVedRateInfo {
   dutyMinUnit: string | null;
   vatRate: number;
   exciseRate: number;
+  /** Единица AKC: null/"%" → exciseRate адвалорный %; "RUB/л", "EUR/тыс.шт" → специфический акциз */
+  exciseRateUnit: string | null;
+  exciseSign: string | null;
+  exciseMin: number | null;
+  exciseMinUnit: string | null;
 }
 
 export interface TnVedExtendedRates {
@@ -73,6 +78,17 @@ export interface TnVedCountryDuty {
   note: string | null;
 }
 
+export interface TnVedConditionalExcise {
+  rate: number | null;
+  rateUnit: string | null;
+  sign: string | null;
+  dateBegin: string | null;
+  dateEnd: string | null;
+  documentNumber: string | null;
+  documentDate: string | null;
+  note: string | null;
+}
+
 export interface TnVedDeclarationExample {
   description: string;
   count: number;
@@ -91,6 +107,7 @@ export interface TnVedCodeDetail {
   rates: TnVedRateInfo;
   extendedRates: TnVedExtendedRates;
   countryDuties: TnVedCountryDuty[];
+  conditionalExcises: TnVedConditionalExcise[];
   declarations: TnVedDeclarationExample[];
   dateBegin?: string;
   dateEnd?: string;
