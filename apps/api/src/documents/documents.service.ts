@@ -92,6 +92,7 @@ export class DocumentsService {
         'rowCount',
         'errorMessage',
         'rejectionReasons',
+        'tokenUsage',
         'createdAt',
         'updatedAt',
       ],

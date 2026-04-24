@@ -2,7 +2,7 @@
 
 import { useDocuments } from '@/hooks/use-documents';
 import { statusColors, statusLabels } from '@/lib/documents';
-import { fmtDateTime } from '@/lib/format';
+import { calcAiCostFromStages, fmtCost, fmtDateTime } from '@/lib/format';
 import { btnLink, btnOutline, td, th } from '@/lib/table-styles';
 import { getDocumentUploaderName } from '@/lib/telegram';
 import type { DocumentStatus } from '@/lib/types';
@@ -133,6 +133,7 @@ export default function DocumentsPage() {
                     {sortIndicator(col.field)}
                   </th>
                 ))}
+                <th style={{ ...th, textAlign: 'right' }}>Стоимость AI</th>
                 <th style={th}></th>
               </tr>
             </thead>
@@ -158,6 +159,9 @@ export default function DocumentsPage() {
                   </td>
                   <td style={td}>{doc.rowCount}</td>
                   <td style={td}>{fmtDateTime(doc.createdAt)}</td>
+                  <td style={{ ...td, textAlign: 'right' }}>
+                    {doc.tokenUsage ? fmtCost(calcAiCostFromStages(doc.tokenUsage)) : '—'}
+                  </td>
                   <td style={td}>
                     {(doc.status === 'failed' || doc.status === 'requires_review' || doc.status === 'processed_with_errors') && (
                       <button
@@ -181,7 +185,7 @@ export default function DocumentsPage() {
               ))}
               {documents.length === 0 && (
                 <tr>
-                  <td style={{ ...td, textAlign: 'center', color: '#888' }} colSpan={6}>
+                  <td style={{ ...td, textAlign: 'center', color: '#888' }} colSpan={7}>
                     Документов не найдено
                   </td>
                 </tr>
