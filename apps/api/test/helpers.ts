@@ -19,6 +19,7 @@ import { CalculationConfigModule } from '../src/calculation-config/calculation-c
 import { DocumentsModule } from '../src/documents/documents.module';
 import { DocumentsParsingProcessor } from '../src/documents/documents-parsing.processor';
 import { DocumentsProcessor } from '../src/documents/documents.processor';
+import { PipelineAuditModule } from '../src/pipeline-audit/pipeline-audit.module';
 import { TelegramUsersModule } from '../src/telegram-users/telegram-users.module';
 import { TnVedModule } from '../src/tn-ved/tn-ved.module';
 import { UsersModule } from '../src/users/users.module';
@@ -28,10 +29,13 @@ import { JwtAuthGuard } from '../src/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../src/auth/guards/roles.guard';
 
 // Entities
+import { AiCall } from '../src/database/entities/ai-call.entity';
 import { AiConfig } from '../src/database/entities/ai-config.entity';
 import { CalculationConfig } from '../src/database/entities/calculation-config.entity';
 import { CalculationLog } from '../src/database/entities/calculation-log.entity';
 import { Document } from '../src/database/entities/document.entity';
+import { DocumentVersion } from '../src/database/entities/document-version.entity';
+import { PipelineStageRun } from '../src/database/entities/pipeline-stage-run.entity';
 import { RefreshToken } from '../src/database/entities/refresh-token.entity';
 import { TelegramUser } from '../src/database/entities/telegram-user.entity';
 import { TksCache } from '../src/database/entities/tks-cache.entity';
@@ -190,10 +194,14 @@ export async function createTestApp(): Promise<INestApplication> {
           Document,
           CalculationConfig,
           TksCache,
+          PipelineStageRun,
+          AiCall,
+          DocumentVersion,
         ],
         synchronize: true,
       }),
       BullModule.forRoot({ connection: { host: 'localhost', port: 6380 }, prefix }),
+      PipelineAuditModule,
       AuthModule,
       UsersModule,
       TnVedModule,

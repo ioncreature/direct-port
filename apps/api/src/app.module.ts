@@ -11,6 +11,7 @@ import { CalculationConfigModule } from './calculation-config/calculation-config
 import { CountriesModule } from './countries/countries.module';
 import { DatabaseModule } from './database/database.module';
 import { DocumentsModule } from './documents/documents.module';
+import { PipelineAuditModule } from './pipeline-audit/pipeline-audit.module';
 import { TelegramUsersModule } from './telegram-users/telegram-users.module';
 import { TnVedModule } from './tn-ved/tn-ved.module';
 import { UsersModule } from './users/users.module';
@@ -27,6 +28,7 @@ import { UsersModule } from './users/users.module';
       }),
     }),
     DatabaseModule,
+    PipelineAuditModule,
     AuthModule,
     UsersModule,
     TnVedModule,

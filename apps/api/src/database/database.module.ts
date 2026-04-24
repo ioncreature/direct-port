@@ -1,11 +1,14 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AiCall } from './entities/ai-call.entity';
 import { AiConfig } from './entities/ai-config.entity';
 import { AiUsageLog } from './entities/ai-usage-log.entity';
 import { CalculationConfig } from './entities/calculation-config.entity';
 import { CalculationLog } from './entities/calculation-log.entity';
 import { Document } from './entities/document.entity';
+import { DocumentVersion } from './entities/document-version.entity';
+import { PipelineStageRun } from './entities/pipeline-stage-run.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { TelegramUser } from './entities/telegram-user.entity';
 import { TksCache } from './entities/tks-cache.entity';
@@ -34,6 +37,7 @@ import { AddCalculationLogDocumentIdIndex1777200000000 } from './migrations/1777
 import { AddDocumentCountryAndCountriesCache1777300000000 } from './migrations/1777300000000-AddDocumentCountryAndCountriesCache';
 import { AddCalculationLogTrigger1777400000000 } from './migrations/1777400000000-AddCalculationLogTrigger';
 import { DropCountriesCache1777500000000 } from './migrations/1777500000000-DropCountriesCache';
+import { AddPipelineAudit1777600000000 } from './migrations/1777600000000-AddPipelineAudit';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -54,6 +58,9 @@ import { SeedService } from './seeds/seed.service';
           AiConfig,
           TksCache,
           AiUsageLog,
+          PipelineStageRun,
+          AiCall,
+          DocumentVersion,
         ],
         synchronize: false,
         migrations: [
@@ -80,6 +87,7 @@ import { SeedService } from './seeds/seed.service';
           AddDocumentCountryAndCountriesCache1777300000000,
           AddCalculationLogTrigger1777400000000,
           DropCountriesCache1777500000000,
+          AddPipelineAudit1777600000000,
         ],
         migrationsRun: true,
       }),

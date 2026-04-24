@@ -124,8 +124,12 @@ export class DocumentsController {
 
   @Patch(':id/review')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  review(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReviewDocumentDto) {
-    return this.service.updateParsedData(id, dto);
+  review(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReviewDocumentDto,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.service.updateParsedData(id, dto, { userId: user.id });
   }
 
   @Post(':id/reject')

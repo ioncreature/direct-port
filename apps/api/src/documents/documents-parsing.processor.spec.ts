@@ -75,18 +75,27 @@ function createProcessor(opts: Opts = {}) {
     }),
   };
 
+  const audit = {
+    startStageRun: jest.fn().mockResolvedValue('stage-run-id'),
+    completeStageRun: jest.fn().mockResolvedValue(undefined),
+    failStageRun: jest.fn().mockResolvedValue(undefined),
+    recordAiCall: jest.fn().mockResolvedValue(undefined),
+    recordDocumentVersion: jest.fn().mockResolvedValue(1),
+  };
+
   const processor = new DocumentsParsingProcessor(
     repo as any,
     processingQueue as any,
     notificationQueue as any,
     aiParser as any,
+    audit as any,
   );
 
-  return { processor, doc, repo, processingQueue, notificationQueue, aiParser };
+  return { processor, doc, repo, processingQueue, notificationQueue, aiParser, audit };
 }
 
 function fakeJob(documentId: string): Job<{ documentId: string }> {
-  return { name: 'parse-document', data: { documentId } } as any;
+  return { name: 'parse-document', data: { documentId }, attemptsMade: 0, id: 'job-1' } as any;
 }
 
 describe('DocumentsParsingProcessor.process', () => {

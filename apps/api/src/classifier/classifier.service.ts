@@ -20,6 +20,7 @@ import {
   type TokenUsageMap,
 } from '../common/token-usage';
 import type { Dimension } from '../duty-interpreter/interfaces';
+import { PipelineAuditService, type AuditContext } from '../pipeline-audit/pipeline-audit.service';
 
 /**
  * Вход классификатора. Содержит минимум для поиска в TKS + опциональные
@@ -62,19 +63,30 @@ export interface ClassifiedProduct extends ProductRow {
  */
 export type VerifiedProduct = ClassifiedProduct;
 
-interface TksCandidate {
+export interface TksCandidate {
   code: string;
   name: string;
   confidence: number;
 }
 
-interface ClaudeSelection {
+export interface ClaudeSelection {
   index: number;
   tnVedCode: string;
   confidence: number;
   comment: string;
   comment_localized?: string;
   fromCandidates: boolean;
+}
+
+/**
+ * Диагностика, которую классификатор возвращает вместе с результатом —
+ * используется аудитом pipeline, чтобы в stage_run.output лежали все
+ * промежуточные данные: поисковые запросы, кандидаты TKS, решения Claude.
+ */
+export interface ClassifierAudit {
+  searchQueries: string[][];
+  tksCandidates: TksCandidate[][];
+  selections: (ClaudeSelection | null)[];
 }
 
 interface ClassifyItem {
@@ -244,13 +256,19 @@ export class ClassifierService {
     private tksApi: TksApiClient,
     @Optional() @Inject(Anthropic) private anthropic: Anthropic | null,
     private aiConfig: AiConfigService,
+    private audit: PipelineAuditService,
   ) {}
 
   async classify(
     products: ProductRow[],
     language?: string,
     confidenceThreshold: number = DEFAULT_CONFIDENCE_THRESHOLD,
-  ): Promise<{ products: ClassifiedProduct[]; tokenUsage: TokenUsageMap }> {
+    auditContext: AuditContext | null = null,
+  ): Promise<{
+    products: ClassifiedProduct[];
+    tokenUsage: TokenUsageMap;
+    audit: ClassifierAudit;
+  }> {
     this.logger.log(
       `Classifying ${products.length} products${language ? `, language=${language}` : ''}, threshold=${confidenceThreshold}`,
     );
@@ -280,7 +298,7 @@ export class ClassifierService {
     const [validatedHsCodes, { queries: searchQueries, tokenUsage: queryTokenUsage }] =
       await Promise.all([
         this.validateHsCodes(uniqueProducts),
-        this.formulateSearchQueries(uniqueProducts),
+        this.formulateSearchQueries(uniqueProducts, auditContext),
       ]);
     let tokenUsage = queryTokenUsage;
 
@@ -317,6 +335,7 @@ export class ClassifierService {
         uncached.map((u) => u.candidates),
         validatedHsCodeSet,
         language,
+        auditContext,
       );
       tokenUsage = mergeTokenUsage(tokenUsage, result.tokenUsage);
 
@@ -339,6 +358,7 @@ export class ClassifierService {
     // Map back to original products
     const candidatesByProduct = products.map((_, i) => uniqueCandidates[originalToUnique[i]]);
     const selections = products.map((_, i) => uniqueSelections[originalToUnique[i]]);
+    const queriesByProduct = products.map((_, i) => searchQueries[originalToUnique[i]] ?? []);
 
     // Phase 3: Load TNVED rates — pre-seed with validated HS codes to avoid duplicate fetches
     const tnvedByCode = new Map<string, TnvedCode>();
@@ -369,7 +389,15 @@ export class ClassifierService {
     this.logger.log(
       `Classification done: ${matched}/${assembled.length} matched, ${codesToLoad.size} unique codes`,
     );
-    return { products: assembled, tokenUsage };
+    return {
+      products: assembled,
+      tokenUsage,
+      audit: {
+        searchQueries: queriesByProduct,
+        tksCandidates: candidatesByProduct,
+        selections,
+      },
+    };
   }
 
   private buildProductKey(p: ProductRow, model?: string): string {
@@ -415,6 +443,7 @@ export class ClassifierService {
 
   private async formulateSearchQueries(
     products: ProductRow[],
+    auditContext: AuditContext | null = null,
   ): Promise<{ queries: string[][]; tokenUsage: TokenUsageMap }> {
     if (!this.anthropic || products.length === 0) {
       return { queries: products.map((p) => [p.description]), tokenUsage: emptyTokenUsageMap() };
@@ -429,16 +458,32 @@ export class ClassifierService {
     const model = await this.aiConfig.getQueryFormulationModel();
 
     try {
-      const response = await this.anthropic.messages.create(
+      const response = await this.audit.trackAiCall(
         {
+          context: auditContext,
+          purpose: 'classify_formulate_queries',
           model,
-          max_tokens: 16384,
-          system: systemPrompt(QUERY_FORMULATION_SYSTEM),
-          messages: [{ role: 'user', content: JSON.stringify(items) }],
-          tools: [FORMULATE_QUERIES_TOOL],
-          tool_choice: { type: 'any' },
+          request: {
+            model,
+            max_tokens: 16384,
+            system: QUERY_FORMULATION_SYSTEM,
+            messages: [{ role: 'user', content: JSON.stringify(items) }],
+            tools: [FORMULATE_QUERIES_TOOL.name],
+            tool_choice: 'any',
+          },
         },
-        { timeout: 45_000 },
+        () =>
+          this.anthropic!.messages.create(
+            {
+              model,
+              max_tokens: 16384,
+              system: systemPrompt(QUERY_FORMULATION_SYSTEM),
+              messages: [{ role: 'user', content: JSON.stringify(items) }],
+              tools: [FORMULATE_QUERIES_TOOL],
+              tool_choice: { type: 'any' },
+            },
+            { timeout: 45_000 },
+          ),
       );
 
       const result = extractToolInput<{ products: Array<{ index: number; queries: string[] }> }>(
@@ -507,6 +552,7 @@ export class ClassifierService {
     candidatesByProduct: TksCandidate[][],
     validatedHsCodes: Set<string>,
     language?: string,
+    auditContext: AuditContext | null = null,
   ): Promise<{ selections: (ClaudeSelection | null)[]; tokenUsage: TokenUsageMap }> {
     const allSelections: (ClaudeSelection | null)[] = new Array(products.length).fill(null);
     let totalUsage = emptyTokenUsageMap();
@@ -533,7 +579,12 @@ export class ClassifierService {
 
     if (batches.length > 0) {
       try {
-        const { selections, tokenUsage } = await this.callClaude(batches[0], language, useCache);
+        const { selections, tokenUsage } = await this.callClaude(
+          batches[0],
+          language,
+          useCache,
+          auditContext,
+        );
         totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
         for (const sel of selections) {
           if (sel.index >= 0 && sel.index < products.length) {
@@ -551,7 +602,7 @@ export class ClassifierService {
       const group = remaining.slice(g, g + CLAUDE_CONCURRENCY);
       const results = await Promise.all(
         group.map((items) =>
-          this.callClaude(items, language, useCache).catch((err) => {
+          this.callClaude(items, language, useCache, auditContext).catch((err) => {
             this.logger.error('Claude classify+verify batch failed', err);
             return { selections: [] as ClaudeSelection[], tokenUsage: emptyTokenUsageMap() };
           }),
@@ -574,6 +625,7 @@ export class ClassifierService {
     items: ClassifyItem[],
     language?: string,
     useCache = false,
+    auditContext: AuditContext | null = null,
   ): Promise<{ selections: ClaudeSelection[]; tokenUsage: TokenUsageMap }> {
     const model = await this.aiConfig.getClassifierModel();
     const needsLocalized = language && language !== 'ru';
@@ -583,16 +635,34 @@ export class ClassifierService {
 
     const userPrompt = `Классифицируй товары по ТН ВЭД: ${JSON.stringify(items, null, 2)}${localizedInstruction}`;
 
-    const response = await this.anthropic!.messages.create(
+    const response = await this.audit.trackAiCall(
       {
+        context: auditContext,
+        purpose: 'classify',
         model,
-        max_tokens: 4096,
-        system: systemPrompt(SYSTEM_PROMPT),
-        messages: [{ role: 'user', content: userPrompt }],
-        tools: cacheTools([CLASSIFY_TOOL], useCache),
-        tool_choice: { type: 'any' },
+        request: {
+          model,
+          max_tokens: 4096,
+          system: SYSTEM_PROMPT,
+          messages: [{ role: 'user', content: userPrompt }],
+          tools: [CLASSIFY_TOOL.name],
+          tool_choice: 'any',
+          batchSize: items.length,
+          indices: items.map((i) => i.index),
+        },
       },
-      { timeout: 30_000 },
+      () =>
+        this.anthropic!.messages.create(
+          {
+            model,
+            max_tokens: 4096,
+            system: systemPrompt(SYSTEM_PROMPT),
+            messages: [{ role: 'user', content: userPrompt }],
+            tools: cacheTools([CLASSIFY_TOOL], useCache),
+            tool_choice: { type: 'any' },
+          },
+          { timeout: 30_000 },
+        ),
     );
 
     const result = extractToolInput<{ items: ClaudeSelection[] }>(response);

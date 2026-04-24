@@ -112,8 +112,20 @@ function createService(opts: ServiceOpts = {}) {
     getInterpreterModel: jest.fn().mockResolvedValue('claude-opus-4-7'),
   };
 
-  const service = new DutyInterpreterService(anthropic as any, tksApi as any, aiConfig as any);
-  return { service, messagesCreate, getTnvedCode, aiConfig };
+  const audit = {
+    trackAiCall: jest
+      .fn()
+      .mockImplementation(async (_params: unknown, fn: () => Promise<unknown>) => fn()),
+    recordAiCall: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const service = new DutyInterpreterService(
+    anthropic as any,
+    tksApi as any,
+    aiConfig as any,
+    audit as any,
+  );
+  return { service, messagesCreate, getTnvedCode, aiConfig, audit };
 }
 
 describe('DutyInterpreterService', () => {

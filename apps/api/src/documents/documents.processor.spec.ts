@@ -100,7 +100,11 @@ function makeSummary(items: CalculatedProduct[]): CalculationSummary {
 
 interface Opts {
   doc?: Document;
-  classifyResult?: { products: ClassifiedProduct[]; tokenUsage: Record<string, unknown> };
+  classifyResult?: {
+    products: ClassifiedProduct[];
+    tokenUsage: Record<string, unknown>;
+    audit?: { searchQueries: string[][]; tksCandidates: unknown[][]; selections: unknown[] };
+  };
   classifyError?: Error;
   interpretResult?: { products: ClassifiedProduct[]; tokenUsage: Record<string, unknown> };
   interpretError?: Error;
@@ -132,10 +136,25 @@ function createProcessor(opts: Opts = {}) {
   };
 
   const classified = opts.classifyResult?.products ?? [makeClassified()];
+  const makeDefaultAudit = (products: ClassifiedProduct[]) => ({
+    searchQueries: products.map(() => [] as string[]),
+    tksCandidates: products.map(() => [] as unknown[]),
+    selections: products.map(() => null),
+  });
   const classifier = {
     classify: jest.fn().mockImplementation(() => {
       if (opts.classifyError) return Promise.reject(opts.classifyError);
-      return Promise.resolve(opts.classifyResult ?? { products: classified, tokenUsage: {} });
+      if (opts.classifyResult) {
+        return Promise.resolve({
+          ...opts.classifyResult,
+          audit: opts.classifyResult.audit ?? makeDefaultAudit(opts.classifyResult.products),
+        });
+      }
+      return Promise.resolve({
+        products: classified,
+        tokenUsage: {},
+        audit: makeDefaultAudit(classified),
+      });
     }),
   };
 
@@ -189,6 +208,14 @@ function createProcessor(opts: Opts = {}) {
     }),
   };
 
+  const audit = {
+    startStageRun: jest.fn().mockResolvedValue('stage-run-id'),
+    completeStageRun: jest.fn().mockResolvedValue(undefined),
+    failStageRun: jest.fn().mockResolvedValue(undefined),
+    recordAiCall: jest.fn().mockResolvedValue(undefined),
+    recordDocumentVersion: jest.fn().mockResolvedValue(1),
+  };
+
   const processor = new DocumentsProcessor(
     repo as any,
     notificationQueue as any,
@@ -198,6 +225,7 @@ function createProcessor(opts: Opts = {}) {
     dutyInterpreter as any,
     currencyService as any,
     calculationLogs as any,
+    audit as any,
   );
 
   return {
@@ -211,11 +239,12 @@ function createProcessor(opts: Opts = {}) {
     configService,
     currencyService,
     calculationLogs,
+    audit,
   };
 }
 
 function fakeJob(documentId: string, name = 'process-document'): Job<{ documentId: string }> {
-  return { name, data: { documentId } } as any;
+  return { name, data: { documentId }, attemptsMade: 0, id: 'job-1' } as any;
 }
 
 describe('DocumentsProcessor.process', () => {
@@ -514,8 +543,17 @@ describe('DocumentsProcessor.process', () => {
 
       await processor.process(fakeJob('doc-1'));
 
-      expect(classifier.classify).toHaveBeenCalledWith(expect.any(Array), 'en', expect.any(Number));
-      expect(dutyInterpreter.interpret).toHaveBeenCalledWith(expect.any(Array), 'en');
+      expect(classifier.classify).toHaveBeenCalledWith(
+        expect.any(Array),
+        'en',
+        expect.any(Number),
+        expect.objectContaining({ documentId: 'doc-1' }),
+      );
+      expect(dutyInterpreter.interpret).toHaveBeenCalledWith(
+        expect.any(Array),
+        'en',
+        expect.objectContaining({ documentId: 'doc-1' }),
+      );
     });
 
     it('fallback на telegramUser.language если doc.language не задан', async () => {
@@ -527,7 +565,12 @@ describe('DocumentsProcessor.process', () => {
 
       await processor.process(fakeJob('doc-1'));
 
-      expect(classifier.classify).toHaveBeenCalledWith(expect.any(Array), 'zh', expect.any(Number));
+      expect(classifier.classify).toHaveBeenCalledWith(
+        expect.any(Array),
+        'zh',
+        expect.any(Number),
+        expect.objectContaining({ documentId: 'doc-1' }),
+      );
     });
 
     it('без language и без telegramUser — передаёт undefined', async () => {
@@ -540,6 +583,7 @@ describe('DocumentsProcessor.process', () => {
         expect.any(Array),
         undefined,
         expect.any(Number),
+        expect.objectContaining({ documentId: 'doc-1' }),
       );
     });
   });

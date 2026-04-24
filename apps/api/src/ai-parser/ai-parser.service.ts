@@ -6,6 +6,8 @@ import { errMsg } from '../common/errors';
 import { normalizeOksmtCode } from '../common/oksmt';
 import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, tokenUsageFromResponse } from '../common/token-usage';
 import type { Dimension } from '../duty-interpreter/interfaces';
+import type { AiCallPurpose } from '../database/entities/ai-call.entity';
+import { PipelineAuditService, type AuditContext } from '../pipeline-audit/pipeline-audit.service';
 import { SpreadsheetData, SpreadsheetReaderService } from './spreadsheet-reader.service';
 
 export interface ParsedProduct {
@@ -324,9 +326,14 @@ export class AiParserService {
     @Optional() @Inject(Anthropic) private anthropic: Anthropic | null,
     private spreadsheetReader: SpreadsheetReaderService,
     private aiConfig: AiConfigService,
+    private audit: PipelineAuditService,
   ) {}
 
-  async parse(buffer: Buffer, fileName: string): Promise<AiParseResult> {
+  async parse(
+    buffer: Buffer,
+    fileName: string,
+    auditContext: AuditContext | null = null,
+  ): Promise<AiParseResult> {
     this.logger.log(`Starting parse: file="${fileName}", buffer=${buffer.length} bytes`);
 
     if (!this.anthropic) {
@@ -356,13 +363,17 @@ export class AiParserService {
       ]);
     }
 
-    const { structure, tokenUsage: analysisUsage } = await this.analyzeStructure(data, tsv);
+    const { structure, tokenUsage: analysisUsage } = await this.analyzeStructure(
+      data,
+      tsv,
+      auditContext,
+    );
 
     let result: AiParseResult;
     if (data.rows.length <= CHUNK_SIZE) {
-      result = await this.parseSinglePass(tsv, data, structure);
+      result = await this.parseSinglePass(tsv, data, structure, auditContext);
     } else {
-      result = await this.parseChunked(data, structure);
+      result = await this.parseChunked(data, structure, auditContext);
     }
     result.tokenUsage = mergeTokenUsage(analysisUsage, result.tokenUsage);
     // Страна определяется из структуры, не зависит от успеха построчного парсинга.
@@ -374,6 +385,7 @@ export class AiParserService {
     tsv: string,
     data: SpreadsheetData,
     structure?: DocumentStructure | null,
+    auditContext: AuditContext | null = null,
   ): Promise<AiParseResult> {
     let lastResult: RawParseResult | null = null;
     let lastIssues: string[] = [];
@@ -386,7 +398,13 @@ export class AiParserService {
           ? this.buildUserPrompt(tsv, structure, expectedCount)
           : this.buildRetryPrompt(tsv, lastIssues, structure, expectedCount);
 
-      const { tokenUsage, ...result } = await this.callClaude(userPrompt);
+      const { tokenUsage, ...result } = await this.callClaude(
+        userPrompt,
+        false,
+        auditContext,
+        'parse_products',
+        attempt,
+      );
       totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
       lastResult = result;
 
@@ -412,6 +430,7 @@ export class AiParserService {
         data,
         result,
         structure,
+        auditContext,
       );
       totalUsage = mergeTokenUsage(totalUsage, valUsage);
       if (validation.valid) {
@@ -434,6 +453,7 @@ export class AiParserService {
   private async parseChunked(
     data: SpreadsheetData,
     structure?: DocumentStructure | null,
+    auditContext: AuditContext | null = null,
   ): Promise<AiParseResult> {
     let totalUsage = emptyTokenUsageMap();
 
@@ -467,7 +487,13 @@ export class AiParserService {
         ? this.buildUserPrompt(firstTsv, structure, expectedChunkCount)
         : this.buildRetryPrompt(firstTsv, lastIssues, structure, expectedChunkCount);
 
-      const { tokenUsage, ...result } = await this.callClaude(prompt, true);
+      const { tokenUsage, ...result } = await this.callClaude(
+        prompt,
+        true,
+        auditContext,
+        'parse_products',
+        attempt,
+      );
       totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
       firstResult = result;
 
@@ -514,7 +540,7 @@ export class AiParserService {
         group.map((chunk) => {
           const chunkWithHeader = [headerRow, ...chunk];
           const chunkTsv = this.formatAsTsv(chunkWithHeader);
-          return this.callClaudeChunk(chunkTsv, currency, columnMapping).catch((err) => {
+          return this.callClaudeChunk(chunkTsv, currency, columnMapping, auditContext).catch((err) => {
             this.logger.error('Chunk parsing failed', err);
             return null;
           });
@@ -550,7 +576,12 @@ export class AiParserService {
       );
     }
 
-    const { tokenUsage: valUsage, ...validation } = await this.validateWithAi(data, fullResult, structure);
+    const { tokenUsage: valUsage, ...validation } = await this.validateWithAi(
+      data,
+      fullResult,
+      structure,
+      auditContext,
+    );
     totalUsage = mergeTokenUsage(totalUsage, valUsage);
     if (!validation.valid) {
       issues.push(...validation.issues);
@@ -568,6 +599,7 @@ export class AiParserService {
   private async analyzeStructure(
     data: SpreadsheetData,
     tsv: string,
+    auditContext: AuditContext | null = null,
   ): Promise<{ structure: DocumentStructure | null; tokenUsage: TokenUsageMap }> {
     if (!this.anthropic) {
       return { structure: null, tokenUsage: emptyTokenUsageMap() };
@@ -581,7 +613,11 @@ export class AiParserService {
         STRUCTURE_ANALYSIS_PROMPT,
         false,
         ANALYZE_STRUCTURE_TOOL,
-        { maxTokens: 2048, timeout: 30_000 },
+        {
+          maxTokens: 2048,
+          timeout: 30_000,
+          audit: { context: auditContext, purpose: 'parse_structure' },
+        },
       );
       const result = raw as Record<string, unknown>;
 
@@ -696,23 +732,47 @@ export class AiParserService {
     sysPrompt = SYSTEM_PROMPT,
     useCache = false,
     tool: Anthropic.Messages.Tool = PARSE_TOOL,
-    opts?: { maxTokens?: number; timeout?: number },
+    opts: {
+      maxTokens?: number;
+      timeout?: number;
+      audit?: { context: AuditContext | null; purpose: AiCallPurpose; attempt?: number };
+    } = {},
   ): Promise<{ raw: unknown; tokenUsage: TokenUsageMap }> {
     const model = await this.aiConfig.getParserModel();
-    let tokenUsage: TokenUsageMap = emptyTokenUsageMap();
+    const maxTokens = opts.maxTokens ?? 16384;
+    const auditContext = opts.audit?.context ?? null;
+    const purpose: AiCallPurpose = opts.audit?.purpose ?? 'parse_products';
+    const attempt = opts.audit?.attempt ?? 1;
     try {
-      const response = await this.anthropic!.messages.create(
+      const response = await this.audit.trackAiCall(
         {
+          context: auditContext,
+          purpose,
           model,
-          max_tokens: opts?.maxTokens ?? 16384,
-          system: systemPrompt(sysPrompt),
-          messages: [{ role: 'user', content: prompt }],
-          tools: cacheTools([tool], useCache),
-          tool_choice: { type: 'any' },
+          attempt,
+          request: {
+            model,
+            max_tokens: maxTokens,
+            system: sysPrompt,
+            messages: [{ role: 'user', content: prompt }],
+            tools: [tool.name],
+            tool_choice: 'any',
+          },
         },
-        { timeout: opts?.timeout ?? 90_000 },
+        () =>
+          this.anthropic!.messages.create(
+            {
+              model,
+              max_tokens: maxTokens,
+              system: systemPrompt(sysPrompt),
+              messages: [{ role: 'user', content: prompt }],
+              tools: cacheTools([tool], useCache),
+              tool_choice: { type: 'any' },
+            },
+            { timeout: opts.timeout ?? 90_000 },
+          ),
       );
-      tokenUsage = tokenUsageFromResponse(model, response.usage);
+      const tokenUsage = tokenUsageFromResponse(model, response.usage);
       return { raw: extractToolInput(response), tokenUsage };
     } catch (err) {
       this.logger.error(`Anthropic API error: ${errMsg(err)}`, err);
@@ -720,8 +780,20 @@ export class AiParserService {
     }
   }
 
-  private async callClaude(userPrompt: string, useCache = false): Promise<RawParseResult & { tokenUsage: TokenUsageMap }> {
-    const { raw, tokenUsage } = await this.callClaudeRaw(userPrompt, SYSTEM_PROMPT, useCache);
+  private async callClaude(
+    userPrompt: string,
+    useCache = false,
+    auditContext: AuditContext | null = null,
+    purpose: AiCallPurpose = 'parse_products',
+    attempt = 1,
+  ): Promise<RawParseResult & { tokenUsage: TokenUsageMap }> {
+    const { raw, tokenUsage } = await this.callClaudeRaw(
+      userPrompt,
+      SYSTEM_PROMPT,
+      useCache,
+      PARSE_TOOL,
+      { audit: { context: auditContext, purpose, attempt } },
+    );
     return { ...this.validateSchema(raw), tokenUsage };
   }
 
@@ -771,6 +843,7 @@ export class AiParserService {
     data: SpreadsheetData,
     result: RawParseResult,
     structure?: DocumentStructure | null,
+    auditContext: AuditContext | null = null,
   ): Promise<ValidationResult & { tokenUsage: TokenUsageMap }> {
     const model = await this.aiConfig.getParserModel();
 
@@ -830,16 +903,32 @@ ${mappingInfo}
 Не включай в issues то, что распознано правильно.`;
 
     try {
-      const response = await this.anthropic!.messages.create(
+      const response = await this.audit.trackAiCall(
         {
+          context: auditContext,
+          purpose: 'parse_validate',
           model,
-          max_tokens: 8192,
-          system: systemPrompt(VALIDATION_SYSTEM_PROMPT),
-          messages: [{ role: 'user', content: prompt }],
-          tools: [VALIDATE_TOOL],
-          tool_choice: { type: 'any' },
+          request: {
+            model,
+            max_tokens: 8192,
+            system: VALIDATION_SYSTEM_PROMPT,
+            messages: [{ role: 'user', content: prompt }],
+            tools: [VALIDATE_TOOL.name],
+            tool_choice: 'any',
+          },
         },
-        { timeout: 90_000 },
+        () =>
+          this.anthropic!.messages.create(
+            {
+              model,
+              max_tokens: 8192,
+              system: systemPrompt(VALIDATION_SYSTEM_PROMPT),
+              messages: [{ role: 'user', content: prompt }],
+              tools: [VALIDATE_TOOL],
+              tool_choice: { type: 'any' },
+            },
+            { timeout: 90_000 },
+          ),
       );
 
       const parsed = extractToolInput<{ valid: boolean; issues: unknown[] }>(response);
@@ -971,9 +1060,16 @@ ${tsv}
     tsv: string,
     currency: string,
     columnMapping: Record<string, number>,
+    auditContext: AuditContext | null = null,
   ): Promise<{ products: ParsedProduct[]; tokenUsage: TokenUsageMap }> {
     const prompt = this.buildChunkPrompt(tsv, currency, columnMapping);
-    const { raw, tokenUsage } = await this.callClaudeRaw(prompt, CHUNK_SYSTEM_PROMPT, false, PARSE_CHUNK_TOOL);
+    const { raw, tokenUsage } = await this.callClaudeRaw(
+      prompt,
+      CHUNK_SYSTEM_PROMPT,
+      false,
+      PARSE_CHUNK_TOOL,
+      { audit: { context: auditContext, purpose: 'parse_chunk' } },
+    );
     const { products } = this.validateSchema(raw);
     return { products, tokenUsage };
   }

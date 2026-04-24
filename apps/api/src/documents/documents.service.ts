@@ -10,6 +10,7 @@ import { CountriesService } from '../countries/countries.service';
 import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
+import { PipelineAuditService } from '../pipeline-audit/pipeline-audit.service';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { FindDocumentsQueryDto } from './dto/find-documents-query.dto';
 import { RejectDocumentDto } from './dto/reject-document.dto';
@@ -28,6 +29,7 @@ export class DocumentsService {
     @InjectQueue('document-processing') private processingQueue: Queue,
     @InjectQueue('document-notifications') private notificationsQueue: Queue,
     private countriesService: CountriesService,
+    private audit: PipelineAuditService,
   ) {}
 
   async create(dto: CreateDocumentDto): Promise<Document> {
@@ -182,7 +184,11 @@ export class DocumentsService {
     return saved;
   }
 
-  async updateParsedData(id: string, dto: ReviewDocumentDto): Promise<Document> {
+  async updateParsedData(
+    id: string,
+    dto: ReviewDocumentDto,
+    meta: { userId?: string } = {},
+  ): Promise<Document> {
     const doc = await this.findOne(id);
     if (doc.status !== DocumentStatus.REQUIRES_REVIEW) {
       throw new BadRequestException({
@@ -195,7 +201,17 @@ export class DocumentsService {
     doc.rowCount = dto.parsedData.length;
     if (dto.currency) doc.currency = dto.currency;
 
-    return this.repo.save(doc);
+    const saved = await this.repo.save(doc);
+    void this.audit.recordDocumentVersion({
+      documentId: id,
+      reason: 'manual_edit',
+      actorType: meta.userId ? 'user' : 'system',
+      actorId: meta.userId ?? null,
+      parsedData: saved.parsedData,
+      currency: saved.currency,
+      columnMapping: saved.columnMapping,
+    });
+    return saved;
   }
 
   async reject(id: string, dto: RejectDocumentDto): Promise<Document> {

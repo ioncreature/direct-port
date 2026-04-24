@@ -15,6 +15,7 @@ import { KNOWN_CURRENCIES } from '../common/normalize-impedi';
 import { DEFAULT_COUNTRY_OF_ORIGIN, Document, DocumentStatus } from '../database/entities/document.entity';
 import { DutyInterpreterService } from '../duty-interpreter/duty-interpreter.service';
 import type { Dimension } from '../duty-interpreter/interfaces';
+import { PipelineAuditService } from '../pipeline-audit/pipeline-audit.service';
 import {
   buildDocumentNotificationPayload,
   type DocumentNotification,
@@ -35,6 +36,7 @@ export class DocumentsProcessor extends WorkerHost {
     private dutyInterpreter: DutyInterpreterService,
     private currencyService: CurrencyService,
     private calculationLogs: CalculationLogsService,
+    private audit: PipelineAuditService,
   ) {
     super();
   }
@@ -58,6 +60,9 @@ export class DocumentsProcessor extends WorkerHost {
 
     doc.status = DocumentStatus.PROCESSING;
     await this.repo.save(doc);
+
+    const attempt = (job.attemptsMade ?? 0) + 1;
+    let currentStageRunId: string | null = null;
 
     try {
       const rows: ProductRow[] = (doc.parsedData ?? []).map((row) => ({
@@ -91,17 +96,61 @@ export class DocumentsProcessor extends WorkerHost {
 
       const language = doc.language ?? doc.telegramUser?.language;
 
+      currentStageRunId = await this.audit.startStageRun({
+        documentId,
+        stage: 'classify',
+        attempt,
+        metadata: { rows: rows.length, language: language ?? null, confidenceThreshold },
+      });
       const t0 = Date.now();
-      const classifyResult = await this.classifier.classify(rows, language, confidenceThreshold);
+      const classifyResult = await this.classifier.classify(
+        rows,
+        language,
+        confidenceThreshold,
+        { documentId, stageRunId: currentStageRunId },
+      );
       const classified = classifyResult.products;
       doc.tokenUsage = addStageUsage(doc.tokenUsage ?? {}, 'classifier', classifyResult.tokenUsage);
       this.logger.log(`Document ${documentId}: classification done in ${Date.now() - t0}ms`);
+      void this.audit.completeStageRun(currentStageRunId, {
+        output: {
+          products: classified,
+          searchQueries: classifyResult.audit.searchQueries,
+          tksCandidates: classifyResult.audit.tksCandidates,
+          selections: classifyResult.audit.selections,
+        },
+        tokenUsage: classifyResult.tokenUsage,
+      });
+      currentStageRunId = null;
 
+      currentStageRunId = await this.audit.startStageRun({
+        documentId,
+        stage: 'interpret',
+        attempt,
+        metadata: {
+          uniqueCodes: new Set(classified.map((c) => c.tnVedCode).filter(Boolean)).size,
+          language: language ?? null,
+        },
+      });
       const t1 = Date.now();
-      const interpretResult = await this.dutyInterpreter.interpret(classified, language);
+      const interpretResult = await this.dutyInterpreter.interpret(classified, language, {
+        documentId,
+        stageRunId: currentStageRunId,
+      });
       const interpreted = interpretResult.products;
       doc.tokenUsage = addStageUsage(doc.tokenUsage, 'interpreter', interpretResult.tokenUsage);
       this.logger.log(`Document ${documentId}: interpretation done in ${Date.now() - t1}ms`);
+      void this.audit.completeStageRun(currentStageRunId, {
+        output: {
+          interpretationsByCode: Object.fromEntries(
+            interpreted
+              .filter((p) => p.dutyInterpretation && p.tnVedCode)
+              .map((p) => [p.tnVedCode, p.dutyInterpretation]),
+          ),
+        },
+        tokenUsage: interpretResult.tokenUsage,
+      });
+      currentStageRunId = null;
 
       if (!doc.countryOfOrigin) {
         doc.countryOfOrigin = DEFAULT_COUNTRY_OF_ORIGIN;
@@ -112,6 +161,19 @@ export class DocumentsProcessor extends WorkerHost {
         for (const p of interpreted) p.notes.push(defaultCountryWarningNote());
       }
 
+      currentStageRunId = await this.audit.startStageRun({
+        documentId,
+        stage: 'calculate',
+        attempt,
+        metadata: {
+          rows: interpreted.length,
+          currency,
+          countryOfOrigin: doc.countryOfOrigin,
+          confidenceThreshold,
+          commission,
+          currencyToDoc,
+        },
+      });
       const t2 = Date.now();
       const summary = this.calculator.calculate(interpreted, commission, {
         currencyToDoc,
@@ -197,6 +259,22 @@ export class DocumentsProcessor extends WorkerHost {
         }
       }
 
+      void this.audit.completeStageRun(currentStageRunId, {
+        output: {
+          grandTotal: summary.grandTotal,
+          totalDuty: summary.totalDuty,
+          totalVat: summary.totalVat,
+          totalExcise: summary.totalExcise,
+          totalLogistics: summary.totalLogistics,
+          items: summary.items,
+          exchangeRates: doc.exchangeRates,
+          exchangeRate: needsConversion ? exchangeRate : null,
+          hasRowErrors,
+          lowConfidenceReasons,
+        },
+      });
+      currentStageRunId = null;
+
       if (lowConfidenceReasons.length > 0) {
         doc.rejectionReasons = lowConfidenceReasons;
         if (lowConfidenceAction === 'reject') {
@@ -244,6 +322,9 @@ export class DocumentsProcessor extends WorkerHost {
         `Document ${documentId} processed: ${rows.length} rows, grandTotal=${summary.grandTotal}`,
       );
     } catch (err) {
+      if (currentStageRunId) {
+        void this.audit.failStageRun(currentStageRunId, err);
+      }
       doc.status = DocumentStatus.FAILED;
       doc.errorMessage = errMsg(err) || 'Unknown error';
       await this.repo.save(doc);
@@ -278,6 +359,15 @@ export class DocumentsProcessor extends WorkerHost {
 
     doc.status = DocumentStatus.PROCESSING;
     await this.repo.save(doc);
+
+    const stageRunId = await this.audit.startStageRun({
+      documentId,
+      stage: 'calculate',
+      metadata: {
+        trigger: 'recalculate',
+        countryOfOrigin: doc.countryOfOrigin,
+      },
+    });
 
     try {
       const currency = (doc.currency || 'USD').toUpperCase();
@@ -369,6 +459,20 @@ export class DocumentsProcessor extends WorkerHost {
       });
 
       const hasRowErrors = summary.items.some((i) => i.calculationStatus === 'error');
+
+      void this.audit.completeStageRun(stageRunId, {
+        output: {
+          grandTotal: summary.grandTotal,
+          totalDuty: summary.totalDuty,
+          totalVat: summary.totalVat,
+          totalExcise: summary.totalExcise,
+          totalLogistics: summary.totalLogistics,
+          items: summary.items,
+          exchangeRate: needsConversion ? exchangeRate : null,
+          hasRowErrors,
+        },
+      });
+
       doc.status = hasRowErrors ? DocumentStatus.PROCESSED_WITH_ERRORS : DocumentStatus.PROCESSED;
       await this.repo.save(doc);
       await this.notify({
@@ -399,6 +503,7 @@ export class DocumentsProcessor extends WorkerHost {
         `Document ${documentId} recalculated: ${inputs.length} rows, grandTotal=${summary.grandTotal}, country=${doc.countryOfOrigin}`,
       );
     } catch (err) {
+      void this.audit.failStageRun(stageRunId, err);
       doc.status = DocumentStatus.FAILED;
       doc.errorMessage = errMsg(err) || 'Recalculation error';
       await this.repo.save(doc);

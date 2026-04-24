@@ -8,6 +8,7 @@ import { errMsg } from '../common/errors';
 import { buildOutputFileName, getDocumentClientName } from '../common/output-filename';
 import { addStageUsage } from '../common/token-usage';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
+import { PipelineAuditService } from '../pipeline-audit/pipeline-audit.service';
 import type { DocumentNotification } from './documents.processor';
 
 @Processor('document-parsing')
@@ -19,6 +20,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
     @InjectQueue('document-processing') private processingQueue: Queue,
     @InjectQueue('document-notifications') private notificationQueue: Queue,
     private aiParser: AiParserService,
+    private audit: PipelineAuditService,
   ) {
     super();
   }
@@ -50,9 +52,27 @@ export class DocumentsParsingProcessor extends WorkerHost {
 
     this.logger.log(`Document ${documentId}: file="${doc.originalFileName}", buffer=${doc.fileBuffer.length} bytes`);
 
+    const attempt = (job.attemptsMade ?? 0) + 1;
+    const stageRunId = await this.audit.startStageRun({
+      documentId,
+      stage: 'parse',
+      attempt,
+      metadata: {
+        fileName: doc.originalFileName,
+        fileSize: doc.fileBuffer.length,
+        jobId: job.id,
+      },
+    });
+    const auditCtx = { documentId, stageRunId };
+
     try {
+      const parseResult = await this.aiParser.parse(
+        doc.fileBuffer,
+        doc.originalFileName,
+        auditCtx,
+      );
       const { products, currency, columnMapping, feasibility, rejectionReasons, tokenUsage, countrySuggestion } =
-        await this.aiParser.parse(doc.fileBuffer, doc.originalFileName);
+        parseResult;
 
       doc.parsedData = products;
       doc.currency = currency;
@@ -67,6 +87,26 @@ export class DocumentsParsingProcessor extends WorkerHost {
         doc.countryOriginSource = countrySuggestion.source;
         doc.countryDetectionReason = countrySuggestion.reason;
       }
+
+      void this.audit.completeStageRun(stageRunId, {
+        output: {
+          productCount: products.length,
+          currency,
+          columnMapping,
+          feasibility,
+          rejectionReasons,
+          countrySuggestion,
+        },
+        tokenUsage,
+      });
+      void this.audit.recordDocumentVersion({
+        documentId,
+        reason: 'ai_parse',
+        actorType: 'system',
+        parsedData: products as unknown as Record<string, unknown>[],
+        currency,
+        columnMapping,
+      });
 
       if (feasibility === 'rejected') {
         doc.status = DocumentStatus.REJECTED;
@@ -89,6 +129,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
         this.logger.log(`Document ${documentId} parsed but needs review: ${rejectionReasons.join('; ')}`);
       }
     } catch (err) {
+      void this.audit.failStageRun(stageRunId, err);
       doc.status = DocumentStatus.FAILED;
       doc.errorMessage = errMsg(err) || 'Parsing failed';
       doc.fileBuffer = null;

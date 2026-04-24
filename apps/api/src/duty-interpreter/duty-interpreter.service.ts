@@ -9,6 +9,7 @@ import { getStaticNoteTranslation } from '../common/note-translations';
 import type { ProductNote } from '../common/product-notes';
 import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, tokenUsageFromResponse } from '../common/token-usage';
 import type { VerifiedProduct } from '../classifier/classifier.service';
+import { PipelineAuditService, type AuditContext } from '../pipeline-audit/pipeline-audit.service';
 import { DutyInterpretation, InterpretedProduct } from './interfaces';
 
 const BATCH_SIZE = 5;
@@ -220,11 +221,13 @@ export class DutyInterpreterService {
     @Optional() @Inject(Anthropic) private anthropic: Anthropic | null,
     private tksApi: TksApiClient,
     private aiConfig: AiConfigService,
+    private audit: PipelineAuditService,
   ) {}
 
   async interpret(
     products: VerifiedProduct[],
     language?: string,
+    auditContext: AuditContext | null = null,
   ): Promise<{ products: InterpretedProduct[]; tokenUsage: TokenUsageMap }> {
     this.logger.log(`Interpreting duties for ${products.length} products`);
     if (!this.anthropic) {
@@ -328,7 +331,12 @@ export class DutyInterpreterService {
 
     if (codeBatches.length > 0) {
       try {
-        const { results, tokenUsage } = await this.interpretBatch(codeBatches[0], language, useCache);
+        const { results, tokenUsage } = await this.interpretBatch(
+          codeBatches[0],
+          language,
+          useCache,
+          auditContext,
+        );
         totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
         for (const result of results) {
           interpretations.set(result.tnvedCode, result);
@@ -345,7 +353,7 @@ export class DutyInterpreterService {
       const group = remainingBatches.slice(g, g + CONCURRENCY);
       const results = await Promise.all(
         group.map((batchData) =>
-          this.interpretBatch(batchData, language, useCache).catch((err) => {
+          this.interpretBatch(batchData, language, useCache, auditContext).catch((err) => {
             this.logger.error('Duty interpretation batch failed', err);
             return { results: [] as DutyInterpretation[], tokenUsage: emptyTokenUsageMap() };
           }),
@@ -440,6 +448,7 @@ export class DutyInterpreterService {
     items: BatchItem[],
     language?: string,
     useCache = false,
+    auditContext: AuditContext | null = null,
   ): Promise<{ results: DutyInterpretation[]; tokenUsage: TokenUsageMap }> {
     const model = await this.aiConfig.getInterpreterModel();
     const codesData = items.map((item) => ({
@@ -459,16 +468,33 @@ export class DutyInterpreterService {
 ${JSON.stringify(codesData, null, 2)}
 </codes>${localizedInstruction}`;
 
-    const response = await this.anthropic!.messages.create(
+    const response = await this.audit.trackAiCall(
       {
+        context: auditContext,
+        purpose: 'interpret',
         model,
-        max_tokens: 8192,
-        system: systemPrompt(SYSTEM_PROMPT),
-        messages: [{ role: 'user', content: userPrompt }],
-        tools: cacheTools([INTERPRET_TOOL], useCache),
-        tool_choice: { type: 'any' },
+        request: {
+          model,
+          max_tokens: 8192,
+          system: SYSTEM_PROMPT,
+          messages: [{ role: 'user', content: userPrompt }],
+          tools: [INTERPRET_TOOL.name],
+          tool_choice: 'any',
+          codes: items.map((i) => i.code),
+        },
       },
-      { timeout: 30_000 },
+      () =>
+        this.anthropic!.messages.create(
+          {
+            model,
+            max_tokens: 8192,
+            system: systemPrompt(SYSTEM_PROMPT),
+            messages: [{ role: 'user', content: userPrompt }],
+            tools: cacheTools([INTERPRET_TOOL], useCache),
+            tool_choice: { type: 'any' },
+          },
+          { timeout: 30_000 },
+        ),
     );
 
     const result = extractToolInput<{ items: DutyInterpretation[] }>(response);

@@ -94,8 +94,20 @@ function createService(opts: {
     getQueryFormulationModel: jest.fn().mockResolvedValue('claude-haiku-4-5-20251001'),
   };
 
-  const service = new ClassifierService(tksApi as any, anthropic as any, aiConfig as any);
-  return { service, tksApi, anthropic, aiConfig };
+  const audit = {
+    trackAiCall: jest
+      .fn()
+      .mockImplementation(async (_params: unknown, fn: () => Promise<unknown>) => fn()),
+    recordAiCall: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const service = new ClassifierService(
+    tksApi as any,
+    anthropic as any,
+    aiConfig as any,
+    audit as any,
+  );
+  return { service, tksApi, anthropic, aiConfig, audit };
 }
 
 /** Count only classification calls (not query formulation) */

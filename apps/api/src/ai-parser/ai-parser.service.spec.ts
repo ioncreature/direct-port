@@ -35,8 +35,20 @@ function createService(opts: {
     getParserModel: jest.fn().mockResolvedValue('claude-sonnet-4-20250514'),
   };
 
-  const service = new AiParserService(anthropic as any, spreadsheetReader as any, aiConfig as any);
-  return { service, anthropic, spreadsheetReader };
+  const audit = {
+    trackAiCall: jest
+      .fn()
+      .mockImplementation(async (_params: unknown, fn: () => Promise<unknown>) => fn()),
+    recordAiCall: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const service = new AiParserService(
+    anthropic as any,
+    spreadsheetReader as any,
+    aiConfig as any,
+    audit as any,
+  );
+  return { service, anthropic, spreadsheetReader, audit };
 }
 
 /** Стандартные 5 строк данных (header + 4 товара) */
