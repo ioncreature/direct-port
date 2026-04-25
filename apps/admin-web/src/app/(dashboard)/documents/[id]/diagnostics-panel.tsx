@@ -52,6 +52,8 @@ const PURPOSE_LABELS: Record<AiCallPurpose, string> = {
   parse_validate: 'Валидация парсинга',
   classify_formulate_queries: 'Запросы TKS',
   classify: 'Классификация+верификация',
+  classify_retry: 'Повторная классификация',
+  classify_vision: 'Уточнение по фото',
   interpret: 'Интерпретация пошлин',
   translate_query: 'Перевод запроса',
 };

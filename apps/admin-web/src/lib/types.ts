@@ -298,6 +298,8 @@ export type AiCallPurpose =
   | 'parse_validate'
   | 'classify_formulate_queries'
   | 'classify'
+  | 'classify_retry'
+  | 'classify_vision'
   | 'interpret'
   | 'translate_query';
 

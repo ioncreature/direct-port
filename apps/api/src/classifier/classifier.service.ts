@@ -524,19 +524,13 @@ export class ClassifierService {
     );
 
     // Phase 4.5: фото фактчекит код для строк с низкой текстовой уверенностью.
-    if (this.anthropic && this.photoStorage && auditContext?.documentId) {
-      const { tokenUsage: visionUsage, applied } = await this.runVisionRetry(
-        assembled,
-        auditContext.documentId,
-        confidenceThreshold,
-        language,
-        auditContext,
-      );
-      tokenUsage = mergeTokenUsage(tokenUsage, visionUsage);
-      if (applied > 0) {
-        this.logger.log(`Vision retry: ${applied} rows updated`);
-      }
-    }
+    const { tokenUsage: visionUsage } = await this.runVisionRetry(
+      assembled,
+      confidenceThreshold,
+      language,
+      auditContext,
+    );
+    tokenUsage = mergeTokenUsage(tokenUsage, visionUsage);
 
     const matched = assembled.filter((p) => p.matched).length;
     this.logger.log(
@@ -1048,26 +1042,33 @@ export class ClassifierService {
 
   private async runVisionRetry(
     assembled: ClassifiedProduct[],
-    documentId: string,
     confidenceThreshold: number,
     language: string | undefined,
     auditContext: AuditContext | null,
   ): Promise<{ tokenUsage: TokenUsageMap; applied: number }> {
-    if (!this.anthropic || !this.photoStorage) {
+    const skip = (reason: string) => {
+      this.logger.log(`Vision retry skipped: ${reason}`);
       return { tokenUsage: emptyTokenUsageMap(), applied: 0 };
-    }
+    };
+
+    if (!this.anthropic) return skip('no Anthropic client');
+    if (!this.photoStorage) return skip('PhotoStorage not wired');
+    const documentId = auditContext?.documentId;
+    if (!documentId) return skip('auditContext.documentId missing');
 
     const lowConfIndices: number[] = [];
     for (let i = 0; i < assembled.length; i++) {
       const p = assembled[i];
-      if (!p.matched || p.matchConfidence < confidenceThreshold) {
-        lowConfIndices.push(i);
-      }
+      if (!p.matched || p.matchConfidence < confidenceThreshold) lowConfIndices.push(i);
     }
-    if (lowConfIndices.length === 0) return { tokenUsage: emptyTokenUsageMap(), applied: 0 };
+    if (lowConfIndices.length === 0) {
+      return skip(`no low-confidence rows (threshold=${confidenceThreshold})`);
+    }
 
     const photos = await this.photoStorage.getFirstByRows(documentId, lowConfIndices);
-    if (photos.length === 0) return { tokenUsage: emptyTokenUsageMap(), applied: 0 };
+    if (photos.length === 0) {
+      return skip(`${lowConfIndices.length} low-conf rows but no photos in document_photo`);
+    }
 
     const photoByRow = new Map<number, DocumentPhoto>();
     for (const ph of photos) photoByRow.set(ph.rowIndex, ph);
@@ -1075,7 +1076,11 @@ export class ClassifierService {
     const tasks = lowConfIndices
       .map((i) => ({ index: i, photo: photoByRow.get(i) }))
       .filter((t): t is { index: number; photo: DocumentPhoto } => !!t.photo);
-    if (tasks.length === 0) return { tokenUsage: emptyTokenUsageMap(), applied: 0 };
+    if (tasks.length === 0) {
+      const lowConf = lowConfIndices.join(',');
+      const photoRows = photos.map((p) => p.rowIndex).join(',');
+      return skip(`photos exist but rowIndex mismatch (lowConf=${lowConf}, photoRows=${photoRows})`);
+    }
 
     const model = await this.aiConfig.getPhotoClassifierModel();
     let totalUsage = emptyTokenUsageMap();
@@ -1133,17 +1138,31 @@ export class ClassifierService {
       ? await this.loadTnvedRates([...newCodesSet])
       : new Map<string, TnvedCode>();
 
-    let applied = 0;
+    let confirmed = 0;
+    let corrected = 0;
+    let emptyResults = 0;
+    let codesNotInTks = 0;
     for (const r of completed) {
-      if (!r.result) continue;
-      const updated = this.applyVisionUpdate(assembled[r.task.index], r.result, tnvedByNewCode);
+      if (!r.result) {
+        emptyResults++;
+        continue;
+      }
+      const before = assembled[r.task.index];
+      const updated = this.applyVisionUpdate(before, r.result, tnvedByNewCode);
       if (updated) {
         assembled[r.task.index] = updated;
-        applied++;
+        if (r.result.tnVedCode === before.tnVedCode) confirmed++;
+        else corrected++;
+      } else if (r.result.tnVedCode && r.result.tnVedCode !== before.tnVedCode) {
+        codesNotInTks++;
       }
     }
 
     this.evictExpiredVisionCache();
+    const applied = confirmed + corrected;
+    this.logger.log(
+      `Vision retry done: tasks=${tasks.length}, confirmed=${confirmed}, corrected=${corrected}, emptyResults=${emptyResults}, codesNotInTks=${codesNotInTks}`,
+    );
     return { tokenUsage: totalUsage, applied };
   }
 
