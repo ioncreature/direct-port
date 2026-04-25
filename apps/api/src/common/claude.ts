@@ -1,5 +1,24 @@
 import type Anthropic from '@anthropic-ai/sdk';
 
+/**
+ * Таймауты на вызовы Claude (мс). Централизованы, чтобы при смене моделей
+ * (Opus/Sonnet → следующее поколение, batch size, etc.) не разъезжались
+ * по 7 файлам и не возникало «бомб замедленного действия» вроде classify=30s
+ * с реальной latency 27s — где любой чуть более тяжёлый батч уходил в timeout.
+ *
+ * Anthropic SDK ретраит 2-3 раза на каждый таймаут, поэтому фактический
+ * worst-case времени ожидания = TIMEOUT × ~3.
+ */
+
+/** Тяжёлые batch-вызовы пайплайна: parse_products, classify, formulate_queries, interpret, validate. */
+export const CLAUDE_TIMEOUT_PIPELINE_MS = 90_000;
+
+/** Анализ структуры таблицы — задача легче, но на больших файлах нужен запас. */
+export const CLAUDE_TIMEOUT_STRUCTURE_MS = 60_000;
+
+/** UI-вызовы вне пайплайна (перевод поисковых запросов в справочнике ТН ВЭД). */
+export const CLAUDE_TIMEOUT_UI_MS = 30_000;
+
 /** Извлекает объединённый текст из всех text-блоков ответа Claude. */
 export function extractClaudeText(response: Anthropic.Message): string {
   return response.content

@@ -11,7 +11,7 @@ import {
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { extractClaudeText } from '../common/claude';
+import { CLAUDE_TIMEOUT_UI_MS, extractClaudeText } from '../common/claude';
 import { normalizeImpediUnit } from '../common/normalize-impedi';
 import { normalizeOksmtCode } from '../common/oksmt';
 import { normalizeModelId } from '../common/token-usage';
@@ -291,7 +291,7 @@ export class TnVedService {
             },
           ],
         },
-        { timeout: 10_000 },
+        { timeout: CLAUDE_TIMEOUT_UI_MS },
       );
 
       this.aiUsageLogRepo

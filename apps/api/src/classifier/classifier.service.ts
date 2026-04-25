@@ -7,7 +7,12 @@ import {
 } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
-import { cacheTools, extractToolInput, systemPrompt } from '../common/claude';
+import {
+  CLAUDE_TIMEOUT_PIPELINE_MS,
+  cacheTools,
+  extractToolInput,
+  systemPrompt,
+} from '../common/claude';
 import { DEFAULT_CONFIDENCE_THRESHOLD } from '../common/confidence';
 import { errMsg } from '../common/errors';
 import { normalizeImpediUnit } from '../common/normalize-impedi';
@@ -627,7 +632,7 @@ export class ClassifierService {
             tools: cacheTools([FORMULATE_QUERIES_TOOL], useCache),
             tool_choice: { type: 'any' },
           },
-          { timeout: 75_000 },
+          { timeout: CLAUDE_TIMEOUT_PIPELINE_MS },
         ),
     );
 
@@ -858,7 +863,7 @@ export class ClassifierService {
             tools: cacheTools([CLASSIFY_TOOL], useCache),
             tool_choice: { type: 'any' },
           },
-          { timeout: 30_000 },
+          { timeout: CLAUDE_TIMEOUT_PIPELINE_MS },
         ),
     );
 

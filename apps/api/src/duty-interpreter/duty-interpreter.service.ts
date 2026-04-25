@@ -2,7 +2,12 @@ import Anthropic from '@anthropic-ai/sdk';
 import { Priznak, TksApiClient, TnvedCode, TnvedallEntry } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
-import { cacheTools, extractToolInput, systemPrompt } from '../common/claude';
+import {
+  CLAUDE_TIMEOUT_PIPELINE_MS,
+  cacheTools,
+  extractToolInput,
+  systemPrompt,
+} from '../common/claude';
 import { errMsg } from '../common/errors';
 import { isFlatCurrencyUnit } from '../common/normalize-impedi';
 import { getStaticNoteTranslation } from '../common/note-translations';
@@ -511,7 +516,7 @@ ${JSON.stringify(codesData, null, 2)}
             tools: cacheTools([INTERPRET_TOOL], useCache),
             tool_choice: { type: 'any' },
           },
-          { timeout: 90_000 },
+          { timeout: CLAUDE_TIMEOUT_PIPELINE_MS },
         ),
     );
 
