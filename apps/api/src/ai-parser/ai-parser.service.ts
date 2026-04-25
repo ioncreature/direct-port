@@ -1,7 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
-import { cacheTools, extractToolInput, systemPrompt } from '../common/claude';
+import {
+  CLAUDE_TIMEOUT_PIPELINE_MS,
+  CLAUDE_TIMEOUT_STRUCTURE_MS,
+  cacheTools,
+  extractToolInput,
+  systemPrompt,
+} from '../common/claude';
 import { errMsg } from '../common/errors';
 import { normalizeOksmtCode } from '../common/oksmt';
 import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, tokenUsageFromResponse } from '../common/token-usage';
@@ -639,7 +645,7 @@ export class AiParserService {
         ANALYZE_STRUCTURE_TOOL,
         {
           maxTokens: 2048,
-          timeout: 30_000,
+          timeout: CLAUDE_TIMEOUT_STRUCTURE_MS,
           audit: { context: auditContext, purpose: 'parse_structure' },
         },
       );
@@ -793,7 +799,7 @@ export class AiParserService {
               tools: cacheTools([tool], useCache),
               tool_choice: { type: 'any' },
             },
-            { timeout: opts.timeout ?? 90_000 },
+            { timeout: opts.timeout ?? CLAUDE_TIMEOUT_PIPELINE_MS },
           ),
       );
       const tokenUsage = tokenUsageFromResponse(model, response.usage);
@@ -951,7 +957,7 @@ ${mappingInfo}
               tools: [VALIDATE_TOOL],
               tool_choice: { type: 'any' },
             },
-            { timeout: 90_000 },
+            { timeout: CLAUDE_TIMEOUT_PIPELINE_MS },
           ),
       );
 
