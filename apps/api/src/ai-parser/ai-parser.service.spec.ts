@@ -417,8 +417,44 @@ describe('AiParserService', () => {
       });
 
       const result = await service.parse(Buffer.from(''), 'test.xlsx');
-      expect(result.products[0].rawContext).toBe('АБС-пластик; ART-1');
-      expect(result.products[1].rawContext).toBe('нержавеющая сталь; ART-2');
+      expect(result.products[0].rawContext).toBe('Материал=АБС-пластик; Артикул=ART-1');
+      expect(result.products[1].rawContext).toBe('Материал=нержавеющая сталь; Артикул=ART-2');
+    });
+
+    it('склеивает имена колонок из двух строк заголовков (китайский + русский)', async () => {
+      const data = {
+        rows: [
+          ['品名', '单价', '单重', '数量', '材质', '货号'],
+          ['Наименование', 'Цена', 'Вес', 'Количество', 'Материал', 'Артикул'],
+          ['手提篮', '3.6', '17.6', '3200', '塑料', 'SL-50504-269'],
+        ],
+        columnCount: 6,
+      };
+      const { service } = createService({
+        spreadsheetData: data,
+        claudeResponses: [
+          {
+            headerRows: [0, 1],
+            dataRows: [2],
+            columnMapping: { description: 0, price: 1, weight: 2, quantity: 3 },
+            currency: 'CNY',
+            weightNote: 'per_unit',
+          },
+          {
+            currency: 'CNY',
+            columnMapping: { description: 0, price: 1, weight: 2, quantity: 3 },
+            products: [
+              { description: 'Корзина', price: 3.6, weight: 17.6, quantity: 3200 },
+            ],
+          },
+          VALIDATION_OK,
+        ],
+      });
+
+      const result = await service.parse(Buffer.from(''), 'test.xlsx');
+      expect(result.products[0].rawContext).toBe(
+        '材质 / Материал=塑料; 货号 / Артикул=SL-50504-269',
+      );
     });
 
     it('нормализует hsCode — убирает не-цифры', async () => {

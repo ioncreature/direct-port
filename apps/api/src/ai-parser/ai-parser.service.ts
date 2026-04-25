@@ -461,6 +461,7 @@ export class AiParserService {
           lastResult.products,
           structure.dataRows.map((i) => data.rows[i]),
           structure.columnMapping,
+          structure.headerRows.map((i) => data.rows[i] ?? []),
         );
       }
 
@@ -557,6 +558,7 @@ export class AiParserService {
           firstResult.products,
           chunks[0],
           structure.columnMapping,
+          structure.headerRows.map((i) => data.rows[i] ?? []),
         );
       }
 
@@ -605,7 +607,15 @@ export class AiParserService {
         if (r) {
           totalUsage = mergeTokenUsage(totalUsage, r.tokenUsage);
           const chunk = group[j];
-          const enriched = this.enrichRawContext(r.products, chunk, columnMapping);
+          const headerRowsForEnrich = structure
+            ? structure.headerRows.map((i) => data.rows[i] ?? [])
+            : [];
+          const enriched = this.enrichRawContext(
+            r.products,
+            chunk,
+            columnMapping,
+            headerRowsForEnrich,
+          );
           allProducts.push(...enriched);
           this.logger.log(`Chunk ${g + j + 1}: parsed ${r.products.length} products`);
         } else {
@@ -1030,6 +1040,7 @@ ${mappingInfo}
     products: ParsedProduct[],
     rows: string[][],
     columnMapping: Record<string, number> | undefined,
+    headerRows: string[][] = [],
   ): ParsedProduct[] {
     if (!columnMapping) return products;
     if (products.length !== rows.length) {
@@ -1045,6 +1056,21 @@ ${mappingInfo}
       if (typeof idx === 'number') mainCols.add(idx);
     }
 
+    const maxCols = rows.reduce((m, r) => Math.max(m, r.length), 0);
+    const labels: string[] = [];
+    for (let c = 0; c < maxCols; c++) {
+      const seen = new Set<string>();
+      const parts: string[] = [];
+      for (const h of headerRows) {
+        const v = String(h?.[c] ?? '').trim();
+        if (v && !seen.has(v)) {
+          seen.add(v);
+          parts.push(v);
+        }
+      }
+      labels[c] = parts.join(' / ');
+    }
+
     return products.map((p, i) => {
       const row = rows[i];
       if (!row) return p;
@@ -1053,7 +1079,9 @@ ${mappingInfo}
         if (mainCols.has(c)) continue;
         // Cap per-cell length: xlsx may contain embedded images or abnormally large text
         const cell = String(row[c] ?? '').trim().slice(0, MAX_RAW_CONTEXT_CELL_CHARS);
-        if (cell) extras.push(cell);
+        if (!cell) continue;
+        const label = labels[c];
+        extras.push(label ? `${label}=${cell}` : cell);
       }
       const rawContext = extras.join('; ');
       return rawContext ? { ...p, rawContext } : p;
