@@ -323,7 +323,10 @@ export class ClassifierService {
     @Optional() @Inject(Anthropic) private anthropic: Anthropic | null,
     private aiConfig: AiConfigService,
     private audit: PipelineAuditService,
-    @Optional() private photoStorage: PhotoStorageService | null = null,
+    // Без явного @Inject(PhotoStorageService) NestJS в production не резолвит
+    // тип `PhotoStorageService | null` — параметр приходит null и vision-retry
+    // молча отключается (наблюдалось на stage).
+    @Optional() @Inject(PhotoStorageService) private photoStorage: PhotoStorageService | null = null,
   ) {}
 
   async classify(
