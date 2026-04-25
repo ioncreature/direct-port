@@ -43,11 +43,11 @@ export default function UploadDocumentPage() {
           />
         </div>
         {file && (
-          <p style={{ marginBottom: 16, color: file.size > 25 * 1024 * 1024 ? '#dc2626' : '#555' }}>
+          <p style={{ marginBottom: 16, color: file.size > 40 * 1024 * 1024 ? '#dc2626' : '#555' }}>
             {file.name} ({file.size >= 1024 * 1024
               ? `${(file.size / 1024 / 1024).toFixed(1)} МБ`
               : `${(file.size / 1024).toFixed(1)} КБ`})
-            {file.size > 25 * 1024 * 1024 && ' — превышает лимит 25 МБ'}
+            {file.size > 40 * 1024 * 1024 && ' — превышает лимит 40 МБ'}
           </p>
         )}
         {error && <p style={{ color: 'red', marginBottom: 16 }}>{error}</p>}

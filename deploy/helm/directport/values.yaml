@@ -69,7 +69,7 @@ ingress:
   enabled: true
   className: nginx
   annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: '25m'
+    nginx.ingress.kubernetes.io/proxy-body-size: '40m'
   hosts:
     admin:
       host: admin.directport.local

@@ -34,7 +34,7 @@ upload-prompt = 请发送 .xlsx 或 .csv 格式的文件
 
 # 文件上传
 unsupported-format = 仅支持 .xlsx 和 .csv 文件
-file-too-large = 文件过大，最大支持 25 MB。
+file-too-large = 文件过大，最大支持 40 MB。
 uploading = 📥 正在下载文件...
 file-accepted = 📄 文件「{ $fileName }」已接受处理。
     处理完成后会通知您。
