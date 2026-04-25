@@ -642,6 +642,121 @@ describe('ClassifierService', () => {
       expect(result.products[0].matched).toBe(false);
       expect(classificationCallCount(anthropic!)).toBe(2);
     });
+
+    it('mixed batch: retry зовётся только для проваленной позиции, остальные не задеты', async () => {
+      // 3 товара в одном пайплайне: A — нормально, B — невалидный код (нужен retry),
+      // C — невалидный код, но без TKS-кандидатов (retry бессмысленен).
+      const products = [
+        makeProduct('Товар A'),
+        makeProduct('Товар B'),
+        makeProduct('Товар C'),
+      ];
+
+      const { service, anthropic } = createService({
+        searchResults: {
+          'Товар A': makeSearchResult('1111111111', 'Кандидат A'),
+          'Товар B': makeSearchResult('2222222222', 'Кандидат B'),
+          'Товар C': { data: [], hm: 0 },
+        },
+        tnvedCodes: {
+          '1111111111': makeTnvedCode('1111111111'),
+          '2222222222': makeTnvedCode('2222222222'),
+        },
+        claudeResponse: [
+          makeClaudeSelection({ index: 0, tnVedCode: '1111111111', confidence: 0.95 }),
+          makeClaudeSelection({ index: 1, tnVedCode: '8888888888', confidence: 0.85, fromCandidates: false }),
+          makeClaudeSelection({ index: 2, tnVedCode: '9999999999', confidence: 0.4, fromCandidates: false }),
+        ],
+        // В retry-батче только B (локальный индекс 0)
+        claudeRetryResponse: [
+          makeClaudeSelection({ index: 0, tnVedCode: '2222222222', confidence: 0.7, fromCandidates: true }),
+        ],
+      });
+
+      const result = await service.classify(products);
+
+      expect(result.products[0]).toMatchObject({
+        matched: true,
+        tnVedCode: '1111111111',
+        matchConfidence: 0.95,
+      });
+      expect(result.products[1]).toMatchObject({
+        matched: true,
+        tnVedCode: '2222222222',
+        matchConfidence: 0.7,
+      });
+      expect(result.products[2]).toMatchObject({
+        matched: false,
+        tnVedCode: '',
+      });
+      // 1 classify (общий) + 1 retry (только B). C не попадает в retry — нет кандидатов
+      expect(classificationCallCount(anthropic!)).toBe(2);
+    });
+
+    it('dedup × retry: два одинаковых товара → один retry-вызов, результат на оба', async () => {
+      const { service, anthropic } = createService({
+        searchResults: {
+          'Кока-кола без сахара': makeSearchResult('2202100000', 'Воды'),
+        },
+        tnvedCodes: { '2202100000': makeTnvedCode('2202100000') },
+        claudeResponse: [
+          makeClaudeSelection({ tnVedCode: '2202999000', fromCandidates: false }),
+        ],
+        claudeRetryResponse: [
+          makeClaudeSelection({ tnVedCode: '2202100000', confidence: 0.7, fromCandidates: true }),
+        ],
+      });
+
+      const result = await service.classify([
+        makeProduct('Кока-кола без сахара'),
+        makeProduct('Кока-кола без сахара'),
+      ]);
+
+      expect(result.products[0].tnVedCode).toBe('2202100000');
+      expect(result.products[1].tnVedCode).toBe('2202100000');
+      expect(result.products[0].matched).toBe(true);
+      expect(result.products[1].matched).toBe(true);
+      // Дедуп должен схлопнуть до 1 уникального → 1 classify + 1 retry, не по 2
+      expect(classificationCallCount(anthropic!)).toBe(2);
+
+      // В retry-батче была одна позиция (запрос содержит ровно 1 item)
+      const retryCalls = anthropic!.messages.create.mock.calls.filter(
+        (c: any[]) =>
+          c[0]?.tools?.[0]?.name === 'classify_products' &&
+          typeof c[0]?.messages?.[0]?.content === 'string' &&
+          c[0].messages[0].content.includes('Повторная классификация'),
+      );
+      expect(retryCalls).toHaveLength(1);
+      const retryUserMsg = retryCalls[0][0].messages[0].content;
+      const retryItems = JSON.parse(retryUserMsg.slice(retryUserMsg.indexOf('[')));
+      expect(retryItems).toHaveLength(1);
+    });
+
+    it('cache invalidation: повторный classify использует retry-результат, второго retry нет', async () => {
+      const { service, anthropic } = createService({
+        searchResults: {
+          'Кока-кола без сахара': makeSearchResult('2202100000', 'Воды'),
+        },
+        tnvedCodes: { '2202100000': makeTnvedCode('2202100000') },
+        claudeResponse: [
+          makeClaudeSelection({ tnVedCode: '2202999000', fromCandidates: false }),
+        ],
+        claudeRetryResponse: [
+          makeClaudeSelection({ tnVedCode: '2202100000', confidence: 0.7, fromCandidates: true }),
+        ],
+      });
+
+      // Первый прогон: 1 classify + 1 retry, в кэш сохраняется retry-результат
+      await service.classify([makeProduct('Кока-кола без сахара')]);
+      expect(classificationCallCount(anthropic!)).toBe(2);
+
+      // Второй прогон того же товара: cache hit → classify не зовётся,
+      // в uniqueSelections уже валидный код → retry тоже не нужен
+      const second = await service.classify([makeProduct('Кока-кола без сахара')]);
+      expect(classificationCallCount(anthropic!)).toBe(2);
+      expect(second.products[0].tnVedCode).toBe('2202100000');
+      expect(second.products[0].matched).toBe(true);
+    });
   });
 
   describe('formulateSearchQueries: батчевание', () => {
