@@ -644,6 +644,84 @@ describe('ClassifierService', () => {
     });
   });
 
+  describe('formulateSearchQueries: батчевание', () => {
+    it('25 товаров → 2 батча, при провале второго — fallback только для 5 товаров второго батча', async () => {
+      const products = Array.from({ length: 25 }, (_, i) => makeProduct(`Товар ${i}`));
+      const tksApi = {
+        searchGoodsGrouped: jest.fn().mockImplementation((query: string) => {
+          // TKS возвращает кандидата по сформулированному запросу. Распознаём
+          // formulated-запросы по префиксу FQ_, raw-описания — без него.
+          if (query.startsWith('FQ_')) {
+            return Promise.resolve({ data: [{ CODE: '1111111111', KR_NAIM: 'Найдено по FQ', CNT: 90 }], hm: 100 });
+          }
+          return Promise.resolve({ data: [{ CODE: '2222222222', KR_NAIM: 'Найдено по raw', CNT: 30 }], hm: 100 });
+        }),
+        getTnvedCode: jest.fn().mockImplementation((code: string) =>
+          Promise.resolve(makeTnvedCode(code)),
+        ),
+      };
+
+      let formulateCallIdx = 0;
+      const anthropic = {
+        messages: {
+          create: jest.fn().mockImplementation((params: any) => {
+            const toolName = params.tools?.[0]?.name;
+            if (toolName === 'formulate_search_queries') {
+              formulateCallIdx++;
+              if (formulateCallIdx === 2) {
+                return Promise.reject(new Error('Request timed out.'));
+              }
+              const userContent = JSON.parse(params.messages[0].content);
+              const productsResp = userContent.map((item: any) => ({
+                index: item.index,
+                queries: [`FQ_${item.description}`],
+              }));
+              return Promise.resolve({
+                content: [{ type: 'tool_use', id: 'q', name: 'formulate_search_queries', input: { products: productsResp } }],
+                usage: { input_tokens: 50, output_tokens: 30, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+              });
+            }
+            // classify
+            const userContent = JSON.parse(params.messages[0].content.replace(/^[^[{]+/, ''));
+            const items = userContent.map((it: any) => ({
+              index: it.index,
+              tnVedCode: it.candidates[0].code,
+              confidence: 0.9,
+              comment: 'ok',
+              fromCandidates: true,
+            }));
+            return Promise.resolve({
+              content: [{ type: 'tool_use', id: 'c', name: 'classify_products', input: { items } }],
+              usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+            });
+          }),
+        },
+      };
+      const aiConfig = {
+        getClassifierModel: jest.fn().mockResolvedValue('claude-opus-4-7'),
+        getQueryFormulationModel: jest.fn().mockResolvedValue('claude-opus-4-7'),
+      };
+      const audit = {
+        trackAiCall: jest.fn().mockImplementation(async (_p: any, fn: any) => fn()),
+        recordAiCall: jest.fn(),
+      };
+
+      const service = new ClassifierService(tksApi as any, anthropic as any, aiConfig as any, audit as any);
+      const result = await service.classify(products);
+
+      // Первые 20 товаров классифицированы по FQ-кандидатам, последние 5 — по raw fallback
+      const codes = result.products.map((p) => p.tnVedCode);
+      expect(codes.slice(0, 20).every((c) => c === '1111111111')).toBe(true);
+      expect(codes.slice(20).every((c) => c === '2222222222')).toBe(true);
+
+      // Два formulate-вызова всего: один успешный, второй упал
+      const formulateCalls = anthropic.messages.create.mock.calls.filter(
+        (c: any[]) => c[0]?.tools?.[0]?.name === 'formulate_search_queries',
+      );
+      expect(formulateCalls).toHaveLength(2);
+    });
+  });
+
   describe('usedFallback', () => {
     it('false — товар сопоставлен и верифицирован', async () => {
       const { service } = createService({

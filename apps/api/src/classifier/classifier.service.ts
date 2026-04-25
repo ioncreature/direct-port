@@ -520,61 +520,125 @@ export class ClassifierService {
     products: ProductRow[],
     auditContext: AuditContext | null = null,
   ): Promise<{ queries: string[][]; tokenUsage: TokenUsageMap }> {
+    // Дефолт — сырое описание. Перезаписывается на запросы Claude по тем индексам,
+    // для которых соответствующий батч успел отработать. Если батч упал в timeout
+    // (Opus на 49 товарах в один присест уходил за 45с × 3 SDK-ретрая = ~135с),
+    // только эти товары останутся с raw fallback, остальные сохранят качественные запросы.
+    const queries = products.map((p) => [p.description]);
     if (!this.anthropic || products.length === 0) {
-      return { queries: products.map((p) => [p.description]), tokenUsage: emptyTokenUsageMap() };
+      return { queries, tokenUsage: emptyTokenUsageMap() };
     }
 
-    const items = products.map((p, i) => ({
+    type FormulateItem = { index: number; description: string; context?: string };
+    const allItems: FormulateItem[] = products.map((p, i) => ({
       index: i,
       description: p.description,
       ...(p.rawContext ? { context: p.rawContext } : {}),
     }));
 
-    const model = await this.aiConfig.getQueryFormulationModel();
+    const batches: FormulateItem[][] = [];
+    for (let i = 0; i < allItems.length; i += CLAUDE_BATCH_SIZE) {
+      batches.push(allItems.slice(i, i + CLAUDE_BATCH_SIZE));
+    }
+    const useCache = batches.length > 1;
 
-    try {
-      const response = await this.audit.trackAiCall(
-        {
-          context: auditContext,
-          purpose: 'classify_formulate_queries',
+    let totalUsage = emptyTokenUsageMap();
+    let formulatedCount = 0;
+
+    const applyResult = (
+      batchItems: FormulateItem[],
+      result: { queries: Map<number, string[]>; tokenUsage: TokenUsageMap },
+    ) => {
+      totalUsage = mergeTokenUsage(totalUsage, result.tokenUsage);
+      for (const item of batchItems) {
+        const formulated = result.queries.get(item.index);
+        if (formulated && formulated.length > 0) {
+          queries[item.index] = formulated;
+          formulatedCount++;
+        }
+      }
+    };
+
+    // Первый батч последовательно — прогревает prompt-cache для остальных
+    if (batches.length > 0) {
+      const result = await this.callClaudeForQueries(batches[0], useCache, auditContext).catch(
+        (err) => {
+          this.logger.warn(`Query formulation batch 1/${batches.length} failed: ${errMsg(err)}`);
+          return { queries: new Map<number, string[]>(), tokenUsage: emptyTokenUsageMap() };
+        },
+      );
+      applyResult(batches[0], result);
+    }
+
+    const remaining = batches.slice(1);
+    for (let g = 0; g < remaining.length; g += CLAUDE_CONCURRENCY) {
+      const group = remaining.slice(g, g + CLAUDE_CONCURRENCY);
+      const results = await Promise.all(
+        group.map((items, j) =>
+          this.callClaudeForQueries(items, useCache, auditContext).catch((err) => {
+            this.logger.warn(
+              `Query formulation batch ${2 + g + j}/${batches.length} failed: ${errMsg(err)}`,
+            );
+            return { queries: new Map<number, string[]>(), tokenUsage: emptyTokenUsageMap() };
+          }),
+        ),
+      );
+      for (let j = 0; j < group.length; j++) {
+        applyResult(group[j], results[j]);
+      }
+    }
+
+    const model = await this.aiConfig.getQueryFormulationModel();
+    this.logger.log(
+      `Formulated ${formulatedCount}/${products.length}×${QUERIES_PER_PRODUCT} search queries via ${model} in ${batches.length} batches`,
+    );
+    return { queries, tokenUsage: totalUsage };
+  }
+
+  private async callClaudeForQueries(
+    items: { index: number; description: string; context?: string }[],
+    useCache: boolean,
+    auditContext: AuditContext | null,
+  ): Promise<{ queries: Map<number, string[]>; tokenUsage: TokenUsageMap }> {
+    const model = await this.aiConfig.getQueryFormulationModel();
+    const response = await this.audit.trackAiCall(
+      {
+        context: auditContext,
+        purpose: 'classify_formulate_queries',
+        model,
+        request: {
           model,
-          request: {
+          max_tokens: 16384,
+          system: QUERY_FORMULATION_SYSTEM,
+          messages: [{ role: 'user', content: JSON.stringify(items) }],
+          tools: [FORMULATE_QUERIES_TOOL.name],
+          tool_choice: 'any',
+          batchSize: items.length,
+          indices: items.map((i) => i.index),
+        },
+      },
+      () =>
+        this.anthropic!.messages.create(
+          {
             model,
             max_tokens: 16384,
-            system: QUERY_FORMULATION_SYSTEM,
+            system: systemPrompt(QUERY_FORMULATION_SYSTEM),
             messages: [{ role: 'user', content: JSON.stringify(items) }],
-            tools: [FORMULATE_QUERIES_TOOL.name],
-            tool_choice: 'any',
+            tools: cacheTools([FORMULATE_QUERIES_TOOL], useCache),
+            tool_choice: { type: 'any' },
           },
-        },
-        () =>
-          this.anthropic!.messages.create(
-            {
-              model,
-              max_tokens: 16384,
-              system: systemPrompt(QUERY_FORMULATION_SYSTEM),
-              messages: [{ role: 'user', content: JSON.stringify(items) }],
-              tools: [FORMULATE_QUERIES_TOOL],
-              tool_choice: { type: 'any' },
-            },
-            { timeout: 45_000 },
-          ),
-      );
+          { timeout: 75_000 },
+        ),
+    );
 
-      const result = extractToolInput<{ products: Array<{ index: number; queries: string[] }> }>(
-        response,
-      );
-      const queryMap = new Map(result.products.map((p) => [p.index, p.queries]));
-      const queries = products.map((p, i) => queryMap.get(i) ?? [p.description]);
-
-      this.logger.log(
-        `Formulated ${queryMap.size}×${QUERIES_PER_PRODUCT} search queries via ${model}`,
-      );
-      return { queries, tokenUsage: tokenUsageFromResponse(model, response.usage) };
-    } catch (err) {
-      this.logger.warn(`Query formulation failed, using raw descriptions: ${errMsg(err)}`);
-      return { queries: products.map((p) => [p.description]), tokenUsage: emptyTokenUsageMap() };
+    const result = extractToolInput<{ products: Array<{ index: number; queries: string[] }> }>(
+      response,
+    );
+    const queryMap = new Map<number, string[]>();
+    for (const p of result.products) {
+      queryMap.set(p.index, p.queries);
     }
+    return { queries: queryMap, tokenUsage: tokenUsageFromResponse(model, response.usage) };
   }
 
   // --- Phase 1: TKS Search (multiple queries per product) ---
