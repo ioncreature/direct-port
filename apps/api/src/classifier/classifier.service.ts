@@ -112,6 +112,19 @@ const CLAUDE_CONCURRENCY = 2;
 const MAX_CANDIDATES = 5;
 const QUERIES_PER_PRODUCT = 5;
 const CLASSIFICATION_CACHE_TTL = 86_400_000; // 24 hours
+
+/**
+ * Префикс user-prompt'а для retry-вызова classify, когда Claude в первой
+ * попытке выбрал код вне справочника TKS. Экспортируется, чтобы тесты и
+ * mock createService могли узнавать retry-вызов по единой строке (а не
+ * по копиям 'Повторная классификация' в трёх местах).
+ */
+export const CLASSIFIER_RETRY_PROMPT_INTRO =
+  'Повторная классификация. В предыдущей попытке ты предложил коды (поле previousCode), которых НЕТ в справочнике ТН ВЭД (TKS). ' +
+  'Выбери tnVedCode СТРОГО из списка candidates (fromCandidates=true). ' +
+  'Не предлагай коды вне candidates: справочник TKS их не содержит, что бы ты ни считал теоретически верным. ' +
+  'Если ни один кандидат не подходит идеально — возьми ближайший по смыслу и понизь confidence. ' +
+  'В comment объясни выбор и причину, почему previousCode не подошёл';
 const CLASSIFICATION_CACHE_MAX = 1000;
 
 const SYSTEM_PROMPT = `Ты — эксперт по таможенной классификации товаров по ТН ВЭД (Товарная номенклатура внешнеэкономической деятельности ЕАЭС).
@@ -783,12 +796,6 @@ export class ClassifierService {
       batches.push(retryItems.slice(i, i + CLAUDE_BATCH_SIZE));
     }
     const useCache = batches.length > 1;
-    const promptIntro =
-      'Повторная классификация. В предыдущей попытке ты предложил коды (поле previousCode), которых НЕТ в справочнике ТН ВЭД (TKS). ' +
-      'Выбери tnVedCode СТРОГО из списка candidates (fromCandidates=true). ' +
-      'Не предлагай коды вне candidates: справочник TKS их не содержит, что бы ты ни считал теоретически верным. ' +
-      'Если ни один кандидат не подходит идеально — возьми ближайший по смыслу и понизь confidence. ' +
-      'В comment объясни выбор и причину, почему previousCode не подошёл';
 
     for (const batch of batches) {
       try {
@@ -804,7 +811,7 @@ export class ClassifierService {
           language,
           useCache,
           auditContext,
-          { purpose: 'classify_retry', promptIntro },
+          { purpose: 'classify_retry', promptIntro: CLASSIFIER_RETRY_PROMPT_INTRO },
         );
         totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
         for (const sel of selections) {

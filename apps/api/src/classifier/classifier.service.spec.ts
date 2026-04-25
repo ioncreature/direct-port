@@ -1,4 +1,4 @@
-import { ClassifierService, type ProductRow } from './classifier.service';
+import { CLASSIFIER_RETRY_PROMPT_INTRO, ClassifierService, type ProductRow } from './classifier.service';
 import type { TnvedCode } from '@direct-port/tks-api';
 
 function makeProduct(desc: string, overrides: Partial<ProductRow> = {}): ProductRow {
@@ -47,7 +47,7 @@ function createService(opts: {
   searchResults?: Record<string, { data: any[]; hm: number }>;
   tnvedCodes?: Record<string, TnvedCode>;
   claudeResponse?: any[];
-  /** Ответ classify_products при retry-вызове (содержит "Повторная классификация" в user prompt). */
+  /** Ответ classify_products при retry-вызове (отличаем по CLASSIFIER_RETRY_PROMPT_INTRO в user prompt). */
   claudeRetryResponse?: any[];
   claudeEnabled?: boolean;
   queryFormulationResults?: Array<{ index: number; queries: string[] }>;
@@ -84,7 +84,7 @@ function createService(opts: {
             }
             const isRetry =
               typeof params.messages?.[0]?.content === 'string' &&
-              params.messages[0].content.includes('Повторная классификация');
+              params.messages[0].content.startsWith(CLASSIFIER_RETRY_PROMPT_INTRO);
             const items = isRetry && opts.claudeRetryResponse
               ? opts.claudeRetryResponse
               : (opts.claudeResponse ?? []);
@@ -719,16 +719,15 @@ describe('ClassifierService', () => {
       // Дедуп должен схлопнуть до 1 уникального → 1 classify + 1 retry, не по 2
       expect(classificationCallCount(anthropic!)).toBe(2);
 
-      // В retry-батче была одна позиция (запрос содержит ровно 1 item)
       const retryCalls = anthropic!.messages.create.mock.calls.filter(
         (c: any[]) =>
           c[0]?.tools?.[0]?.name === 'classify_products' &&
           typeof c[0]?.messages?.[0]?.content === 'string' &&
-          c[0].messages[0].content.includes('Повторная классификация'),
+          c[0].messages[0].content.startsWith(CLASSIFIER_RETRY_PROMPT_INTRO),
       );
       expect(retryCalls).toHaveLength(1);
-      const retryUserMsg = retryCalls[0][0].messages[0].content;
-      const retryItems = JSON.parse(retryUserMsg.slice(retryUserMsg.indexOf('[')));
+      const retryUserMsg: string = retryCalls[0][0].messages[0].content;
+      const retryItems = JSON.parse(retryUserMsg.slice(CLASSIFIER_RETRY_PROMPT_INTRO.length + 2));
       expect(retryItems).toHaveLength(1);
     });
 
