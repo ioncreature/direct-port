@@ -268,11 +268,24 @@ export class DutyInterpreterService {
       codeToIndices.set(code, indices);
     }
 
+    // Только коды, у которых хотя бы один товар имеет нетривиальные ставки,
+    // нуждаются в AI-интерпретации. Чисто адвалорные ставки (% без условий по
+    // стране, без специфической части, без акциза) Calculator считает из плоских
+    // полей TNVED напрямую — Claude тут не нужен.
+    const codesNeedingInterpretation = new Set<string>();
+    for (const [code, indices] of codeToIndices) {
+      if (indices.some((i) => this.hasNonTrivialRates(products[i]))) {
+        codesNeedingInterpretation.add(code);
+      }
+    }
+    const skippedSimpleCodes = codeToIndices.size - codesNeedingInterpretation.size;
+
     // Check cache, collect codes that need interpretation
     const interpretations = new Map<string, DutyInterpretation>();
     const codesToInterpret: string[] = [];
 
     for (const code of codeToIndices.keys()) {
+      if (!codesNeedingInterpretation.has(code)) continue;
       const cached = this.cache.get(code);
       if (cached && cached.expiresAt > Date.now()) {
         interpretations.set(code, cached.data);
@@ -379,7 +392,11 @@ export class DutyInterpreterService {
       }
     }
 
-    this.logger.log(`Interpretation done: ${interpretations.size} codes interpreted, ${codesToInterpret.length - validCodes.length} codes skipped (no TNVED data)`);
+    this.logger.log(
+      `Interpretation done: ${interpretations.size} codes interpreted, ` +
+        `${codesToInterpret.length - validCodes.length} skipped (no TNVED data), ` +
+        `${skippedSimpleCodes} skipped (simple ad valorem rates)`,
+    );
 
     const resultProducts = products.map((p) => {
       const interpretation = interpretations.get(p.tnVedCode) ?? null;

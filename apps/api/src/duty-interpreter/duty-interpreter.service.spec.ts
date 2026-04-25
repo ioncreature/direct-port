@@ -51,6 +51,19 @@ function makeProduct(overrides: Partial<VerifiedProduct> = {}): VerifiedProduct 
   };
 }
 
+/**
+ * Шорткат для тестов, где interpreter должен реально вызываться.
+ * Ставит акциз (AKC) на raw-ставках — это однозначный nonTrivial-сигнал
+ * для hasNonTrivialRates, без зависимости от dutySign.
+ */
+function makeNonTrivialProduct(overrides: Partial<VerifiedProduct> = {}): VerifiedProduct {
+  const code = overrides.tnVedCode ?? '0000000000';
+  return makeProduct({
+    tnvedRaw: makeTnvedCode(code, { AKC: 5 }),
+    ...overrides,
+  });
+}
+
 function makeInterpretation(
   code: string,
   overrides: Partial<DutyInterpretation> = {},
@@ -236,7 +249,7 @@ describe('DutyInterpreterService', () => {
         reasoning: 'Комбинированная: 15% но не менее 0.5 EUR/кг',
       });
       const { service, messagesCreate } = createService({ items: [interp] });
-      const product = makeProduct({ tnVedCode: '1234567890' });
+      const product = makeNonTrivialProduct({ tnVedCode: '1234567890' });
 
       const { products } = await service.interpret([product]);
 
@@ -250,8 +263,8 @@ describe('DutyInterpreterService', () => {
     it('группирует продукты по уникальному коду — 1 вызов Claude на 2 продукта с одинаковым кодом', async () => {
       const interp = makeInterpretation('1234567890');
       const { service, messagesCreate } = createService({ items: [interp] });
-      const p1 = makeProduct({ tnVedCode: '1234567890', description: 'A' });
-      const p2 = makeProduct({ tnVedCode: '1234567890', description: 'B' });
+      const p1 = makeNonTrivialProduct({ tnVedCode: '1234567890', description: 'A' });
+      const p2 = makeNonTrivialProduct({ tnVedCode: '1234567890', description: 'B' });
 
       const { products } = await service.interpret([p1, p2]);
 
@@ -263,7 +276,7 @@ describe('DutyInterpreterService', () => {
     it('использует кэш — повторный interpret() того же кода не идёт в Claude', async () => {
       const interp = makeInterpretation('1234567890');
       const { service, messagesCreate } = createService({ items: [interp] });
-      const product = makeProduct({ tnVedCode: '1234567890' });
+      const product = makeNonTrivialProduct({ tnVedCode: '1234567890' });
 
       await service.interpret([product]);
       await service.interpret([product]);
@@ -278,9 +291,7 @@ describe('DutyInterpreterService', () => {
         codes.slice(5).map((c) => makeInterpretation(c)),
       ];
       const { service, messagesCreate } = createService({ itemsByCall });
-      const products = codes.map((c) =>
-        makeProduct({ tnVedCode: c, tnvedRaw: makeTnvedCode(c) }),
-      );
+      const products = codes.map((c) => makeNonTrivialProduct({ tnVedCode: c }));
 
       const result = await service.interpret(products);
 
@@ -303,12 +314,14 @@ describe('DutyInterpreterService', () => {
     });
 
     it('идёт в TKS если tnvedRaw отсутствует', async () => {
-      const raw = makeTnvedCode('1234567890');
+      const raw = makeTnvedCode('1234567890', { AKC: 5 });
       const { service, getTnvedCode } = createService({
         items: [makeInterpretation('1234567890')],
         tnvedByCode: { '1234567890': raw },
       });
-      const product = makeProduct({ tnVedCode: '1234567890', tnvedRaw: undefined });
+      // exciseRate>0 — flat-сигнал nonTrivial для hasNonTrivialRates без tnvedRaw,
+      // чтобы код реально попал в codesToInterpret и getTnvedCode был вызван.
+      const product = makeProduct({ tnVedCode: '1234567890', tnvedRaw: undefined, exciseRate: 5 });
 
       await service.interpret([product]);
 
@@ -372,7 +385,7 @@ describe('DutyInterpreterService', () => {
       const { service, messagesCreate } = createService({
         items: [makeInterpretation('1234567890', { reasoningLocalized: 'Ad valorem 10%' })],
       });
-      const product = makeProduct({ tnVedCode: '1234567890' });
+      const product = makeNonTrivialProduct({ tnVedCode: '1234567890' });
 
       await service.interpret([product], 'en');
 
@@ -385,7 +398,7 @@ describe('DutyInterpreterService', () => {
       const { service, messagesCreate } = createService({
         items: [makeInterpretation('1234567890')],
       });
-      const product = makeProduct({ tnVedCode: '1234567890' });
+      const product = makeNonTrivialProduct({ tnVedCode: '1234567890' });
 
       await service.interpret([product], 'zh');
 
@@ -397,7 +410,7 @@ describe('DutyInterpreterService', () => {
       const { service } = createService({
         items: [makeInterpretation('1234567890', { reasoningLocalized: 'Ad valorem 10 percent' })],
       });
-      const product = makeProduct({ tnVedCode: '1234567890' });
+      const product = makeNonTrivialProduct({ tnVedCode: '1234567890' });
 
       const { products } = await service.interpret([product], 'en');
 
@@ -410,7 +423,7 @@ describe('DutyInterpreterService', () => {
       const { service, messagesCreate } = createService({
         items: [makeInterpretation('1234567890')],
       });
-      const product = makeProduct({ tnVedCode: '1234567890' });
+      const product = makeNonTrivialProduct({ tnVedCode: '1234567890' });
 
       await service.interpret([product]);
 
@@ -440,7 +453,7 @@ describe('DutyInterpreterService', () => {
           cache_read_input_tokens: 50,
         },
       });
-      const product = makeProduct({ tnVedCode: '1234567890' });
+      const product = makeNonTrivialProduct({ tnVedCode: '1234567890' });
 
       const { tokenUsage } = await service.interpret([product]);
 
@@ -491,7 +504,7 @@ describe('DutyInterpreterService', () => {
         NOTE: 'Условие применения ставки для страны '.repeat(10),
       })) as TnvedallEntry[];
       const heavyTnved = makeTnvedCode('8708705009', {}, { '19': heavyEntries });
-      const lightTnved = makeTnvedCode('1234567890');
+      const lightTnved = makeTnvedCode('1234567890', { AKC: 5 });
 
       const { service, messagesCreate } = createService({
         itemsByCall: [
@@ -520,9 +533,7 @@ describe('DutyInterpreterService', () => {
       const { service, messagesCreate } = createService({
         items: codes.map((c) => makeInterpretation(c)),
       });
-      const products = codes.map((c) =>
-        makeProduct({ tnVedCode: c, tnvedRaw: makeTnvedCode(c) }),
-      );
+      const products = codes.map((c) => makeNonTrivialProduct({ tnVedCode: c }));
 
       await service.interpret(products);
 
@@ -550,7 +561,7 @@ describe('DutyInterpreterService', () => {
         ],
       });
       const { service } = createService({ items: [interp] });
-      const product = makeProduct({ tnVedCode: '7326909809' });
+      const product = makeNonTrivialProduct({ tnVedCode: '7326909809' });
 
       const { products } = await service.interpret([product]);
 
