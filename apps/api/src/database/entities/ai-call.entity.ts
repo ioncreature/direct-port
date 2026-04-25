@@ -17,6 +17,7 @@ export type AiCallPurpose =
   | 'classify_formulate_queries'
   | 'classify'
   | 'classify_retry'
+  | 'classify_vision'
   | 'interpret'
   | 'translate_query';
 

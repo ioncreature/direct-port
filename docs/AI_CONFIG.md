@@ -4,10 +4,11 @@
 
 ## Зачем
 
-В DirectPort 4 различных сценария вызова Claude (см. CLAUDE.md, раздел «Четыре точки применения AI»). У каждого свои требования к качеству и цене:
+В DirectPort 5 различных сценариев вызова Claude (см. CLAUDE.md, раздел «Пять точек применения AI»). У каждого свои требования к качеству и цене:
 
 - Парсер таблиц — дорогой, но критичный для качества входных данных
 - Классификатор ТН ВЭД — критичный для правильности кодов
+- Vision-retry классификации — фактчекит low-confidence строки по фото, vision-токены вдвое дороже текстовых
 - Интерпретатор пошлин — нужен только для нетривиальных ставок
 - Перевод поисковых запросов — короткие промпты, можно дешёвую модель
 
@@ -26,6 +27,7 @@ class AiConfig {
   queryFormulationModel: AiModelTier;  // дефолт: 'haiku'
   classifierModel: AiModelTier;        // дефолт: 'sonnet'
   interpreterModel: AiModelTier;       // дефолт: 'sonnet'
+  photoClassifierModel: AiModelTier;   // дефолт: 'sonnet'
   updatedAt: Date;
 }
 ```
@@ -46,23 +48,24 @@ haiku  → claude-haiku-4-5-20251001
 
 | Метод | Путь | Роли | Назначение |
 |---|---|---|---|
-| GET | `/ai-config` | ADMIN, CUSTOMS | Текущая конфигурация (все 4 поля) |
+| GET | `/ai-config` | ADMIN, CUSTOMS | Текущая конфигурация (все 5 полей) |
 | PUT | `/ai-config` | ADMIN | Частичное обновление (любое подмножество полей) |
 
 DTO для PUT (`UpdateAiConfigDto`) — все поля `@IsOptional()`, валидируются через `@IsIn(['opus', 'sonnet', 'haiku'])`.
 
 ## Использование в сервисах
 
-`AiConfigService` экспортирует 4 геттера, возвращающих готовый model ID:
+`AiConfigService` экспортирует 5 геттеров, возвращающих готовый model ID:
 
 ```typescript
 service.getParserModel()             // → 'claude-sonnet-4-6'
 service.getQueryFormulationModel()   // → 'claude-haiku-4-5-20251001'
 service.getClassifierModel()         // → 'claude-sonnet-4-6'
 service.getInterpreterModel()        // → 'claude-sonnet-4-6'
+service.getPhotoClassifierModel()    // → 'claude-sonnet-4-6'
 ```
 
-Сервисы (AiParser, Classifier, DutyInterpreter, TnVed) должны вызывать соответствующий геттер перед каждым запросом к Claude и использовать возвращённую строку как `model` в `anthropic.messages.create()`.
+Сервисы (AiParser, Classifier для основного и vision-retry проходов, DutyInterpreter, TnVed) должны вызывать соответствующий геттер перед каждым запросом к Claude и использовать возвращённую строку как `model` в `anthropic.messages.create()`.
 
 ⚠️ **Текущее расхождение:** `TnVedService.translateToRussian()` (`tn-ved.service.ts:257`) хардкодит `claude-sonnet-4-6` вместо вызова `getQueryFormulationModel()`. Это надо поправить — иначе изменение поля `queryFormulationModel` в админке не имеет эффекта.
 

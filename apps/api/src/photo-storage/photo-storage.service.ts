@@ -144,4 +144,28 @@ export class PhotoStorageService {
       .andWhere('p.image_hash IN (:...hashes)', { hashes })
       .getMany();
   }
+
+  async getByDocument(documentId: string): Promise<DocumentPhoto[]> {
+    return this.repo.find({
+      where: { documentId },
+      order: { rowIndex: 'ASC', createdAt: 'ASC' },
+    });
+  }
+
+  /**
+   * По одному фото на каждую запрошенную строку (DISTINCT ON по rowIndex).
+   * Используется vision-retry'ем, чтобы не таскать все BYTEA документа из БД,
+   * когда нужны только несколько low-confidence строк.
+   */
+  async getFirstByRows(documentId: string, rowIndices: number[]): Promise<DocumentPhoto[]> {
+    if (rowIndices.length === 0) return [];
+    return this.repo
+      .createQueryBuilder('p')
+      .distinctOn(['p.row_index'])
+      .where('p.document_id = :documentId', { documentId })
+      .andWhere('p.row_index IN (:...rowIndices)', { rowIndices })
+      .orderBy('p.row_index', 'ASC')
+      .addOrderBy('p.created_at', 'ASC')
+      .getMany();
+  }
 }

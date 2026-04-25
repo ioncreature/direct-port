@@ -2,11 +2,12 @@ import Anthropic from '@anthropic-ai/sdk';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AiConfigModule } from '../ai-config/ai-config.module';
+import { PhotoStorageModule } from '../photo-storage/photo-storage.module';
 import { TksModule } from '../tks/tks.module';
 import { ClassifierService } from './classifier.service';
 
 @Module({
-  imports: [ConfigModule, TksModule, AiConfigModule],
+  imports: [ConfigModule, TksModule, AiConfigModule, PhotoStorageModule],
   providers: [
     {
       provide: Anthropic,

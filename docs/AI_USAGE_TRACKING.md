@@ -26,7 +26,9 @@ type TokenUsageMap = Record<string, {
 
 Ключи внешнего объекта — стадия pipeline (`parse`, `classify`, `interpret`). Ключи внутреннего — model ID (с обрезанным date-suffix через `normalizeModelId()`, т.е. `claude-haiku-4-5` вместо `claude-haiku-4-5-20251001`).
 
-Сюда пишутся вызовы, которые относятся к конкретному документу: AiParser, Classifier, DutyInterpreter. Запись делает воркер документа после успешного завершения этапа.
+Сюда пишутся вызовы, которые относятся к конкретному документу: AiParser, Classifier (основной проход + vision-retry — оба идут в стадию `classify`), DutyInterpreter. Запись делает воркер документа после успешного завершения этапа.
+
+`ai_call.purpose` (детальный per-call audit, см. ниже): `parse_structure / parse_products / parse_chunk / parse_validate / classify_formulate_queries / classify / classify_retry / classify_vision / interpret / translate_query`.
 
 Утилиты — `apps/api/src/common/token-usage.ts`:
 - `tokenUsageFromResponse(model, usage)` — собирает `TokenUsageMap` из ответа Anthropic SDK

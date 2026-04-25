@@ -49,6 +49,10 @@ function createService(opts: {
   claudeResponse?: any[];
   /** Ответ classify_products при retry-вызове (отличаем по CLASSIFIER_RETRY_PROMPT_INTRO в user prompt). */
   claudeRetryResponse?: any[];
+  /** Ответ verify_with_photo на vision-retry. Один объект на все vision-вызовы или null/undefined чтобы не подключать photoStorage. */
+  visionResponse?: { tnVedCode: string; confidence: number; comment: string; comment_localized?: string };
+  /** Фото в БД per documentId/rowIndex. Если не передан — getByDocument возвращает []. */
+  photosByDoc?: Record<string, Array<{ rowIndex: number; imageHash: string; bytes?: Buffer }>>;
   claudeEnabled?: boolean;
   queryFormulationResults?: Array<{ index: number; queries: string[] }>;
 } = {}) {
@@ -82,6 +86,23 @@ function createService(opts: {
                 usage: { input_tokens: 50, output_tokens: 30, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
               });
             }
+            if (toolName === 'verify_with_photo') {
+              return Promise.resolve({
+                content: [
+                  {
+                    type: 'tool_use',
+                    id: 'toolu_v',
+                    name: 'verify_with_photo',
+                    input: opts.visionResponse ?? {
+                      tnVedCode: '',
+                      confidence: 0,
+                      comment: 'no-op',
+                    },
+                  },
+                ],
+                usage: { input_tokens: 200, output_tokens: 80, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+              });
+            }
             const isRetry =
               typeof params.messages?.[0]?.content === 'string' &&
               params.messages[0].content.startsWith(CLASSIFIER_RETRY_PROMPT_INTRO);
@@ -100,6 +121,7 @@ function createService(opts: {
   const aiConfig = {
     getClassifierModel: jest.fn().mockResolvedValue('claude-sonnet-4-20250514'),
     getQueryFormulationModel: jest.fn().mockResolvedValue('claude-haiku-4-5-20251001'),
+    getPhotoClassifierModel: jest.fn().mockResolvedValue('claude-sonnet-4-20250514'),
   };
 
   const audit = {
@@ -109,13 +131,39 @@ function createService(opts: {
     recordAiCall: jest.fn().mockResolvedValue(undefined),
   };
 
+  const photoStorage = opts.photosByDoc
+    ? {
+        getFirstByRows: jest.fn().mockImplementation(
+          async (documentId: string, rowIndices: number[]) => {
+            const seed = opts.photosByDoc?.[documentId] ?? [];
+            const want = new Set(rowIndices);
+            return seed
+              .filter((p) => want.has(p.rowIndex))
+              .map((p) => ({
+                documentId,
+                rowIndex: p.rowIndex,
+                imageHash: p.imageHash,
+                mimeType: 'image/jpeg',
+                bytes: p.bytes ?? Buffer.from('jpeg-mock'),
+                createdAt: new Date(),
+              }));
+          },
+        ),
+        getByDocument: jest.fn().mockResolvedValue([]),
+        getByHash: jest.fn().mockResolvedValue([]),
+        savePhotos: jest.fn().mockResolvedValue([]),
+        deleteForDocument: jest.fn().mockResolvedValue(undefined),
+      }
+    : null;
+
   const service = new ClassifierService(
     tksApi as any,
     anthropic as any,
     aiConfig as any,
     audit as any,
+    photoStorage as any,
   );
-  return { service, tksApi, anthropic, aiConfig, audit };
+  return { service, tksApi, anthropic, aiConfig, audit, photoStorage };
 }
 
 /** Count only classification calls (not query formulation) */
@@ -873,6 +921,168 @@ describe('ClassifierService', () => {
       expect(result.products[0].matched).toBe(true);
       expect(result.products[0].verified).toBe(false);
       expect(result.usedFallback).toBe(true);
+    });
+  });
+
+  describe('vision-retry (Phase 4.5)', () => {
+    function visionCallCount(anthropic: { messages: { create: jest.Mock } }): number {
+      return anthropic.messages.create.mock.calls.filter(
+        (call: any[]) => call[0]?.tools?.[0]?.name === 'verify_with_photo',
+      ).length;
+    }
+
+    it('не вызывается, если photoStorage не подключён', async () => {
+      const { service, anthropic } = createService({
+        searchResults: { 'X': makeSearchResult('1111111111', 'X') },
+        tnvedCodes: { '1111111111': makeTnvedCode('1111111111') },
+        claudeResponse: [makeClaudeSelection({ tnVedCode: '1111111111', confidence: 0.5 })],
+      });
+
+      await service.classify([makeProduct('X')], 'ru', 0.8, { documentId: 'doc-1', stageRunId: 'sr' });
+
+      expect(visionCallCount(anthropic!)).toBe(0);
+    });
+
+    it('не вызывается, если documentId отсутствует в auditContext', async () => {
+      const { service, anthropic, photoStorage } = createService({
+        searchResults: { 'X': makeSearchResult('1111111111', 'X') },
+        tnvedCodes: { '1111111111': makeTnvedCode('1111111111') },
+        claudeResponse: [makeClaudeSelection({ tnVedCode: '1111111111', confidence: 0.5 })],
+        photosByDoc: { 'doc-1': [{ rowIndex: 0, imageHash: 'h' }] },
+        visionResponse: { tnVedCode: '1111111111', confidence: 0.95, comment: 'ok' },
+      });
+
+      await service.classify([makeProduct('X')], 'ru', 0.8);
+
+      expect(visionCallCount(anthropic!)).toBe(0);
+      expect(photoStorage!.getFirstByRows).not.toHaveBeenCalled();
+    });
+
+    it('не вызывается, если все строки выше threshold', async () => {
+      const { service, anthropic, photoStorage } = createService({
+        searchResults: { 'X': makeSearchResult('1111111111', 'X') },
+        tnvedCodes: { '1111111111': makeTnvedCode('1111111111') },
+        claudeResponse: [makeClaudeSelection({ tnVedCode: '1111111111', confidence: 0.95 })],
+        photosByDoc: { 'doc-1': [{ rowIndex: 0, imageHash: 'h' }] },
+        visionResponse: { tnVedCode: '1111111111', confidence: 1.0, comment: 'ok' },
+      });
+
+      await service.classify([makeProduct('X')], 'ru', 0.8, {
+        documentId: 'doc-1',
+        stageRunId: 'sr',
+      });
+
+      expect(visionCallCount(anthropic!)).toBe(0);
+      expect(photoStorage!.getFirstByRows).not.toHaveBeenCalled();
+    });
+
+    it('подтверждает текущий код — повышает confidence и помечает verified', async () => {
+      const { service, anthropic } = createService({
+        searchResults: { 'X': makeSearchResult('1111111111', 'X') },
+        tnvedCodes: { '1111111111': makeTnvedCode('1111111111') },
+        claudeResponse: [makeClaudeSelection({ tnVedCode: '1111111111', confidence: 0.6 })],
+        photosByDoc: { 'doc-1': [{ rowIndex: 0, imageHash: 'h1' }] },
+        visionResponse: {
+          tnVedCode: '1111111111',
+          confidence: 0.92,
+          comment: 'фото подтверждает',
+        },
+      });
+
+      const result = await service.classify([makeProduct('X')], 'ru', 0.8, {
+        documentId: 'doc-1',
+        stageRunId: 'sr',
+      });
+
+      expect(visionCallCount(anthropic!)).toBe(1);
+      expect(result.products[0].matchConfidence).toBeCloseTo(0.92);
+      expect(result.products[0].verified).toBe(true);
+      expect(result.products[0].notes.some((n) => n.message.includes('подтвердило'))).toBe(true);
+    });
+
+    it('корректирует код, перезагружает TNVED rates и обновляет product', async () => {
+      const { service, anthropic } = createService({
+        searchResults: { 'Шлейка': makeSearchResult('6307909800', 'Изделия текстильные') },
+        tnvedCodes: {
+          '6307909800': makeTnvedCode('6307909800', { IMP: 12, NDS: 20 }),
+          '4201001000': makeTnvedCode('4201001000', { IMP: 7, NDS: 22 }),
+        },
+        claudeResponse: [makeClaudeSelection({ tnVedCode: '6307909800', confidence: 0.65 })],
+        photosByDoc: { 'doc-1': [{ rowIndex: 0, imageHash: 'h1' }] },
+        visionResponse: {
+          tnVedCode: '4201001000',
+          confidence: 0.9,
+          comment: 'на фото поводки, не шлейка',
+        },
+      });
+
+      const result = await service.classify([makeProduct('Шлейка для питомцев')], 'ru', 0.8, {
+        documentId: 'doc-1',
+        stageRunId: 'sr',
+      });
+
+      expect(visionCallCount(anthropic!)).toBe(1);
+      expect(result.products[0].tnVedCode).toBe('4201001000');
+      expect(result.products[0].dutyRate).toBe(7);
+      expect(result.products[0].vatRate).toBe(22);
+      expect(result.products[0].matchConfidence).toBeCloseTo(0.9);
+    });
+
+    it('не применяет vision-результат, если новый код отсутствует в TKS', async () => {
+      const { service } = createService({
+        searchResults: { 'X': makeSearchResult('1111111111', 'X') },
+        tnvedCodes: { '1111111111': makeTnvedCode('1111111111') },
+        claudeResponse: [makeClaudeSelection({ tnVedCode: '1111111111', confidence: 0.6 })],
+        photosByDoc: { 'doc-1': [{ rowIndex: 0, imageHash: 'h1' }] },
+        visionResponse: { tnVedCode: '9999999999', confidence: 0.95, comment: 'fake code' },
+      });
+
+      const result = await service.classify([makeProduct('X')], 'ru', 0.8, {
+        documentId: 'doc-1',
+        stageRunId: 'sr',
+      });
+
+      expect(result.products[0].tnVedCode).toBe('1111111111');
+      expect(result.products[0].matchConfidence).toBeCloseTo(0.6);
+    });
+
+    it('кэширует vision-результат по hash+code+language', async () => {
+      const { service, anthropic } = createService({
+        searchResults: { 'X': makeSearchResult('1111111111', 'X') },
+        tnvedCodes: { '1111111111': makeTnvedCode('1111111111') },
+        claudeResponse: [makeClaudeSelection({ tnVedCode: '1111111111', confidence: 0.5 })],
+        photosByDoc: { 'doc-1': [{ rowIndex: 0, imageHash: 'h-same' }] },
+        visionResponse: { tnVedCode: '1111111111', confidence: 0.9, comment: 'ok' },
+      });
+
+      await service.classify([makeProduct('X')], 'ru', 0.8, {
+        documentId: 'doc-1',
+        stageRunId: 'sr',
+      });
+      await service.classify([makeProduct('X')], 'ru', 0.8, {
+        documentId: 'doc-1',
+        stageRunId: 'sr',
+      });
+
+      expect(visionCallCount(anthropic!)).toBe(1);
+    });
+
+    it('vision-вызов помечает audit purpose=classify_vision', async () => {
+      const { service, audit } = createService({
+        searchResults: { 'X': makeSearchResult('1111111111', 'X') },
+        tnvedCodes: { '1111111111': makeTnvedCode('1111111111') },
+        claudeResponse: [makeClaudeSelection({ tnVedCode: '1111111111', confidence: 0.6 })],
+        photosByDoc: { 'doc-1': [{ rowIndex: 0, imageHash: 'h-purpose' }] },
+        visionResponse: { tnVedCode: '1111111111', confidence: 0.9, comment: 'ok' },
+      });
+
+      await service.classify([makeProduct('X')], 'ru', 0.8, {
+        documentId: 'doc-1',
+        stageRunId: 'sr',
+      });
+
+      const purposes = audit.trackAiCall.mock.calls.map((c: any[]) => c[0]?.purpose);
+      expect(purposes).toContain('classify_vision');
     });
   });
 });

@@ -25,7 +25,9 @@ import {
   type TokenUsageMap,
 } from '../common/token-usage';
 import type { AiCallPurpose } from '../database/entities/ai-call.entity';
+import type { DocumentPhoto } from '../database/entities/document-photo.entity';
 import type { Dimension } from '../duty-interpreter/interfaces';
+import { PhotoStorageService } from '../photo-storage/photo-storage.service';
 import { PipelineAuditService, type AuditContext } from '../pipeline-audit/pipeline-audit.service';
 
 /**
@@ -109,6 +111,7 @@ interface ClassifyItem {
 const SEARCH_CONCURRENCY = 5;
 const CLAUDE_BATCH_SIZE = 20;
 const CLAUDE_CONCURRENCY = 2;
+const VISION_CONCURRENCY = 3;
 const MAX_CANDIDATES = 5;
 const QUERIES_PER_PRODUCT = 5;
 const CLASSIFICATION_CACHE_TTL = 86_400_000; // 24 hours
@@ -270,16 +273,57 @@ const FORMULATE_QUERIES_TOOL: Anthropic.Messages.Tool = {
   },
 };
 
+interface VisionResult {
+  tnVedCode: string;
+  confidence: number;
+  comment: string;
+  commentLocalized?: string;
+}
+
+const VISION_SYSTEM_PROMPT = `Ты — эксперт по таможенной классификации ТН ВЭД, который верифицирует решение по фотографии товара.
+
+Тебе дают: текстовое описание товара, текущий выбранный 10-значный код ТН ВЭД и фотографию реального товара.
+
+Задача — посмотреть на фото и:
+1. Подтвердить текущий код, если фото соответствует описанию и коду — верни тот же tnVedCode с повышенной confidence.
+2. Скорректировать код, если фото показывает другой материал/тип товара (например, "Шлейка" в описании, а на фото поводки; "ступица колеса" в описании, а на фото литой диск). Верни новый 10-значный tnVedCode.
+
+Что можно понять по фото товара: материал (металл/пластик/дерево/ткань), тип изделия (готовый продукт vs упаковка vs части), назначение (бытовое/промышленное/детское), наличие электрики, форм-фактор. Используй это для уточнения группы ТН ВЭД.
+
+confidence: 0.0–1.0 — твоя уверенность по итогу (с учётом фото).
+comment: 1-2 фразы на русском о том, что увидел на фото и почему это соответствует или не соответствует коду.
+`;
+
+const VISION_TOOL: Anthropic.Messages.Tool = {
+  name: 'verify_with_photo',
+  description: 'Подтверждение или корректировка кода ТН ВЭД по фотографии товара',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      tnVedCode: { type: 'string', description: '10-значный код ТН ВЭД' },
+      confidence: { type: 'number', description: '0.0–1.0' },
+      comment: { type: 'string', description: 'Что видно на фото и почему код подходит/не подходит' },
+      comment_localized: {
+        type: 'string',
+        description: 'Тот же комментарий на языке пользователя (если language≠ru)',
+      },
+    },
+    required: ['tnVedCode', 'confidence', 'comment'],
+  },
+};
+
 @Injectable()
 export class ClassifierService {
   private logger = new Logger(ClassifierService.name);
   private classificationCache = new Map<string, { data: ClaudeSelection; expiresAt: number }>();
+  private visionCache = new Map<string, { data: VisionResult; expiresAt: number }>();
 
   constructor(
     private tksApi: TksApiClient,
     @Optional() @Inject(Anthropic) private anthropic: Anthropic | null,
     private aiConfig: AiConfigService,
     private audit: PipelineAuditService,
+    @Optional() private photoStorage: PhotoStorageService | null = null,
   ) {}
 
   async classify(
@@ -478,6 +522,22 @@ export class ClassifierService {
       language,
       confidenceThreshold,
     );
+
+    // Phase 4.5: фото фактчекит код для строк с низкой текстовой уверенностью.
+    if (this.anthropic && this.photoStorage && auditContext?.documentId) {
+      const { tokenUsage: visionUsage, applied } = await this.runVisionRetry(
+        assembled,
+        auditContext.documentId,
+        confidenceThreshold,
+        language,
+        auditContext,
+      );
+      tokenUsage = mergeTokenUsage(tokenUsage, visionUsage);
+      if (applied > 0) {
+        this.logger.log(`Vision retry: ${applied} rows updated`);
+      }
+    }
+
     const matched = assembled.filter((p) => p.matched).length;
     this.logger.log(
       `Classification done: ${matched}/${assembled.length} matched, ${codesToLoad.size} unique codes`,
@@ -984,6 +1044,285 @@ export class ClassifierService {
         notes,
       };
     });
+  }
+
+  private async runVisionRetry(
+    assembled: ClassifiedProduct[],
+    documentId: string,
+    confidenceThreshold: number,
+    language: string | undefined,
+    auditContext: AuditContext | null,
+  ): Promise<{ tokenUsage: TokenUsageMap; applied: number }> {
+    if (!this.anthropic || !this.photoStorage) {
+      return { tokenUsage: emptyTokenUsageMap(), applied: 0 };
+    }
+
+    const lowConfIndices: number[] = [];
+    for (let i = 0; i < assembled.length; i++) {
+      const p = assembled[i];
+      if (!p.matched || p.matchConfidence < confidenceThreshold) {
+        lowConfIndices.push(i);
+      }
+    }
+    if (lowConfIndices.length === 0) return { tokenUsage: emptyTokenUsageMap(), applied: 0 };
+
+    const photos = await this.photoStorage.getFirstByRows(documentId, lowConfIndices);
+    if (photos.length === 0) return { tokenUsage: emptyTokenUsageMap(), applied: 0 };
+
+    const photoByRow = new Map<number, DocumentPhoto>();
+    for (const ph of photos) photoByRow.set(ph.rowIndex, ph);
+
+    const tasks = lowConfIndices
+      .map((i) => ({ index: i, photo: photoByRow.get(i) }))
+      .filter((t): t is { index: number; photo: DocumentPhoto } => !!t.photo);
+    if (tasks.length === 0) return { tokenUsage: emptyTokenUsageMap(), applied: 0 };
+
+    const model = await this.aiConfig.getPhotoClassifierModel();
+    let totalUsage = emptyTokenUsageMap();
+
+    type TaskResult = { task: { index: number; photo: DocumentPhoto }; result: VisionResult | null };
+    const completed: TaskResult[] = [];
+    for (let g = 0; g < tasks.length; g += VISION_CONCURRENCY) {
+      const batch = tasks.slice(g, g + VISION_CONCURRENCY);
+      const batchResults = await Promise.all(
+        batch.map(async (t): Promise<TaskResult & { tokenUsage: TokenUsageMap }> => {
+          const product = assembled[t.index];
+          const cacheKey = [t.photo.imageHash, product.tnVedCode, language ?? 'ru', model].join('\x1F');
+          const now = Date.now();
+          const cached = this.visionCache.get(cacheKey);
+          if (cached && cached.expiresAt > now) {
+            return { task: t, result: cached.data, tokenUsage: emptyTokenUsageMap() };
+          }
+          try {
+            const { result, tokenUsage } = await this.executeVisionCall(
+              product,
+              t.photo,
+              model,
+              language,
+              auditContext,
+            );
+            if (result) {
+              this.visionCache.set(cacheKey, {
+                data: result,
+                expiresAt: now + CLASSIFICATION_CACHE_TTL,
+              });
+            }
+            return { task: t, result, tokenUsage };
+          } catch (err) {
+            this.logger.warn(`Vision call failed for row ${t.index}: ${errMsg(err)}`);
+            return { task: t, result: null, tokenUsage: emptyTokenUsageMap() };
+          }
+        }),
+      );
+      for (const r of batchResults) {
+        totalUsage = mergeTokenUsage(totalUsage, r.tokenUsage);
+        completed.push({ task: r.task, result: r.result });
+      }
+    }
+
+    // Один батчевый loadTnvedRates под все новые коды — иначе N последовательных
+    // обращений к TKS (через кэш PgTksCacheStore это дёшево, но всё равно лишние round-trips).
+    const newCodesSet = new Set<string>();
+    for (const r of completed) {
+      if (!r.result) continue;
+      const next = r.result.tnVedCode;
+      const current = assembled[r.task.index].tnVedCode;
+      if (next && next !== current) newCodesSet.add(next);
+    }
+    const tnvedByNewCode = newCodesSet.size > 0
+      ? await this.loadTnvedRates([...newCodesSet])
+      : new Map<string, TnvedCode>();
+
+    let applied = 0;
+    for (const r of completed) {
+      if (!r.result) continue;
+      const updated = this.applyVisionUpdate(assembled[r.task.index], r.result, tnvedByNewCode);
+      if (updated) {
+        assembled[r.task.index] = updated;
+        applied++;
+      }
+    }
+
+    this.evictExpiredVisionCache();
+    return { tokenUsage: totalUsage, applied };
+  }
+
+  private async executeVisionCall(
+    product: ClassifiedProduct,
+    photo: DocumentPhoto,
+    model: string,
+    language: string | undefined,
+    auditContext: AuditContext | null,
+  ): Promise<{ result: VisionResult | null; tokenUsage: TokenUsageMap }> {
+    if (!this.anthropic) return { result: null, tokenUsage: emptyTokenUsageMap() };
+
+    const localizedHint =
+      language && language !== 'ru'
+        ? `\nДополнительно: верни comment_localized на ${language === 'zh' ? 'китайском' : 'английском'}.`
+        : '';
+    const userText =
+      `Подтверди или скорректируй код ТН ВЭД для товара по фотографии.\n\n` +
+      `Текущее описание: ${product.description}\n` +
+      (product.rawContext ? `Контекст: ${product.rawContext}\n` : '') +
+      `Текущий код: ${product.tnVedCode || '(не определён)'} — ${product.tnVedDescription}\n` +
+      `Текущая уверенность: ${product.matchConfidence.toFixed(2)}\n\n` +
+      `Если фото подтверждает текущий код — верни тот же tnVedCode и подними confidence. ` +
+      `Если фото противоречит описанию (например, фактический материал/тип товара другой) — ` +
+      `предложи более подходящий 10-значный код. ` +
+      `В comment кратко объясни, что увидел на фото и почему это соответствует или не соответствует коду.${localizedHint}`;
+
+    const sdkMessages = [
+      {
+        role: 'user' as const,
+        content: [
+          {
+            type: 'image' as const,
+            source: {
+              type: 'base64' as const,
+              media_type: 'image/jpeg' as const,
+              data: photo.bytes.toString('base64'),
+            },
+          },
+          { type: 'text' as const, text: userText },
+        ],
+      },
+    ];
+
+    // В audit пишем легковесный request — без base64-байтов, иначе ai_call.request
+    // распухнет на ~270 KB на каждый vision-вызов.
+    const auditRequest = {
+      model,
+      max_tokens: 1024,
+      system: VISION_SYSTEM_PROMPT,
+      prompt: userText,
+      photoHash: photo.imageHash,
+      photoSizeBytes: photo.bytes.length,
+      tools: [VISION_TOOL.name],
+      tool_choice: 'any',
+    };
+
+    const response = await this.audit.trackAiCall(
+      {
+        context: auditContext,
+        purpose: 'classify_vision',
+        model,
+        request: auditRequest,
+      },
+      () =>
+        this.anthropic!.messages.create(
+          {
+            model,
+            max_tokens: 1024,
+            system: systemPrompt(VISION_SYSTEM_PROMPT),
+            messages: sdkMessages,
+            tools: [VISION_TOOL],
+            tool_choice: { type: 'any' },
+          },
+          { timeout: CLAUDE_TIMEOUT_PIPELINE_MS },
+        ),
+    );
+
+    const parsed = extractToolInput<{
+      tnVedCode: string;
+      confidence: number;
+      comment: string;
+      comment_localized?: string;
+    }>(response);
+    return {
+      result: {
+        tnVedCode: String(parsed.tnVedCode ?? '').replace(/\D/g, ''),
+        confidence: Math.max(0, Math.min(1, Number(parsed.confidence) || 0)),
+        comment: String(parsed.comment ?? ''),
+        commentLocalized: parsed.comment_localized
+          ? String(parsed.comment_localized)
+          : undefined,
+      },
+      tokenUsage: tokenUsageFromResponse(model, response.usage),
+    };
+  }
+
+  private applyVisionUpdate(
+    product: ClassifiedProduct,
+    vision: VisionResult,
+    tnvedByNewCode: Map<string, TnvedCode>,
+  ): ClassifiedProduct | null {
+    const sameCode = vision.tnVedCode && vision.tnVedCode === product.tnVedCode;
+    const newCode = vision.tnVedCode && vision.tnVedCode !== product.tnVedCode ? vision.tnVedCode : null;
+    if (!sameCode && !newCode) return null;
+
+    const newTnved = newCode ? tnvedByNewCode.get(newCode) : undefined;
+    if (newCode && !newTnved) {
+      // Vision предложил код вне справочника — не применяем (как в text-retry).
+      return null;
+    }
+
+    const note: ProductNote = {
+      stage: 'classify',
+      severity: 'info',
+      field: 'code',
+      message: sameCode
+        ? `Фото подтвердило код ${product.tnVedCode} (vision conf ${vision.confidence.toFixed(2)}). ${vision.comment}`
+        : `Фото скорректировало код ${product.tnVedCode || '(не определён)'} → ${newCode} (vision conf ${vision.confidence.toFixed(2)}). ${vision.comment}`,
+      messageLocalized: vision.commentLocalized
+        ? sameCode
+          ? `Photo confirmed code ${product.tnVedCode} (vision conf ${vision.confidence.toFixed(2)}). ${vision.commentLocalized}`
+          : `Photo corrected code ${product.tnVedCode || '(none)'} → ${newCode} (vision conf ${vision.confidence.toFixed(2)}). ${vision.commentLocalized}`
+        : undefined,
+    };
+
+    if (sameCode) {
+      return {
+        ...product,
+        matchConfidence: Math.max(product.matchConfidence, vision.confidence),
+        verified: true,
+        notes: [...product.notes, note],
+      };
+    }
+
+    return {
+      ...product,
+      ...this.buildRateFields(newTnved!),
+      matchConfidence: vision.confidence,
+      matched: true,
+      tnvedRaw: newTnved!,
+      verified: true,
+      suggestedCode: null,
+      verificationComment: vision.comment,
+      notes: [...product.notes, note],
+    };
+  }
+
+  private buildRateFields(tnved: TnvedCode): {
+    tnVedCode: string;
+    tnVedDescription: string;
+    dutyRate: number;
+    dutyRateUnit: string | null;
+    dutySign: string | null;
+    dutyMin: number | null;
+    dutyMinUnit: string | null;
+    vatRate: number;
+    exciseRate: number;
+  } {
+    const rates = tnved.TNVED;
+    return {
+      tnVedCode: tnved.CODE,
+      tnVedDescription: tnved.KR_NAIM,
+      dutyRate: rates?.IMP ?? 0,
+      dutyRateUnit: normalizeImpediUnit(rates?.IMPEDI),
+      dutySign: rates?.IMPSIGN ?? null,
+      dutyMin: rates?.IMP2 ?? null,
+      dutyMinUnit: normalizeImpediUnit(rates?.IMPEDI2),
+      vatRate: rates?.NDS ?? 20,
+      exciseRate: rates?.AKC ?? 0,
+    };
+  }
+
+  private evictExpiredVisionCache(): void {
+    if (this.visionCache.size <= CLASSIFICATION_CACHE_MAX) return;
+    const now = Date.now();
+    for (const [key, entry] of this.visionCache) {
+      if (entry.expiresAt <= now) this.visionCache.delete(key);
+    }
   }
 
   private unmatched(

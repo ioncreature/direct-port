@@ -104,8 +104,9 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 → Если confident → status=PENDING → BullMQ: document-processing → status=PROCESSING
 → Если не confident → status=REQUIRES_REVIEW → ручная проверка в админке (PATCH :id/review + POST :id/reprocess, POST :id/approve или POST :id/reject)
 → [Воркер] Classifier+Verify (TKS API: searchGoodsGrouped → Claude classify+verify → getTnvedCode)
+→ Vision-retry (Phase 4.5): для строк с `matchConfidence < confidenceThreshold` при наличии фото в `document_photo` — отправка изображения + текста + текущего кода в Claude (`photoClassifierModel`), подтверждение или корректировка кода
 → Если все коды с низкой уверенностью и lowConfidenceAction='review' → status=CODE_REVIEW_REQUIRED
-→ DutyInterpreter (Claude: интерпретация правил расчёта пошлин)
+→ DutyInterpreter (Claude: интерпретация правил расчёта пошлин; пропускается для чисто адвалорных ставок без условий по стране/акциза/спецчасти)
 → При language≠ru: Claude возвращает comment_localized / reasoning_localized для двуязычных замечаний
 → Calculator (пошлина + НДС + акциз + комиссия, конвертация валют → RUB)
 → resultData + CalculationLog (аудит) + tokenUsage → BullMQ: document-notifications
@@ -301,16 +302,22 @@ Docker compose (порты выбраны чтобы не конфликтова
 
 **Свежесть:** Определяется динамически из `fetched_at + categoryTtl`, без колонки `expires_at`. Позволяет менять TTL без обновления строк.
 
-## Четыре точки применения AI (Claude)
+## Прочие БД-кэши и хранилища pipeline
 
-Конкретная модель Claude для каждого сценария настраивается в БД (таблица `ai_config`) через `PUT /ai-config` (только ADMIN). По умолчанию: parser=sonnet, classifier=sonnet, interpreter=sonnet, queryFormulation=haiku. Подробнее — `docs/AI_CONFIG.md`.
+- `duty_interpretation_cache` (`DutyInterpretationCache`) — persistent cache интерпретаций пошлин Claude. Ключ `(tnvedCode, language, model)`, TTL 180 дней. Между рестартами и репликами API повторно интерпретировать известные коды не требуется. Реализация — `DutyInterpreterService.loadFromPersistentCache / savePersistentCache`. In-memory L1 (1 час) поверх БД L2.
+- `document_photo` (`DocumentPhoto`) — фотографии товаров, извлечённые из xlsx. Ресайз до ≤1024px JPEG (q=85) через `sharp`, sha256-hash для дедупликации, привязка к `rowIndex` в parsedData. Запись — `PhotoStorageService.savePhotos` после успешного парсинга (idempotent: `delete({ documentId })` перед save). Чтение vision-retry'ем — `getFirstByRows(documentId, rowIndices)`. Кап `MAX_IMAGES_PER_DOC=200`. Удаление каскадом при удалении документа.
+
+## Пять точек применения AI (Claude)
+
+Конкретная модель Claude для каждого сценария настраивается в БД (таблица `ai_config`) через `PUT /ai-config` (только ADMIN). По умолчанию: parser=sonnet, classifier=sonnet, interpreter=sonnet, queryFormulation=haiku, photoClassifier=sonnet. Подробнее — `docs/AI_CONFIG.md`.
 
 1. **Парсинг документов** (AiParserService, поле `parserModel`) — анализ структуры таблицы, определение валюты, перевод наименований, извлечение данных, автодетект страны происхождения. Детерминистическая + AI валидация, retry до 2 попыток
 2. **Классификация+верификация кодов ТН ВЭД** (ClassifierService, поле `classifierModel`) — объединённый classify+verify в одном запросе Claude. При language≠ru промпт запрашивает comment_localized для двуязычных замечаний
-3. **Интерпретация правил расчёта пошлин** (DutyInterpreterService, поле `interpreterModel`) — анализ текстовых правил из справочника ТН ВЭД: комбинированные ставки, специфические пошлины (EUR/кг, EUR/л), акцизы. При language≠ru промпт запрашивает reasoning_localized
-4. **Перевод поисковых запросов** (TnVedService, поле `queryFormulationModel`) — перевод запросов в справочнике ТН ВЭД с английского/китайского на русский для поиска в TKS API. max_tokens: 100, timeout: 10с. Graceful degradation: без API-ключа поиск работает без перевода. ⚠️ В коде модель сейчас захардкожена `claude-sonnet-4-6` (`tn-ved.service.ts:257`), хотя `AiConfigService.getQueryFormulationModel()` уже существует и должен использоваться — расхождение, требующее правки
+3. **Vision-retry классификации** (ClassifierService Phase 4.5, поле `photoClassifierModel`) — для строк с `matchConfidence < CalculationConfig.confidenceThreshold` при наличии фото в `document_photo`. Claude получает текст+фото+текущий код через vision-API, подтверждает (повышает confidence) или корректирует код (новый загружается из TKS, переписывает rates). In-memory cache по `imageHash + tnVedCode + language + model`, TTL 24ч, концурент 3. Audit-purpose `classify_vision`. Тихо пропускается, если фото нет / `documentId` не известен / все строки выше threshold
+4. **Интерпретация правил расчёта пошлин** (DutyInterpreterService, поле `interpreterModel`) — анализ текстовых правил из справочника ТН ВЭД: комбинированные ставки, специфические пошлины (EUR/кг, EUR/л), акцизы. При language≠ru промпт запрашивает reasoning_localized. Пропускается для чисто адвалорных кодов (нет IMP2/IMPSIGN/AKC/IMPTMP/IMPDEMP/IMPCOMP/flat-currency и нет country/excise conditions) — у них Calculator считает по плоским полям TNVED без AI
+5. **Перевод поисковых запросов** (TnVedService, поле `queryFormulationModel`) — перевод запросов в справочнике ТН ВЭД с английского/китайского на русский для поиска в TKS API. max_tokens: 100, timeout: 10с. Graceful degradation: без API-ключа поиск работает без перевода. ⚠️ В коде модель сейчас захардкожена `claude-sonnet-4-6` (`tn-ved.service.ts:257`), хотя `AiConfigService.getQueryFormulationModel()` уже существует и должен использоваться — расхождение, требующее правки
 
-Все вызовы Claude учитываются: токены классификатора/интерпретатора/парсера записываются в `Document.tokenUsage` (per-stage per-model), вызовы перевода — в таблицу `ai_usage_log`. См. `docs/AI_USAGE_TRACKING.md`.
+Все вызовы Claude учитываются: токены парсера/классификатора (включая vision-retry)/интерпретатора записываются в `Document.tokenUsage` (per-stage per-model), вызовы перевода — в таблицу `ai_usage_log`. См. `docs/AI_USAGE_TRACKING.md`.
 
 ## Локализация бота (i18n)
 
