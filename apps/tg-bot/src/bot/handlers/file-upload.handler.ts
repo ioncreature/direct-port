@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ApiClientService } from '../../api-client/api-client.service';
 import { formatUser } from '../format-user';
-import { type BotContext, mapTelegramLocale } from '../i18n';
+import { type BotContext, mapTelegramLocale, tErrorCode } from '../i18n';
 import { ConversationStateService } from '../state/conversation-state.service';
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
@@ -78,8 +78,7 @@ export class FileUploadHandler {
     } catch (err) {
       this.logger.error(`File upload failed for "${fileName}" from ${user}: ${(err as Error).message}`);
       const code = (err as { response?: { data?: { code?: string } } })?.response?.data?.code;
-      const msgKey = code ? `error-${code}` : 'upload-error';
-      await ctx.reply(ctx.t(msgKey));
+      await ctx.reply(tErrorCode(ctx.from?.language_code, code, 'upload-error'));
     }
   }
 }

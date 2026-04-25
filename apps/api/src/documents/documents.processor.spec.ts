@@ -393,7 +393,7 @@ describe('DocumentsProcessor.process', () => {
       expect(doc.errorMessage).toBe('Classify failed');
       expect(notificationQueue.add).toHaveBeenCalledWith(
         'document-ready',
-        expect.objectContaining({ status: 'failed', errorMessage: 'Classify failed' }),
+        expect.objectContaining({ status: 'failed', errorCode: 'PROCESSING_FAILED' }),
       );
     });
 

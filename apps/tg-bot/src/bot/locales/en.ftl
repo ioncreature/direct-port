@@ -111,5 +111,7 @@ status-rejected = Rejected
 error-FILE_REQUIRED = No file attached. Please send an .xlsx or .csv file.
 error-UNSUPPORTED_FORMAT = Only .xlsx and .csv files are supported.
 error-DOCUMENT_NOT_FOUND = Document not found.
+error-PARSING_FAILED = Failed to parse the file. Check the format and try again.
 error-PROCESSING_FAILED = Error processing the document.
+error-MISSING_FILE_BUFFER = The file was not saved on the server. Please upload the document again.
 error-unknown = An unexpected error occurred. Please try again.

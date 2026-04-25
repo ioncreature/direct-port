@@ -111,5 +111,7 @@ status-rejected = Отклонён
 error-FILE_REQUIRED = Файл не прикреплён. Отправьте файл .xlsx или .csv.
 error-UNSUPPORTED_FORMAT = Поддерживаются только файлы .xlsx и .csv.
 error-DOCUMENT_NOT_FOUND = Документ не найден.
+error-PARSING_FAILED = Не удалось разобрать файл. Проверьте формат и попробуйте снова.
 error-PROCESSING_FAILED = Ошибка при обработке документа.
+error-MISSING_FILE_BUFFER = Файл не сохранился на сервере. Загрузите документ заново.
 error-unknown = Произошла непредвиденная ошибка. Попробуйте ещё раз.

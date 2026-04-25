@@ -111,5 +111,7 @@ status-rejected = 已拒绝
 error-FILE_REQUIRED = 未附加文件，请发送 .xlsx 或 .csv 文件。
 error-UNSUPPORTED_FORMAT = 仅支持 .xlsx 和 .csv 文件。
 error-DOCUMENT_NOT_FOUND = 未找到文档。
+error-PARSING_FAILED = 文件解析失败，请检查格式后重试。
 error-PROCESSING_FAILED = 文档处理出错。
+error-MISSING_FILE_BUFFER = 文件未保存在服务器上，请重新上传。
 error-unknown = 发生意外错误，请重试。

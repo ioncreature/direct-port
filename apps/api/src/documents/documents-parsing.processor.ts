@@ -4,8 +4,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Job, Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 import { AiParserService } from '../ai-parser/ai-parser.service';
+import { ErrorCode } from '../common/error-codes';
 import { errMsg } from '../common/errors';
 import { buildOutputFileName, getDocumentClientName } from '../common/output-filename';
+import { localizeRejectionReasonsForUser } from '../common/rejection-reasons';
 import { addStageUsage } from '../common/token-usage';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { PipelineAuditService } from '../pipeline-audit/pipeline-audit.service';
@@ -46,7 +48,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
       doc.status = DocumentStatus.FAILED;
       doc.errorMessage = 'File buffer is missing';
       await this.repo.save(doc);
-      await this.notify({ doc, status: 'failed', errorMessage: doc.errorMessage });
+      await this.notify({ doc, status: 'failed', errorCode: ErrorCode.MISSING_FILE_BUFFER });
       return;
     }
 
@@ -71,8 +73,20 @@ export class DocumentsParsingProcessor extends WorkerHost {
         doc.originalFileName,
         auditCtx,
       );
-      const { products, currency, columnMapping, feasibility, rejectionReasons, tokenUsage, countrySuggestion } =
-        parseResult;
+      const {
+        products,
+        currency,
+        columnMapping,
+        feasibility,
+        rejectionReasons,
+        rejectionReasonsData,
+        tokenUsage,
+        countrySuggestion,
+      } = parseResult;
+      const rejectionReasonsLocalized = localizeRejectionReasonsForUser(
+        rejectionReasonsData,
+        doc.language ?? doc.telegramUser?.language,
+      );
 
       doc.parsedData = products;
       doc.currency = currency;
@@ -113,7 +127,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
         doc.status = DocumentStatus.REJECTED;
         doc.rejectionReasons = rejectionReasons.length > 0 ? rejectionReasons : null;
         await this.repo.save(doc);
-        await this.notify({ doc, status: 'rejected', rejectionReasons });
+        await this.notify({ doc, status: 'rejected', rejectionReasons, rejectionReasonsLocalized });
         this.logger.log(`Document ${documentId} rejected: ${rejectionReasons.join('; ')}`);
       } else if (feasibility === 'ok') {
         doc.status = DocumentStatus.PENDING;
@@ -135,7 +149,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
       doc.errorMessage = errMsg(err) || 'Parsing failed';
       doc.fileBuffer = null;
       await this.repo.save(doc);
-      await this.notify({ doc, status: 'failed', errorMessage: doc.errorMessage ?? undefined });
+      await this.notify({ doc, status: 'failed', errorCode: ErrorCode.PARSING_FAILED });
       this.logger.error(
         `Document ${documentId} parsing failed: ${doc.errorMessage}`,
         err instanceof Error ? err.stack : err,
@@ -147,7 +161,9 @@ export class DocumentsParsingProcessor extends WorkerHost {
     doc: Document;
     status: DocumentNotification['status'];
     errorMessage?: string;
+    errorCode?: string;
     rejectionReasons?: string[];
+    rejectionReasonsLocalized?: string[];
   }): Promise<void> {
     const telegramId = opts.doc.telegramUser?.telegramId;
     if (!telegramId) return;
@@ -158,7 +174,9 @@ export class DocumentsParsingProcessor extends WorkerHost {
       telegramUserId: telegramId,
       status: opts.status,
       errorMessage: opts.errorMessage,
+      errorCode: opts.errorCode,
       rejectionReasons: opts.rejectionReasons,
+      rejectionReasonsLocalized: opts.rejectionReasonsLocalized,
       language: opts.doc.language ?? opts.doc.telegramUser?.language,
       outputFileName: buildOutputFileName(opts.doc.createdAt, clientName),
     };

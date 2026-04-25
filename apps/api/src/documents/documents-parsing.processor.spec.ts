@@ -38,6 +38,7 @@ function makeParseResult(overrides: Partial<AiParseResult> = {}): AiParseResult 
     columnMapping: { description: 0, price: 1, weight: 2, quantity: 3 },
     feasibility: 'ok',
     rejectionReasons: [],
+    rejectionReasonsData: [],
     countrySuggestion: null,
     tokenUsage: {},
     ...overrides,
@@ -328,7 +329,7 @@ describe('DocumentsParsingProcessor.process', () => {
         'document-ready',
         expect.objectContaining({
           status: 'failed',
-          errorMessage: 'Claude rate limit',
+          errorCode: 'PARSING_FAILED',
         }),
       );
     });

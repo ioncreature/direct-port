@@ -7,8 +7,14 @@ import { CalculationConfigService } from '../calculation-config/calculation-conf
 import { CalculationLogsService } from '../calculation-logs/calculation-logs.service';
 import { CalculatorService, type CalculatedProduct, type CalculatorInput } from '../calculator/calculator.service';
 import { ClassifierService, type ProductRow } from '../classifier/classifier.service';
+import { ErrorCode } from '../common/error-codes';
 import { errMsg } from '../common/errors';
 import { defaultCountryWarningNote, type ProductNote } from '../common/product-notes';
+import {
+  type RejectionReasonData,
+  formatRejectionReason,
+  localizeRejectionReasonsForUser,
+} from '../common/rejection-reasons';
 import { addStageUsage } from '../common/token-usage';
 import { CurrencyService } from '../currency/currency.service';
 import { KNOWN_CURRENCIES } from '../common/normalize-impedi';
@@ -252,14 +258,19 @@ export class DocumentsProcessor extends WorkerHost {
         };
       });
       let hasRowErrors = false;
-      const lowConfidenceReasons: string[] = [];
+      const lowConfidenceReasonsData: RejectionReasonData[] = [];
       for (let i = 0; i < summary.items.length; i++) {
         const item = summary.items[i];
         if (item.calculationStatus === 'error') hasRowErrors = true;
         if (!item.matched || item.matchConfidence < confidenceThreshold) {
-          lowConfidenceReasons.push(this.formatLowConfidenceReason(i, item, confidenceThreshold));
+          lowConfidenceReasonsData.push(this.buildLowConfidenceReason(i, item, confidenceThreshold));
         }
       }
+      const lowConfidenceReasons = lowConfidenceReasonsData.map((d) => formatRejectionReason(d, 'ru'));
+      const lowConfidenceReasonsLocalized = localizeRejectionReasonsForUser(
+        lowConfidenceReasonsData,
+        doc.language ?? doc.telegramUser?.language,
+      );
 
       void this.audit.completeStageRun(currentStageRunId, {
         output: {
@@ -283,7 +294,12 @@ export class DocumentsProcessor extends WorkerHost {
         if (lowConfidenceAction === 'reject') {
           doc.status = DocumentStatus.REJECTED;
           await this.repo.save(doc);
-          await this.notify({ doc, status: 'rejected', rejectionReasons: lowConfidenceReasons });
+          await this.notify({
+            doc,
+            status: 'rejected',
+            rejectionReasons: lowConfidenceReasons,
+            rejectionReasonsLocalized: lowConfidenceReasonsLocalized,
+          });
         } else {
           doc.status = DocumentStatus.CODE_REVIEW_REQUIRED;
           await this.repo.save(doc);
@@ -331,7 +347,7 @@ export class DocumentsProcessor extends WorkerHost {
       doc.status = DocumentStatus.FAILED;
       doc.errorMessage = errMsg(err) || 'Unknown error';
       await this.repo.save(doc);
-      await this.notify({ doc, status: 'failed', errorMessage: doc.errorMessage ?? undefined });
+      await this.notify({ doc, status: 'failed', errorCode: ErrorCode.PROCESSING_FAILED });
       this.logger.error(
         `Document ${documentId} processing failed: ${doc.errorMessage}`,
         err instanceof Error ? err.stack : err,
@@ -610,12 +626,16 @@ export class DocumentsProcessor extends WorkerHost {
     doc: Document;
     status: DocumentNotification['status'];
     errorMessage?: string;
+    errorCode?: string;
     sendResultFile?: boolean;
     rejectionReasons?: string[];
+    rejectionReasonsLocalized?: string[];
   }): Promise<void> {
     const payload = buildDocumentNotificationPayload(opts.doc, opts.status, {
       errorMessage: opts.errorMessage,
+      errorCode: opts.errorCode,
       rejectionReasons: opts.rejectionReasons,
+      rejectionReasonsLocalized: opts.rejectionReasonsLocalized,
       sendResultFile: opts.sendResultFile,
     });
     if (!payload) return;
@@ -625,18 +645,23 @@ export class DocumentsProcessor extends WorkerHost {
     });
   }
 
-  private formatLowConfidenceReason(
+  private buildLowConfidenceReason(
     idx: number,
     item: { description: string; tnVedCode?: string; matchConfidence: number; matched: boolean },
     threshold: number,
-  ): string {
+  ): RejectionReasonData {
     const row = idx + 1;
-    const desc = item.description || '—';
+    const description = item.description || '';
     if (!item.matched) {
-      return `Строка ${row}: «${desc}» — код ТН ВЭД не определён (ниже порога ${threshold.toFixed(2)}).`;
+      return { type: 'low_confidence_no_match', row, description, threshold };
     }
-    const code = item.tnVedCode || '—';
-    const conf = item.matchConfidence.toFixed(2);
-    return `Строка ${row}: «${desc}» — код ${code}, уверенность ${conf} (ниже порога ${threshold.toFixed(2)}).`;
+    return {
+      type: 'low_confidence_with_code',
+      row,
+      description,
+      code: item.tnVedCode || '',
+      confidence: item.matchConfidence,
+      threshold,
+    };
   }
 }

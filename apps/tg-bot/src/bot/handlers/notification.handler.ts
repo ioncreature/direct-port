@@ -4,14 +4,16 @@ import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 import { Api, InputFile } from 'grammy';
 import { ApiClientService } from '../../api-client/api-client.service';
-import { i18n } from '../i18n';
+import { i18n, tErrorCode } from '../i18n';
 
 interface DocumentNotification {
   documentId: string;
   telegramUserId: string;
   status: 'processed' | 'processed_with_errors' | 'failed' | 'rejected' | 'code_review_required';
   errorMessage?: string;
+  errorCode?: string;
   rejectionReasons?: string[];
+  rejectionReasonsLocalized?: string[];
   language?: string;
   outputFileName?: string;
   sendResultFile?: boolean;
@@ -37,8 +39,18 @@ export class NotificationHandler extends WorkerHost {
   }
 
   async process(job: Job<DocumentNotification>): Promise<void> {
-    const { documentId, telegramUserId, status, errorMessage, rejectionReasons, language, outputFileName, sendResultFile } =
-      job.data;
+    const {
+      documentId,
+      telegramUserId,
+      status,
+      errorMessage,
+      errorCode,
+      rejectionReasons,
+      rejectionReasonsLocalized,
+      language,
+      outputFileName,
+      sendResultFile,
+    } = job.data;
     this.logger.log(`Notification for document ${documentId}: ${status}`);
 
     if (!this.tgApi) {
@@ -49,7 +61,7 @@ export class NotificationHandler extends WorkerHost {
     const chatId = telegramUserId;
 
     if (status === 'rejected') {
-      const reasons = rejectionReasons ?? [];
+      const reasons = rejectionReasonsLocalized ?? rejectionReasons ?? [];
       const reasonsList =
         reasons.length > 0
           ? reasons.map((r, i) => `${i + 1}. ${r}`).join('\n')
@@ -64,9 +76,9 @@ export class NotificationHandler extends WorkerHost {
     }
 
     if (status === 'failed') {
-      const detail = errorMessage
-        ? errorMessage
-        : this.t(language, 'notif-failed-retry');
+      const detail = errorCode
+        ? tErrorCode(language, errorCode, 'notif-failed-retry')
+        : errorMessage ?? this.t(language, 'notif-failed-retry');
       await this.tgApi
         .sendMessage(chatId, this.t(language, 'notif-failed', { detail }))
         .catch((err) => this.logger.error(`Failed to send error notification to ${chatId}`, err));

@@ -21,3 +21,22 @@ export function mapTelegramLocale(languageCode: string | undefined): SupportedLo
   if (languageCode.startsWith('zh')) return 'zh';
   return 'en';
 }
+
+/**
+ * Render an `error-{code}` Fluent key with safe fallback. If the code is
+ * missing or its key is not defined in the locale, returns the fallback key.
+ *
+ * Fluent returns the literal `{error-FOO}` placeholder for unknown keys,
+ * which would leak through to the user — guard against that.
+ */
+export function tErrorCode(
+  language: string | undefined,
+  code: string | undefined,
+  fallbackKey: string,
+): string {
+  const lang = mapTelegramLocale(language);
+  if (!code) return i18n.t(lang, fallbackKey);
+  const value = i18n.t(lang, `error-${code}`);
+  if (value.startsWith('{') && value.endsWith('}')) return i18n.t(lang, fallbackKey);
+  return value;
+}

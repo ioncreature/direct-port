@@ -10,6 +10,10 @@ import {
 } from '../common/claude';
 import { errMsg } from '../common/errors';
 import { normalizeOksmtCode } from '../common/oksmt';
+import {
+  type RejectionReasonData,
+  formatRejectionReason,
+} from '../common/rejection-reasons';
 import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, tokenUsageFromResponse } from '../common/token-usage';
 import type { Dimension } from '../duty-interpreter/interfaces';
 import type { AiCallPurpose } from '../database/entities/ai-call.entity';
@@ -48,12 +52,22 @@ export interface AiParseResult {
   feasibility: ParseFeasibility;
   /** Причины отклонения (при rejected) или замечания (при review). Пустой для ok. */
   rejectionReasons: string[];
+  /**
+   * Структурированные причины — параметры для рендеринга на разных языках.
+   * Совпадает по содержанию с rejectionReasons, но позволяет локализовать
+   * причины для бота. Пусто, когда нет ничего, что можно структурировать
+   * (например, AI-замечания в режиме review приходят как свободный текст).
+   */
+  rejectionReasonsData: RejectionReasonData[];
   /** Предположение AI о стране происхождения товара. null — не удалось определить. */
   countrySuggestion: CountrySuggestion | null;
   tokenUsage: TokenUsageMap;
 }
 
-type RawParseResult = Omit<AiParseResult, 'feasibility' | 'rejectionReasons' | 'tokenUsage' | 'countrySuggestion'> & {
+type RawParseResult = Omit<
+  AiParseResult,
+  'feasibility' | 'rejectionReasons' | 'rejectionReasonsData' | 'tokenUsage' | 'countrySuggestion'
+> & {
   countrySuggestion?: CountrySuggestion | null;
 };
 
@@ -375,21 +389,23 @@ export class AiParserService {
 
     if (data.rows.length > MAX_ROWS) {
       this.logger.warn(`File rejected: too many rows (${data.rows.length} > ${MAX_ROWS})`);
-      return this.rejected([
-        `Файл содержит слишком много строк (более ${MAX_ROWS}). Пожалуйста, разделите файл на части не более ${MAX_ROWS} строк.`,
-      ]);
+      return this.rejected([{ type: 'too_many_rows', max: MAX_ROWS }]);
     }
 
     if (data.rows.length < 2) {
       this.logger.warn(`File rejected: too few rows (${data.rows.length})`);
-      return this.rejected(['Файл пустой или содержит только заголовок (менее 2 строк).']);
+      return this.rejected([{ type: 'file_empty' }]);
     }
 
     const tsv = this.formatAsTsv(data.rows);
     if (tsv.length > MAX_TSV_LENGTH) {
       this.logger.warn(`File rejected: content too large (${tsv.length} chars > ${MAX_TSV_LENGTH})`);
       return this.rejected([
-        `Содержимое файла слишком большое (${Math.round(tsv.length / 1000)}K символов). Максимум — ${MAX_TSV_LENGTH / 1000}K. Уменьшите объём текста в ячейках или разделите файл.`,
+        {
+          type: 'file_too_large',
+          sizeKChars: Math.round(tsv.length / 1000),
+          maxKChars: MAX_TSV_LENGTH / 1000,
+        },
       ]);
     }
 
@@ -467,7 +483,14 @@ export class AiParserService {
         this.logger.log(
           `Parsed ${result.products.length} products, currency=${result.currency} (attempt ${attempt})`,
         );
-        return { ...result, feasibility: 'ok', rejectionReasons: [], countrySuggestion: null, tokenUsage: totalUsage };
+        return {
+          ...result,
+          feasibility: 'ok',
+          rejectionReasons: [],
+          rejectionReasonsData: [],
+          countrySuggestion: null,
+          tokenUsage: totalUsage,
+        };
       }
 
       this.logger.warn(`Attempt ${attempt}: AI validation issues: ${validation.issues.join('; ')}`);
@@ -623,7 +646,14 @@ export class AiParserService {
     }
 
     this.logger.log(`Parsed ${allProducts.length} products in ${chunks.length} chunks, currency=${currency}`);
-    return { ...fullResult, feasibility: 'ok', rejectionReasons: [], countrySuggestion: null, tokenUsage: totalUsage };
+    return {
+      ...fullResult,
+      feasibility: 'ok',
+      rejectionReasons: [],
+      rejectionReasonsData: [],
+      countrySuggestion: null,
+      tokenUsage: totalUsage,
+    };
   }
 
   private async analyzeStructure(
@@ -690,11 +720,11 @@ export class AiParserService {
    * review = данные есть, но AI не уверен — пусть декларант проверит.
    */
   private assessFeasibility(result: RawParseResult, issues: string[]): Omit<AiParseResult, 'tokenUsage'> {
-    const reasons: string[] = [];
+    const reasonsData: RejectionReasonData[] = [];
     const total = result.products.length;
 
     if (total === 0) {
-      reasons.push('Не удалось извлечь ни одного товара из файла.');
+      reasonsData.push({ type: 'no_products' });
     } else {
       let zeroPriceCount = 0;
       let emptyDescCount = 0;
@@ -706,38 +736,47 @@ export class AiParserService {
       }
 
       if (zeroPriceCount > 0) {
-        reasons.push(
-          `Не удалось определить цены: у ${zeroPriceCount} из ${total} товаров цена нулевая или не найдена.`,
-        );
+        reasonsData.push({ type: 'zero_price', count: zeroPriceCount, total });
       }
       if (emptyDescCount > 0) {
-        reasons.push(
-          `Описания товаров отсутствуют или слишком короткие для классификации по ТН ВЭД (${emptyDescCount} из ${total}).`,
-        );
+        reasonsData.push({ type: 'empty_description', count: emptyDescCount, total });
       }
       if (zeroWeightCount > 0) {
-        reasons.push(
-          `Не указан вес у ${zeroWeightCount} из ${total} товаров. Вес необходим для расчёта пошлин.`,
-        );
+        reasonsData.push({ type: 'zero_weight', count: zeroWeightCount, total });
       }
     }
+
+    const reasons = reasonsData.map((d) => formatRejectionReason(d, 'ru'));
 
     if (reasons.length > 0) {
       this.logger.warn(`Document rejected (${total} products): ${reasons.join('; ')}`);
-      return { ...result, feasibility: 'rejected', rejectionReasons: reasons, countrySuggestion: null };
+      return {
+        ...result,
+        feasibility: 'rejected',
+        rejectionReasons: reasons,
+        rejectionReasonsData: reasonsData,
+        countrySuggestion: null,
+      };
     }
 
     this.logger.log(`Document needs review (${total} products): ${issues.join('; ')}`);
-    return { ...result, feasibility: 'review', rejectionReasons: issues, countrySuggestion: null };
+    return {
+      ...result,
+      feasibility: 'review',
+      rejectionReasons: issues,
+      rejectionReasonsData: [],
+      countrySuggestion: null,
+    };
   }
 
-  private rejected(reasons: string[]): AiParseResult {
+  private rejected(reasonsData: RejectionReasonData[]): AiParseResult {
     return {
       products: [],
       currency: '',
       columnMapping: {},
       feasibility: 'rejected',
-      rejectionReasons: reasons,
+      rejectionReasons: reasonsData.map((d) => formatRejectionReason(d, 'ru')),
+      rejectionReasonsData: reasonsData,
       countrySuggestion: null,
       tokenUsage: emptyTokenUsageMap(),
     };

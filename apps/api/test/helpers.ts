@@ -97,6 +97,7 @@ export function createMockAiParser(): Partial<AiParserService> {
       columnMapping: { description: 0, price: 1, weight: 2, quantity: 3 },
       feasibility: 'ok',
       rejectionReasons: [],
+      rejectionReasonsData: [],
       tokenUsage: {},
     }),
   };
