@@ -22,6 +22,14 @@ export class AiConfig {
   @Column({ type: 'varchar', length: 10, name: 'interpreter_model', default: 'sonnet' })
   interpreterModel: AiModelTier;
 
+  /**
+   * Модель для второго прохода classifier с фотографиями товара (vision-retry
+   * для строк с matchConfidence ниже confidenceThreshold). Все доступные тиры
+   * Claude (opus/sonnet/haiku) поддерживают vision.
+   */
+  @Column({ type: 'varchar', length: 10, name: 'photo_classifier_model', default: 'sonnet' })
+  photoClassifierModel: AiModelTier;
+
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 }

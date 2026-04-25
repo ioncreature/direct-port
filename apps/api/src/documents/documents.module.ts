@@ -18,6 +18,7 @@ import { DocumentsController } from './documents.controller';
 import { DocumentsProcessor } from './documents.processor';
 import { DocumentsService } from './documents.service';
 import { ExcelExportService } from './excel-export.service';
+import { PhotoStorageModule } from '../photo-storage/photo-storage.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { ExcelExportService } from './excel-export.service';
     CalculationLogsModule,
     CountriesModule,
     DiagnosticsModule,
+    PhotoStorageModule,
   ],
   controllers: [DocumentsController],
   providers: [DocumentsService, DocumentsProcessor, DocumentsParsingProcessor, ExcelExportService],

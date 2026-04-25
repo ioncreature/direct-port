@@ -19,11 +19,13 @@ function createMockClaude(responses: unknown[]) {
 
 function createService(opts: {
   claudeResponses?: unknown[];
-  spreadsheetData?: { rows: string[][]; columnCount: number };
+  spreadsheetData?: { rows: string[][]; columnCount: number; images?: unknown[] };
   claudeEnabled?: boolean;
 } = {}) {
   const claudeEnabled = opts.claudeEnabled ?? true;
-  const spreadsheetData = opts.spreadsheetData ?? { rows: [], columnCount: 0 };
+  const spreadsheetData = opts.spreadsheetData
+    ? { ...opts.spreadsheetData, images: opts.spreadsheetData.images ?? [] }
+    : { rows: [], columnCount: 0, images: [] };
 
   const anthropic = claudeEnabled ? createMockClaude(opts.claudeResponses ?? []) : null;
 
@@ -52,13 +54,15 @@ function createService(opts: {
 }
 
 /** Стандартные 5 строк данных (header + 4 товара) */
-function makeSpreadsheetData(productCount = 4): { rows: string[][]; columnCount: number } {
+function makeSpreadsheetData(
+  productCount = 4,
+): { rows: string[][]; columnCount: number; images: never[] } {
   const header = ['Наименование', 'Цена', 'Вес', 'Количество'];
   const rows = [header];
   for (let i = 0; i < productCount; i++) {
     rows.push([`Товар ${i + 1}`, String((i + 1) * 100), String(i + 1), '10']);
   }
-  return { rows, columnCount: 4 };
+  return { rows, columnCount: 4, images: [] };
 }
 
 /** Ответ Claude — валидный результат парсинга */
@@ -96,7 +100,7 @@ describe('AiParserService', () => {
     it('rejected если файл слишком большой (>400 строк)', async () => {
       const rows = Array.from({ length: 402 }, (_, i) => [`row ${i}`]);
       const { service } = createService({
-        spreadsheetData: { rows, columnCount: 1 },
+        spreadsheetData: { rows, columnCount: 1, images: [] },
       });
 
       const result = await service.parse(Buffer.from(''), 'test.xlsx');
@@ -106,7 +110,7 @@ describe('AiParserService', () => {
 
     it('rejected если файл пустой (< 2 строк)', async () => {
       const { service } = createService({
-        spreadsheetData: { rows: [['header']], columnCount: 1 },
+        spreadsheetData: { rows: [['header']], columnCount: 1, images: [] },
       });
 
       const result = await service.parse(Buffer.from(''), 'test.xlsx');
@@ -393,6 +397,7 @@ describe('AiParserService', () => {
           ['Чайник', '200', '2', '5', 'нержавеющая сталь', 'ART-2'],
         ],
         columnCount: 6,
+        images: [],
       };
       const { service } = createService({
         spreadsheetData: data,
@@ -429,6 +434,7 @@ describe('AiParserService', () => {
           ['手提篮', '3.6', '17.6', '3200', '塑料', 'SL-50504-269'],
         ],
         columnCount: 6,
+        images: [],
       };
       const { service } = createService({
         spreadsheetData: data,

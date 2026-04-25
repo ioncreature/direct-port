@@ -39,6 +39,7 @@ export class AiConfigService {
         queryFormulationModel: 'haiku',
         classifierModel: 'sonnet',
         interpreterModel: 'sonnet',
+        photoClassifierModel: 'sonnet',
       }),
     );
     this.cached = created;
@@ -51,17 +52,21 @@ export class AiConfigService {
     queryFormulationModel?: AiModelTier;
     classifierModel?: AiModelTier;
     interpreterModel?: AiModelTier;
+    photoClassifierModel?: AiModelTier;
   }): Promise<AiConfig> {
     const config = await this.get();
     if (dto.parserModel !== undefined) config.parserModel = dto.parserModel;
     if (dto.queryFormulationModel !== undefined) config.queryFormulationModel = dto.queryFormulationModel;
     if (dto.classifierModel !== undefined) config.classifierModel = dto.classifierModel;
     if (dto.interpreterModel !== undefined) config.interpreterModel = dto.interpreterModel;
+    if (dto.photoClassifierModel !== undefined) config.photoClassifierModel = dto.photoClassifierModel;
     const saved = await this.repo.save(config);
     this.cached = saved;
     this.cachedAt = Date.now();
     this.logger.log(
-      `AI config updated: parser=${saved.parserModel}, queryFormulation=${saved.queryFormulationModel}, classifier=${saved.classifierModel}, interpreter=${saved.interpreterModel}`,
+      `AI config updated: parser=${saved.parserModel}, queryFormulation=${saved.queryFormulationModel}, ` +
+        `classifier=${saved.classifierModel}, interpreter=${saved.interpreterModel}, ` +
+        `photoClassifier=${saved.photoClassifierModel}`,
     );
     return saved;
   }
@@ -88,5 +93,11 @@ export class AiConfigService {
   async getInterpreterModel(): Promise<string> {
     const config = await this.get();
     return MODEL_IDS[config.interpreterModel] ?? MODEL_IDS.sonnet;
+  }
+
+  /** Возвращает model ID для второго прохода classifier с фото. */
+  async getPhotoClassifierModel(): Promise<string> {
+    const config = await this.get();
+    return MODEL_IDS[config.photoClassifierModel] ?? MODEL_IDS.sonnet;
   }
 }

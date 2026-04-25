@@ -1,10 +1,30 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { parse as csvParseSync } from 'csv-parse/sync';
 import * as ExcelJS from 'exceljs';
+import { errMsg } from '../common/errors';
+
+export interface SpreadsheetImage {
+  /** 0-indexed excel row, к которой xlsx-anchor привязал картинку. */
+  rowIndex: number;
+  bytes: Buffer;
+  extension: string;
+}
 
 export interface SpreadsheetData {
   rows: string[][];
   columnCount: number;
+  /** Встроенные картинки из xlsx, привязанные к строкам через twoCellAnchor.from.row. Пусто для CSV. */
+  images: SpreadsheetImage[];
+}
+
+interface ExcelJsImageAnchor {
+  imageId: string | number;
+  range?: { tl?: { nativeRow?: number; row?: number } };
+}
+
+interface ExcelJsImageMedia {
+  buffer?: Buffer;
+  extension?: string;
 }
 
 function extractCellValue(value: ExcelJS.CellValue): string {
@@ -47,7 +67,7 @@ export class SpreadsheetReaderService {
     const sheet = workbook.worksheets[0];
     if (!sheet) {
       this.logger.warn('XLSX has no worksheets');
-      return { rows: [], columnCount: 0 };
+      return { rows: [], columnCount: 0, images: [] };
     }
 
     const rows: string[][] = [];
@@ -63,8 +83,50 @@ export class SpreadsheetReaderService {
       columnCount = Math.max(columnCount, cells.length);
     });
 
-    this.logger.log(`Read XLSX: ${rows.length} rows, ${columnCount} columns`);
-    return { rows, columnCount };
+    const images = this.extractXlsxImages(workbook, sheet);
+
+    this.logger.log(
+      `Read XLSX: ${rows.length} rows, ${columnCount} columns, ${images.length} images`,
+    );
+    return { rows, columnCount, images };
+  }
+
+  /**
+   * Сопоставляет встроенные картинки со строками через twoCellAnchor.from.row
+   * (0-indexed). Возвращаются raw — ресайз и хэширование делает PhotoStorageService.
+   */
+  private extractXlsxImages(
+    workbook: ExcelJS.Workbook,
+    sheet: ExcelJS.Worksheet,
+  ): SpreadsheetImage[] {
+    const result: SpreadsheetImage[] = [];
+    let anchors: ExcelJsImageAnchor[] = [];
+    try {
+      anchors = sheet.getImages() as ExcelJsImageAnchor[];
+    } catch (err) {
+      this.logger.warn(`getImages() failed: ${errMsg(err)}`);
+      return result;
+    }
+    for (const anchor of anchors) {
+      const tl = anchor.range?.tl;
+      const rowIndex = tl?.nativeRow ?? tl?.row;
+      if (rowIndex == null || !Number.isFinite(rowIndex)) continue;
+      let media: ExcelJsImageMedia | undefined;
+      try {
+        media = workbook.getImage(Number(anchor.imageId)) as unknown as ExcelJsImageMedia;
+      } catch (err) {
+        this.logger.warn(`getImage(${anchor.imageId}) failed: ${errMsg(err)}`);
+        continue;
+      }
+      const buffer = media?.buffer;
+      if (!buffer || buffer.length === 0) continue;
+      result.push({
+        rowIndex: Math.floor(Number(rowIndex)),
+        bytes: buffer,
+        extension: media?.extension ?? 'png',
+      });
+    }
+    return result;
   }
 
   private readCsv(buffer: Buffer, maxRows: number): SpreadsheetData {
@@ -87,6 +149,6 @@ export class SpreadsheetReaderService {
     const rows = records.map((row) => row.map((cell) => (cell ?? '').trim()));
 
     this.logger.log(`Read CSV: ${rows.length} rows, ${columnCount} columns`);
-    return { rows, columnCount };
+    return { rows, columnCount, images: [] };
   }
 }

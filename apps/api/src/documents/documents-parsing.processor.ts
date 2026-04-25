@@ -12,6 +12,7 @@ import { addStageUsage } from '../common/token-usage';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { PipelineAuditService } from '../pipeline-audit/pipeline-audit.service';
 import type { DocumentNotification } from './documents.processor';
+import { PhotoStorageService } from '../photo-storage/photo-storage.service';
 
 @Processor('document-parsing')
 export class DocumentsParsingProcessor extends WorkerHost {
@@ -23,6 +24,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
     @InjectQueue('document-notifications') private notificationQueue: Queue,
     private aiParser: AiParserService,
     private audit: PipelineAuditService,
+    private photoStorage: PhotoStorageService,
   ) {
     super();
   }
@@ -82,6 +84,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
         rejectionReasonsData,
         tokenUsage,
         countrySuggestion,
+        photoBundle,
       } = parseResult;
       const rejectionReasonsLocalized = localizeRejectionReasonsForUser(
         rejectionReasonsData,
@@ -94,6 +97,19 @@ export class DocumentsParsingProcessor extends WorkerHost {
       doc.rowCount = products.length;
       doc.tokenUsage = addStageUsage(doc.tokenUsage ?? {}, 'parser', tokenUsage);
       doc.fileBuffer = null;
+
+      // Best-effort: фото — опциональный вход для vision-retry, ошибки не должны валить парсинг.
+      if (photoBundle) {
+        try {
+          await this.photoStorage.savePhotos(
+            documentId,
+            photoBundle.photos,
+            photoBundle.dataRowIndices,
+          );
+        } catch (err) {
+          this.logger.warn(`Photo save failed for ${documentId}: ${errMsg(err)}`);
+        }
+      }
 
       // Manual-значение не затираем при reparse.
       if (doc.countryOriginSource !== 'manual' && countrySuggestion) {

@@ -19,6 +19,7 @@ import type { Dimension } from '../duty-interpreter/interfaces';
 import type { AiCallPurpose } from '../database/entities/ai-call.entity';
 import { PipelineAuditService, type AuditContext } from '../pipeline-audit/pipeline-audit.service';
 import { SpreadsheetData, SpreadsheetReaderService } from './spreadsheet-reader.service';
+import type { ProductPhotoInput } from '../photo-storage/photo-storage.service';
 
 export interface ParsedProduct {
   description: string;
@@ -62,6 +63,12 @@ export interface AiParseResult {
   /** Предположение AI о стране происхождения товара. null — не удалось определить. */
   countrySuggestion: CountrySuggestion | null;
   tokenUsage: TokenUsageMap;
+  /**
+   * Фото товаров для сохранения процессором — parser не пишет в БД сам.
+   * `dataRowIndices` нужен, чтобы привязать xlsx-anchor (0-indexed excel row)
+   * к индексу товара в parsedData.
+   */
+  photoBundle?: { photos: ProductPhotoInput[]; dataRowIndices: number[] };
 }
 
 type RawParseResult = Omit<
@@ -424,6 +431,13 @@ export class AiParserService {
     result.tokenUsage = mergeTokenUsage(analysisUsage, result.tokenUsage);
     // Страна определяется из структуры, не зависит от успеха построчного парсинга.
     result.countrySuggestion = structure?.countrySuggestion ?? null;
+    // Без структуры (rejected) фото не к чему привязывать.
+    if (data.images.length > 0 && structure?.dataRows && structure.dataRows.length > 0) {
+      result.photoBundle = {
+        photos: data.images.map(({ rowIndex, bytes }) => ({ rowIndex, bytes })),
+        dataRowIndices: structure.dataRows,
+      };
+    }
     return result;
   }
 
@@ -564,7 +578,7 @@ export class AiParserService {
 
       const issues = this.checkDeterministic(
         result,
-        { rows: chunks[0], columnCount: data.columnCount },
+        { rows: chunks[0], columnCount: data.columnCount, images: [] },
         expectedChunkCount,
       );
       if (issues.length === 0) break;

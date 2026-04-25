@@ -84,12 +84,19 @@ function createProcessor(opts: Opts = {}) {
     recordDocumentVersion: jest.fn().mockResolvedValue(1),
   };
 
+  const photoStorage = {
+    savePhotos: jest.fn().mockResolvedValue([]),
+    deleteForDocument: jest.fn().mockResolvedValue(undefined),
+    getByHash: jest.fn().mockResolvedValue([]),
+  };
+
   const processor = new DocumentsParsingProcessor(
     repo as any,
     processingQueue as any,
     notificationQueue as any,
     aiParser as any,
     audit as any,
+    photoStorage as any,
   );
 
   return { processor, doc, repo, processingQueue, notificationQueue, aiParser, audit };

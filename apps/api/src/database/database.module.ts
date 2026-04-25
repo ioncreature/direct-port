@@ -7,6 +7,7 @@ import { AiUsageLog } from './entities/ai-usage-log.entity';
 import { CalculationConfig } from './entities/calculation-config.entity';
 import { CalculationLog } from './entities/calculation-log.entity';
 import { Document } from './entities/document.entity';
+import { DocumentPhoto } from './entities/document-photo.entity';
 import { DocumentVersion } from './entities/document-version.entity';
 import { DutyInterpretationCache } from './entities/duty-interpretation-cache.entity';
 import { PipelineStageRun } from './entities/pipeline-stage-run.entity';
@@ -40,6 +41,8 @@ import { AddCalculationLogTrigger1777400000000 } from './migrations/177740000000
 import { DropCountriesCache1777500000000 } from './migrations/1777500000000-DropCountriesCache';
 import { AddPipelineAudit1777600000000 } from './migrations/1777600000000-AddPipelineAudit';
 import { AddDutyInterpretationCache1777700000000 } from './migrations/1777700000000-AddDutyInterpretationCache';
+import { AddPhotoClassifierModel1777800000000 } from './migrations/1777800000000-AddPhotoClassifierModel';
+import { AddDocumentPhotos1777900000000 } from './migrations/1777900000000-AddDocumentPhotos';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -64,6 +67,7 @@ import { SeedService } from './seeds/seed.service';
           AiCall,
           DocumentVersion,
           DutyInterpretationCache,
+          DocumentPhoto,
         ],
         synchronize: false,
         migrations: [
@@ -92,6 +96,8 @@ import { SeedService } from './seeds/seed.service';
           DropCountriesCache1777500000000,
           AddPipelineAudit1777600000000,
           AddDutyInterpretationCache1777700000000,
+          AddPhotoClassifierModel1777800000000,
+          AddDocumentPhotos1777900000000,
         ],
         migrationsRun: true,
       }),

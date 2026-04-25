@@ -12,6 +12,7 @@ export interface AiConfig {
   queryFormulationModel: AiModelTier;
   classifierModel: AiModelTier;
   interpreterModel: AiModelTier;
+  photoClassifierModel: AiModelTier;
   updatedAt: string;
 }
 
@@ -35,7 +36,18 @@ export function useAiConfig() {
   }, []);
 
   const save = useCallback(
-    async (values: Partial<Pick<AiConfig, 'parserModel' | 'queryFormulationModel' | 'classifierModel' | 'interpreterModel'>>) => {
+    async (
+      values: Partial<
+        Pick<
+          AiConfig,
+          | 'parserModel'
+          | 'queryFormulationModel'
+          | 'classifierModel'
+          | 'interpreterModel'
+          | 'photoClassifierModel'
+        >
+      >,
+    ) => {
       setSaving(true);
       setError(null);
       try {

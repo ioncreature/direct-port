@@ -263,6 +263,7 @@ function AiModelsSection() {
         queryFormulationModel: config.queryFormulationModel,
         classifierModel: config.classifierModel,
         interpreterModel: config.interpreterModel,
+        photoClassifierModel: config.photoClassifierModel,
       });
     }
   }, [config]);
@@ -280,14 +281,15 @@ function AiModelsSection() {
     models.parserModel !== config.parserModel ||
     models.queryFormulationModel !== config.queryFormulationModel ||
     models.classifierModel !== config.classifierModel ||
-    models.interpreterModel !== config.interpreterModel
+    models.interpreterModel !== config.interpreterModel ||
+    models.photoClassifierModel !== config.photoClassifierModel
   );
 
   return (
     <div style={{ maxWidth: 700, padding: 24, border: '1px solid #ddd', borderRadius: 8 }}>
       <h3 style={{ marginBottom: 8 }}>Модели AI</h3>
       <p style={{ fontSize: 14, color: '#555', marginBottom: 12, lineHeight: 1.6 }}>
-        Обработка каждого документа проходит через четыре этапа. На каждом этапе работает ИИ (Claude),
+        Обработка каждого документа проходит через несколько этапов. На каждом этапе работает ИИ (Claude),
         и вы можете выбрать уровень модели — от базовой до максимальной.
       </p>
       <p style={{ fontSize: 13, color: '#777', marginBottom: 24, lineHeight: 1.5 }}>
