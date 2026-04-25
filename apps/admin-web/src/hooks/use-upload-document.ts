@@ -4,7 +4,7 @@ import api from '@/lib/api';
 import type { Document } from '@/lib/types';
 import { useCallback, useState } from 'react';
 
-const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 МБ — совпадает с лимитом API
+const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 МБ — совпадает с лимитом API
 
 export type UploadProgress = { loaded: number; total: number };
 
@@ -19,7 +19,7 @@ export function useUploadDocument() {
     setProgress({ loaded: 0, total: file.size });
     if (file.size > MAX_FILE_SIZE) {
       const sizeMb = (file.size / 1024 / 1024).toFixed(1);
-      const err = `Файл слишком большой (${sizeMb} МБ). Максимальный размер — 15 МБ.`;
+      const err = `Файл слишком большой (${sizeMb} МБ). Максимальный размер — 25 МБ.`;
       setError(err);
       setUploading(false);
       setProgress(null);

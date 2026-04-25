@@ -34,7 +34,7 @@ upload-prompt = Send me a file in .xlsx or .csv format
 
 # File upload
 unsupported-format = Only .xlsx and .csv files are supported
-file-too-large = File is too large. Maximum size is 15 MB.
+file-too-large = File is too large. Maximum size is 25 MB.
 uploading = 📥 Downloading file...
 file-accepted = 📄 File "{ $fileName }" accepted for processing.
     You will be notified when done.

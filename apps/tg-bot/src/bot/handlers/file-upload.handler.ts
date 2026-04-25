@@ -4,7 +4,7 @@ import { formatUser } from '../format-user';
 import { type BotContext, mapTelegramLocale, tErrorCode } from '../i18n';
 import { ConversationStateService } from '../state/conversation-state.service';
 
-const MAX_FILE_SIZE = 15 * 1024 * 1024;
+const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
 @Injectable()
 export class FileUploadHandler {
