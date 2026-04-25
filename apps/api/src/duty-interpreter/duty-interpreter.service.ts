@@ -1,7 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Priznak, TksApiClient, TnvedCode, TnvedallEntry } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { In, Repository } from 'typeorm';
 import { AiConfigService } from '../ai-config/ai-config.service';
+import { DutyInterpretationCache } from '../database/entities/duty-interpretation-cache.entity';
 import {
   CLAUDE_TIMEOUT_PIPELINE_MS,
   cacheTools,
@@ -19,7 +22,8 @@ import { DutyInterpretation, InterpretedProduct } from './interfaces';
 
 const BATCH_SIZE = 5;
 const CONCURRENCY = 2;
-const CACHE_TTL = 3600_000; // 1 hour
+const CACHE_TTL = 3600_000; // 1 hour (in-memory)
+const PERSISTENT_CACHE_TTL_MS = 180 * 24 * 3600_000; // 180 days (DB)
 /** Коды с conditions тяжелее этого (символов JSON) отправляются в Claude поодиночке. */
 const HEAVY_CONDITIONS_THRESHOLD = 6000;
 /** Суммарный размер conditions батча; при превышении — батч закрывается. */
@@ -232,6 +236,9 @@ export class DutyInterpreterService {
     private tksApi: TksApiClient,
     private aiConfig: AiConfigService,
     private audit: PipelineAuditService,
+    @Optional()
+    @InjectRepository(DutyInterpretationCache)
+    private persistentCache: Repository<DutyInterpretationCache> | null = null,
   ) {}
 
   async interpret(
@@ -280,9 +287,9 @@ export class DutyInterpreterService {
     }
     const skippedSimpleCodes = codeToIndices.size - codesNeedingInterpretation.size;
 
-    // Check cache, collect codes that need interpretation
+    // Check L1 in-memory cache, collect codes that need further lookup
     const interpretations = new Map<string, DutyInterpretation>();
-    const codesToInterpret: string[] = [];
+    let codesToInterpret: string[] = [];
 
     for (const code of codeToIndices.keys()) {
       if (!codesNeedingInterpretation.has(code)) continue;
@@ -292,6 +299,27 @@ export class DutyInterpreterService {
       } else {
         codesToInterpret.push(code);
       }
+    }
+
+    // L2 persistent (DB) cache — правила пошлин ТН ВЭД меняются редко,
+    // ответ Claude хранится 180 дней (см. PERSISTENT_CACHE_TTL_MS). Ключ
+    // включает language и model, потому что reasoningLocalized зависит от
+    // языка, а смена interpreter-модели может изменить интерпретацию.
+    const langKey = language ?? 'ru';
+    const interpreterModel = await this.aiConfig.getInterpreterModel();
+    let dbHits = 0;
+    if (codesToInterpret.length > 0 && this.persistentCache) {
+      const fromDb = await this.loadFromPersistentCache(
+        codesToInterpret,
+        langKey,
+        interpreterModel,
+      );
+      for (const [code, data] of fromDb) {
+        interpretations.set(code, data);
+        this.cache.set(code, { data, expiresAt: Date.now() + CACHE_TTL });
+      }
+      dbHits = fromDb.size;
+      codesToInterpret = codesToInterpret.filter((c) => !fromDb.has(c));
     }
 
     // Fetch full TNVED data for uncached codes
@@ -352,6 +380,7 @@ export class DutyInterpreterService {
     }
 
     const useCache = codeBatches.length > 1;
+    const freshFromClaude: DutyInterpretation[] = [];
 
     if (codeBatches.length > 0) {
       try {
@@ -365,6 +394,7 @@ export class DutyInterpreterService {
         for (const result of results) {
           interpretations.set(result.tnvedCode, result);
           this.cache.set(result.tnvedCode, { data: result, expiresAt: Date.now() + CACHE_TTL });
+          freshFromClaude.push(result);
         }
       } catch (err) {
         this.logger.error('Duty interpretation batch failed', err);
@@ -388,12 +418,20 @@ export class DutyInterpreterService {
         for (const result of batchResults) {
           interpretations.set(result.tnvedCode, result);
           this.cache.set(result.tnvedCode, { data: result, expiresAt: Date.now() + CACHE_TTL });
+          freshFromClaude.push(result);
         }
       }
     }
 
+    if (freshFromClaude.length > 0 && this.persistentCache) {
+      await this.savePersistentCache(freshFromClaude, langKey, interpreterModel).catch((err) => {
+        this.logger.warn(`Persistent cache save failed: ${errMsg(err)}`);
+      });
+    }
+
     this.logger.log(
-      `Interpretation done: ${interpretations.size} codes interpreted, ` +
+      `Interpretation done: ${interpretations.size} codes interpreted ` +
+        `(${dbHits} from DB cache, ${freshFromClaude.length} from Claude), ` +
         `${codesToInterpret.length - validCodes.length} skipped (no TNVED data), ` +
         `${skippedSimpleCodes} skipped (simple ad valorem rates)`,
     );
@@ -482,6 +520,52 @@ export class DutyInterpreterService {
       hasCountryConditions ||
       hasExciseConditions
     );
+  }
+
+  private async loadFromPersistentCache(
+    codes: string[],
+    language: string,
+    model: string,
+  ): Promise<Map<string, DutyInterpretation>> {
+    const result = new Map<string, DutyInterpretation>();
+    if (!this.persistentCache || codes.length === 0) return result;
+    try {
+      const cutoff = new Date(Date.now() - PERSISTENT_CACHE_TTL_MS);
+      const rows = await this.persistentCache.find({
+        where: { tnvedCode: In(codes), language, model },
+      });
+      for (const row of rows) {
+        if (row.fetchedAt >= cutoff) {
+          result.set(row.tnvedCode, row.interpretation);
+        }
+      }
+    } catch (err) {
+      this.logger.warn(`Persistent cache lookup failed: ${errMsg(err)}`);
+    }
+    return result;
+  }
+
+  private async savePersistentCache(
+    items: DutyInterpretation[],
+    language: string,
+    model: string,
+  ): Promise<void> {
+    if (!this.persistentCache || items.length === 0) return;
+    const now = new Date();
+    const rows = items.map((data) => ({
+      tnvedCode: data.tnvedCode,
+      language,
+      model,
+      interpretation: data,
+      fetchedAt: now,
+    }));
+    await this.persistentCache
+      .createQueryBuilder()
+      .insert()
+      .into(DutyInterpretationCache)
+      .values(rows)
+      .orUpdate(['interpretation', 'fetched_at'], ['tnved_code', 'language', 'model'])
+      .execute();
   }
 
   private async interpretBatch(

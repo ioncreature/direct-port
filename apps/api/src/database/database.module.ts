@@ -8,6 +8,7 @@ import { CalculationConfig } from './entities/calculation-config.entity';
 import { CalculationLog } from './entities/calculation-log.entity';
 import { Document } from './entities/document.entity';
 import { DocumentVersion } from './entities/document-version.entity';
+import { DutyInterpretationCache } from './entities/duty-interpretation-cache.entity';
 import { PipelineStageRun } from './entities/pipeline-stage-run.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { TelegramUser } from './entities/telegram-user.entity';
@@ -38,6 +39,7 @@ import { AddDocumentCountryAndCountriesCache1777300000000 } from './migrations/1
 import { AddCalculationLogTrigger1777400000000 } from './migrations/1777400000000-AddCalculationLogTrigger';
 import { DropCountriesCache1777500000000 } from './migrations/1777500000000-DropCountriesCache';
 import { AddPipelineAudit1777600000000 } from './migrations/1777600000000-AddPipelineAudit';
+import { AddDutyInterpretationCache1777700000000 } from './migrations/1777700000000-AddDutyInterpretationCache';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -61,6 +63,7 @@ import { SeedService } from './seeds/seed.service';
           PipelineStageRun,
           AiCall,
           DocumentVersion,
+          DutyInterpretationCache,
         ],
         synchronize: false,
         migrations: [
@@ -88,6 +91,7 @@ import { SeedService } from './seeds/seed.service';
           AddCalculationLogTrigger1777400000000,
           DropCountriesCache1777500000000,
           AddPipelineAudit1777600000000,
+          AddDutyInterpretationCache1777700000000,
         ],
         migrationsRun: true,
       }),

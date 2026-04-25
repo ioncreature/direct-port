@@ -83,6 +83,14 @@ function makeInterpretation(
   };
 }
 
+interface PersistentCacheRow {
+  tnvedCode: string;
+  language: string;
+  model: string;
+  interpretation: DutyInterpretation;
+  fetchedAt?: Date;
+}
+
 interface ServiceOpts {
   items?: DutyInterpretation[];
   itemsByCall?: DutyInterpretation[][];
@@ -90,6 +98,8 @@ interface ServiceOpts {
   claudeError?: Error;
   tnvedByCode?: Record<string, TnvedCode>;
   tksFetchError?: Error;
+  persistentRows?: PersistentCacheRow[];
+  withPersistentCache?: boolean;
 }
 
 function createService(opts: ServiceOpts = {}) {
@@ -132,13 +142,44 @@ function createService(opts: ServiceOpts = {}) {
     recordAiCall: jest.fn().mockResolvedValue(undefined),
   };
 
+  let persistentCache: any = null;
+  let executeMock: jest.Mock | null = null;
+  if (opts.withPersistentCache || opts.persistentRows) {
+    const seed = (opts.persistentRows ?? []).map((r) => ({
+      ...r,
+      fetchedAt: r.fetchedAt ?? new Date(),
+    }));
+    const findMock = jest.fn().mockImplementation(async (params: any) => {
+      // Mock не разбирает FindOperator (In(codes)) — фильтруем только по
+      // language/model, что достаточно для тестов: в каждом тесте кодов мало
+      // и они подобраны в seed заранее.
+      const where = params?.where ?? {};
+      const language = where.language;
+      const model = where.model;
+      return seed.filter((r) => r.language === language && r.model === model);
+    });
+    executeMock = jest.fn().mockResolvedValue({});
+    const queryBuilder = {
+      insert: jest.fn().mockReturnThis(),
+      into: jest.fn().mockReturnThis(),
+      values: jest.fn().mockReturnThis(),
+      orUpdate: jest.fn().mockReturnThis(),
+      execute: executeMock,
+    };
+    persistentCache = {
+      find: findMock,
+      createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+    };
+  }
+
   const service = new DutyInterpreterService(
     anthropic as any,
     tksApi as any,
     aiConfig as any,
     audit as any,
+    persistentCache,
   );
-  return { service, messagesCreate, getTnvedCode, aiConfig, audit };
+  return { service, messagesCreate, getTnvedCode, aiConfig, audit, persistentCache, executeMock };
 }
 
 describe('DutyInterpreterService', () => {
@@ -612,6 +653,77 @@ describe('DutyInterpreterService', () => {
       const product = makeProduct({ tnVedCode: code });
       const result = await service.interpret([product]);
       expect(result.usedFallback).toBe(false);
+    });
+  });
+
+  describe('persistent cache (БД)', () => {
+    it('hit в БД — Claude не вызывается, интерпретация берётся из персистентного кэша', async () => {
+      const code = '8708705009';
+      const cachedInterp = makeInterpretation(code, { reasoning: 'из БД' });
+      const { service, messagesCreate } = createService({
+        items: [makeInterpretation(code, { reasoning: 'из Claude' })],
+        persistentRows: [
+          {
+            tnvedCode: code,
+            language: 'ru',
+            model: 'claude-opus-4-7',
+            interpretation: cachedInterp,
+          },
+        ],
+      });
+      const product = makeNonTrivialProduct({ tnVedCode: code });
+
+      const { products } = await service.interpret([product]);
+
+      expect(messagesCreate).not.toHaveBeenCalled();
+      expect(products[0].dutyInterpretation?.reasoning).toBe('из БД');
+    });
+
+    it('miss в БД — Claude вызывается, результат сохраняется в БД через upsert', async () => {
+      const code = '8708705009';
+      const { service, messagesCreate, executeMock } = createService({
+        items: [makeInterpretation(code)],
+        withPersistentCache: true,
+      });
+      const product = makeNonTrivialProduct({ tnVedCode: code });
+
+      await service.interpret([product]);
+
+      expect(messagesCreate).toHaveBeenCalledTimes(1);
+      expect(executeMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('запись в БД с другим language не подходит — Claude вызывается', async () => {
+      const code = '8708705009';
+      const { service, messagesCreate } = createService({
+        items: [makeInterpretation(code)],
+        persistentRows: [
+          {
+            tnvedCode: code,
+            language: 'en',
+            model: 'claude-opus-4-7',
+            interpretation: makeInterpretation(code),
+          },
+        ],
+      });
+      const product = makeNonTrivialProduct({ tnVedCode: code });
+
+      await service.interpret([product], 'ru');
+
+      expect(messagesCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it('persistent cache недоступен (репозиторий null) — поведение не меняется', async () => {
+      const code = '8708705009';
+      const { service, messagesCreate } = createService({
+        items: [makeInterpretation(code)],
+      });
+      const product = makeNonTrivialProduct({ tnVedCode: code });
+
+      const { products } = await service.interpret([product]);
+
+      expect(messagesCreate).toHaveBeenCalledTimes(1);
+      expect(products[0].dutyInterpretation).toBeTruthy();
     });
   });
 });
