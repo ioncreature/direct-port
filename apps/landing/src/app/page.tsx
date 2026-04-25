@@ -1,188 +1,627 @@
+import {
+  BRAND_MARK,
+  BRAND_NAME,
+  HEADLINE_ACCENT,
+  HEADLINE_PRIMARY,
+  TAGLINE,
+} from './_brand';
+
 const TELEGRAM_BOT_URL = process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL || 'https://t.me/DirectPortBot';
+const ADMIN_URL = process.env.NEXT_PUBLIC_ADMIN_URL || '/admin';
 
 export default function LandingPage() {
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <header style={headerStyle}>
-        <div style={containerStyle}>
-          <span style={{ fontSize: 20, fontWeight: 700 }}>DirectPort</span>
-        </div>
-      </header>
+    <div className="page">
+      <Header />
+      <main>
+        <Hero />
+        <HowItWorks />
+        <WhatIsCalculated />
+        <Channels />
+        <TnVed />
+        <FinalCta />
+      </main>
+      <Footer />
+    </div>
+  );
+}
 
-      <section style={heroStyle}>
-        <div style={centeredContainerStyle}>
-          <h1 style={{ fontSize: 48, margin: '0 0 24px', fontWeight: 800 }}>
-            Импорт товаров в Россию — просто
+function Header() {
+  return (
+    <header className="header">
+      <div className="container header-inner">
+        <a href="#top" className="logo">
+          <span className="logo-mark">{BRAND_MARK}</span>
+          <span>{BRAND_NAME}</span>
+        </a>
+        <nav className="nav-links" aria-label="Основная навигация">
+          <a href="#how">Как работает</a>
+          <a href="#calc">Расчёт</a>
+          <a href="#channels">Способы</a>
+          <a href="#tnved">Справочник</a>
+        </nav>
+        <div className="header-cta">
+          <a href={ADMIN_URL} className="btn btn-secondary">
+            Войти
+          </a>
+          <a
+            href={TELEGRAM_BOT_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-primary"
+          >
+            Открыть бота
+          </a>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function Hero() {
+  return (
+    <section className="hero" id="top">
+      <div className="container hero-inner">
+        <div className="fade-up">
+          <span className="eyebrow">
+            <span className="eyebrow-dot" />
+            {TAGLINE}
+          </span>
+          <h1>
+            {HEADLINE_PRIMARY} <span className="accent">{HEADLINE_ACCENT}</span>
           </h1>
-          <p style={{ fontSize: 20, color: '#555', maxWidth: 640, margin: '0 auto 40px' }}>
-            Загрузите прайс-лист — получите готовый расчёт таможенных пошлин, НДС и стоимости
-            доставки за пару минут.
+          <p className="lede">
+            Загрузите прайс-лист — на любом языке и в любой валюте. Получите готовый Excel
+            с пошлинами, НДС, акцизами и логистикой по каждой позиции.
           </p>
-          <a href={TELEGRAM_BOT_URL} target="_blank" rel="noopener noreferrer" style={ctaStyle}>
+          <div className="hero-ctas">
+            <a
+              href={TELEGRAM_BOT_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-primary btn-lg"
+            >
+              <IconTelegram />
+              Открыть бота в Telegram
+            </a>
+            <a href={ADMIN_URL} className="btn btn-secondary btn-lg">
+              Войти в админку
+            </a>
+          </div>
+          <div className="hero-trust">
+            <span><IconCheck /> AI на базе Claude</span>
+            <span><IconCheck /> ТН ВЭД из справочника ФТС</span>
+            <span><IconCheck /> Курсы ЦБ РФ</span>
+            <span><IconCheck /> ru / zh / en</span>
+          </div>
+        </div>
+        <div className="preview-wrap fade-up delay-2" aria-hidden="true">
+          <div className="preview">
+            <div className="preview-header">
+              <span className="dot dot-r" />
+              <span className="dot dot-y" />
+              <span className="dot dot-g" />
+              <span className="preview-title">расчёт-пошлин.xlsx</span>
+            </div>
+            <table className="preview-table">
+              <thead>
+                <tr>
+                  <th>Товар</th>
+                  <th>ТН ВЭД</th>
+                  <th>Пошлина</th>
+                  <th style={{ textAlign: 'right' }}>Итого, ₽</th>
+                  <th>Статус</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Светильник LED 12W</td>
+                  <td className="code">9405 41</td>
+                  <td>5%</td>
+                  <td className="num">119 400</td>
+                  <td><span className="tag tag-green">Точно</span></td>
+                </tr>
+                <tr>
+                  <td>Кружка керамическая</td>
+                  <td className="code">6911 10</td>
+                  <td>12%</td>
+                  <td className="num">56 600</td>
+                  <td><span className="tag tag-green">Точно</span></td>
+                </tr>
+                <tr>
+                  <td>Кроссовки беговые</td>
+                  <td className="code">6403 99</td>
+                  <td>15% / 1.4€/пара</td>
+                  <td className="num">482 100</td>
+                  <td><span className="tag tag-yellow">Проверить</span></td>
+                </tr>
+                <tr>
+                  <td>Косметика для лица</td>
+                  <td className="code">3304 99</td>
+                  <td>6.5%</td>
+                  <td className="num">208 750</td>
+                  <td><span className="tag tag-green">Точно</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function HowItWorks() {
+  const steps = [
+    {
+      num: 1,
+      icon: <IconUpload />,
+      title: 'Загрузите прайс',
+      text: 'Excel или CSV с любыми колонками — структура определяется автоматически. Рубли, юани, доллары, евро — валюта роли не играет.',
+    },
+    {
+      num: 2,
+      icon: <IconSparkles />,
+      title: 'AI парсит и переводит',
+      text: 'Claude извлекает наименования, цены, вес и количество. Переводит названия с китайского или английского на русский для классификации.',
+    },
+    {
+      num: 3,
+      icon: <IconChart />,
+      title: 'Классификация ТН ВЭД',
+      text: 'Поиск кодов в справочнике ФТС через TKS API + AI-верификация в один заход. Спорные коды попадают на ручную проверку в админку.',
+    },
+    {
+      num: 4,
+      icon: <IconDownload />,
+      title: 'Готовый Excel',
+      text: 'Пошлины, НДС, акцизы, логистика и итог — в исходной валюте и в рублях. Подсветка позиций, требующих проверки.',
+    },
+  ];
+  return (
+    <section className="section" id="how">
+      <div className="container">
+        <div className="section-head">
+          <span className="label">Как это работает</span>
+          <h2>От прайса до готового расчёта — четыре шага</h2>
+          <p>
+            Pipeline полностью автоматизирован. Ручная проверка нужна только для пограничных
+            случаев, и для них есть удобный интерфейс в админке.
+          </p>
+        </div>
+        <div className="grid grid-2">
+          {steps.map((s, i) => (
+            <div key={s.num} className={`card step-card fade-up delay-${i + 1}`}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <span className="step-num">{s.num}</span>
+                <span className="icon-wrap">{s.icon}</span>
+              </div>
+              <h3>{s.title}</h3>
+              <p>{s.text}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function WhatIsCalculated() {
+  const items = [
+    {
+      icon: <IconLayers />,
+      title: 'Комбинированные ставки',
+      text: 'Например, max(15% от стоимости, 1.4 EUR за пару). AI интерпретирует текст из справочника и применяет правильную формулу.',
+    },
+    {
+      icon: <IconBadge />,
+      title: 'Акцизы',
+      text: 'Для подакцизных товаров — отдельная строка в расчёте. Учитывается в базе для НДС.',
+    },
+    {
+      icon: <IconPercent />,
+      title: 'НДС с базы',
+      text: 'НДС считается на сумму товара, пошлины и акциза вместе — как требует таможня. Без перепутанной базы.',
+    },
+    {
+      icon: <IconGlobe />,
+      title: 'Страна происхождения',
+      text: 'Автоопределение по языку наименований и валюте. Можно вручную выбрать другую страну и пересчитать в один клик.',
+    },
+    {
+      icon: <IconCurrency />,
+      title: 'Любая валюта',
+      text: 'Юани, доллары, евро и десятки других — конвертация по курсу ЦБ РФ. В Excel суммы в исходной валюте и в рублях.',
+    },
+    {
+      icon: <IconTruck />,
+      title: 'Логистика',
+      text: 'Настраиваемая формула: процент от стоимости, ставка за килограмм и фиксированная доставка. Под вашу схему работы.',
+    },
+  ];
+  return (
+    <section className="section section-alt" id="calc">
+      <div className="container">
+        <div className="section-head">
+          <span className="label">Что внутри расчёта</span>
+          <h2>Шесть факторов, которые легко упустить вручную</h2>
+          <p>
+            Сложные ставки и многоступенчатый НДС — основные источники ошибок при импорте.
+            Сервис закрывает их по умолчанию.
+          </p>
+        </div>
+        <div className="grid grid-3">
+          {items.map((it, i) => (
+            <div key={it.title} className={`card fade-up delay-${(i % 3) + 1}`}>
+              <span className="icon-wrap">{it.icon}</span>
+              <h3>{it.title}</h3>
+              <p>{it.text}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Channels() {
+  return (
+    <section className="section" id="channels">
+      <div className="container">
+        <div className="section-head">
+          <span className="label">Способы работать</span>
+          <h2>Бот для скорости, админка для контроля</h2>
+          <p>
+            Загрузите файл за 30 секунд через Telegram или работайте полным интерфейсом
+            с историей и ручной модерацией.
+          </p>
+        </div>
+        <div className="grid grid-2">
+          <div className="channel channel-bot fade-up delay-1">
+            <span className="icon-wrap">
+              <IconTelegram />
+            </span>
+            <h3>Telegram-бот</h3>
+            <p>
+              Самый быстрый путь — отправили файл, получили готовый Excel. Подходит, если
+              у вас простой регулярный поток.
+            </p>
+            <ul>
+              <li><IconCheckSmall />Три языка: русский, китайский, английский</li>
+              <li><IconCheckSmall />Автодетект языка по настройкам Telegram</li>
+              <li><IconCheckSmall />Двуязычные замечания в Excel для не-русских пользователей</li>
+              <li><IconCheckSmall />Уведомления о готовности расчёта</li>
+            </ul>
+            <a
+              href={TELEGRAM_BOT_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-primary"
+            >
+              Открыть бота
+              <IconArrow />
+            </a>
+          </div>
+          <div className="channel channel-admin fade-up delay-2">
+            <span className="icon-wrap">
+              <IconDashboard />
+            </span>
+            <h3>Веб-админка</h3>
+            <p>
+              Полный интерфейс для работы команды: ручная проверка спорных позиций, история
+              расчётов, настройки и аудит.
+            </p>
+            <ul>
+              <li><IconCheckSmall />Ручная проверка наименований и кодов ТН ВЭД</li>
+              <li><IconCheckSmall />История расчётов и пересчёт с другими параметрами</li>
+              <li><IconCheckSmall />Диагностика AI-вызовов и стоимости токенов</li>
+              <li><IconCheckSmall />Настройки формулы логистики и порогов уверенности</li>
+            </ul>
+            <a href={ADMIN_URL} className="btn btn-secondary">
+              Войти в админку
+              <IconArrow />
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TnVed() {
+  return (
+    <section className="section section-alt" id="tnved">
+      <div className="container tnved">
+        <div className="fade-up">
+          <span className="label">Бонус</span>
+          <h2 className="heading-2">Полноценный справочник ТН ВЭД</h2>
+          <p className="lede">
+            Не только pipeline — отдельный инструмент для повседневной работы:
+            найдите код, проверьте ставки, посчитайте пошлину для конкретной партии.
+          </p>
+          <div className="tnved-list">
+            <div className="tnved-item">
+              <span className="icon-wrap"><IconSearch /></span>
+              <div>
+                <h4>Поиск по описанию или коду</h4>
+                <p>Прямой запрос в справочник ФТС через TKS API. Кликабельные коды, копирование одной кнопкой.</p>
+              </div>
+            </div>
+            <div className="tnved-item">
+              <span className="icon-wrap"><IconTranslate /></span>
+              <div>
+                <h4>Перевод запросов</h4>
+                <p>Введите название на китайском или английском — Claude переведёт его на русский для точного поиска.</p>
+              </div>
+            </div>
+            <div className="tnved-item">
+              <span className="icon-wrap"><IconCalculator /></span>
+              <div>
+                <h4>Калькулятор пошлин</h4>
+                <p>Любая единица измерения: килограммы, литры, м², м³, штуки. Видны и ввозная пошлина, и НДС, и акциз.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="preview-wrap fade-up delay-2" aria-hidden="true">
+          <div className="preview">
+            <div className="preview-header">
+              <span className="dot dot-r" />
+              <span className="dot dot-y" />
+              <span className="dot dot-g" />
+              <span className="preview-title">Справочник ТН ВЭД</span>
+            </div>
+            <div className="tnved-mock-body">
+              <div className="tnved-mock-search">
+                <IconSearch />
+                <span>беспроводные наушники с шумоподавлением</span>
+              </div>
+              <div className="tnved-mock-card">
+                <div className="tnved-mock-card-head">
+                  <span className="tnved-mock-code">8518 30 200 0</span>
+                  <span className="tag tag-green">Найдено</span>
+                </div>
+                <div className="tnved-mock-desc">
+                  Наушники, в том числе совмещённые с микрофоном
+                </div>
+                <div className="tnved-mock-rates">
+                  <span><strong>Пошлина:</strong> 5%</span>
+                  <span><strong>НДС:</strong> 20%</span>
+                  <span><strong>Акциз:</strong> —</span>
+                </div>
+              </div>
+              <div className="tnved-mock-card">
+                <div className="tnved-mock-label">Калькулятор</div>
+                <div className="tnved-mock-calc">
+                  <span>Стоимость:</span><span className="right">$1 200</span>
+                  <span>Количество:</span><span className="right">50 шт</span>
+                  <span className="total">Итого с пошлинами:</span>
+                  <span className="total-value">137 280 ₽</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FinalCta() {
+  return (
+    <section className="cta-section">
+      <div className="container cta-inner">
+        <h2>Готовы попробовать?</h2>
+        <p>Первый файл — бесплатно. Регистрация не нужна — просто откройте бот в Telegram.</p>
+        <div className="cta-buttons">
+          <a
+            href={TELEGRAM_BOT_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-on-dark btn-lg"
+          >
+            <IconTelegram />
             Открыть бота в Telegram
           </a>
-        </div>
-      </section>
-
-      <section style={sectionStyle}>
-        <div style={containerStyle}>
-          <h2 style={sectionTitleStyle}>Как это работает</h2>
-          <div style={gridStyle}>
-            <Card
-              step="1"
-              title="Загрузите файл"
-              description="Отправьте боту Excel или CSV с товарами — наименования, цены, вес, количество."
-            />
-            <Card
-              step="2"
-              title="AI обрабатывает данные"
-              description="Система переводит наименования, определяет коды ТН ВЭД и ставки пошлин автоматически."
-            />
-            <Card
-              step="3"
-              title="Получите расчёт"
-              description="Готовый Excel с пошлинами, НДС, акцизами и итоговой стоимостью для каждого товара."
-            />
-          </div>
-        </div>
-      </section>
-
-      <section style={altSectionStyle}>
-        <div style={containerStyle}>
-          <h2 style={sectionTitleStyle}>Почему DirectPort</h2>
-          <div style={gridStyle}>
-            <Card
-              title="Любая валюта"
-              description="Юани, доллары, евро — цены автоматически конвертируются по актуальному курсу ЦБ РФ."
-            />
-            <Card
-              title="Любой язык"
-              description="Наименования на китайском, английском или другом языке переводятся на русский."
-            />
-            <Card
-              title="Точная классификация"
-              description="Коды ТН ВЭД подбираются по справочнику ФТС и проверяются AI-верификацией."
-            />
-          </div>
-        </div>
-      </section>
-
-      <section style={centeredSectionStyle}>
-        <div style={containerStyle}>
-          <h2 style={{ fontSize: 32, margin: '0 0 16px', fontWeight: 700 }}>Готовы начать?</h2>
-          <p style={{ fontSize: 18, color: '#555', margin: '0 0 32px' }}>
-            Отправьте первый файл прямо сейчас — это бесплатно.
-          </p>
-          <a href={TELEGRAM_BOT_URL} target="_blank" rel="noopener noreferrer" style={ctaStyle}>
-            Перейти в Telegram
+          <a href={ADMIN_URL} className="btn btn-ghost-on-dark btn-lg">
+            Войти в админку
           </a>
         </div>
-      </section>
-
-      <footer style={footerStyle}>
-        <div style={containerStyle}>DirectPort &copy; {new Date().getFullYear()}</div>
-      </footer>
-    </div>
+      </div>
+    </section>
   );
 }
 
-function Card({ step, title, description }: { step?: string; title: string; description: string }) {
+function Footer() {
   return (
-    <div style={cardStyle}>
-      {step && <div style={stepBadgeStyle}>{step}</div>}
-      <h3 style={{ margin: step ? '12px 0 8px' : '0 0 8px', fontSize: 20 }}>{title}</h3>
-      <p style={{ margin: 0, color: '#555', lineHeight: 1.6 }}>{description}</p>
-    </div>
+    <footer className="footer">
+      <div className="container footer-inner">
+        <span>{BRAND_NAME} &copy; {new Date().getFullYear()}</span>
+        <div className="footer-links">
+          <a href={TELEGRAM_BOT_URL} target="_blank" rel="noopener noreferrer">Telegram</a>
+          <a href={ADMIN_URL}>Админка</a>
+        </div>
+      </div>
+    </footer>
   );
 }
 
-/* ---------- Styles ---------- */
+function IconCheck() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="5 12 10 17 19 7" />
+    </svg>
+  );
+}
 
-const containerStyle: React.CSSProperties = {
-  maxWidth: 1080,
-  margin: '0 auto',
-  padding: '0 24px',
-};
+function IconCheckSmall() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="5 12 10 17 19 7" />
+    </svg>
+  );
+}
 
-const centeredContainerStyle: React.CSSProperties = {
-  ...containerStyle,
-  textAlign: 'center',
-};
+function IconTelegram() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M21.4 3.7c-.3-.2-.7-.3-1-.2L2.5 10.4c-.6.2-1 .8-1 1.5s.4 1.2 1 1.4l4 1.4 1.6 5.1c.1.3.4.5.7.6h.2c.3 0 .5-.1.7-.3l2.7-2.7 4.7 3.4c.2.1.5.2.7.2.1 0 .3 0 .4-.1.4-.1.7-.5.8-.9L22 5c.1-.5-.1-1-.6-1.3zM10 14.6l-1 3-1-3.4 9.5-5.6L10 14.6z" />
+    </svg>
+  );
+}
 
-const headerStyle: React.CSSProperties = {
-  padding: '16px 0',
-  borderBottom: '1px solid #eee',
-};
+function IconUpload() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="17 8 12 3 7 8" />
+      <line x1="12" y1="3" x2="12" y2="15" />
+    </svg>
+  );
+}
 
-const heroStyle: React.CSSProperties = {
-  padding: '96px 0 80px',
-  background: 'linear-gradient(180deg, #f0f5ff 0%, #fff 100%)',
-};
+function IconSparkles() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" />
+    </svg>
+  );
+}
 
-const sectionStyle: React.CSSProperties = {
-  padding: '80px 0',
-};
+function IconChart() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 3v18h18" />
+      <rect x="7" y="13" width="3" height="6" rx="0.5" />
+      <rect x="12" y="9" width="3" height="10" rx="0.5" />
+      <rect x="17" y="5" width="3" height="14" rx="0.5" />
+    </svg>
+  );
+}
 
-const altSectionStyle: React.CSSProperties = {
-  ...sectionStyle,
-  background: '#f7f9fc',
-};
+function IconDownload() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
 
-const centeredSectionStyle: React.CSSProperties = {
-  ...sectionStyle,
-  textAlign: 'center',
-};
+function IconLayers() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polygon points="12 2 2 7 12 12 22 7 12 2" />
+      <polyline points="2 17 12 22 22 17" />
+      <polyline points="2 12 12 17 22 12" />
+    </svg>
+  );
+}
 
-const sectionTitleStyle: React.CSSProperties = {
-  fontSize: 32,
-  fontWeight: 700,
-  textAlign: 'center',
-  margin: '0 0 48px',
-};
+function IconBadge() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="9" r="6" />
+      <polyline points="9 14 7 22 12 19 17 22 15 14" />
+    </svg>
+  );
+}
 
-const gridStyle: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-  gap: 32,
-};
+function IconPercent() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="19" y1="5" x2="5" y2="19" />
+      <circle cx="6.5" cy="6.5" r="2.5" />
+      <circle cx="17.5" cy="17.5" r="2.5" />
+    </svg>
+  );
+}
 
-const cardStyle: React.CSSProperties = {
-  background: '#fff',
-  borderRadius: 12,
-  padding: 32,
-  boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-  border: '1px solid #eee',
-};
+function IconGlobe() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <path d="M12 3a13 13 0 0 1 0 18M12 3a13 13 0 0 0 0 18" />
+    </svg>
+  );
+}
 
-const stepBadgeStyle: React.CSSProperties = {
-  width: 36,
-  height: 36,
-  borderRadius: '50%',
-  background: '#1a56db',
-  color: '#fff',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  fontWeight: 700,
-  fontSize: 16,
-};
+function IconCurrency() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M16 8.5C16 7 14 6 12 6s-4 1-4 2.8c0 4 8 2.2 8 6.4 0 1.8-2 2.8-4 2.8s-4-1-4-2.5" />
+      <line x1="12" y1="4" x2="12" y2="6" />
+      <line x1="12" y1="18" x2="12" y2="20" />
+    </svg>
+  );
+}
 
-const ctaStyle: React.CSSProperties = {
-  display: 'inline-block',
-  background: '#1a56db',
-  color: '#fff',
-  padding: '16px 40px',
-  borderRadius: 8,
-  fontSize: 18,
-  fontWeight: 600,
-  textDecoration: 'none',
-};
+function IconTruck() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="1" y="6" width="13" height="11" rx="1" />
+      <path d="M14 9h4l3 3v5h-7" />
+      <circle cx="6" cy="19" r="2" />
+      <circle cx="17" cy="19" r="2" />
+    </svg>
+  );
+}
 
-const footerStyle: React.CSSProperties = {
-  marginTop: 'auto',
-  padding: '24px 0',
-  borderTop: '1px solid #eee',
-  color: '#888',
-  fontSize: 14,
-  textAlign: 'center',
-};
+function IconDashboard() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="3" width="8" height="10" rx="1" />
+      <rect x="13" y="3" width="8" height="6" rx="1" />
+      <rect x="13" y="11" width="8" height="10" rx="1" />
+      <rect x="3" y="15" width="8" height="6" rx="1" />
+    </svg>
+  );
+}
+
+function IconSearch() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" />
+      <line x1="21" y1="21" x2="16.5" y2="16.5" />
+    </svg>
+  );
+}
+
+function IconTranslate() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 5h10M9 3v2c0 5-2 9-6 12M5 9c0 4 4 8 10 9" />
+      <path d="M14 22l4-9 4 9M16 18h4" />
+    </svg>
+  );
+}
+
+function IconCalculator() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4" y="2" width="16" height="20" rx="2" />
+      <line x1="8" y1="6" x2="16" y2="6" />
+      <line x1="8" y1="11" x2="9" y2="11" />
+      <line x1="12" y1="11" x2="12" y2="11" />
+      <line x1="16" y1="11" x2="16" y2="11" />
+      <line x1="8" y1="15" x2="9" y2="15" />
+      <line x1="12" y1="15" x2="12" y2="15" />
+      <line x1="16" y1="15" x2="16" y2="15" />
+      <line x1="8" y1="19" x2="9" y2="19" />
+      <line x1="12" y1="19" x2="12" y2="19" />
+      <line x1="16" y1="19" x2="16" y2="19" />
+    </svg>
+  );
+}
+
+function IconArrow() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="5" y1="12" x2="19" y2="12" />
+      <polyline points="13 6 19 12 13 18" />
+    </svg>
+  );
+}
