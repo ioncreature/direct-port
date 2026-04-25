@@ -17,7 +17,7 @@ export async function logout(): Promise<void> {
     try {
       await api.post('/auth/logout', { refreshToken });
     } catch {
-      // ignore
+      /* noop */
     }
   }
   localStorage.removeItem('accessToken');

@@ -1,13 +1,9 @@
 'use client';
 
 import { useUploadDocument } from '@/hooks/use-upload-document';
+import { fmtFileSize } from '@/lib/format';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
-
-function formatSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
-  return `${(bytes / 1024).toFixed(1)} КБ`;
-}
 
 export default function UploadDocumentPage() {
   const router = useRouter();
@@ -21,7 +17,7 @@ export default function UploadDocumentPage() {
       const doc = await upload(file);
       router.push(`/documents/${doc.id}`);
     } catch {
-      // error отображается через хук
+      /* noop */
     }
   }
 
@@ -44,9 +40,7 @@ export default function UploadDocumentPage() {
         </div>
         {file && (
           <p style={{ marginBottom: 16, color: file.size > 40 * 1024 * 1024 ? '#dc2626' : '#555' }}>
-            {file.name} ({file.size >= 1024 * 1024
-              ? `${(file.size / 1024 / 1024).toFixed(1)} МБ`
-              : `${(file.size / 1024).toFixed(1)} КБ`})
+            {file.name} ({fmtFileSize(file.size)})
             {file.size > 40 * 1024 * 1024 && ' — превышает лимит 40 МБ'}
           </p>
         )}
@@ -76,7 +70,7 @@ export default function UploadDocumentPage() {
             </div>
             <p style={{ fontSize: 13, color: '#555', margin: 0 }}>
               {progress.loaded < progress.total
-                ? `Загрузка: ${formatSize(progress.loaded)} из ${formatSize(progress.total)} (${Math.round((progress.loaded / progress.total) * 100)}%)`
+                ? `Загрузка: ${fmtFileSize(progress.loaded)} из ${fmtFileSize(progress.total)} (${Math.round((progress.loaded / progress.total) * 100)}%)`
                 : 'Файл загружен, обрабатывается на сервере...'}
             </p>
           </div>

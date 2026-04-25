@@ -15,13 +15,13 @@ export default function DashboardPage() {
   const { documents, total: docsTotal, loading: docsLoading } = useDocuments();
   const { total: tgTotal, loading: tgLoading } = useTelegramUsers();
   const [aiCost, setAiCost] = useState<number | null>(null);
-  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
+  const [statusCounts, setStatusCounts] = useState<Partial<Record<DocumentStatus, number>>>({});
 
   useEffect(() => {
     api.get<TokenStatsPeriod>('/documents/token-stats/monthly').then(({ data }) => {
       setAiCost(calcAiCostFromMap(data.models));
     }).catch(() => {});
-    api.get<Record<string, number>>('/documents/status-counts').then(({ data }) => {
+    api.get<Partial<Record<DocumentStatus, number>>>('/documents/status-counts').then(({ data }) => {
       setStatusCounts(data);
     }).catch(() => {});
   }, []);
@@ -49,9 +49,9 @@ export default function DashboardPage() {
         <StatCard label="Пользователи" value={usersTotal} href="/users" />
         <StatCard label="Telegram" value={tgTotal} href="/telegram-users" />
         <StatCard label="Документы" value={docsTotal} href="/documents" />
-        <StatCard label="Обработано" value={statusCounts['processed'] || 0} color="#16a34a" />
-        <StatCard label="Частично" value={statusCounts['processed_with_errors'] || 0} color="#d97706" />
-        <StatCard label="Сбои" value={statusCounts['failed'] || 0} color="#dc2626" />
+        <StatCard label="Обработано" value={statusCounts.processed ?? 0} color="#16a34a" />
+        <StatCard label="Частично" value={statusCounts.processed_with_errors ?? 0} color="#d97706" />
+        <StatCard label="Сбои" value={statusCounts.failed ?? 0} color="#dc2626" />
         <StatCard
           label="AI за месяц"
           value={aiCost != null ? fmtCost(aiCost) : '...'}
@@ -71,7 +71,7 @@ export default function DashboardPage() {
                   style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}
                 >
                   <span style={{ color: statusColors[status] }}>{statusLabels[status]}</span>
-                  <strong>{statusCounts[status] || 0}</strong>
+                  <strong>{statusCounts[status] ?? 0}</strong>
                 </div>
               ),
             )}

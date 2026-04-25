@@ -6,8 +6,8 @@ import { useCountries } from '@/hooks/use-countries';
 import { useDocument } from '@/hooks/use-document';
 import { DiagnosticsPanel } from './diagnostics-panel';
 import { countryOriginSourceLabels, downloadDocument, statusColors, statusLabels } from '@/lib/documents';
-import { calcAiCostFromMap, calcAiCostFromStages, fmt, fmtCost, fmtTokens, modelLabel, stageLabel } from '@/lib/format';
-import { btnOutline } from '@/lib/table-styles';
+import { calcAiCostFromMap, calcAiCostFromStages, fmt, fmtCost, fmtDateTimeLocale, fmtTokens, modelLabel, stageLabel } from '@/lib/format';
+import { btnDangerOutline, btnOutline, btnPrimary, btnSuccess, btnWarning } from '@/lib/table-styles';
 import { getDocumentUploaderName } from '@/lib/telegram';
 import type { CalculationStatus, DocumentResultRow, DocumentStatus, ParsedDataRow, ProductNoteSeverity } from '@/lib/types';
 import Link from 'next/link';
@@ -215,8 +215,8 @@ export default function DocumentDetailPage() {
   const [rejecting, setRejecting] = useState(false);
   const [recalculating, setRecalculating] = useState(false);
   const [countryDraft, setCountryDraft] = useState<string>('');
-  // Серверное значение на момент прошлой синхронизации. Polling обновляет doc каждые 3с —
-  // без ref сохранённый draft оператора затирался бы серверным значением при каждом опросе.
+  // Polling каждые 3с обновляет doc — без отслеживания last-synced серверного значения
+  // ввод оператора затирался бы при каждом опросе.
   const lastSyncedCountry = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
@@ -232,7 +232,7 @@ export default function DocumentDetailPage() {
     try {
       await recalculate(countryDraft || undefined);
     } catch {
-      // error уже установлен в хуке
+      /* error выставлен в хуке */
     } finally {
       setRecalculating(false);
     }
@@ -246,6 +246,9 @@ export default function DocumentDetailPage() {
   const [activeTab, setActiveTab] = useState<'main' | 'diagnostics'>('main');
   const [editableRows, setEditableRows] = useState<ParsedDataRow[]>([]);
   const [editableCurrency, setEditableCurrency] = useState('');
+  // Тот же паттерн что для countryDraft: polling обновляет doc.parsedData ссылочно,
+  // но при настоящей правке ref защищает draft оператора от перетирания.
+  const lastSyncedParsedData = useRef<ParsedDataRow[] | null | undefined>(undefined);
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [displayCurrency, setDisplayCurrency] = useState('');
@@ -275,16 +278,18 @@ export default function DocumentDetailPage() {
   );
 
   useEffect(() => {
-    if (doc?.parsedData) {
+    const server = doc?.parsedData ?? null;
+    if (server && lastSyncedParsedData.current !== server) {
       setEditableRows(
-        doc.parsedData.map((r) => ({
+        server.map((r) => ({
           description: String(r.description ?? ''),
           quantity: Number(r.quantity) || 0,
           price: Number(r.price) || 0,
           weight: Number(r.weight) || 0,
         })),
       );
-      setEditableCurrency(doc.currency || '');
+      setEditableCurrency(doc?.currency || '');
+      lastSyncedParsedData.current = server;
     }
   }, [doc?.parsedData, doc?.currency]);
 
@@ -336,7 +341,7 @@ export default function DocumentDetailPage() {
       await saveParsedData(editableRows, editableCurrency || undefined);
       await reprocess();
     } catch {
-      // saveParsedData throws on failure to skip reprocess
+      // saveParsedData бросает при ошибке — это пропускает reprocess
     } finally {
       setApproving(false);
     }
@@ -388,7 +393,7 @@ export default function DocumentDetailPage() {
             <button
               onClick={handleApprove}
               disabled={approving || editableRows.length === 0}
-              style={primaryBtnStyle}
+              style={btnSuccess}
             >
               {approving ? 'Сохранение...' : 'Подтвердить и обработать'}
             </button>
@@ -397,7 +402,7 @@ export default function DocumentDetailPage() {
             <button
               onClick={handleAcceptAsIs}
               disabled={approving}
-              style={primaryBtnStyle}
+              style={btnSuccess}
             >
               {approving ? 'Обработка...' : 'Принять как есть'}
             </button>
@@ -406,7 +411,7 @@ export default function DocumentDetailPage() {
             <button
               onClick={() => setShowRejectForm(!showRejectForm)}
               disabled={rejecting}
-              style={dangerOutlineBtnStyle}
+              style={btnDangerOutline}
             >
               Отклонить
             </button>
@@ -422,30 +427,13 @@ export default function DocumentDetailPage() {
                 }
               }}
               disabled={reprocessing}
-              style={{
-                padding: '8px 16px',
-                background: '#ca8a04',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 4,
-                cursor: 'pointer',
-              }}
+              style={btnWarning}
             >
               {reprocessing ? 'Отправка...' : 'Переобработать'}
             </button>
           )}
           {doc.status === 'processed' && (
-            <button
-              onClick={() => downloadDocument(doc.id)}
-              style={{
-                padding: '8px 16px',
-                background: '#2563eb',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 4,
-                cursor: 'pointer',
-              }}
-            >
+            <button onClick={() => downloadDocument(doc.id)} style={btnPrimary}>
               Скачать Excel
             </button>
           )}
@@ -573,8 +561,8 @@ export default function DocumentDetailPage() {
         <InfoCard label="Строк" value={String(doc.rowCount)} />
         {doc.currency && <InfoCard label="Валюта" value={doc.currency} />}
         <InfoCard label="Пользователь" value={getDocumentUploaderName(doc)} />
-        <InfoCard label="Создан" value={new Date(doc.createdAt).toLocaleString('ru')} />
-        <InfoCard label="Обновлён" value={new Date(doc.updatedAt).toLocaleString('ru')} />
+        <InfoCard label="Создан" value={fmtDateTimeLocale(doc.createdAt)} />
+        <InfoCard label="Обновлён" value={fmtDateTimeLocale(doc.updatedAt)} />
       </div>
 
       {/* Token usage */}
@@ -971,7 +959,7 @@ export default function DocumentDetailPage() {
               <tbody>
                 {history.map((log) => (
                   <tr key={log.id}>
-                    <td style={td}>{new Date(log.createdAt).toLocaleString('ru')}</td>
+                    <td style={td}>{fmtDateTimeLocale(log.createdAt)}</td>
                     <td style={td}>{log.trigger === 'recalculate' ? 'Пересчёт' : 'Полный'}</td>
                     <td style={tdR}>{log.itemsCount}</td>
                     <td style={tdR}>{log.resultSummary ? fmt(log.resultSummary.grandTotal) : '—'}</td>
@@ -1238,24 +1226,6 @@ function CalcLine({ label, value, note }: { label: string; value: string; note?:
     </div>
   );
 }
-
-const primaryBtnStyle: React.CSSProperties = {
-  padding: '8px 16px',
-  background: '#16a34a',
-  color: '#fff',
-  border: 'none',
-  borderRadius: 4,
-  cursor: 'pointer',
-};
-
-const dangerOutlineBtnStyle: React.CSSProperties = {
-  padding: '8px 16px',
-  background: '#fff',
-  color: '#dc2626',
-  border: '1px solid #dc2626',
-  borderRadius: 4,
-  cursor: 'pointer',
-};
 
 const th: React.CSSProperties = {
   textAlign: 'left',

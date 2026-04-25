@@ -1,6 +1,7 @@
 'use client';
 
 import { useUsers } from '@/hooks/use-users';
+import type { User } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useState } from 'react';
 
@@ -10,7 +11,7 @@ export default function EditUserPage() {
   const { users, loading: usersLoading, updateUser } = useUsers();
 
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState('customs');
+  const [role, setRole] = useState<User['role']>('customs');
   const [isActive, setIsActive] = useState(true);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -86,7 +87,7 @@ export default function EditUserPage() {
           <select
             id="role"
             value={role}
-            onChange={(e) => setRole(e.target.value)}
+            onChange={(e) => setRole(e.target.value as User['role'])}
             style={inputStyle}
           >
             <option value="customs">Таможня</option>

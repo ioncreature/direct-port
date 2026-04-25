@@ -1,60 +1,21 @@
 'use client';
 
-import api from '@/lib/api';
-import type { PaginatedResponse, SortOrder, TelegramUser } from '@/lib/types';
-import { useCallback, useEffect, useState } from 'react';
-
-const PAGE_SIZE = 20;
+import type { TelegramUser } from '@/lib/types';
+import { useServerPaginatedList } from './use-server-paginated-list';
 
 export function useTelegramUsers() {
-  const [telegramUsers, setTelegramUsers] = useState<TelegramUser[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [sortBy, setSortBy] = useState('createdAt');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('DESC');
-
-  const fetch = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = { page, limit: PAGE_SIZE, sortBy, sortOrder };
-      const { data } = await api.get<PaginatedResponse<TelegramUser>>('/telegram-users', {
-        params,
-      });
-      setTelegramUsers(data.data);
-      setTotal(data.total);
-    } finally {
-      setLoading(false);
-    }
-  }, [page, sortBy, sortOrder]);
-
-  useEffect(() => {
-    fetch();
-  }, [fetch]);
-
-  const toggleSort = useCallback(
-    (field: string) => {
-      if (sortBy === field) {
-        setSortOrder((prev) => (prev === 'DESC' ? 'ASC' : 'DESC'));
-      } else {
-        setSortBy(field);
-        setSortOrder('DESC');
-      }
-      setPage(1);
-    },
-    [sortBy],
-  );
+  const list = useServerPaginatedList<TelegramUser>('/telegram-users');
 
   return {
-    telegramUsers,
-    total,
-    loading,
-    page,
-    limit: PAGE_SIZE,
-    sortBy,
-    sortOrder,
-    setPage,
-    toggleSort,
-    refetch: fetch,
+    telegramUsers: list.items,
+    total: list.total,
+    loading: list.loading,
+    page: list.page,
+    limit: list.limit,
+    sortBy: list.sortBy,
+    sortOrder: list.sortOrder,
+    setPage: list.setPage,
+    toggleSort: list.toggleSort,
+    refetch: list.refetch,
   };
 }

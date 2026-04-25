@@ -2,7 +2,7 @@
 
 import { useTnVed } from '@/hooks/use-tn-ved';
 import { fmt } from '@/lib/format';
-import { td, th } from '@/lib/table-styles';
+import { tdR, thR, td, th } from '@/lib/table-styles';
 import type {
   TnVedCodeDetail,
   TnVedConditionalExcise,
@@ -14,8 +14,6 @@ import type {
 } from '@/lib/types';
 import { useCallback, useState } from 'react';
 
-const thRight: React.CSSProperties = { ...th, textAlign: 'right' };
-const tdRight: React.CSSProperties = { ...td, textAlign: 'right' };
 const labelStyle: React.CSSProperties = { color: '#888', marginRight: 4 };
 
 export default function TnVedPage() {
@@ -453,10 +451,10 @@ function ResultsTable({
         <tr>
           <th style={th}>Код</th>
           <th style={{ ...th, width: '40%' }}>Описание</th>
-          <th style={thRight}>Частота</th>
-          <th style={thRight}>Пошлина</th>
-          <th style={thRight}>НДС</th>
-          <th style={thRight}>Акциз</th>
+          <th style={thR}>Частота</th>
+          <th style={thR}>Пошлина</th>
+          <th style={thR}>НДС</th>
+          <th style={thR}>Акциз</th>
         </tr>
       </thead>
       <tbody>
@@ -478,10 +476,10 @@ function ResultsTable({
               </code>
             </td>
             <td style={{ ...td, fontSize: 14 }}>{item.description}</td>
-            <td style={tdRight}>{item.count}</td>
-            <td style={tdRight}>{formatDutyRate(item.rates)}</td>
-            <td style={tdRight}>{item.rates.vatRate}%</td>
-            <td style={tdRight}>{formatExciseRate(item.rates) ?? '—'}</td>
+            <td style={tdR}>{item.count}</td>
+            <td style={tdR}>{formatDutyRate(item.rates)}</td>
+            <td style={tdR}>{item.rates.vatRate}%</td>
+            <td style={tdR}>{formatExciseRate(item.rates) ?? '—'}</td>
           </tr>
         ))}
       </tbody>
@@ -611,14 +609,14 @@ function DeclarationsSection({ items }: { items: TnVedDeclarationExample[] }) {
         <thead>
           <tr>
             <th style={th}>Наименование товара</th>
-            <th style={thRight}>Частота</th>
+            <th style={thR}>Частота</th>
           </tr>
         </thead>
         <tbody>
           {items.map((item, idx) => (
             <tr key={`${idx}-${item.description}`}>
               <td style={{ ...td, fontSize: 14 }}>{item.description}</td>
-              <td style={tdRight}>{item.count}</td>
+              <td style={tdR}>{item.count}</td>
             </tr>
           ))}
         </tbody>

@@ -1,12 +1,23 @@
 'use client';
 
 import { InfoCard } from '@/components/info-card';
+import { Pager } from '@/components/pager';
+import { SortableTh } from '@/components/sortable-th';
 import { useDocuments } from '@/hooks/use-documents';
 import { useTelegramUser } from '@/hooks/use-telegram-user';
 import { statusColors, statusLabels } from '@/lib/documents';
-import { btnOutline, td, th } from '@/lib/table-styles';
+import { fmtDate, fmtDateTimeLocale } from '@/lib/format';
+import { tdEmpty, td, th } from '@/lib/table-styles';
+import { getTelegramName } from '@/lib/telegram';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+
+const sortableColumns: { field: string; label: string }[] = [
+  { field: 'originalFileName', label: 'Файл' },
+  { field: 'status', label: 'Статус' },
+  { field: 'rowCount', label: 'Строк' },
+  { field: 'createdAt', label: 'Дата' },
+];
 
 export default function TelegramUserDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -24,13 +35,6 @@ export default function TelegramUserDetailPage() {
     downloadDocument,
   } = useDocuments({ telegramUserId: id });
 
-  const totalPages = Math.max(1, Math.ceil(total / limit));
-
-  function sortIndicator(field: string) {
-    if (sortBy !== field) return '';
-    return sortOrder === 'ASC' ? ' ▲' : ' ▼';
-  }
-
   if (userLoading) return <p>Загрузка...</p>;
   if (error || !user)
     return <p style={{ color: '#dc2626' }}>{error || 'Пользователь не найден'}</p>;
@@ -46,11 +50,7 @@ export default function TelegramUserDetailPage() {
         </Link>
       </div>
 
-      <h1>
-        {user.username
-          ? `@${user.username}`
-          : [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Telegram-пользователь'}
-      </h1>
+      <h1>{getTelegramName(user)}</h1>
 
       <div
         style={{
@@ -67,7 +67,7 @@ export default function TelegramUserDetailPage() {
           value={[user.firstName, user.lastName].filter(Boolean).join(' ') || '—'}
         />
         <InfoCard label="Документов" value={String(user.documentCount ?? 0)} />
-        <InfoCard label="Регистрация" value={new Date(user.createdAt).toLocaleString('ru')} />
+        <InfoCard label="Регистрация" value={fmtDateTimeLocale(user.createdAt)} />
       </div>
 
       <h2>Документы</h2>
@@ -79,20 +79,15 @@ export default function TelegramUserDetailPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                {[
-                  { field: 'originalFileName', label: 'Файл' },
-                  { field: 'status', label: 'Статус' },
-                  { field: 'rowCount', label: 'Строк' },
-                  { field: 'createdAt', label: 'Дата' },
-                ].map((col) => (
-                  <th
+                {sortableColumns.map((col) => (
+                  <SortableTh
                     key={col.field}
-                    style={{ ...th, cursor: 'pointer', userSelect: 'none' }}
-                    onClick={() => toggleSort(col.field)}
-                  >
-                    {col.label}
-                    {sortIndicator(col.field)}
-                  </th>
+                    field={col.field}
+                    label={col.label}
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onToggle={toggleSort}
+                  />
                 ))}
                 <th style={th}></th>
               </tr>
@@ -114,7 +109,7 @@ export default function TelegramUserDetailPage() {
                     </span>
                   </td>
                   <td style={td}>{doc.rowCount}</td>
-                  <td style={td}>{new Date(doc.createdAt).toLocaleDateString('ru')}</td>
+                  <td style={td}>{fmtDate(doc.createdAt)}</td>
                   <td style={td}>
                     <button
                       onClick={() => downloadDocument(doc.id)}
@@ -135,7 +130,7 @@ export default function TelegramUserDetailPage() {
               ))}
               {documents.length === 0 && (
                 <tr>
-                  <td style={{ ...td, textAlign: 'center', color: '#888' }} colSpan={5}>
+                  <td style={tdEmpty} colSpan={5}>
                     Документов нет
                   </td>
                 </tr>
@@ -143,32 +138,7 @@ export default function TelegramUserDetailPage() {
             </tbody>
           </table>
 
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginTop: 16,
-              fontSize: 14,
-            }}
-          >
-            <span style={{ color: '#666' }}>Всего: {total}</span>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <button onClick={() => setPage(page - 1)} disabled={page <= 1} style={btnOutline}>
-                ← Пред
-              </button>
-              <span>
-                {page} из {totalPages}
-              </span>
-              <button
-                onClick={() => setPage(page + 1)}
-                disabled={page >= totalPages}
-                style={btnOutline}
-              >
-                След →
-              </button>
-            </div>
-          </div>
+          <Pager page={page} total={total} limit={limit} onPageChange={setPage} />
         </>
       )}
     </div>

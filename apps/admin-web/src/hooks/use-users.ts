@@ -1,95 +1,67 @@
 'use client';
 
 import api from '@/lib/api';
-import type { PaginatedResponse, SortOrder, User } from '@/lib/types';
-import { useCallback, useEffect, useState } from 'react';
+import type { User } from '@/lib/types';
+import { useCallback, useMemo, useState } from 'react';
+import { useServerPaginatedList } from './use-server-paginated-list';
 
-const PAGE_SIZE = 20;
+type RoleFilter = User['role'] | '';
 
 export function useUsers() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [sortBy, setSortBy] = useState('createdAt');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('DESC');
-  const [role, setRole] = useState<'admin' | 'customs' | ''>('');
+  const [role, setRole] = useState<RoleFilter>('');
 
-  const fetch = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params: Record<string, string | number> = { page, limit: PAGE_SIZE, sortBy, sortOrder };
-      if (role) params.role = role;
-      const { data } = await api.get<PaginatedResponse<User>>('/users', { params });
-      setUsers(data.data);
-      setTotal(data.total);
-    } finally {
-      setLoading(false);
-    }
-  }, [page, sortBy, sortOrder, role]);
+  const extraParams = useMemo(() => ({ role: role || undefined }), [role]);
 
-  useEffect(() => {
-    fetch();
-  }, [fetch]);
+  const list = useServerPaginatedList<User>('/users', { extraParams });
 
-  const toggleSort = useCallback(
-    (field: string) => {
-      if (sortBy === field) {
-        setSortOrder((prev) => (prev === 'DESC' ? 'ASC' : 'DESC'));
-      } else {
-        setSortBy(field);
-        setSortOrder('DESC');
-      }
-      setPage(1);
+  const filterByRole = useCallback(
+    (r: RoleFilter) => {
+      setRole(r);
+      list.resetPage();
     },
-    [sortBy],
+    [list],
   );
 
-  const filterByRole = useCallback((r: 'admin' | 'customs' | '') => {
-    setRole(r);
-    setPage(1);
-  }, []);
-
   const createUser = useCallback(
-    async (payload: { email: string; password: string; role: string }) => {
+    async (payload: { email: string; password: string; role: User['role'] }) => {
       await api.post('/users', payload);
-      await fetch();
+      await list.refetch();
     },
-    [fetch],
+    [list],
   );
 
   const updateUser = useCallback(
     async (
       id: string,
-      payload: { email?: string; password?: string; role?: string; isActive?: boolean },
+      payload: { email?: string; password?: string; role?: User['role']; isActive?: boolean },
     ) => {
       await api.patch(`/users/${id}`, payload);
-      await fetch();
+      await list.refetch();
     },
-    [fetch],
+    [list],
   );
 
   const deleteUser = useCallback(
     async (id: string) => {
       await api.delete(`/users/${id}`);
-      await fetch();
+      await list.refetch();
     },
-    [fetch],
+    [list],
   );
 
   return {
-    users,
-    total,
-    loading,
-    page,
-    limit: PAGE_SIZE,
-    sortBy,
-    sortOrder,
+    users: list.items,
+    total: list.total,
+    loading: list.loading,
+    page: list.page,
+    limit: list.limit,
+    sortBy: list.sortBy,
+    sortOrder: list.sortOrder,
     role,
-    setPage,
-    toggleSort,
+    setPage: list.setPage,
+    toggleSort: list.toggleSort,
     filterByRole,
-    refetch: fetch,
+    refetch: list.refetch,
     createUser,
     updateUser,
     deleteUser,

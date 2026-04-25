@@ -2,77 +2,52 @@
 
 import api from '@/lib/api';
 import { downloadDocument } from '@/lib/documents';
-import type { Document, DocumentStatus, PaginatedResponse, SortOrder } from '@/lib/types';
-import { useCallback, useEffect, useState } from 'react';
-
-const PAGE_SIZE = 20;
+import type { Document, DocumentStatus } from '@/lib/types';
+import { useCallback, useMemo, useState } from 'react';
+import { useServerPaginatedList } from './use-server-paginated-list';
 
 export function useDocuments(options?: { telegramUserId?: string }) {
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [sortBy, setSortBy] = useState('createdAt');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('DESC');
   const [status, setStatus] = useState<DocumentStatus | ''>('');
 
-  const fetch = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params: Record<string, string | number> = { page, limit: PAGE_SIZE, sortBy, sortOrder };
-      if (status) params.status = status;
-      if (options?.telegramUserId) params.telegramUserId = options.telegramUserId;
-      const { data } = await api.get<PaginatedResponse<Document>>('/documents', { params });
-      setDocuments(data.data);
-      setTotal(data.total);
-    } finally {
-      setLoading(false);
-    }
-  }, [page, sortBy, sortOrder, status, options?.telegramUserId]);
-
-  useEffect(() => {
-    fetch();
-  }, [fetch]);
-
-  const toggleSort = useCallback(
-    (field: string) => {
-      if (sortBy === field) {
-        setSortOrder((prev) => (prev === 'DESC' ? 'ASC' : 'DESC'));
-      } else {
-        setSortBy(field);
-        setSortOrder('DESC');
-      }
-      setPage(1);
-    },
-    [sortBy],
+  const extraParams = useMemo(
+    () => ({
+      status: status || undefined,
+      telegramUserId: options?.telegramUserId,
+    }),
+    [status, options?.telegramUserId],
   );
 
-  const filterByStatus = useCallback((s: DocumentStatus | '') => {
-    setStatus(s);
-    setPage(1);
-  }, []);
+  const list = useServerPaginatedList<Document>('/documents', { extraParams });
+
+  const filterByStatus = useCallback(
+    (s: DocumentStatus | '') => {
+      setStatus(s);
+      list.resetPage();
+    },
+    [list],
+  );
 
   const reprocessDocument = useCallback(
     async (id: string) => {
       await api.post(`/documents/${id}/reprocess`);
-      await fetch();
+      await list.refetch();
     },
-    [fetch],
+    [list],
   );
 
   return {
-    documents,
-    total,
-    loading,
-    page,
-    limit: PAGE_SIZE,
-    sortBy,
-    sortOrder,
+    documents: list.items,
+    total: list.total,
+    loading: list.loading,
+    page: list.page,
+    limit: list.limit,
+    sortBy: list.sortBy,
+    sortOrder: list.sortOrder,
     status,
-    setPage,
-    toggleSort,
+    setPage: list.setPage,
+    toggleSort: list.toggleSort,
     filterByStatus,
-    refetch: fetch,
+    refetch: list.refetch,
     downloadDocument,
     reprocessDocument,
   };

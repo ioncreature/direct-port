@@ -1,9 +1,11 @@
 'use client';
 
+import { Pager } from '@/components/pager';
+import { SortableTh } from '@/components/sortable-th';
 import { useDocuments } from '@/hooks/use-documents';
 import { statusColors, statusLabels } from '@/lib/documents';
 import { calcAiCostFromStages, fmtCost, fmtDateTime } from '@/lib/format';
-import { btnLink, btnOutline, td, th } from '@/lib/table-styles';
+import { btnLink, btnOutline, td, tdEmpty, tdR, th, thR } from '@/lib/table-styles';
 import { getDocumentUploaderName } from '@/lib/telegram';
 import type { DocumentStatus } from '@/lib/types';
 import Link from 'next/link';
@@ -44,8 +46,6 @@ export default function DocumentsPage() {
 
   const [reprocessingIds, setReprocessingIds] = useState<Set<string>>(new Set());
 
-  const totalPages = Math.max(1, Math.ceil(total / limit));
-
   const handleReprocess = async (id: string) => {
     setReprocessingIds((prev) => new Set(prev).add(id));
     try {
@@ -58,11 +58,6 @@ export default function DocumentsPage() {
       });
     }
   };
-
-  function sortIndicator(field: string) {
-    if (sortBy !== field) return '';
-    return sortOrder === 'ASC' ? ' ▲' : ' ▼';
-  }
 
   return (
     <div>
@@ -124,16 +119,16 @@ export default function DocumentsPage() {
               <tr>
                 <th style={th}>Пользователь</th>
                 {sortableColumns.map((col) => (
-                  <th
+                  <SortableTh
                     key={col.field}
-                    style={{ ...th, cursor: 'pointer', userSelect: 'none' }}
-                    onClick={() => toggleSort(col.field)}
-                  >
-                    {col.label}
-                    {sortIndicator(col.field)}
-                  </th>
+                    field={col.field}
+                    label={col.label}
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onToggle={toggleSort}
+                  />
                 ))}
-                <th style={{ ...th, textAlign: 'right' }}>Стоимость AI</th>
+                <th style={thR}>Стоимость AI</th>
                 <th style={th}></th>
               </tr>
             </thead>
@@ -159,7 +154,7 @@ export default function DocumentsPage() {
                   </td>
                   <td style={td}>{doc.rowCount}</td>
                   <td style={td}>{fmtDateTime(doc.createdAt)}</td>
-                  <td style={{ ...td, textAlign: 'right' }}>
+                  <td style={tdR}>
                     {doc.tokenUsage ? fmtCost(calcAiCostFromStages(doc.tokenUsage)) : '—'}
                   </td>
                   <td style={td}>
@@ -185,7 +180,7 @@ export default function DocumentsPage() {
               ))}
               {documents.length === 0 && (
                 <tr>
-                  <td style={{ ...td, textAlign: 'center', color: '#888' }} colSpan={7}>
+                  <td style={tdEmpty} colSpan={7}>
                     Документов не найдено
                   </td>
                 </tr>
@@ -193,32 +188,7 @@ export default function DocumentsPage() {
             </tbody>
           </table>
 
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginTop: 16,
-              fontSize: 14,
-            }}
-          >
-            <span style={{ color: '#666' }}>Всего: {total}</span>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <button onClick={() => setPage(page - 1)} disabled={page <= 1} style={btnOutline}>
-                ← Пред
-              </button>
-              <span>
-                {page} из {totalPages}
-              </span>
-              <button
-                onClick={() => setPage(page + 1)}
-                disabled={page >= totalPages}
-                style={btnOutline}
-              >
-                След →
-              </button>
-            </div>
-          </div>
+          <Pager page={page} total={total} limit={limit} onPageChange={setPage} />
         </>
       )}
     </div>

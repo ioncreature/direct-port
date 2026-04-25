@@ -1,10 +1,14 @@
 'use client';
 
+import { Pager } from '@/components/pager';
+import { SortableTh } from '@/components/sortable-th';
 import { useUsers } from '@/hooks/use-users';
-import { btnOutline, td, th } from '@/lib/table-styles';
+import { fmtDate } from '@/lib/format';
+import { tdEmpty, td, th } from '@/lib/table-styles';
+import type { User } from '@/lib/types';
 import Link from 'next/link';
 
-const roles: { value: 'admin' | 'customs' | ''; label: string }[] = [
+const roles: { value: User['role'] | ''; label: string }[] = [
   { value: '', label: 'Все' },
   { value: 'admin', label: 'Администратор' },
   { value: 'customs', label: 'Таможня' },
@@ -31,13 +35,6 @@ export default function UsersPage() {
     filterByRole,
     deleteUser,
   } = useUsers();
-
-  const totalPages = Math.max(1, Math.ceil(total / limit));
-
-  function sortIndicator(field: string) {
-    if (sortBy !== field) return '';
-    return sortOrder === 'ASC' ? ' ▲' : ' ▼';
-  }
 
   return (
     <div>
@@ -92,14 +89,14 @@ export default function UsersPage() {
             <thead>
               <tr>
                 {sortableColumns.map((col) => (
-                  <th
+                  <SortableTh
                     key={col.field}
-                    style={{ ...th, cursor: 'pointer', userSelect: 'none' }}
-                    onClick={() => toggleSort(col.field)}
-                  >
-                    {col.label}
-                    {sortIndicator(col.field)}
-                  </th>
+                    field={col.field}
+                    label={col.label}
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onToggle={toggleSort}
+                  />
                 ))}
                 <th style={th}>Активен</th>
                 <th style={th}></th>
@@ -110,7 +107,7 @@ export default function UsersPage() {
                 <tr key={user.id}>
                   <td style={td}>{user.email}</td>
                   <td style={td}>{user.role}</td>
-                  <td style={td}>{new Date(user.createdAt).toLocaleDateString('ru')}</td>
+                  <td style={td}>{fmtDate(user.createdAt)}</td>
                   <td style={td}>{user.isActive ? 'Да' : 'Нет'}</td>
                   <td style={td}>
                     <Link
@@ -137,7 +134,7 @@ export default function UsersPage() {
               ))}
               {users.length === 0 && (
                 <tr>
-                  <td style={{ ...td, textAlign: 'center', color: '#888' }} colSpan={5}>
+                  <td style={tdEmpty} colSpan={5}>
                     Пользователей не найдено
                   </td>
                 </tr>
@@ -145,32 +142,7 @@ export default function UsersPage() {
             </tbody>
           </table>
 
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginTop: 16,
-              fontSize: 14,
-            }}
-          >
-            <span style={{ color: '#666' }}>Всего: {total}</span>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <button onClick={() => setPage(page - 1)} disabled={page <= 1} style={btnOutline}>
-                ← Пред
-              </button>
-              <span>
-                {page} из {totalPages}
-              </span>
-              <button
-                onClick={() => setPage(page + 1)}
-                disabled={page >= totalPages}
-                style={btnOutline}
-              >
-                След →
-              </button>
-            </div>
-          </div>
+          <Pager page={page} total={total} limit={limit} onPageChange={setPage} />
         </>
       )}
     </div>
