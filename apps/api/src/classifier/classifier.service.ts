@@ -19,6 +19,7 @@ import {
   tokenUsageFromResponse,
   type TokenUsageMap,
 } from '../common/token-usage';
+import type { AiCallPurpose } from '../database/entities/ai-call.entity';
 import type { Dimension } from '../duty-interpreter/interfaces';
 import { PipelineAuditService, type AuditContext } from '../pipeline-audit/pipeline-audit.service';
 
@@ -96,6 +97,8 @@ interface ClassifyItem {
   rawContext?: string;
   hsCode?: string;
   hsCodeValid?: boolean;
+  /** Заполняется только в retry-вызове: код, который выбрал Claude в первой попытке и которого не оказалось в TKS. */
+  previousCode?: string;
 }
 
 const SEARCH_CONCURRENCY = 5;
@@ -377,6 +380,75 @@ export class ClassifierService {
       tnvedByCode.set(code, tnved);
     }
 
+    // Phase 3.5: одна попытка retry для позиций, где Claude выдал код, которого нет в TKS.
+    // Без этого assembleResults уйдёт в unmatched (matchConfidence=0), и при
+    // low_confidence_action='reject' даже одна такая позиция валит весь документ —
+    // хотя у нас на руках есть TKS-кандидаты, из которых Claude мог бы выбрать.
+    if (this.anthropic) {
+      const retryItems: {
+        uniqueIdx: number;
+        product: ProductRow;
+        candidates: TksCandidate[];
+        failedCode: string;
+      }[] = [];
+      for (let i = 0; i < uniqueProducts.length; i++) {
+        const sel = uniqueSelections[i];
+        const candidates = uniqueCandidates[i];
+        if (
+          sel &&
+          sel.tnVedCode &&
+          !tnvedByCode.has(sel.tnVedCode) &&
+          candidates.length > 0
+        ) {
+          retryItems.push({
+            uniqueIdx: i,
+            product: uniqueProducts[i],
+            candidates,
+            failedCode: sel.tnVedCode,
+          });
+        }
+      }
+
+      if (retryItems.length > 0) {
+        this.logger.log(
+          `Classifier retry: ${retryItems.length} unique products with codes not in TKS`,
+        );
+        const { selections: retrySels, tokenUsage: retryUsage } = await this.retryUnmatchedClaude(
+          retryItems,
+          language,
+          auditContext,
+        );
+        tokenUsage = mergeTokenUsage(tokenUsage, retryUsage);
+
+        const newCodesToLoad = new Set<string>();
+        for (const item of retryItems) {
+          const newSel = retrySels.get(item.uniqueIdx);
+          if (!newSel) continue;
+          uniqueSelections[item.uniqueIdx] = newSel;
+          const cacheKey = this.buildProductKey(item.product, classifierModel);
+          this.classificationCache.set(cacheKey, {
+            data: newSel,
+            expiresAt: now + CLASSIFICATION_CACHE_TTL,
+          });
+          if (newSel.tnVedCode && !tnvedByCode.has(newSel.tnVedCode)) {
+            newCodesToLoad.add(newSel.tnVedCode);
+          }
+        }
+
+        // Re-map selections per original product after dedup mapping
+        for (let i = 0; i < products.length; i++) {
+          selections[i] = uniqueSelections[originalToUnique[i]];
+        }
+
+        if (newCodesToLoad.size > 0) {
+          const moreLoaded = await this.loadTnvedRates([...newCodesToLoad]);
+          for (const [code, tnved] of moreLoaded) {
+            tnvedByCode.set(code, tnved);
+          }
+        }
+      }
+    }
+
     // Phase 4: Assemble results
     const assembled = this.assembleResults(
       products,
@@ -624,11 +696,67 @@ export class ClassifierService {
     return { selections: allSelections, tokenUsage: totalUsage };
   }
 
+  private async retryUnmatchedClaude(
+    retryItems: {
+      uniqueIdx: number;
+      product: ProductRow;
+      candidates: TksCandidate[];
+      failedCode: string;
+    }[],
+    language: string | undefined,
+    auditContext: AuditContext | null,
+  ): Promise<{ selections: Map<number, ClaudeSelection>; tokenUsage: TokenUsageMap }> {
+    const newSelections = new Map<number, ClaudeSelection>();
+    let totalUsage = emptyTokenUsageMap();
+
+    const batches: (typeof retryItems)[] = [];
+    for (let i = 0; i < retryItems.length; i += CLAUDE_BATCH_SIZE) {
+      batches.push(retryItems.slice(i, i + CLAUDE_BATCH_SIZE));
+    }
+    const useCache = batches.length > 1;
+    const promptIntro =
+      'Повторная классификация. В предыдущей попытке ты предложил коды (поле previousCode), которых НЕТ в справочнике ТН ВЭД (TKS). ' +
+      'Выбери tnVedCode СТРОГО из списка candidates (fromCandidates=true). ' +
+      'Не предлагай коды вне candidates: справочник TKS их не содержит, что бы ты ни считал теоретически верным. ' +
+      'Если ни один кандидат не подходит идеально — возьми ближайший по смыслу и понизь confidence. ' +
+      'В comment объясни выбор и причину, почему previousCode не подошёл';
+
+    for (const batch of batches) {
+      try {
+        const items: ClassifyItem[] = batch.map((b, idx) => ({
+          index: idx,
+          description: b.product.description,
+          candidates: b.candidates,
+          ...(b.product.rawContext ? { rawContext: b.product.rawContext } : {}),
+          previousCode: b.failedCode,
+        }));
+        const { selections, tokenUsage } = await this.callClaude(
+          items,
+          language,
+          useCache,
+          auditContext,
+          { purpose: 'classify_retry', promptIntro },
+        );
+        totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
+        for (const sel of selections) {
+          if (sel.index >= 0 && sel.index < batch.length) {
+            newSelections.set(batch[sel.index].uniqueIdx, sel);
+          }
+        }
+      } catch (err) {
+        this.logger.error('Classifier retry batch failed', err);
+      }
+    }
+
+    return { selections: newSelections, tokenUsage: totalUsage };
+  }
+
   private async callClaude(
     items: ClassifyItem[],
     language?: string,
     useCache = false,
     auditContext: AuditContext | null = null,
+    opts: { purpose?: AiCallPurpose; promptIntro?: string } = {},
   ): Promise<{ selections: ClaudeSelection[]; tokenUsage: TokenUsageMap }> {
     const model = await this.aiConfig.getClassifierModel();
     const needsLocalized = language && language !== 'ru';
@@ -636,12 +764,14 @@ export class ClassifierService {
       ? `\nДополнительно: для каждого товара добавь comment_localized — пояснение на ${language === 'zh' ? 'китайском' : 'английском'} языке.`
       : '';
 
-    const userPrompt = `Классифицируй товары по ТН ВЭД: ${JSON.stringify(items, null, 2)}${localizedInstruction}`;
+    const purpose: AiCallPurpose = opts.purpose ?? 'classify';
+    const intro = opts.promptIntro ?? 'Классифицируй товары по ТН ВЭД';
+    const userPrompt = `${intro}: ${JSON.stringify(items, null, 2)}${localizedInstruction}`;
 
     const response = await this.audit.trackAiCall(
       {
         context: auditContext,
-        purpose: 'classify',
+        purpose,
         model,
         request: {
           model,

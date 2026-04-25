@@ -47,6 +47,8 @@ function createService(opts: {
   searchResults?: Record<string, { data: any[]; hm: number }>;
   tnvedCodes?: Record<string, TnvedCode>;
   claudeResponse?: any[];
+  /** Ответ classify_products при retry-вызове (содержит "Повторная классификация" в user prompt). */
+  claudeRetryResponse?: any[];
   claudeEnabled?: boolean;
   queryFormulationResults?: Array<{ index: number; queries: string[] }>;
 } = {}) {
@@ -80,8 +82,14 @@ function createService(opts: {
                 usage: { input_tokens: 50, output_tokens: 30, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
               });
             }
+            const isRetry =
+              typeof params.messages?.[0]?.content === 'string' &&
+              params.messages[0].content.includes('Повторная классификация');
+            const items = isRetry && opts.claudeRetryResponse
+              ? opts.claudeRetryResponse
+              : (opts.claudeResponse ?? []);
             return Promise.resolve({
-              content: [{ type: 'tool_use', id: 'toolu_mock', name: 'classify_products', input: { items: opts.claudeResponse ?? [] } }],
+              content: [{ type: 'tool_use', id: 'toolu_mock', name: 'classify_products', input: { items } }],
               usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
             });
           }),
@@ -554,6 +562,85 @@ describe('ClassifierService', () => {
         (call: any[]) => call[0] === '123456',
       );
       expect(tnvedCalls).toHaveLength(0);
+    });
+  });
+
+  describe('Retry для выдуманных Claude кодов вне TKS', () => {
+    it('повторно зовёт Claude если первый код отсутствует в справочнике, использует валидный код из retry', async () => {
+      const { service, anthropic } = createService({
+        searchResults: {
+          'Кока-кола без сахара': makeSearchResult('2202100000', 'Воды с добавлением сахара'),
+        },
+        // 2202999000 — выдуманный Claude (нет в TKS), 2202100000 — реальный TKS-кандидат
+        tnvedCodes: { '2202100000': makeTnvedCode('2202100000', { IMP: 8, NDS: 22 }) },
+        claudeResponse: [
+          makeClaudeSelection({
+            tnVedCode: '2202999000',
+            confidence: 0.85,
+            comment: 'Безсахарная кола',
+            fromCandidates: false,
+          }),
+        ],
+        claudeRetryResponse: [
+          makeClaudeSelection({
+            tnVedCode: '2202100000',
+            confidence: 0.7,
+            comment: 'Ближайший из кандидатов',
+            fromCandidates: true,
+          }),
+        ],
+      });
+
+      const result = await service.classify([makeProduct('Кока-кола без сахара')]);
+      const p = result.products[0];
+
+      expect(p.matched).toBe(true);
+      expect(p.tnVedCode).toBe('2202100000');
+      expect(p.matchConfidence).toBe(0.7);
+      expect(p.dutyRate).toBe(8);
+      expect(p.vatRate).toBe(22);
+      // Один первичный + один retry classify-вызов
+      expect(classificationCallCount(anthropic!)).toBe(2);
+    });
+
+    it('не делает retry если у товара нет TKS-кандидатов', async () => {
+      const { service, anthropic } = createService({
+        searchResults: { 'Совсем неизвестный': { data: [], hm: 0 } },
+        claudeResponse: [
+          makeClaudeSelection({
+            tnVedCode: '9999999999',
+            confidence: 0.4,
+            fromCandidates: false,
+          }),
+        ],
+      });
+
+      const result = await service.classify([makeProduct('Совсем неизвестный')]);
+      expect(result.products[0].matched).toBe(false);
+      // Только один classify-вызов: retry не имеет смысла без кандидатов
+      expect(classificationCallCount(anthropic!)).toBe(1);
+    });
+
+    it('если retry вернул пусто, остаётся unmatched', async () => {
+      const { service, anthropic } = createService({
+        searchResults: {
+          'Странный товар': makeSearchResult('1111111111', 'Кандидат'),
+        },
+        // Кандидат 1111111111 нет в tnvedCodes, поэтому даже после retry assemble не найдёт ставок
+        tnvedCodes: {},
+        claudeResponse: [
+          makeClaudeSelection({
+            tnVedCode: '7777777777',
+            confidence: 0.6,
+            fromCandidates: false,
+          }),
+        ],
+        claudeRetryResponse: [],
+      });
+
+      const result = await service.classify([makeProduct('Странный товар')]);
+      expect(result.products[0].matched).toBe(false);
+      expect(classificationCallCount(anthropic!)).toBe(2);
     });
   });
 
