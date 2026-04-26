@@ -203,7 +203,9 @@ export class DocumentsProcessor extends WorkerHost {
         if (cur in ratesMap) continue;
         try {
           ratesMap[cur] = await this.currencyService.getRate(cur);
-        } catch { /* skip unavailable */ }
+        } catch (err) {
+          this.logger.warn(`Display rate for ${cur} unavailable: ${errMsg(err)}`);
+        }
       }
       doc.exchangeRates = ratesMap;
 

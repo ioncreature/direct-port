@@ -12,6 +12,7 @@ import {
   systemPrompt,
 } from '../common/claude';
 import { errMsg } from '../common/errors';
+import { localizedLanguageName } from '../common/i18n';
 import { isFlatCurrencyUnit } from '../common/normalize-impedi';
 import { getStaticNoteTranslation } from '../common/note-translations';
 import type { ProductNote } from '../common/product-notes';
@@ -583,7 +584,7 @@ export class DutyInterpreterService {
     }));
 
     const localizedInstruction = language && language !== 'ru'
-      ? `\nДополнительно: для каждого кода добавь reasoningLocalized — пояснение на ${language === 'zh' ? 'китайском' : 'английском'} языке.`
+      ? `\nДополнительно: для каждого кода добавь reasoningLocalized — пояснение на ${localizedLanguageName(language)} языке.`
       : '';
 
     const userPrompt = `Интерпретируй ставки пошлин для следующих кодов ТН ВЭД:

@@ -15,6 +15,7 @@ import {
 } from '../common/claude';
 import { DEFAULT_CONFIDENCE_THRESHOLD } from '../common/confidence';
 import { errMsg } from '../common/errors';
+import { localizedLanguageName } from '../common/i18n';
 import { normalizeImpediUnit } from '../common/normalize-impedi';
 import { getStaticNoteTranslation } from '../common/note-translations';
 import type { ProductNote } from '../common/product-notes';
@@ -896,7 +897,7 @@ export class ClassifierService {
     const model = await this.aiConfig.getClassifierModel();
     const needsLocalized = language && language !== 'ru';
     const localizedInstruction = needsLocalized
-      ? `\nДополнительно: для каждого товара добавь comment_localized — пояснение на ${language === 'zh' ? 'китайском' : 'английском'} языке.`
+      ? `\nДополнительно: для каждого товара добавь comment_localized — пояснение на ${localizedLanguageName(language)} языке.`
       : '';
 
     const purpose: AiCallPurpose = opts.purpose ?? 'classify';
@@ -1180,7 +1181,7 @@ export class ClassifierService {
 
     const localizedHint =
       language && language !== 'ru'
-        ? `\nДополнительно: верни comment_localized на ${language === 'zh' ? 'китайском' : 'английском'}.`
+        ? `\nДополнительно: верни comment_localized на ${localizedLanguageName(language)}.`
         : '';
     const userText =
       `Подтверди или скорректируй код ТН ВЭД для товара по фотографии.\n\n` +

@@ -11,7 +11,9 @@ import {
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { AiConfigService } from '../ai-config/ai-config.service';
 import { CLAUDE_TIMEOUT_UI_MS, extractClaudeText } from '../common/claude';
+import { errMsg } from '../common/errors';
 import { normalizeImpediUnit } from '../common/normalize-impedi';
 import { normalizeOksmtCode } from '../common/oksmt';
 import { normalizeModelId } from '../common/token-usage';
@@ -137,16 +139,20 @@ export interface TnVedSearchResponse {
 }
 
 const ENRICH_CONCURRENCY = 5;
+const TRANSLATION_CACHE_TTL_MS = 3600_000;
+const TRANSLATION_CACHE_MAX = 500;
 
 @Injectable()
 export class TnVedService {
   private logger = new Logger(TnVedService.name);
+  private translationCache = new Map<string, { value: string; expiresAt: number }>();
 
   constructor(
     @InjectRepository(TnVedCode) private tnVedRepo: Repository<TnVedCode>,
     @InjectRepository(AiUsageLog) private aiUsageLogRepo: Repository<AiUsageLog>,
     private tksApi: TksApiClient,
     private countriesService: CountriesService,
+    private aiConfig: AiConfigService,
     @Optional() @Inject(Anthropic) private anthropic: Anthropic | null,
   ) {}
 
@@ -161,7 +167,7 @@ export class TnVedService {
         return await this.lookupCode(trimmed);
       } catch (err) {
         this.logger.warn(
-          `Code lookup failed for "${trimmed}", falling back to text search: ${err instanceof Error ? err.message : err}`,
+          `Code lookup failed for "${trimmed}", falling back to text search: ${errMsg(err)}`,
         );
         return this.searchByText(trimmed);
       }
@@ -278,7 +284,11 @@ export class TnVedService {
     if (!this.anthropic) return query;
     if (this.isCyrillic(query)) return query;
 
-    const model = 'claude-sonnet-4-6';
+    const cacheKey = query.trim().toLowerCase();
+    const cached = this.translationCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+    const model = await this.aiConfig.getQueryFormulationModel();
     try {
       const response = await this.anthropic.messages.create(
         {
@@ -305,13 +315,23 @@ export class TnVedService {
         })
         .catch((err) => this.logger.warn('Failed to log translate token usage', err));
 
-      return extractClaudeText(response).trim() || query;
+      const translated = extractClaudeText(response).trim() || query;
+      this.cacheTranslation(cacheKey, translated);
+      return translated;
     } catch (err) {
       this.logger.warn(
-        `Translation failed, using original query: ${err instanceof Error ? err.message : err}`,
+        `Translation failed, using original query: ${errMsg(err)}`,
       );
       return query;
     }
+  }
+
+  private cacheTranslation(key: string, value: string): void {
+    if (this.translationCache.size >= TRANSLATION_CACHE_MAX) {
+      const oldest = this.translationCache.keys().next().value;
+      if (oldest !== undefined) this.translationCache.delete(oldest);
+    }
+    this.translationCache.set(key, { value, expiresAt: Date.now() + TRANSLATION_CACHE_TTL_MS });
   }
 
   private isCyrillic(text: string): boolean {
@@ -442,7 +462,7 @@ export class TnVedService {
           const country = await this.countriesService.findByCode(c);
           if (country) countryNames.set(c, country.nameRu);
         } catch (err) {
-          this.logger.warn(`Country lookup failed for ${c}: ${err instanceof Error ? err.message : err}`);
+          this.logger.warn(`Country lookup failed for ${c}: ${errMsg(err)}`);
         }
       }),
     );

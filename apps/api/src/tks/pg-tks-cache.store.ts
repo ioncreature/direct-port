@@ -3,6 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { errMsg } from '../common/errors';
 import { TksCache } from '../database/entities/tks-cache.entity';
 
 type Category = 'goods' | 'tnved' | 'reference' | 'other';
@@ -78,7 +79,7 @@ export class PgTksCacheStore implements TksCacheStore {
 
     if (Math.random() < CLEANUP_PROBABILITY) {
       void this.cleanup().catch((err) => {
-        this.logger.warn(`Cache cleanup failed: ${err instanceof Error ? err.message : err}`);
+        this.logger.warn(`Cache cleanup failed: ${errMsg(err)}`);
       });
     }
   }
