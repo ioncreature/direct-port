@@ -95,6 +95,18 @@ postgresql:
     username: directport
     password: ''
     database: directport
+  primary:
+    # Bitnami chart по дефолту ставит resourcesPreset=nano (192Mi limit), чего не хватает на INSERT
+    # 40МБ файла в documents.file_buffer (BYTEA) — postmaster держит несколько копий + WAL buffer и
+    # ловит cgroup OOM. См. инцидент 2026-04-26 (postgres OOMKill при загрузке 24МБ).
+    resourcesPreset: none
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
 
 redis:
   enabled: true
