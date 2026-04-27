@@ -498,7 +498,7 @@ describe('DutyInterpreterService', () => {
 
       const { tokenUsage } = await service.interpret([product]);
 
-      const modelUsage = tokenUsage['claude-opus-4-7'];
+      const modelUsage = tokenUsage['opus'];
       expect(modelUsage).toBeDefined();
       expect(modelUsage.inputTokens).toBe(500);
       expect(modelUsage.outputTokens).toBe(200);
@@ -666,7 +666,7 @@ describe('DutyInterpreterService', () => {
           {
             tnvedCode: code,
             language: 'ru',
-            model: 'claude-opus-4-7',
+            model: 'opus',
             interpretation: cachedInterp,
           },
         ],
@@ -701,7 +701,7 @@ describe('DutyInterpreterService', () => {
           {
             tnvedCode: code,
             language: 'en',
-            model: 'claude-opus-4-7',
+            model: 'opus',
             interpretation: makeInterpretation(code),
           },
         ],

@@ -16,7 +16,7 @@ import { localizedLanguageName } from '../common/i18n';
 import { isFlatCurrencyUnit } from '../common/normalize-impedi';
 import { getStaticNoteTranslation } from '../common/note-translations';
 import type { ProductNote } from '../common/product-notes';
-import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, tokenUsageFromResponse } from '../common/token-usage';
+import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, modelFamily, tokenUsageFromResponse } from '../common/token-usage';
 import type { VerifiedProduct } from '../classifier/classifier.service';
 import { PipelineAuditService, type AuditContext } from '../pipeline-audit/pipeline-audit.service';
 import { DutyInterpretation, InterpretedProduct } from './interfaces';
@@ -309,11 +309,17 @@ export class DutyInterpreterService {
     const langKey = language ?? 'ru';
     const interpreterModel = await this.aiConfig.getInterpreterModel();
     let dbHits = 0;
+    // model в DB-кэше хранится как семейство (sonnet/opus/haiku) — см. миграцию
+    // NormalizeModelFamilies. Конкретный version ID интерпретатора (например
+    // `claude-opus-4-7`) не должен инвалидировать persistent cache при минорных
+    // апдейтах: интерпретация ставок ТН ВЭД от точечной версии семейства
+    // практически не зависит.
+    const cacheModelKey = modelFamily(interpreterModel);
     if (codesToInterpret.length > 0 && this.persistentCache) {
       const fromDb = await this.loadFromPersistentCache(
         codesToInterpret,
         langKey,
-        interpreterModel,
+        cacheModelKey,
       );
       for (const [code, data] of fromDb) {
         interpretations.set(code, data);
@@ -425,7 +431,7 @@ export class DutyInterpreterService {
     }
 
     if (freshFromClaude.length > 0 && this.persistentCache) {
-      await this.savePersistentCache(freshFromClaude, langKey, interpreterModel).catch((err) => {
+      await this.savePersistentCache(freshFromClaude, langKey, cacheModelKey).catch((err) => {
         this.logger.warn(`Persistent cache save failed: ${errMsg(err)}`);
       });
     }

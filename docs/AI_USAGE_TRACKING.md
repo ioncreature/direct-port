@@ -24,17 +24,17 @@ type TokenUsageMap = Record<string, {
 }>;
 ```
 
-Ключи внешнего объекта — стадия pipeline (`parse`, `classify`, `interpret`). Ключи внутреннего — model ID (с обрезанным date-suffix через `normalizeModelId()`, т.е. `claude-haiku-4-5` вместо `claude-haiku-4-5-20251001`).
+Ключи внешнего объекта — стадия pipeline (`parse`, `classify`, `interpret`). Ключи внутреннего — семейство модели Claude (`haiku` / `sonnet` / `opus`), полученное через `modelFamily()`. Конкретный version ID (например `claude-opus-4-7`) для аналитики стоимости и UX-фильтра не нужен — версии меняются по нескольку раз в год, раздувают список и ломают сводку при апгрейде. Точная версия для вызова Anthropic SDK живёт в `AiConfigService.MODEL_IDS`.
 
 Сюда пишутся вызовы, которые относятся к конкретному документу: AiParser, Classifier (основной проход + vision-retry — оба идут в стадию `classify`), DutyInterpreter. Запись делает воркер документа после успешного завершения этапа.
 
 `ai_call.purpose` (детальный per-call audit, см. ниже): `parse_structure / parse_products / parse_chunk / parse_validate / classify_formulate_queries / classify / classify_retry / classify_vision / interpret / translate_query`.
 
 Утилиты — `apps/api/src/common/token-usage.ts`:
-- `tokenUsageFromResponse(model, usage)` — собирает `TokenUsageMap` из ответа Anthropic SDK
+- `tokenUsageFromResponse(model, usage)` — собирает `TokenUsageMap` из ответа Anthropic SDK (ключ — семейство)
 - `mergeTokenUsage(a, b)` — суммирует per-model
 - `addStageUsage(map, stage, usage)` — добавляет в нужную стадию
-- `normalizeModelId(model)` — стрипает дату из ID
+- `modelFamily(model)` — сворачивает любой model ID в `haiku`/`sonnet`/`opus`
 
 ### 2. Таблица `ai_usage_log` (entity `AiUsageLog`)
 
@@ -70,10 +70,10 @@ type TokenUsageMap = Record<string, {
 - Таблица «Расходы по пользователям» (включая `null` = админка)
 - Таблица «Последние документы» с переходом на детали
 
-В подвале — текущие тарифы (хардкод в компоненте): Sonnet — $3 / $15 за 1M, Haiku — $1 / $5 за 1M. При обновлении прайс-листа Anthropic нужно править здесь.
+В подвале — текущие тарифы (хардкод в компоненте): Claude Haiku — $1 / $5 за 1M, Claude Sonnet — $3 / $15 за 1M, Claude Opus — $5 / $25 за 1M. При обновлении прайс-листа Anthropic нужно править здесь.
 
 ## Что добавлять в код при новом AI-вызове
 
 1. Если вызов в рамках pipeline документа → собрать `TokenUsageMap` через `tokenUsageFromResponse(model, response.usage)` и положить в `tokenUsage[stage]` через `addStageUsage()`. Сохранить документ.
-2. Если вызов вне документа → `aiUsageLogRepo.save({ model: normalizeModelId(model), purpose: 'своё-имя', inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens })`. Save можно делать fire-and-forget (без `await`), как в TnVedService — это не критичный путь.
-3. Если появилась новая модель Claude — добавить её цену в `apps/admin-web/src/lib/format.ts` и в подвал страницы ai-costs.
+2. Если вызов вне документа → `aiUsageLogRepo.save({ model: modelFamily(model), purpose: 'своё-имя', inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens })`. Save можно делать fire-and-forget (без `await`), как в TnVedService — это не критичный путь.
+3. Если появилось новое семейство Claude — добавить его в `MODEL_CONFIG` (`apps/admin-web/src/lib/format.ts`), в `modelFamily()` (api и admin) и в подвал страницы ai-costs. Ребрендинг ревизий в пределах семейства (например, sonnet-4-7) править нигде не нужно — нормализация идёт по подстроке.

@@ -342,16 +342,24 @@ export class DocumentsService {
     const [byUser, recentDocs, availableModels] = await Promise.all([
       this.repo.manager.query(byUserQuery, byUserParams),
       recentDocsQb.getMany(),
-      model
-        ? Promise.resolve([model])
-        : this.repo.manager
-            .query(`
-              SELECT DISTINCT model.key AS "model"
-              FROM documents doc,
-                jsonb_each(doc.token_usage) stage,
-                jsonb_each(stage.value) model
-            `)
-            .then((rows: Array<{ model: string }>) => rows.map((r) => r.model).sort()),
+      // availableModels — это меню выбора в UI, и его список НЕ должен зависеть
+      // от текущего фильтра: иначе при клике на семейство остальные табы
+      // пропадут (фильтр сужает данные до одной модели, и DISTINCT возвращает
+      // одну строку). Поэтому всегда отдаём полный список из БД, объединённый
+      // с ai_usage_log (translate-вызовы пишутся туда, а не в token_usage).
+      this.repo.manager
+        .query(`
+          SELECT DISTINCT m FROM (
+            SELECT model.key AS m
+            FROM documents doc,
+              jsonb_each(doc.token_usage) stage,
+              jsonb_each(stage.value) model
+            UNION
+            SELECT model AS m FROM ai_usage_log
+          ) all_models
+          ORDER BY m
+        `)
+        .then((rows: Array<{ m: string }>) => rows.map((r) => r.m)),
     ]);
 
     return {

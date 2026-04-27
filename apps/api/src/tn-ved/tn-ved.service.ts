@@ -16,7 +16,7 @@ import { CLAUDE_TIMEOUT_UI_MS, extractClaudeText } from '../common/claude';
 import { errMsg } from '../common/errors';
 import { normalizeImpediUnit } from '../common/normalize-impedi';
 import { normalizeOksmtCode } from '../common/oksmt';
-import { normalizeModelId } from '../common/token-usage';
+import { modelFamily } from '../common/token-usage';
 import { CountriesService } from '../countries/countries.service';
 import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
 import { TnVedCode } from '../database/entities/tn-ved-code.entity';
@@ -306,7 +306,7 @@ export class TnVedService {
 
       this.aiUsageLogRepo
         .save({
-          model: normalizeModelId(model),
+          model: modelFamily(model),
           purpose: 'translate',
           inputTokens: response.usage.input_tokens,
           outputTokens: response.usage.output_tokens,

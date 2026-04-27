@@ -4,11 +4,17 @@ export function fmt(n: number): string {
   return n.toLocaleString('ru', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-/** Per-model config: pricing ($/1M tokens) + display label */
+/**
+ * Конфигурация семейств Claude: ценник ($/1M токенов) + подпись для UI.
+ * API после миграции NormalizeModelFamilies хранит семейство (haiku/sonnet/opus),
+ * не version ID, поэтому ключи здесь — семейства. modelFamily() ниже на всякий
+ * случай нормализует входное значение, чтобы устаревшие записи и историю
+ * AiCall с конкретной версией мы тоже корректно подписывали.
+ */
 export const MODEL_CONFIG: Record<string, { label: string; input: number; output: number }> = {
-  'claude-opus-4-7': { label: 'Opus', input: 5, output: 25 },
-  'claude-sonnet-4-6': { label: 'Sonnet', input: 3, output: 15 },
-  'claude-haiku-4-5': { label: 'Haiku', input: 1, output: 5 },
+  haiku: { label: 'Claude Haiku', input: 1, output: 5 },
+  sonnet: { label: 'Claude Sonnet', input: 3, output: 15 },
+  opus: { label: 'Claude Opus', input: 5, output: 25 },
 };
 const DEFAULT_PRICING = { input: 3, output: 15 };
 
@@ -18,8 +24,17 @@ export const STAGE_LABELS: Record<string, string> = {
   interpreter: 'Интерпретация',
 };
 
+function modelFamily(model: string): string {
+  const m = (model || '').toLowerCase();
+  if (m.includes('haiku')) return 'haiku';
+  if (m.includes('sonnet')) return 'sonnet';
+  if (m.includes('opus')) return 'opus';
+  return model;
+}
+
 export function modelLabel(model: string): string {
-  return MODEL_CONFIG[model]?.label ?? model;
+  const family = modelFamily(model);
+  return MODEL_CONFIG[family]?.label ?? model;
 }
 
 export function stageLabel(stage: string): string {
@@ -32,7 +47,7 @@ export function calcAiCostFromMap(map: TokenUsageMap | null | undefined): number
   if (!map) return 0;
   let cost = 0;
   for (const [model, usage] of Object.entries(map)) {
-    const pricing = MODEL_CONFIG[model] ?? DEFAULT_PRICING;
+    const pricing = MODEL_CONFIG[modelFamily(model)] ?? DEFAULT_PRICING;
     cost += (
       usage.inputTokens * pricing.input +
       (usage.cacheCreationTokens ?? 0) * pricing.input * 1.25 +

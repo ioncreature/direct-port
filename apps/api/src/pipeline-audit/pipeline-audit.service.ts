@@ -3,7 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
 import { errMsg } from '../common/errors';
-import { normalizeModelId, type TokenUsageMap } from '../common/token-usage';
+import { modelFamily, type TokenUsageMap } from '../common/token-usage';
 import { AiCall, type AiCallPurpose } from '../database/entities/ai-call.entity';
 import {
   DocumentVersion,
@@ -227,7 +227,7 @@ export class PipelineAuditService {
           stageRunId: input.context?.stageRunId ?? null,
           documentId: input.context?.documentId ?? null,
           purpose: input.purpose,
-          model: normalizeModelId(input.model),
+          model: modelFamily(input.model),
           attempt: input.attempt ?? 1,
           request: input.request,
           response: input.response ?? null,

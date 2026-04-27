@@ -13,9 +13,24 @@ export function emptyTokenUsageMap(): TokenUsageMap {
   return {};
 }
 
-/** Strip date suffix from model ID (e.g. 'claude-haiku-4-5-20251001' → 'claude-haiku-4-5') */
-export function normalizeModelId(model: string): string {
-  return model.replace(/-\d{8}$/, '');
+export type ModelFamily = 'haiku' | 'sonnet' | 'opus';
+
+/**
+ * Сворачивает любой model ID Claude в семейство (haiku/sonnet/opus). Версии
+ * обновляются по нескольку раз в год, и хранить в статистике/audit детальный
+ * suffix вида `claude-haiku-4-5-20251001` бесполезно — для аналитики и UX
+ * важно семейство, не точная ревизия. Конкретная версия для вызова SDK живёт
+ * в `AiConfigService.MODEL_IDS` и в `request` audit-записи AiCall.
+ *
+ * Возвращает исходную строку, если ни одно семейство не подошло — fallback на
+ * случай не-Anthropic моделей в будущем.
+ */
+export function modelFamily(model: string): string {
+  const m = model.toLowerCase();
+  if (m.includes('haiku')) return 'haiku';
+  if (m.includes('sonnet')) return 'sonnet';
+  if (m.includes('opus')) return 'opus';
+  return model;
 }
 
 /** Create a single-model entry from an Anthropic API response */
@@ -24,7 +39,7 @@ export function tokenUsageFromResponse(
   usage: { input_tokens: number; output_tokens: number; cache_creation_input_tokens?: number | null; cache_read_input_tokens?: number | null },
 ): TokenUsageMap {
   return {
-    [normalizeModelId(model)]: {
+    [modelFamily(model)]: {
       inputTokens: usage.input_tokens,
       outputTokens: usage.output_tokens,
       cacheCreationTokens: usage.cache_creation_input_tokens ?? 0,

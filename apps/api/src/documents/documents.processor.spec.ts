@@ -915,10 +915,6 @@ describe('DocumentsProcessor.recalculate (job.name="recalculate-document")', () 
 });
 
 describe('DocumentsProcessor partial_ok flag', () => {
-  function findStageCall(audit: { completeStageRun: jest.Mock }, stageRunId: string) {
-    return audit.completeStageRun.mock.calls.find(([id]) => id === stageRunId);
-  }
-
   it('все стадии ok → completeStageRun вызывается с partial=false (или без флага)', async () => {
     const doc = makeDoc({ countryOfOrigin: '156', countryOriginSource: 'ai_explicit' });
     const classified = [makeClassified()];

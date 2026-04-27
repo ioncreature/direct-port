@@ -191,7 +191,7 @@ export default function AiCostsPage() {
       </div>
 
       <div style={{ marginTop: 24, padding: 16, background: '#f9f9f9', borderRadius: 8, fontSize: 13, color: '#888' }}>
-        Расчёт стоимости по моделям: Sonnet — $3 / $15 за 1M токенов (in/out), Haiku — $1 / $5 за 1M токенов (in/out)
+        Расчёт стоимости по моделям: Claude Haiku — $1 / $5 за 1M токенов (in/out), Claude Sonnet — $3 / $15 за 1M токенов (in/out), Claude Opus — $5 / $25 за 1M токенов (in/out)
       </div>
     </div>
   );
