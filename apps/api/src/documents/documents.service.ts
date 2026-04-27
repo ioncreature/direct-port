@@ -307,7 +307,7 @@ export class DocumentsService {
       SELECT doc.telegram_user_id AS "telegramUserId",
         tu.username AS "username",
         tu.first_name AS "firstName",
-        model.key AS "model",
+        model_family(model.key) AS "model",
         COALESCE(SUM((model.value->>'inputTokens')::int), 0) AS "inputTokens",
         COALESCE(SUM((model.value->>'outputTokens')::int), 0) AS "outputTokens",
         COALESCE(SUM((model.value->>'cacheCreationTokens')::int), 0) AS "cacheCreationTokens",
@@ -320,9 +320,9 @@ export class DocumentsService {
     const byUserParams: unknown[] = [];
     if (model) {
       byUserParams.push(model);
-      byUserQuery += ` WHERE model.key = $1`;
+      byUserQuery += ` WHERE model_family(model.key) = $1`;
     }
-    byUserQuery += ` GROUP BY doc.telegram_user_id, tu.username, tu.first_name, model.key`;
+    byUserQuery += ` GROUP BY doc.telegram_user_id, tu.username, tu.first_name, model_family(model.key)`;
 
     const recentDocsQb = this.repo
       .createQueryBuilder('doc')
@@ -334,7 +334,10 @@ export class DocumentsService {
       .limit(10);
     if (model) {
       recentDocsQb.andWhere(
-        `EXISTS (SELECT 1 FROM jsonb_each(doc.token_usage) s WHERE s.value ? :model)`,
+        `EXISTS (
+          SELECT 1 FROM jsonb_each(doc.token_usage) s, jsonb_each(s.value) m
+          WHERE model_family(m.key) = :model
+        )`,
         { model },
       );
     }
@@ -344,12 +347,13 @@ export class DocumentsService {
       recentDocsQb.getMany(),
       // availableModels — это меню выбора в UI, и его список НЕ должен зависеть
       // от текущего фильтра: иначе при клике на семейство остальные табы
-      // пропадут (фильтр сужает данные до одной модели, и DISTINCT возвращает
-      // одну строку). Поэтому всегда отдаём полный список из БД, объединённый
-      // с ai_usage_log (translate-вызовы пишутся туда, а не в token_usage).
+      // пропадут. Группируем по семейству, чтобы устаревшие записи (те, что
+      // не попали под NormalizeModelFamilies — например translate, успевший
+      // записать полный version ID между миграцией и передеплоем API) не
+      // дублировали кнопки «Claude Haiku» и «Claude Opus» в фильтре.
       this.repo.manager
         .query(`
-          SELECT DISTINCT m FROM (
+          SELECT DISTINCT model_family(m) AS m FROM (
             SELECT model.key AS m
             FROM documents doc,
               jsonb_each(doc.token_usage) stage,
@@ -396,7 +400,7 @@ export class DocumentsService {
     since.setDate(since.getDate() - days + 1);
     since.setHours(0, 0, 0, 0);
 
-    let docQuery = `SELECT DATE(doc.created_at AT TIME ZONE 'UTC') AS "date", model.key AS "model",
+    let docQuery = `SELECT DATE(doc.created_at AT TIME ZONE 'UTC') AS "date", model_family(model.key) AS "model",
          COALESCE(SUM((model.value->>'inputTokens')::int), 0) AS "inputTokens",
          COALESCE(SUM((model.value->>'outputTokens')::int), 0) AS "outputTokens",
          COALESCE(SUM((model.value->>'cacheCreationTokens')::int), 0) AS "cacheCreationTokens",
@@ -408,11 +412,11 @@ export class DocumentsService {
     const docParams: unknown[] = [since];
     if (model) {
       docParams.push(model);
-      docQuery += ` AND model.key = $2`;
+      docQuery += ` AND model_family(model.key) = $2`;
     }
-    docQuery += ` GROUP BY "date", model.key ORDER BY "date"`;
+    docQuery += ` GROUP BY "date", model_family(model.key) ORDER BY "date"`;
 
-    let logQuery = `SELECT DATE(created_at AT TIME ZONE 'UTC') AS "date", model AS "model",
+    let logQuery = `SELECT DATE(created_at AT TIME ZONE 'UTC') AS "date", model_family(model) AS "model",
          COALESCE(SUM(input_tokens), 0) AS "inputTokens",
          COALESCE(SUM(output_tokens), 0) AS "outputTokens",
          COALESCE(SUM(cache_creation_tokens), 0) AS "cacheCreationTokens",
@@ -422,9 +426,9 @@ export class DocumentsService {
     const logParams: unknown[] = [since];
     if (model) {
       logParams.push(model);
-      logQuery += ` AND model = $2`;
+      logQuery += ` AND model_family(model) = $2`;
     }
-    logQuery += ` GROUP BY "date", model ORDER BY "date"`;
+    logQuery += ` GROUP BY "date", model_family(model) ORDER BY "date"`;
 
     const [docRows, logRows] = await Promise.all([
       this.repo.manager.query(docQuery, docParams),
@@ -499,7 +503,7 @@ export class DocumentsService {
   /** Aggregate per-model tokens from two-level JSONB: { stage: { model: { in, out } } } */
   private tokensByModel(since?: Date, model?: string) {
     let query = `
-      SELECT model.key AS "model",
+      SELECT model_family(model.key) AS "model",
         COALESCE(SUM((model.value->>'inputTokens')::int), 0) AS "inputTokens",
         COALESCE(SUM((model.value->>'outputTokens')::int), 0) AS "outputTokens",
         COALESCE(SUM((model.value->>'cacheCreationTokens')::int), 0) AS "cacheCreationTokens",
@@ -515,10 +519,10 @@ export class DocumentsService {
     }
     if (model) {
       params.push(model);
-      conditions.push(`model.key = $${params.length}`);
+      conditions.push(`model_family(model.key) = $${params.length}`);
     }
     if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
-    query += ' GROUP BY model.key';
+    query += ' GROUP BY model_family(model.key)';
     return this.repo.manager.query(query, params);
   }
 
@@ -530,7 +534,10 @@ export class DocumentsService {
     if (since) qb.andWhere('doc.created_at >= :since', { since });
     if (model) {
       qb.andWhere(
-        `EXISTS (SELECT 1 FROM jsonb_each(doc.token_usage) s WHERE s.value ? :model)`,
+        `EXISTS (
+          SELECT 1 FROM jsonb_each(doc.token_usage) s, jsonb_each(s.value) m
+          WHERE model_family(m.key) = :model
+        )`,
         { model },
       );
     }
