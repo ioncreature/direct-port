@@ -40,6 +40,7 @@ export class AiConfigService {
         classifierModel: 'sonnet',
         interpreterModel: 'sonnet',
         photoClassifierModel: 'sonnet',
+        regulatoryInterpreterModel: 'haiku',
       }),
     );
     this.cached = created;
@@ -53,6 +54,7 @@ export class AiConfigService {
     classifierModel?: AiModelTier;
     interpreterModel?: AiModelTier;
     photoClassifierModel?: AiModelTier;
+    regulatoryInterpreterModel?: AiModelTier;
   }): Promise<AiConfig> {
     const config = await this.get();
     if (dto.parserModel !== undefined) config.parserModel = dto.parserModel;
@@ -60,13 +62,15 @@ export class AiConfigService {
     if (dto.classifierModel !== undefined) config.classifierModel = dto.classifierModel;
     if (dto.interpreterModel !== undefined) config.interpreterModel = dto.interpreterModel;
     if (dto.photoClassifierModel !== undefined) config.photoClassifierModel = dto.photoClassifierModel;
+    if (dto.regulatoryInterpreterModel !== undefined)
+      config.regulatoryInterpreterModel = dto.regulatoryInterpreterModel;
     const saved = await this.repo.save(config);
     this.cached = saved;
     this.cachedAt = Date.now();
     this.logger.log(
       `AI config updated: parser=${saved.parserModel}, queryFormulation=${saved.queryFormulationModel}, ` +
         `classifier=${saved.classifierModel}, interpreter=${saved.interpreterModel}, ` +
-        `photoClassifier=${saved.photoClassifierModel}`,
+        `photoClassifier=${saved.photoClassifierModel}, regulatoryInterpreter=${saved.regulatoryInterpreterModel}`,
     );
     return saved;
   }
@@ -99,5 +103,11 @@ export class AiConfigService {
   async getPhotoClassifierModel(): Promise<string> {
     const config = await this.get();
     return MODEL_IDS[config.photoClassifierModel] ?? MODEL_IDS.sonnet;
+  }
+
+  /** Возвращает model ID для AI-выжимок разрешительных мер (NOTE → summary). */
+  async getRegulatoryInterpreterModel(): Promise<string> {
+    const config = await this.get();
+    return MODEL_IDS[config.regulatoryInterpreterModel] ?? MODEL_IDS.haiku;
   }
 }

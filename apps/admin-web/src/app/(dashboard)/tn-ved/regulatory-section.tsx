@@ -1,9 +1,11 @@
 'use client';
 
+import type { RegulatoryExplanationsState } from '@/hooks/use-regulatory-explanations';
 import { fmtIsoDate, fmtPeriod } from '@/lib/format';
 import type {
   AssessmentForm,
   MatchPrecision,
+  RegulatoryExplanation,
   RegulatoryItem,
   RegulatoryReport,
 } from '@/lib/types';
@@ -94,7 +96,13 @@ const SECTIONS: SectionConfig[] = [
   },
 ];
 
-export function RegulatoryRequirementsSection({ report }: { report: RegulatoryReport }) {
+export function RegulatoryRequirementsSection({
+  report,
+  explanations,
+}: {
+  report: RegulatoryReport;
+  explanations: RegulatoryExplanationsState;
+}) {
   if (report.totalCount === 0) {
     return (
       <div style={{ marginTop: 24 }}>
@@ -119,6 +127,16 @@ export function RegulatoryRequirementsSection({ report }: { report: RegulatoryRe
         Информация носит справочный характер на основе ТН ВЭД-справочника TKS. Окончательный
         список документов подтверждается в органе по сертификации / у таможенного брокера.
       </p>
+      {explanations.status === 'loading' && (
+        <p style={{ color: '#2563eb', fontSize: 12, margin: '0 0 14px' }}>
+          AI-выжимки загружаются…
+        </p>
+      )}
+      {explanations.status === 'error' && (
+        <p style={{ color: '#b91c1c', fontSize: 12, margin: '0 0 14px' }}>
+          AI-выжимки недоступны: {explanations.message}. Показаны базовые сводки.
+        </p>
+      )}
 
       {SECTIONS.map((section) => {
         const items = report[section.key];
@@ -129,6 +147,7 @@ export function RegulatoryRequirementsSection({ report }: { report: RegulatoryRe
             title={section.title}
             description={section.description}
             items={items}
+            explanations={explanations}
           />
         );
       })}
@@ -140,10 +159,12 @@ function RegulatorySubSection({
   title,
   description,
   items,
+  explanations,
 }: {
   title: string;
   description?: string;
   items: RegulatoryItem[];
+  explanations: RegulatoryExplanationsState;
 }) {
   return (
     <div style={{ marginTop: 18 }}>
@@ -155,18 +176,36 @@ function RegulatorySubSection({
         <p style={{ margin: '0 0 8px', color: '#888', fontSize: 12 }}>{description}</p>
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {items.map((item, idx) => (
-          <RegulatoryCard key={`${item.priznak}-${item.codeRange.min}-${idx}`} item={item} />
+        {items.map((item) => (
+          <RegulatoryCard
+            key={item.id}
+            item={item}
+            explanation={explanations.status === 'ready' ? explanations.data[item.id] ?? null : null}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function RegulatoryCard({ item }: { item: RegulatoryItem }) {
+function RegulatoryCard({
+  item,
+  explanation,
+}: {
+  item: RegulatoryItem;
+  explanation: RegulatoryExplanation | null;
+}) {
   const [expanded, setExpanded] = useState(false);
   const precision = PRECISION_BADGES[item.matchPrecision];
-  const formLabel = FORM_LABELS[item.form];
+  // AI-уточнения накладываются поверх детерминистических полей. nullable AI-поля не
+  // затирают валидные значения парсера — берём только не-null/непустые.
+  const display = {
+    form: explanation?.form ?? item.form,
+    regulation: explanation?.regulation ?? item.regulation,
+    authority: explanation?.authority ?? item.authority,
+    summary: explanation?.summary ?? item.summary,
+  };
+  const formLabel = FORM_LABELS[display.form];
 
   return (
     <div
@@ -180,7 +219,7 @@ function RegulatoryCard({ item }: { item: RegulatoryItem }) {
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 320px', minWidth: 0 }}>
           <div style={{ fontWeight: 500, fontSize: 14 }}>{item.title}</div>
-          {item.regulation && item.form !== 'unknown' && (
+          {display.regulation && display.form !== 'unknown' && (
             <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
               Форма: {formLabel}
             </div>
@@ -203,7 +242,24 @@ function RegulatoryCard({ item }: { item: RegulatoryItem }) {
           whiteSpace: 'pre-wrap',
         }}
       >
-        {item.summary}
+        {display.summary}
+        {explanation && (
+          <span
+            title="Сводка получена AI-моделью на основе текста NOTE из справочника TKS"
+            style={{
+              marginLeft: 8,
+              fontSize: 10,
+              padding: '1px 6px',
+              borderRadius: 4,
+              backgroundColor: '#ede9fe',
+              color: '#5b21b6',
+              verticalAlign: 'middle',
+              cursor: 'help',
+            }}
+          >
+            AI
+          </span>
+        )}
       </div>
 
       <div
@@ -216,9 +272,9 @@ function RegulatoryCard({ item }: { item: RegulatoryItem }) {
           color: '#6b7280',
         }}
       >
-        {item.authority && (
+        {display.authority && (
           <span>
-            <span style={{ color: '#9ca3af' }}>Регулятор:</span> {item.authority}
+            <span style={{ color: '#9ca3af' }}>Регулятор:</span> {display.authority}
           </span>
         )}
         {item.documentRef && (

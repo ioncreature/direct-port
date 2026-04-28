@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { formatIsoDate, formatPeriod } from '../common/format-date';
 import { normalizeOksmtCode } from '../common/oksmt';
 import { CountriesService } from '../countries/countries.service';
+import { computeItemId } from './note-hash';
 import {
   extractAuthority,
   extractForm,
@@ -95,6 +96,29 @@ export class RegulatoryRequirementsService {
     return groupReport(flatItems);
   }
 
+  /**
+   * Итерирует все items из RegulatoryReport одним списком — для случаев, когда
+   * категории не важны (AI-обогащение, экспорт). Использует typed-keys чтобы
+   * добавление нового бакета в RegulatoryReport ловилось TS, а не молча терялось.
+   */
+  static flattenReport(report: RegulatoryReport): RegulatoryItem[] {
+    const buckets: Array<keyof RegulatoryReport> = [
+      'certifications',
+      'permits',
+      'licenses',
+      'marking',
+      'traceability',
+      'utilizationFee',
+      'strategicAndDualUse',
+      'countryRestrictions',
+      'other',
+    ];
+    return buckets.flatMap((key) => {
+      const value = report[key];
+      return Array.isArray(value) ? value : [];
+    });
+  }
+
   private async toItem(
     entry: TnvedallEntry,
     priznak: number,
@@ -120,6 +144,7 @@ export class RegulatoryRequirementsService {
     const countryName = country?.nameRu ?? null;
 
     return {
+      id: computeItemId(priznak, codeMin, countryCode, note),
       category,
       priznak,
       title: buildTitle(category, regulation, regulationTitle, form, countryName),

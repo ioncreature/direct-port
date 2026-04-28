@@ -1,5 +1,6 @@
 'use client';
 
+import { useRegulatoryExplanations } from '@/hooks/use-regulatory-explanations';
 import { useTnVed } from '@/hooks/use-tn-ved';
 import { fmt, fmtDocumentRef, fmtPeriod } from '@/lib/format';
 import { tdR, thR, td, th } from '@/lib/table-styles';
@@ -20,6 +21,13 @@ const labelStyle: React.CSSProperties = { color: '#888', marginRight: 4 };
 export default function TnVedPage() {
   const { query, setQuery, result, loading, debouncing, searchImmediate } = useTnVed();
   const busy = debouncing || loading;
+  const lookupCode =
+    result?.mode === 'code_lookup' && result.codeDetail ? result.codeDetail.code : null;
+  // Lazy-load AI-выжимок только когда уже есть детерминистический отчёт с записями.
+  const explanationsState = useRegulatoryExplanations(
+    lookupCode,
+    !!result?.codeDetail && result.codeDetail.regulatoryReport.totalCount > 0,
+  );
 
   const onCodeClick = useCallback(
     (code: string) => searchImmediate(code.replace(/\D/g, '')),
@@ -68,7 +76,10 @@ export default function TnVedPage() {
       )}
 
       {result?.mode === 'code_lookup' && result.codeDetail && (
-        <RegulatoryRequirementsSection report={result.codeDetail.regulatoryReport} />
+        <RegulatoryRequirementsSection
+          report={result.codeDetail.regulatoryReport}
+          explanations={explanationsState}
+        />
       )}
 
       {result?.mode === 'code_lookup' && result.codeDetail && result.codeDetail.declarations.length > 0 && (

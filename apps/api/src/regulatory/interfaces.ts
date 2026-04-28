@@ -18,16 +18,23 @@ export type RegulatoryCategory =
   | 'country_export_ban'  // PRIZNAK=34
   | 'other';              // PRIZNAK=15 и неклассифицированные
 
-/** Форма документа/оценки соответствия, извлечённая из текста NOTE. */
-export type AssessmentForm =
-  | 'declaration'         // декларация о соответствии (ДС)
-  | 'certificate'         // сертификат соответствия (СС)
-  | 'state_registration'  // свидетельство о государственной регистрации (СГР)
-  | 'notification'        // нотификация (например, криптография ФСБ)
-  | 'permit'              // разрешение / заключение
-  | 'license'             // лицензия Минпромторга/иного органа
-  | 'fee'                 // сбор/платёж (утилизационный, экологический)
-  | 'unknown';
+/**
+ * Форма документа/оценки соответствия, извлечённая из текста NOTE.
+ * Объявлено как `as const`-массив, чтобы и валидатор Claude-ответа, и JSON-схема
+ * tool_use, и парсер NOTE использовали один источник истины — добавление формы
+ * в массив автоматически обновляет union, иначе TS ловит drift.
+ */
+export const ASSESSMENT_FORMS = [
+  'declaration',          // декларация о соответствии (ДС)
+  'certificate',          // сертификат соответствия (СС)
+  'state_registration',   // свидетельство о государственной регистрации (СГР)
+  'notification',         // нотификация (например, криптография ФСБ)
+  'permit',               // разрешение / заключение
+  'license',              // лицензия Минпромторга/иного органа
+  'fee',                  // сбор/платёж (утилизационный, экологический)
+  'unknown',
+] as const;
+export type AssessmentForm = (typeof ASSESSMENT_FORMS)[number];
 
 export interface RegulatoryDocumentRef {
   /** Номер документа из DOC_N (может содержать буквенные префиксы, например "БН_392"). */
@@ -45,6 +52,12 @@ export interface RegulatoryDocumentRef {
 export type MatchPrecision = 'exact' | 'narrow' | 'broad';
 
 export interface RegulatoryItem {
+  /**
+   * Стабильный идентификатор записи на основе sha256(rawNote + priznak + codeMin + cu).
+   * Используется и как ключ React-списка на фронте, и как идентификатор для merge
+   * AI-выжимок из endpoint'а /tn-ved/:code/regulatory-explanations.
+   */
+  id: string;
   category: RegulatoryCategory;
   priznak: number;
   /** Короткий заголовок для UI (одна строка). */
@@ -88,4 +101,19 @@ export interface RegulatoryReport {
   countryRestrictions: RegulatoryItem[];    // country_import_ban + country_export_ban
   other: RegulatoryItem[];
   totalCount: number;
+}
+
+/**
+ * AI-обогащение для одной записи NOTE. Возвращается отдельным endpoint'ом
+ * `/tn-ved/:code/regulatory-explanations` (lazy load) — не блокирует первичный
+ * показ /tn-ved страницы. Поля могут уточнять детерминистические значения из
+ * RegulatoryItem (regulation/form/authority): если AI распарсил то, что регекспы
+ * пропустили, фронт мерджит уточнения. Если AI не уверен — возвращает null/undefined.
+ */
+export interface RegulatoryExplanation {
+  /** Расширенная сводка (4–7 предложений на русском): что требуется, кто требует, основание, нюансы. */
+  summary: string;
+  regulation: string | null;
+  form: AssessmentForm | null;
+  authority: string | null;
 }

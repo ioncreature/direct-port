@@ -12,6 +12,7 @@ import { DocumentVersion } from './entities/document-version.entity';
 import { DutyInterpretationCache } from './entities/duty-interpretation-cache.entity';
 import { PipelineStageRun } from './entities/pipeline-stage-run.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
+import { RegulatoryInterpretationCache } from './entities/regulatory-interpretation-cache.entity';
 import { TelegramUser } from './entities/telegram-user.entity';
 import { TksCache } from './entities/tks-cache.entity';
 import { TnVedCode } from './entities/tn-ved-code.entity';
@@ -45,6 +46,8 @@ import { AddPhotoClassifierModel1777800000000 } from './migrations/1777800000000
 import { AddDocumentPhotos1777900000000 } from './migrations/1777900000000-AddDocumentPhotos';
 import { NormalizeModelFamilies1778000000000 } from './migrations/1778000000000-NormalizeModelFamilies';
 import { AddModelFamilyFunction1778100000000 } from './migrations/1778100000000-AddModelFamilyFunction';
+import { AddRegulatoryInterpreterModel1778200000000 } from './migrations/1778200000000-AddRegulatoryInterpreterModel';
+import { AddRegulatoryInterpretationCache1778300000000 } from './migrations/1778300000000-AddRegulatoryInterpretationCache';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -70,6 +73,7 @@ import { SeedService } from './seeds/seed.service';
           DocumentVersion,
           DutyInterpretationCache,
           DocumentPhoto,
+          RegulatoryInterpretationCache,
         ],
         synchronize: false,
         migrations: [
@@ -102,6 +106,8 @@ import { SeedService } from './seeds/seed.service';
           AddDocumentPhotos1777900000000,
           NormalizeModelFamilies1778000000000,
           AddModelFamilyFunction1778100000000,
+          AddRegulatoryInterpreterModel1778200000000,
+          AddRegulatoryInterpretationCache1778300000000,
         ],
         migrationsRun: true,
       }),

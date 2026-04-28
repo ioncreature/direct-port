@@ -30,6 +30,14 @@ export class AiConfig {
   @Column({ type: 'varchar', length: 10, name: 'photo_classifier_model', default: 'sonnet' })
   photoClassifierModel: AiModelTier;
 
+  /**
+   * Модель для AI-выжимок разрешительных мер (RegulatoryInterpreterService).
+   * Задача — короткий пересказ NOTE-текста (форма документа, регулятор, нюансы),
+   * не reasoning. Haiku по умолчанию: дешёвый, быстрый, кэшируется в БД на 180д.
+   */
+  @Column({ type: 'varchar', length: 10, name: 'regulatory_interpreter_model', default: 'haiku' })
+  regulatoryInterpreterModel: AiModelTier;
+
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 }

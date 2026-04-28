@@ -56,6 +56,7 @@ const PURPOSE_LABELS: Record<AiCallPurpose, string> = {
   classify_vision: 'Уточнение по фото',
   interpret: 'Интерпретация пошлин',
   translate_query: 'Перевод запроса',
+  regulatory_interpret: 'Выжимка разрешит. мер',
 };
 
 const REASON_LABELS: Record<DocumentVersionReason, string> = {

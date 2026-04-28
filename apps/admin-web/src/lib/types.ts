@@ -130,6 +130,7 @@ export type AssessmentForm =
 export type MatchPrecision = 'exact' | 'narrow' | 'broad';
 
 export interface RegulatoryItem {
+  id: string;
   category: RegulatoryCategory;
   priznak: number;
   title: string;
@@ -160,6 +161,13 @@ export interface RegulatoryReport {
   countryRestrictions: RegulatoryItem[];
   other: RegulatoryItem[];
   totalCount: number;
+}
+
+export interface RegulatoryExplanation {
+  summary: string;
+  regulation: string | null;
+  form: AssessmentForm | null;
+  authority: string | null;
 }
 
 export interface TnVedCodeDetail {
@@ -363,7 +371,8 @@ export type AiCallPurpose =
   | 'classify_retry'
   | 'classify_vision'
   | 'interpret'
-  | 'translate_query';
+  | 'translate_query'
+  | 'regulatory_interpret';
 
 export interface AiCallError {
   message: string;

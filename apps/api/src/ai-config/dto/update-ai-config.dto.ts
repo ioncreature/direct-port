@@ -23,4 +23,8 @@ export class UpdateAiConfigDto {
   @IsOptional()
   @IsIn(TIERS)
   photoClassifierModel?: AiModelTier;
+
+  @IsOptional()
+  @IsIn(TIERS)
+  regulatoryInterpreterModel?: AiModelTier;
 }

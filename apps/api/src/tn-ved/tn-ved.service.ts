@@ -20,8 +20,9 @@ import { modelFamily } from '../common/token-usage';
 import { CountriesService } from '../countries/countries.service';
 import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
 import { TnVedCode } from '../database/entities/tn-ved-code.entity';
+import { RegulatoryInterpreterService } from '../regulatory/regulatory-interpreter.service';
 import { RegulatoryRequirementsService } from '../regulatory/regulatory-requirements.service';
-import type { RegulatoryReport } from '../regulatory/interfaces';
+import type { RegulatoryExplanation, RegulatoryReport } from '../regulatory/interfaces';
 
 export interface TnVedRateInfo {
   dutyRate: number;
@@ -158,6 +159,7 @@ export class TnVedService {
     private countriesService: CountriesService,
     private aiConfig: AiConfigService,
     private regulatoryService: RegulatoryRequirementsService,
+    private regulatoryInterpreter: RegulatoryInterpreterService,
     @Optional() @Inject(Anthropic) private anthropic: Anthropic | null,
   ) {}
 
@@ -179,6 +181,26 @@ export class TnVedService {
     }
 
     return this.searchByText(trimmed);
+  }
+
+  /**
+   * Lazy-load AI-выжимок для разрешительных мер (вызывается из endpoint'а
+   * /tn-ved/:code/regulatory-explanations). Возвращает Record<itemId, explanation>.
+   * Записи с одинаковым NOTE-текстом получают одну выжимку, но разворачиваются
+   * на каждый item.id внутри RegulatoryInterpreterService.
+   */
+  async getRegulatoryExplanations(
+    code: string,
+    language?: string,
+  ): Promise<Record<string, RegulatoryExplanation>> {
+    const normalized = this.normalizeCode(code);
+    const tnved = await this.tksApi.getTnvedCode(normalized);
+    const report = await this.regulatoryService.buildReport(tnved);
+    const items = RegulatoryRequirementsService.flattenReport(report);
+    if (items.length === 0) return {};
+
+    const result = await this.regulatoryInterpreter.explain(items, language ?? 'ru');
+    return Object.fromEntries(result.byId);
   }
 
   /** Поиск по локальной БД (обратная совместимость). */
