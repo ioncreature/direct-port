@@ -131,13 +131,16 @@ describe('DocumentsParsingProcessor.process', () => {
       });
     });
 
-    it('feasibility=ok → notify НЕ зовётся (уведомление шлёт DocumentsProcessor)', async () => {
+    it('feasibility=ok → отправляет промежуточный stage_classifying', async () => {
       const doc = makeDoc({ telegramUser: { telegramId: '123' } as any });
       const { processor, notificationQueue } = createProcessor({ doc });
 
       await processor.process(fakeJob('doc-1'));
 
-      expect(notificationQueue.add).not.toHaveBeenCalled();
+      expect(notificationQueue.add).toHaveBeenCalledWith(
+        'document-ready',
+        expect.objectContaining({ status: 'stage_classifying', itemCount: 1 }),
+      );
     });
 
     it('feasibility=review → status=REQUIRES_REVIEW, rejectionReasons, processing НЕ вызывается', async () => {
@@ -321,7 +324,7 @@ describe('DocumentsParsingProcessor.process', () => {
   });
 
   describe('обработка ошибок', () => {
-    it('aiParser бросает → FAILED + errorMessage + notify', async () => {
+    it('aiParser бросает rate-limit → FAILED + errorCode=AI_UNAVAILABLE', async () => {
       const doc = makeDoc({ telegramUser: { telegramId: '123' } as any });
       const { processor, notificationQueue } = createProcessor({
         doc,
@@ -332,6 +335,25 @@ describe('DocumentsParsingProcessor.process', () => {
 
       expect(doc.status).toBe(DocumentStatus.FAILED);
       expect(doc.errorMessage).toBe('Claude rate limit');
+      expect(notificationQueue.add).toHaveBeenCalledWith(
+        'document-ready',
+        expect.objectContaining({
+          status: 'failed',
+          errorCode: 'AI_UNAVAILABLE',
+        }),
+      );
+    });
+
+    it('aiParser бросает generic ошибку → FAILED + errorCode=PARSING_FAILED', async () => {
+      const doc = makeDoc({ telegramUser: { telegramId: '123' } as any });
+      const { processor, notificationQueue } = createProcessor({
+        doc,
+        parseError: new Error('something unexpected went wrong'),
+      });
+
+      await processor.process(fakeJob('doc-1'));
+
+      expect(doc.status).toBe(DocumentStatus.FAILED);
       expect(notificationQueue.add).toHaveBeenCalledWith(
         'document-ready',
         expect.objectContaining({

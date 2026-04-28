@@ -349,7 +349,7 @@ describe('DocumentsProcessor.process', () => {
       expect(doc.status).toBe(DocumentStatus.CODE_REVIEW_REQUIRED);
       expect(doc.rejectionReasons).toBeDefined();
       expect(doc.rejectionReasons!.length).toBe(1);
-      expect(doc.rejectionReasons![0]).toContain('0.50');
+      expect(doc.rejectionReasons![0]).toContain('не уверена в коде');
       expect(notificationQueue.add).toHaveBeenCalledWith(
         'document-ready',
         expect.objectContaining({ status: 'code_review_required' }),
@@ -371,12 +371,14 @@ describe('DocumentsProcessor.process', () => {
 
       expect(doc.status).toBe(DocumentStatus.REJECTED);
       expect(doc.rejectionReasons).toBeDefined();
-      expect(doc.rejectionReasons![0]).toContain('не определён');
+      expect(doc.rejectionReasons![0]).toContain('не удалось подобрать код');
       expect(notificationQueue.add).toHaveBeenCalledWith(
         'document-ready',
         expect.objectContaining({
           status: 'rejected',
-          rejectionReasons: expect.arrayContaining([expect.stringContaining('не определён')]),
+          rejectionReasons: expect.arrayContaining([
+            expect.stringContaining('не удалось подобрать код'),
+          ]),
         }),
       );
     });

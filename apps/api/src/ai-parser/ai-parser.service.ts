@@ -23,6 +23,7 @@ import type { ProductPhotoInput } from '../photo-storage/photo-storage.service';
 
 export interface ParsedProduct {
   description: string;
+  descriptionOriginal?: string;
   price: number;
   weight: number;
   quantity: number;
@@ -1085,6 +1086,7 @@ ${mappingInfo}
       labels[c] = parts.join(' / ');
     }
 
+    const descriptionCol = columnMapping['description'];
     return products.map((p, i) => {
       const row = rows[i];
       if (!row) return p;
@@ -1098,7 +1100,14 @@ ${mappingInfo}
         extras.push(label ? `${label}=${cell}` : cell);
       }
       const rawContext = extras.join('; ');
-      return rawContext ? { ...p, rawContext } : p;
+      const original =
+        typeof descriptionCol === 'number'
+          ? String(row[descriptionCol] ?? '').trim()
+          : '';
+      const out: ParsedProduct = { ...p };
+      if (rawContext) out.rawContext = rawContext;
+      if (original && original !== p.description) out.descriptionOriginal = original;
+      return out;
     });
   }
 

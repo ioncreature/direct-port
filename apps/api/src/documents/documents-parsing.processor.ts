@@ -5,13 +5,12 @@ import { Job, Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 import { AiParserService } from '../ai-parser/ai-parser.service';
 import { ErrorCode } from '../common/error-codes';
-import { errMsg } from '../common/errors';
-import { buildOutputFileName, getDocumentClientName } from '../common/output-filename';
+import { classifyPipelineError, errMsg } from '../common/errors';
 import { localizeRejectionReasonsForUser } from '../common/rejection-reasons';
 import { addStageUsage } from '../common/token-usage';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { PipelineAuditService } from '../pipeline-audit/pipeline-audit.service';
-import type { DocumentNotification } from './documents.processor';
+import { buildDocumentNotificationPayload, type DocumentNotification } from './notification';
 import { PhotoStorageService } from '../photo-storage/photo-storage.service';
 
 @Processor('document-parsing')
@@ -149,6 +148,11 @@ export class DocumentsParsingProcessor extends WorkerHost {
         doc.status = DocumentStatus.PENDING;
         await this.repo.save(doc);
         await this.processingQueue.add('process-document', { documentId });
+        await this.notify({
+          doc,
+          status: 'stage_classifying',
+          itemCount: products.length,
+        });
         this.logger.log(
           `Document ${documentId} parsed: ${products.length} rows, sending to processing`,
         );
@@ -165,9 +169,10 @@ export class DocumentsParsingProcessor extends WorkerHost {
       doc.errorMessage = errMsg(err) || 'Parsing failed';
       doc.fileBuffer = null;
       await this.repo.save(doc);
-      await this.notify({ doc, status: 'failed', errorCode: ErrorCode.PARSING_FAILED });
+      const errorCode = classifyPipelineError(err, ErrorCode.PARSING_FAILED);
+      await this.notify({ doc, status: 'failed', errorCode });
       this.logger.error(
-        `Document ${documentId} parsing failed: ${doc.errorMessage}`,
+        `Document ${documentId} parsing failed [${errorCode}]: ${doc.errorMessage}`,
         err instanceof Error ? err.stack : err,
       );
     }
@@ -180,22 +185,16 @@ export class DocumentsParsingProcessor extends WorkerHost {
     errorCode?: string;
     rejectionReasons?: string[];
     rejectionReasonsLocalized?: string[];
+    itemCount?: number;
   }): Promise<void> {
-    const telegramId = opts.doc.telegramUser?.telegramId;
-    if (!telegramId) return;
-
-    const clientName = getDocumentClientName(opts.doc);
-    const payload: DocumentNotification = {
-      documentId: opts.doc.id,
-      telegramUserId: telegramId,
-      status: opts.status,
+    const payload = buildDocumentNotificationPayload(opts.doc, opts.status, {
       errorMessage: opts.errorMessage,
       errorCode: opts.errorCode,
       rejectionReasons: opts.rejectionReasons,
       rejectionReasonsLocalized: opts.rejectionReasonsLocalized,
-      language: opts.doc.language ?? opts.doc.telegramUser?.language,
-      outputFileName: buildOutputFileName(opts.doc.createdAt, clientName),
-    };
+      itemCount: opts.itemCount,
+    });
+    if (!payload) return;
 
     await this.notificationQueue.add('document-ready', payload).catch((err) => {
       this.logger.warn(`Failed to send notification for ${opts.doc.id}`, err);

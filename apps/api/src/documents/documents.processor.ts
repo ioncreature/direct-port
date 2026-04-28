@@ -8,7 +8,7 @@ import { CalculationLogsService } from '../calculation-logs/calculation-logs.ser
 import { CalculatorService, type CalculatedProduct, type CalculatorInput } from '../calculator/calculator.service';
 import { ClassifierService, type ProductRow } from '../classifier/classifier.service';
 import { ErrorCode } from '../common/error-codes';
-import { errMsg } from '../common/errors';
+import { classifyPipelineError, errMsg } from '../common/errors';
 import { defaultCountryWarningNote, type ProductNote } from '../common/product-notes';
 import {
   type RejectionReasonData,
@@ -231,7 +231,11 @@ export class DocumentsProcessor extends WorkerHost {
         const item = summary.items[i];
         if (item.calculationStatus === 'error') hasRowErrors = true;
         if (!item.matched || item.matchConfidence < confidenceThreshold) {
-          lowConfidenceReasonsData.push(this.buildLowConfidenceReason(i, item, confidenceThreshold));
+          const original = (doc.parsedData?.[i] as { descriptionOriginal?: string } | undefined)
+            ?.descriptionOriginal;
+          lowConfidenceReasonsData.push(
+            this.buildLowConfidenceReason(i, item, confidenceThreshold, original),
+          );
         }
       }
       const lowConfidenceReasons = lowConfidenceReasonsData.map((d) => formatRejectionReason(d, 'ru'));
@@ -315,9 +319,10 @@ export class DocumentsProcessor extends WorkerHost {
       doc.status = DocumentStatus.FAILED;
       doc.errorMessage = errMsg(err) || 'Unknown error';
       await this.repo.save(doc);
-      await this.notify({ doc, status: 'failed', errorCode: ErrorCode.PROCESSING_FAILED });
+      const errorCode = classifyPipelineError(err, ErrorCode.PROCESSING_FAILED);
+      await this.notify({ doc, status: 'failed', errorCode });
       this.logger.error(
-        `Document ${documentId} processing failed: ${doc.errorMessage}`,
+        `Document ${documentId} processing failed [${errorCode}]: ${doc.errorMessage}`,
         err instanceof Error ? err.stack : err,
       );
     }
@@ -608,16 +613,18 @@ export class DocumentsProcessor extends WorkerHost {
     idx: number,
     item: { description: string; tnVedCode?: string; matchConfidence: number; matched: boolean },
     threshold: number,
+    descriptionOriginal?: string,
   ): RejectionReasonData {
     const row = idx + 1;
     const description = item.description || '';
     if (!item.matched) {
-      return { type: 'low_confidence_no_match', row, description, threshold };
+      return { type: 'low_confidence_no_match', row, description, descriptionOriginal, threshold };
     }
     return {
       type: 'low_confidence_with_code',
       row,
       description,
+      descriptionOriginal,
       code: item.tnVedCode || '',
       confidence: item.matchConfidence,
       threshold,

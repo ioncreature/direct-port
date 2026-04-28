@@ -9,11 +9,18 @@ import { i18n, tErrorCode } from '../i18n';
 interface DocumentNotification {
   documentId: string;
   telegramUserId: string;
-  status: 'processed' | 'processed_with_errors' | 'failed' | 'rejected' | 'code_review_required';
+  status:
+    | 'processed'
+    | 'processed_with_errors'
+    | 'failed'
+    | 'rejected'
+    | 'code_review_required'
+    | 'stage_classifying';
   errorMessage?: string;
   errorCode?: string;
   rejectionReasons?: string[];
   rejectionReasonsLocalized?: string[];
+  itemCount?: number;
   language?: string;
   outputFileName?: string;
   sendResultFile?: boolean;
@@ -47,6 +54,7 @@ export class NotificationHandler extends WorkerHost {
       errorCode,
       rejectionReasons,
       rejectionReasonsLocalized,
+      itemCount,
       language,
       outputFileName,
       sendResultFile,
@@ -59,6 +67,16 @@ export class NotificationHandler extends WorkerHost {
     }
 
     const chatId = telegramUserId;
+
+    if (status === 'stage_classifying') {
+      await this.tgApi
+        .sendMessage(
+          chatId,
+          this.t(language, 'notif-stage-classifying', { count: String(itemCount ?? 0) }),
+        )
+        .catch((err) => this.logger.error(`Failed to send stage notification to ${chatId}`, err));
+      return;
+    }
 
     if (status === 'rejected') {
       const reasons = rejectionReasonsLocalized ?? rejectionReasons ?? [];

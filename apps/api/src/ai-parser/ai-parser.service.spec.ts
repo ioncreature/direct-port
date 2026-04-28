@@ -276,7 +276,7 @@ describe('AiParserService', () => {
 
       const result = await service.parse(Buffer.from(''), 'test.xlsx');
       expect(result.feasibility).toBe('rejected');
-      expect(result.rejectionReasons[0]).toContain('ни одного товара');
+      expect(result.rejectionReasons[0]).toContain('товарной строки');
     });
 
     it('rejected если есть нулевые цены', async () => {
@@ -320,7 +320,11 @@ describe('AiParserService', () => {
 
       const result = await service.parse(Buffer.from(''), 'test.xlsx');
       expect(result.feasibility).toBe('rejected');
-      expect(result.rejectionReasons.some((r) => r.includes('описания') || r.includes('Описания'))).toBe(true);
+      expect(
+        result.rejectionReasons.some((r) =>
+          r.toLowerCase().includes('наименование') || r.toLowerCase().includes('название'),
+        ),
+      ).toBe(true);
     });
 
     it('rejected если есть товары с нулевым весом', async () => {

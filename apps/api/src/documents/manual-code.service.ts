@@ -153,6 +153,7 @@ export class ManualCodeService {
       updatedRows,
       config.confidenceThreshold,
       doc.language ?? doc.telegramUser?.language,
+      (doc.parsedData ?? []) as Record<string, unknown>[],
     );
 
     if (rejectionReasons.length > 0) {
@@ -261,6 +262,7 @@ export class ManualCodeService {
     rows: Record<string, unknown>[],
     threshold: number,
     language: string | null | undefined,
+    parsedRows: Record<string, unknown>[] = [],
   ): {
     rejectionReasons: string[];
     rejectionReasonsLocalized: string[] | undefined;
@@ -276,13 +278,22 @@ export class ManualCodeService {
       if (calcStatus === 'error') hasRowErrors = true;
       if (!matched || confidence < threshold) {
         const description = String(row.description ?? '');
+        const rawOriginal = String(parsedRows[i]?.descriptionOriginal ?? '').trim();
+        const descriptionOriginal = rawOriginal && rawOriginal !== description ? rawOriginal : undefined;
         if (!matched) {
-          data.push({ type: 'low_confidence_no_match', row: i + 1, description, threshold });
+          data.push({
+            type: 'low_confidence_no_match',
+            row: i + 1,
+            description,
+            descriptionOriginal,
+            threshold,
+          });
         } else {
           data.push({
             type: 'low_confidence_with_code',
             row: i + 1,
             description,
+            descriptionOriginal,
             code: String(row.tnVedCode ?? ''),
             confidence,
             threshold,

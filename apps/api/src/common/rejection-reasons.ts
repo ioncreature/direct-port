@@ -19,12 +19,15 @@ export type RejectionReasonData =
       type: 'low_confidence_no_match';
       row: number;
       description: string;
+      /** Оригинал из файла до перевода Claude — для не-ru пользователей. */
+      descriptionOriginal?: string;
       threshold: number;
     }
   | {
       type: 'low_confidence_with_code';
       row: number;
       description: string;
+      descriptionOriginal?: string;
       code: string;
       confidence: number;
       threshold: number;
@@ -38,68 +41,131 @@ function normalizeLang(language: string | undefined): Lang {
   return 'ru';
 }
 
+function pickDescription(
+  data: { description: string; descriptionOriginal?: string },
+  lang: Lang,
+): string {
+  if (lang !== 'ru' && data.descriptionOriginal) return data.descriptionOriginal;
+  return data.description || '—';
+}
+
 function buildTemplates(data: RejectionReasonData): Templates {
   switch (data.type) {
     case 'no_products':
       return {
-        ru: 'Не удалось извлечь ни одного товара из файла.',
-        en: 'Failed to extract any products from the file.',
-        zh: '无法从文件中提取任何商品。',
+        ru:
+          'Не удалось найти ни одной товарной строки в файле.\n' +
+          '   Проверьте, что в файле есть колонки с наименованием, ценой, весом и количеством, и что данные товаров идут после строки заголовка.',
+        en:
+          'No product rows were found in the file.\n' +
+          '   Make sure the file has columns for name, price, weight and quantity, and that product data comes after the header row.',
+        zh:
+          '文件中未找到任何商品行。\n' +
+          '   请确认文件中包含名称、价格、重量和数量列，且商品数据位于表头行之后。',
       };
     case 'zero_price':
       return {
-        ru: `Не удалось определить цены: у ${data.count} из ${data.total} товаров цена нулевая или не найдена.`,
-        en: `Failed to determine prices: ${data.count} of ${data.total} products have zero or missing price.`,
-        zh: `无法确定价格：${data.total} 件商品中有 ${data.count} 件价格为零或缺失。`,
+        ru:
+          `Не указана цена у ${data.count} из ${data.total} товаров.\n` +
+          '   Без цены за единицу нельзя рассчитать пошлину и НДС. Проверьте колонку с ценой — возможно, в ней пустые ячейки или нули.',
+        en:
+          `Price is missing for ${data.count} of ${data.total} products.\n` +
+          '   Duty and VAT cannot be calculated without a unit price. Check the price column — there may be empty cells or zeros.',
+        zh:
+          `${data.total} 件商品中有 ${data.count} 件未填写价格。\n` +
+          '   没有单价无法计算关税和增值税。请检查价格列 — 可能存在空单元格或零值。',
       };
     case 'empty_description':
       return {
-        ru: `Описания товаров отсутствуют или слишком короткие для классификации по ТН ВЭД (${data.count} из ${data.total}).`,
-        en: `Product descriptions are missing or too short for HS code classification (${data.count} of ${data.total}).`,
-        zh: `商品描述缺失或过短，无法进行 HS 编码分类（${data.total} 件中有 ${data.count} 件）。`,
+        ru:
+          `У ${data.count} из ${data.total} товаров отсутствует наименование (или оно слишком короткое).\n` +
+          '   Название нужно, чтобы подобрать код ТН ВЭД. Укажите для каждого товара хотя бы краткое описание (что это, из чего, для чего).',
+        en:
+          `${data.count} of ${data.total} products have a missing or very short name.\n` +
+          '   The name is required to match an HS code. Please add at least a brief description (what it is, what it is made of, what it is for).',
+        zh:
+          `${data.total} 件商品中有 ${data.count} 件没有名称或名称过短。\n` +
+          '   匹配 HS 编码需要商品名称。请为每件商品至少填写简短描述（是什么、由什么制成、用途）。',
       };
     case 'zero_weight':
       return {
-        ru: `Не указан вес у ${data.count} из ${data.total} товаров. Вес необходим для расчёта пошлин.`,
-        en: `Weight is missing for ${data.count} of ${data.total} products. Weight is required for duty calculation.`,
-        zh: `${data.total} 件商品中有 ${data.count} 件未指定重量。重量是计算关税所必需的。`,
+        ru:
+          `Не указан вес у ${data.count} из ${data.total} товаров.\n` +
+          '   Вес одной единицы в килограммах нужен для расчёта пошлины. Проверьте колонку «вес» — единица измерения должна быть кг, не граммы.',
+        en:
+          `Weight is missing for ${data.count} of ${data.total} products.\n` +
+          '   The unit weight in kilograms is required for duty calculation. Check the weight column — the unit must be kg, not grams.',
+        zh:
+          `${data.total} 件商品中有 ${data.count} 件未填写重量。\n` +
+          '   计算关税需要单件重量（千克）。请检查重量列 — 单位应为千克，而非克。',
       };
     case 'too_many_rows':
       return {
-        ru: `Файл содержит слишком много строк (более ${data.max}). Пожалуйста, разделите файл на части не более ${data.max} строк.`,
-        en: `The file contains too many rows (more than ${data.max}). Please split the file into parts of no more than ${data.max} rows.`,
-        zh: `文件包含的行数过多（超过 ${data.max}）。请将文件拆分为每份不超过 ${data.max} 行。`,
+        ru:
+          `Файл содержит слишком много товарных позиций (более ${data.max}).\n` +
+          `   Разделите его на несколько файлов по ${data.max} позиций или меньше и загрузите по очереди.`,
+        en:
+          `The file contains too many product rows (more than ${data.max}).\n` +
+          `   Split it into several files of up to ${data.max} rows each and upload them one by one.`,
+        zh:
+          `文件中商品行数过多（超过 ${data.max} 条）。\n` +
+          `   请将文件拆分为每份不超过 ${data.max} 行的多个文件，并逐个上传。`,
       };
     case 'file_empty':
       return {
-        ru: 'Файл пустой или содержит только заголовок (менее 2 строк).',
-        en: 'The file is empty or contains only a header row (less than 2 rows).',
-        zh: '文件为空或仅包含标题行（少于 2 行）。',
+        ru:
+          'Файл пустой или содержит только заголовок без товарных строк.\n' +
+          '   Добавьте данные товаров под строкой заголовка и загрузите файл снова.',
+        en:
+          'The file is empty or contains only a header row.\n' +
+          '   Add product rows below the header and upload the file again.',
+        zh:
+          '文件为空或仅包含表头。\n' +
+          '   请在表头下方添加商品数据后重新上传。',
       };
     case 'file_too_large':
       return {
-        ru: `Содержимое файла слишком большое (${data.sizeKChars}K символов). Максимум — ${data.maxKChars}K. Уменьшите объём текста в ячейках или разделите файл.`,
-        en: `The file content is too large (${data.sizeKChars}K characters). Maximum is ${data.maxKChars}K. Reduce the amount of text in cells or split the file.`,
-        zh: `文件内容过大（${data.sizeKChars}K 字符）。上限为 ${data.maxKChars}K。请减少单元格中的文本或拆分文件。`,
+        ru:
+          'Содержимое файла слишком объёмное по тексту.\n' +
+          '   Сократите количество текста в ячейках (длинные описания, технические комментарии) или разделите файл на несколько частей.',
+        en:
+          'The file content is too large in terms of text.\n' +
+          '   Reduce the amount of text in cells (long descriptions, technical comments) or split the file into several parts.',
+        zh:
+          '文件中的文本内容过多。\n' +
+          '   请减少单元格中的文本量（过长的描述、技术备注）或将文件拆分为若干部分。',
       };
     case 'low_confidence_no_match': {
-      const desc = data.description || '—';
-      const threshold = data.threshold.toFixed(2);
+      const ru = pickDescription(data, 'ru');
+      const en = pickDescription(data, 'en');
+      const zh = pickDescription(data, 'zh');
       return {
-        ru: `Строка ${data.row}: «${desc}» — код ТН ВЭД не определён (ниже порога ${threshold}).`,
-        en: `Row ${data.row}: «${desc}» — HS code not determined (below threshold ${threshold}).`,
-        zh: `第 ${data.row} 行：«${desc}» — 未能确定 HS 编码（低于阈值 ${threshold}）。`,
+        ru:
+          `Строка ${data.row} «${ru}» — не удалось подобрать код ТН ВЭД.\n` +
+          '   Уточните наименование (что это, из чего, для чего) или впишите код ТН ВЭД в отдельную колонку — тогда система воспользуется им напрямую.',
+        en:
+          `Row ${data.row} "${en}" — no HS code could be matched.\n` +
+          '   Clarify the name (what it is, what it is made of, what it is for) or add an HS code in a separate column so the system can use it directly.',
+        zh:
+          `第 ${data.row} 行「${zh}」— 未能匹配到 HS 编码。\n` +
+          '   请补充更具体的名称（是什么、由什么制成、用途），或在独立列中填写 HS 编码，系统将直接使用。',
       };
     }
     case 'low_confidence_with_code': {
-      const desc = data.description || '—';
       const code = data.code || '—';
-      const confidence = data.confidence.toFixed(2);
-      const threshold = data.threshold.toFixed(2);
+      const ru = pickDescription(data, 'ru');
+      const en = pickDescription(data, 'en');
+      const zh = pickDescription(data, 'zh');
       return {
-        ru: `Строка ${data.row}: «${desc}» — код ${code}, уверенность ${confidence} (ниже порога ${threshold}).`,
-        en: `Row ${data.row}: «${desc}» — code ${code}, confidence ${confidence} (below threshold ${threshold}).`,
-        zh: `第 ${data.row} 行：«${desc}» — 编码 ${code}，置信度 ${confidence}（低于阈值 ${threshold}）。`,
+        ru:
+          `Строка ${data.row} «${ru}» — система не уверена в коде ${code}.\n` +
+          '   Это часто значит, что описание слишком общее. Добавьте подробностей (материал, состав, назначение, для кого), либо укажите код ТН ВЭД в отдельной колонке вручную.',
+        en:
+          `Row ${data.row} "${en}" — the system is not sure about code ${code}.\n` +
+          '   The description is likely too generic. Add details (material, composition, purpose, target user) or specify an HS code in a separate column manually.',
+        zh:
+          `第 ${data.row} 行「${zh}」— 系统对编码 ${code} 不太确定。\n` +
+          '   通常是因为描述过于笼统。请补充细节（材质、成分、用途、目标用户），或在独立列中手动填写 HS 编码。',
       };
     }
   }
