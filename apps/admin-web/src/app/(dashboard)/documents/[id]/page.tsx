@@ -4,6 +4,8 @@ import { InfoCard } from '@/components/info-card';
 import { useCalculationHistory } from '@/hooks/use-calculation-history';
 import { useCountries } from '@/hooks/use-countries';
 import { useDocument } from '@/hooks/use-document';
+import { useDocumentRegulatoryExplanations } from '@/hooks/use-document-regulatory-explanations';
+import { RegulatoryRequirementsSection } from '../../tn-ved/regulatory-section';
 import { DiagnosticsPanel } from './diagnostics-panel';
 import { countryOriginSourceLabels, downloadDocument, statusColors, statusLabels } from '@/lib/documents';
 import { calcAiCostFromMap, calcAiCostFromStages, fmt, fmtCost, fmtDateTimeLocale, fmtTokens, modelLabel, stageLabel } from '@/lib/format';
@@ -242,6 +244,12 @@ export default function DocumentDetailPage() {
   const toggleRow = useCallback(
     (i: number) => setExpandedRow((prev) => (prev === i ? null : i)),
     [],
+  );
+  // Lazy-load AI-выжимок: один запрос на весь документ при первом раскрытии любой строки.
+  // После этого данные кэшируются в state до анмаунта/смены документа.
+  const explanationsState = useDocumentRegulatoryExplanations(
+    doc?.id ?? null,
+    expandedRow !== null,
   );
   const [activeTab, setActiveTab] = useState<'main' | 'diagnostics'>('main');
   const [editableRows, setEditableRows] = useState<ParsedDataRow[]>([]);
@@ -922,6 +930,7 @@ export default function DocumentDetailPage() {
                     fmtMoney={fmtMoney}
                     canEditCode={isCodeReview || doc.status === 'processed_with_errors'}
                     onSetCode={setRowCode}
+                    explanations={explanationsState}
                   />
                 ))}
               </tbody>
@@ -989,6 +998,7 @@ const ResultRow = memo(function ResultRow({
   fmtMoney,
   canEditCode,
   onSetCode,
+  explanations,
 }: {
   row: DocumentResultRow;
   index: number;
@@ -997,6 +1007,7 @@ const ResultRow = memo(function ResultRow({
   fmtMoney: (n: number) => string;
   canEditCode: boolean;
   onSetCode: (rowIndex: number, tnVedCode: string) => Promise<void>;
+  explanations: import('@/hooks/use-regulatory-explanations').RegulatoryExplanationsState;
 }) {
   const [hovered, setHovered] = useState(false);
   const status = resolveStatus(row);
@@ -1059,6 +1070,7 @@ const ResultRow = memo(function ResultRow({
           fmtMoney={fmtMoney}
           canEditCode={canEditCode}
           onSetCode={onSetCode}
+          explanations={explanations}
         />
       )}
     </>
@@ -1071,12 +1083,14 @@ function ResultDetail({
   fmtMoney,
   canEditCode,
   onSetCode,
+  explanations,
 }: {
   row: DocumentResultRow;
   rowIndex: number;
   fmtMoney: (n: number) => string;
   canEditCode: boolean;
   onSetCode: (rowIndex: number, tnVedCode: string) => Promise<void>;
+  explanations: import('@/hooks/use-regulatory-explanations').RegulatoryExplanationsState;
 }) {
   const notes = row.notes ?? [];
   const sortedNotes = [...notes].sort(
@@ -1205,6 +1219,19 @@ function ResultDetail({
               candidateCodes={row.candidateCodes ?? null}
               onSetCode={onSetCode}
             />
+          </div>
+        )}
+        {row.regulatoryReport ? (
+          <div style={{ padding: '0 12px 16px', background: '#fafafa' }}>
+            <RegulatoryRequirementsSection
+              report={row.regulatoryReport}
+              explanations={explanations}
+            />
+          </div>
+        ) : (
+          <div style={{ padding: '0 12px 16px', background: '#fafafa', fontSize: 12, color: '#888' }}>
+            Разрешительные документы для этой строки не рассчитаны (документ обработан до релиза
+            фичи). Запустите пересчёт, чтобы получить список.
           </div>
         )}
       </td>

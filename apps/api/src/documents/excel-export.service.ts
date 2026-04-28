@@ -4,6 +4,8 @@ import { humanizeUnit, normalizePer } from '../calculator/calculator.service';
 import type { CalculationStatus, ProductNote } from '../common/product-notes';
 import { Document } from '../database/entities/document.entity';
 import type { Dimension } from '../duty-interpreter/interfaces';
+import type { RegulatoryReport } from '../regulatory/interfaces';
+import { formatRegulatoryReportShort } from '../regulatory/regulatory-format';
 
 interface ResultRow {
   description: string;
@@ -38,6 +40,7 @@ interface ResultRow {
   dutyFormula?: string | null;
   dutyBase?: string | null;
   notes?: ProductNote[];
+  regulatoryReport?: RegulatoryReport | null;
 }
 
 /** Находит объём за единицу товара (в литрах) среди dimensions строки.
@@ -106,6 +109,7 @@ function buildColumns(
   }
 
   columns.push({ header: 'Статус', key: 'calculationStatus', width: 20 });
+  columns.push({ header: 'Разрешительные документы', key: 'regulatoryShort', width: 50 });
   columns.push({ header: 'Замечания', key: 'notesText', width: 60 });
 
   if (language && language !== 'ru' && LOCALIZED_NOTES_HEADERS[language]) {
@@ -215,6 +219,7 @@ export class ExcelExportService {
     const statusColIdx = COLUMNS.findIndex((c) => c.key === 'calculationStatus') + 1;
     const notesColIdx = COLUMNS.findIndex((c) => c.key === 'notesText') + 1;
     const formulaColIdx = COLUMNS.findIndex((c) => c.key === 'dutyFormula') + 1;
+    const regulatoryColIdx = COLUMNS.findIndex((c) => c.key === 'regulatoryShort') + 1;
 
     for (let rowIdx = 0; rowIdx < data.length; rowIdx++) {
       const row = data[rowIdx];
@@ -243,6 +248,7 @@ export class ExcelExportService {
         logisticsCommission: row.logisticsCommission,
         totalCost: row.totalCost,
         calculationStatus: STATUS_LABELS[status],
+        regulatoryShort: formatRegulatoryReportShort(row.regulatoryReport),
         notesText,
       };
 
@@ -291,6 +297,9 @@ export class ExcelExportService {
           excelRow.height = Math.min(15 * lineCount + 5, 120);
         }
       }
+
+      const regulatoryCell = excelRow.getCell(regulatoryColIdx);
+      regulatoryCell.alignment = { wrapText: true, vertical: 'top' };
     }
 
     sheet.autoFilter = {
