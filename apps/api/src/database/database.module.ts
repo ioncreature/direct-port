@@ -43,6 +43,8 @@ import { AddPipelineAudit1777600000000 } from './migrations/1777600000000-AddPip
 import { AddDutyInterpretationCache1777700000000 } from './migrations/1777700000000-AddDutyInterpretationCache';
 import { AddPhotoClassifierModel1777800000000 } from './migrations/1777800000000-AddPhotoClassifierModel';
 import { AddDocumentPhotos1777900000000 } from './migrations/1777900000000-AddDocumentPhotos';
+import { NormalizeModelFamilies1778000000000 } from './migrations/1778000000000-NormalizeModelFamilies';
+import { AddModelFamilyFunction1778100000000 } from './migrations/1778100000000-AddModelFamilyFunction';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -98,6 +100,8 @@ import { SeedService } from './seeds/seed.service';
           AddDutyInterpretationCache1777700000000,
           AddPhotoClassifierModel1777800000000,
           AddDocumentPhotos1777900000000,
+          NormalizeModelFamilies1778000000000,
+          AddModelFamilyFunction1778100000000,
         ],
         migrationsRun: true,
       }),
