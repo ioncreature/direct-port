@@ -215,6 +215,8 @@ function PeriodCard({ label, period }: { label: string; period: TokenStatsPeriod
   );
 }
 
+const CHART_HEIGHT_PX = 120;
+
 function DailyChart({ data }: { data: DailyTokenStats[] }) {
   const costs = data.map((d) => calcAiCostFromMap(d.models));
   const maxCost = Math.max(...costs, 0.01);
@@ -227,38 +229,44 @@ function DailyChart({ data }: { data: DailyTokenStats[] }) {
         <span>Последние {data.length} дней</span>
         <span style={{ fontWeight: 600 }}>Итого: {fmtCost(total)}</span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 120 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: CHART_HEIGHT_PX }}>
         {data.map((d, i) => {
           const cost = costs[i];
-          const height = cost > 0 ? Math.max((cost / maxCost) * 100, 2) : 0;
-          const dateLabel = d.date.slice(5); // MM-DD
+          // Высота в px: проценты от неопределённой высоты parent давали 0.
+          const heightPx = cost > 0 ? Math.max((cost / maxCost) * CHART_HEIGHT_PX, 2) : 0;
           const isToday = d.date === todayStr;
           return (
             <div
               key={d.date}
-              style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 0 }}
+              style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'center' }}
               title={`${d.date}: ${fmtCost(cost)}`}
             >
               <div
                 style={{
                   width: '100%',
                   maxWidth: 24,
-                  height: `${height}%`,
+                  height: heightPx,
                   background: isToday ? '#2563eb' : '#93c5fd',
                   borderRadius: '3px 3px 0 0',
                   transition: 'height 0.3s',
                 }}
               />
-              {data.length <= 14 && (
-                <div style={{ fontSize: 10, color: '#999', marginTop: 4, whiteSpace: 'nowrap' }}>
-                  {dateLabel}
-                </div>
-              )}
             </div>
           );
         })}
       </div>
-      {data.length > 14 && (
+      {data.length <= 14 ? (
+        <div style={{ display: 'flex', gap: 2, marginTop: 4 }}>
+          {data.map((d) => (
+            <div
+              key={d.date}
+              style={{ flex: 1, minWidth: 0, fontSize: 10, color: '#999', textAlign: 'center', whiteSpace: 'nowrap' }}
+            >
+              {d.date.slice(5)}
+            </div>
+          ))}
+        </div>
+      ) : (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#999', marginTop: 4 }}>
           <span>{data[0]?.date.slice(5)}</span>
           <span>{data[data.length - 1]?.date.slice(5)}</span>
