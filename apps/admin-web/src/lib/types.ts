@@ -101,6 +101,67 @@ export interface TnVedSearchResultItem {
   rates: TnVedRateInfo;
 }
 
+export type RegulatoryCategory =
+  | 'certification'
+  | 'permit_import'
+  | 'permit_export'
+  | 'license_import'
+  | 'license_export'
+  | 'marking'
+  | 'traceability'
+  | 'utilization'
+  | 'strategic'
+  | 'dual_use_import'
+  | 'dual_use_export'
+  | 'country_import_ban'
+  | 'country_export_ban'
+  | 'other';
+
+export type AssessmentForm =
+  | 'declaration'
+  | 'certificate'
+  | 'state_registration'
+  | 'notification'
+  | 'permit'
+  | 'license'
+  | 'fee'
+  | 'unknown';
+
+export type MatchPrecision = 'exact' | 'narrow' | 'broad';
+
+export interface RegulatoryItem {
+  category: RegulatoryCategory;
+  priznak: number;
+  title: string;
+  summary: string;
+  regulation: string | null;
+  regulationTitle: string | null;
+  form: AssessmentForm;
+  authority: string | null;
+  documentRef: { number: string; date: string | null } | null;
+  validFrom: string | null;
+  validTo: string | null;
+  matchPrecision: MatchPrecision;
+  codeRange: { min: string; max: string | null };
+  countryCode: string | null;
+  countryName: string | null;
+  values: { min: number | null; max: number | null; unit: string | null };
+  rawNote: string;
+}
+
+export interface RegulatoryReport {
+  certifications: RegulatoryItem[];
+  permits: RegulatoryItem[];
+  licenses: RegulatoryItem[];
+  marking: RegulatoryItem[];
+  traceability: RegulatoryItem[];
+  utilizationFee: RegulatoryItem[];
+  strategicAndDualUse: RegulatoryItem[];
+  countryRestrictions: RegulatoryItem[];
+  other: RegulatoryItem[];
+  totalCount: number;
+}
+
 export interface TnVedCodeDetail {
   code: string;
   description: string;
@@ -109,6 +170,7 @@ export interface TnVedCodeDetail {
   countryDuties: TnVedCountryDuty[];
   conditionalExcises: TnVedConditionalExcise[];
   declarations: TnVedDeclarationExample[];
+  regulatoryReport: RegulatoryReport;
   dateBegin?: string;
   dateEnd?: string;
   notes?: string;

@@ -35,14 +35,15 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 - JWT-авторизация (access + refresh tokens)
 - Роли: admin, customs
 - Глобальные guards: JwtAuthGuard (пропускает X-Internal-Key), RolesGuard
-- Модули верхнего уровня (app.module.ts): Auth, Users, TnVed, TelegramUsers, Documents, CalculationConfig, AiConfig, Countries
+- Модули верхнего уровня (app.module.ts): Auth, Users, TnVed, TelegramUsers, Documents, CalculationConfig, AiConfig, Countries, Regulatory
   - Auth, Users — авторизация и управление пользователями
-  - TnVed — справочник ТН ВЭД: поиск по TKS API (searchGoodsGrouped + getTnvedCode), перевод запросов через Claude, обогащение ставками
+  - TnVed — справочник ТН ВЭД: поиск по TKS API (searchGoodsGrouped + getTnvedCode), перевод запросов через Claude, обогащение ставками + блок `regulatoryReport` в `codeDetail` (Regulatory)
   - TelegramUsers — регистрация пользователей Telegram, детальный просмотр по UUID, PATCH :telegramId/language
   - Documents — загрузка (Telegram + админка), обработка, переобработка, скачивание, token-stats. Зонтичный модуль: агрегирует внутри AiParser/Classifier/Calculator/DutyInterpreter/Currency/CalculationLogs/Tks, они не импортируются на верхнем уровне
   - CalculationConfig — настройки формулы комиссии, флага отправки Excel, порога уверенности классификатора (CRUD)
   - AiConfig — CRUD для выбора моделей Claude (opus/sonnet/haiku) для 4 сценариев AI. См. `docs/AI_CONFIG.md`
   - Countries — справочник стран (OKSMT), используется для страны происхождения товара
+  - Regulatory — формирует RegulatoryReport (сертификация, лицензии, маркировка, утильсбор, страновые запреты) из блоков `TnvedCode.TNVEDALL` по PRIZNAK 6/7/11–15/21/27–29/33–35. Парсер NOTE извлекает ТР ТС/ЕАЭС, форму оценки, регулятора. Отдельных запросов к TKS не делает — использует уже загруженный TnvedCode
 - Вложенные модули (внутри DocumentsModule):
   - AiParser — AI-парсинг таблиц (Claude): определение валюты, перевод, извлечение данных, автодетект страны происхождения. Retry + валидация
   - Classifier — классификация+верификация ТН ВЭД: TKS search (батчи по 5) → Claude classify+verify (батчи по 10) → getTnvedCode
@@ -66,7 +67,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 - Вкладка «Диагностика» на странице деталей документа: этапы pipeline (parse/classify/interpret/calculate) с таймингами, ошибками и токенами; список AI-вызовов Claude per stage (модалка с полными request/response по клику); версии parsedData (модалка со snapshot). Ленивая загрузка — данные запрашиваются только при переходе на вкладку
 - Telegram-пользователи: список с пагинацией/сортировкой, детальная страница с документами пользователя
 - AI-расходы (`/ai-costs`, только ADMIN): сводка токенов и стоимости (Sonnet $3/$15, Haiku $1/$5 за 1M), фильтр по моделям, графики по дням, разбивка по пользователям и последние документы. См. `docs/AI_USAGE_TRACKING.md`
-- Справочник ТН ВЭД: поиск по TKS API (текст/код), перевод запросов через Claude (модель настраивается через AiConfig), кликабельные коды, копирование кода, калькулятор пошлин с учётом единиц измерения (кг/л/м²/м³/шт)
+- Справочник ТН ВЭД: поиск по TKS API (текст/код), перевод запросов через Claude (модель настраивается через AiConfig), кликабельные коды, копирование кода, калькулятор пошлин с учётом единиц измерения (кг/л/м²/м³/шт). Секция «Разрешительные документы и ограничения» — сертификация, разрешения, лицензии, маркировка, утильсбор, страновые запреты — со сводкой и бейджем точности применимости (exact/narrow/broad)
 - Настройки: формула комиссии (pricePercent, weightRate, fixedFee), порог уверенности классификатора (confidenceThreshold + lowConfidenceAction), отправка Excel пользователю бота (sendResultFile), выбор моделей Claude для 4 AI-сценариев
 - Shared: InfoCard, table-styles, format (fmt), хуки с серверной пагинацией
 - API-клиент с автообновлением токенов

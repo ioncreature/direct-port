@@ -6,12 +6,20 @@ import { AiConfigModule } from '../ai-config/ai-config.module';
 import { CountriesModule } from '../countries/countries.module';
 import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
 import { TnVedCode } from '../database/entities/tn-ved-code.entity';
+import { RegulatoryModule } from '../regulatory/regulatory.module';
 import { TksModule } from '../tks/tks.module';
 import { TnVedController } from './tn-ved.controller';
 import { TnVedService } from './tn-ved.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([TnVedCode, AiUsageLog]), ConfigModule, TksModule, CountriesModule, AiConfigModule],
+  imports: [
+    TypeOrmModule.forFeature([TnVedCode, AiUsageLog]),
+    ConfigModule,
+    TksModule,
+    CountriesModule,
+    AiConfigModule,
+    RegulatoryModule,
+  ],
   controllers: [TnVedController],
   providers: [
     {

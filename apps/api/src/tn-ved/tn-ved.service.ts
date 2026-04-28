@@ -20,6 +20,8 @@ import { modelFamily } from '../common/token-usage';
 import { CountriesService } from '../countries/countries.service';
 import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
 import { TnVedCode } from '../database/entities/tn-ved-code.entity';
+import { RegulatoryRequirementsService } from '../regulatory/regulatory-requirements.service';
+import type { RegulatoryReport } from '../regulatory/interfaces';
 
 export interface TnVedRateInfo {
   dutyRate: number;
@@ -115,6 +117,8 @@ export interface TnVedCodeDetail {
   countryDuties: TnVedCountryDuty[];
   conditionalExcises: TnVedConditionalExcise[];
   declarations: TnVedDeclarationExample[];
+  /** Разрешительные меры (сертификация, лицензии, маркировка, утильсбор, страновые запреты). */
+  regulatoryReport: RegulatoryReport;
   dateBegin?: string;
   dateEnd?: string;
   notes?: string;
@@ -153,6 +157,7 @@ export class TnVedService {
     private tksApi: TksApiClient,
     private countriesService: CountriesService,
     private aiConfig: AiConfigService,
+    private regulatoryService: RegulatoryRequirementsService,
     @Optional() @Inject(Anthropic) private anthropic: Anthropic | null,
   ) {}
 
@@ -238,10 +243,11 @@ export class TnVedService {
     const rawCodes: Record<string, TnvedCode> = {};
     const rawTks: TnVedRawTks = { code: tnved, codes: rawCodes };
 
-    const [related, declData, countryDuties] = await Promise.all([
+    const [related, declData, countryDuties, regulatoryReport] = await Promise.all([
       this.tksApi.searchGoodsGrouped(tnved.KR_NAIM).catch(() => null),
       this.tksApi.searchGoodsByCode(tnved.KR_NAIM, code).catch(() => null),
       this.extractCountryDuties(tnved),
+      this.regulatoryService.buildReport(tnved),
     ]);
 
     let examples: TnVedSearchResultItem[] = [];
@@ -270,6 +276,7 @@ export class TnVedService {
         countryDuties,
         conditionalExcises: this.extractConditionalExcises(tnved),
         declarations,
+        regulatoryReport,
         dateBegin: tnved.DBEGIN ?? undefined,
         dateEnd: tnved.DEND ?? undefined,
         notes: tnved.PRIM != null ? String(tnved.PRIM) : undefined,

@@ -1,7 +1,7 @@
 'use client';
 
 import { useTnVed } from '@/hooks/use-tn-ved';
-import { fmt } from '@/lib/format';
+import { fmt, fmtDocumentRef, fmtPeriod } from '@/lib/format';
 import { tdR, thR, td, th } from '@/lib/table-styles';
 import type {
   TnVedCodeDetail,
@@ -13,6 +13,7 @@ import type {
   TnVedSearchResultItem,
 } from '@/lib/types';
 import { useCallback, useState } from 'react';
+import { RegulatoryRequirementsSection } from './regulatory-section';
 
 const labelStyle: React.CSSProperties = { color: '#888', marginRight: 4 };
 
@@ -64,6 +65,10 @@ export default function TnVedPage() {
 
       {result?.mode === 'code_lookup' && result.codeDetail && result.codeDetail.countryDuties.length > 0 && (
         <CountryDutiesSection duties={result.codeDetail.countryDuties} />
+      )}
+
+      {result?.mode === 'code_lookup' && result.codeDetail && (
+        <RegulatoryRequirementsSection report={result.codeDetail.regulatoryReport} />
       )}
 
       {result?.mode === 'code_lookup' && result.codeDetail && result.codeDetail.declarations.length > 0 && (
@@ -507,10 +512,10 @@ function ConditionalExcisesSection({ items }: { items: TnVedConditionalExcise[] 
                 {e.rate != null ? formatConditionalExciseRate(e) : '—'}
               </td>
               <td style={{ ...td, fontSize: 13, color: '#555' }}>
-                {formatPeriod(e.dateBegin, e.dateEnd)}
+                {fmtPeriod(e.dateBegin, e.dateEnd)}
               </td>
               <td style={{ ...td, fontSize: 13, color: '#555' }}>
-                {formatDocument(e.documentNumber, e.documentDate)}
+                {fmtDocumentRef(e.documentNumber, e.documentDate)}
               </td>
               <td style={{ ...td, fontSize: 13, color: '#555' }}>{e.note || '—'}</td>
             </tr>
@@ -584,10 +589,10 @@ function CountryDutiesSection({ duties }: { duties: TnVedCountryDuty[] }) {
                       {d.rate != null ? formatRateValue(d.rate, d.rateUnit) : '—'}
                     </td>
                     <td style={{ ...td, fontSize: 13, color: '#555' }}>
-                      {formatPeriod(d.dateBegin, d.dateEnd)}
+                      {fmtPeriod(d.dateBegin, d.dateEnd)}
                     </td>
                     <td style={{ ...td, fontSize: 13, color: '#555' }}>
-                      {formatDocument(d.documentNumber, d.documentDate)}
+                      {fmtDocumentRef(d.documentNumber, d.documentDate)}
                     </td>
                     <td style={{ ...td, fontSize: 13, color: '#555' }}>{d.note || '—'}</td>
                   </tr>
@@ -623,27 +628,6 @@ function DeclarationsSection({ items }: { items: TnVedDeclarationExample[] }) {
       </table>
     </div>
   );
-}
-
-function formatPeriod(begin: string | null, end: string | null): string {
-  if (!begin && !end) return '—';
-  const beginStr = begin ? formatIsoDate(begin) : '—';
-  const endStr = end ? formatIsoDate(end) : '—';
-  return `${beginStr} … ${endStr}`;
-}
-
-function formatDocument(number: string | null, date: string | null): string {
-  if (!number && !date) return '—';
-  if (!number) return formatIsoDate(date!);
-  if (!date) return number;
-  return `${number} от ${formatIsoDate(date)}`;
-}
-
-function formatIsoDate(raw: string): string {
-  // TKS возвращает "YYYY-MM-DD" или уже форматированное "DD.MM.YYYY"
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
-  if (match) return `${match[3]}.${match[2]}.${match[1]}`;
-  return raw;
 }
 
 function formatDutyRate(rates: TnVedRateInfo): string {

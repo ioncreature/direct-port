@@ -125,3 +125,22 @@ export function fmtDuration(ms: number | null | undefined): string {
   if (ms < 1000) return `${ms} мс`;
   return `${(ms / 1000).toFixed(2)} с`;
 }
+
+export function fmtIsoDate(raw: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : raw;
+}
+
+export function fmtPeriod(begin: string | null, end: string | null): string {
+  if (!begin && !end) return '—';
+  const beginStr = begin ? fmtIsoDate(begin) : '—';
+  const endStr = end ? fmtIsoDate(end) : '—';
+  return `${beginStr} … ${endStr}`;
+}
+
+export function fmtDocumentRef(number: string | null, date: string | null): string {
+  if (!number && !date) return '—';
+  if (!number) return fmtIsoDate(date!);
+  if (!date) return number;
+  return `${number} от ${fmtIsoDate(date)}`;
+}
