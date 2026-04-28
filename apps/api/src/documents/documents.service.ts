@@ -11,6 +11,9 @@ import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
 import { PipelineAuditService } from '../pipeline-audit/pipeline-audit.service';
+import type { RegulatoryExplanation, RegulatoryItem, RegulatoryReport } from '../regulatory/interfaces';
+import { RegulatoryInterpreterService } from '../regulatory/regulatory-interpreter.service';
+import { RegulatoryRequirementsService } from '../regulatory/regulatory-requirements.service';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { FindDocumentsQueryDto } from './dto/find-documents-query.dto';
 import { RejectDocumentDto } from './dto/reject-document.dto';
@@ -30,7 +33,38 @@ export class DocumentsService {
     @InjectQueue('document-notifications') private notificationsQueue: Queue,
     private countriesService: CountriesService,
     private audit: PipelineAuditService,
+    private regulatoryInterpreter: RegulatoryInterpreterService,
   ) {}
+
+  /**
+   * Lazy-load AI-выжимок разрешительных мер для всего документа одним запросом.
+   * Собирает все RegulatoryItem'ы из resultData, прогоняет через interpreter,
+   * возвращает Record<itemId, RegulatoryExplanation>. Для старых документов без
+   * `regulatoryReport` в resultData отдаёт пустой объект.
+   */
+  async getRegulatoryExplanations(
+    documentId: string,
+    language?: string,
+  ): Promise<Record<string, RegulatoryExplanation>> {
+    const doc = await this.repo.findOne({ where: { id: documentId } });
+    if (!doc) {
+      throw new NotFoundException({ code: ErrorCode.DOCUMENT_NOT_FOUND, message: 'Document not found' });
+    }
+    const items: RegulatoryItem[] = [];
+    const seen = new Set<string>();
+    for (const row of (doc.resultData ?? []) as Array<{ regulatoryReport?: RegulatoryReport | null }>) {
+      const report = row.regulatoryReport;
+      if (!report) continue;
+      for (const item of RegulatoryRequirementsService.flattenReport(report)) {
+        if (seen.has(item.id)) continue;
+        seen.add(item.id);
+        items.push(item);
+      }
+    }
+    if (items.length === 0) return {};
+    const result = await this.regulatoryInterpreter.explain(items, language ?? doc.language ?? 'ru');
+    return Object.fromEntries(result.byId);
+  }
 
   async create(dto: CreateDocumentDto): Promise<Document> {
     const doc = this.repo.create({

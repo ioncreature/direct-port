@@ -103,5 +103,25 @@ export function useDocument(id: string) {
     }
   }, [id, fetch]);
 
-  return { document, loading, error, refetch: fetch, reprocess, recalculate, saveParsedData, reject, approve };
+  const setRowCode = useCallback(
+    async (rowIndex: number, tnVedCode: string) => {
+      try {
+        await api.post(`/documents/${id}/rows/${rowIndex}/set-code`, { tnVedCode });
+        await fetch();
+      } catch (err) {
+        const apiErr = err as { response?: { data?: { message?: string; code?: string } } };
+        const msg = apiErr?.response?.data?.message;
+        const code = apiErr?.response?.data?.code;
+        if (code === 'UNKNOWN_TNVED_CODE') {
+          setError(`Код ${tnVedCode} не найден в справочнике ТН ВЭД`);
+        } else {
+          setError(msg || 'Не удалось применить код к строке');
+        }
+        throw new Error('setRowCode failed');
+      }
+    },
+    [id, fetch],
+  );
+
+  return { document, loading, error, refetch: fetch, reprocess, recalculate, saveParsedData, reject, approve, setRowCode };
 }

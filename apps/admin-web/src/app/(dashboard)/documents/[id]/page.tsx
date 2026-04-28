@@ -9,7 +9,7 @@ import { countryOriginSourceLabels, downloadDocument, statusColors, statusLabels
 import { calcAiCostFromMap, calcAiCostFromStages, fmt, fmtCost, fmtDateTimeLocale, fmtTokens, modelLabel, stageLabel } from '@/lib/format';
 import { btnDangerOutline, btnOutline, btnPrimary, btnSuccess, btnWarning } from '@/lib/table-styles';
 import { getDocumentUploaderName } from '@/lib/telegram';
-import type { CalculationStatus, DocumentResultRow, DocumentStatus, ParsedDataRow, ProductNoteSeverity } from '@/lib/types';
+import type { CalculationStatus, CodeCandidate, DocumentResultRow, DocumentStatus, ParsedDataRow, ProductNoteSeverity } from '@/lib/types';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -206,7 +206,7 @@ function resolveStatus(row: DocumentResultRow): CalculationStatus {
 
 export default function DocumentDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { document: doc, loading, error, reprocess, recalculate, saveParsedData, reject, approve } = useDocument(id);
+  const { document: doc, loading, error, reprocess, recalculate, saveParsedData, reject, approve, setRowCode } = useDocument(id);
   const history = useCalculationHistory(id, doc?.updatedAt);
   const { countries } = useCountries();
 
@@ -920,6 +920,8 @@ export default function DocumentDetailPage() {
                     isExpanded={expandedRow === i}
                     onToggle={toggleRow}
                     fmtMoney={fmtMoney}
+                    canEditCode={isCodeReview || doc.status === 'processed_with_errors'}
+                    onSetCode={setRowCode}
                   />
                 ))}
               </tbody>
@@ -985,12 +987,16 @@ const ResultRow = memo(function ResultRow({
   isExpanded,
   onToggle,
   fmtMoney,
+  canEditCode,
+  onSetCode,
 }: {
   row: DocumentResultRow;
   index: number;
   isExpanded: boolean;
   onToggle: (index: number) => void;
   fmtMoney: (n: number) => string;
+  canEditCode: boolean;
+  onSetCode: (rowIndex: number, tnVedCode: string) => Promise<void>;
 }) {
   const [hovered, setHovered] = useState(false);
   const status = resolveStatus(row);
@@ -1046,12 +1052,32 @@ const ResultRow = memo(function ResultRow({
         </td>
       </tr>
 
-      {isExpanded && <ResultDetail row={row} fmtMoney={fmtMoney} />}
+      {isExpanded && (
+        <ResultDetail
+          row={row}
+          rowIndex={index}
+          fmtMoney={fmtMoney}
+          canEditCode={canEditCode}
+          onSetCode={onSetCode}
+        />
+      )}
     </>
   );
 });
 
-function ResultDetail({ row, fmtMoney }: { row: DocumentResultRow; fmtMoney: (n: number) => string }) {
+function ResultDetail({
+  row,
+  rowIndex,
+  fmtMoney,
+  canEditCode,
+  onSetCode,
+}: {
+  row: DocumentResultRow;
+  rowIndex: number;
+  fmtMoney: (n: number) => string;
+  canEditCode: boolean;
+  onSetCode: (rowIndex: number, tnVedCode: string) => Promise<void>;
+}) {
   const notes = row.notes ?? [];
   const sortedNotes = [...notes].sort(
     (a, b) => severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity),
@@ -1171,8 +1197,181 @@ function ResultDetail({ row, fmtMoney }: { row: DocumentResultRow; fmtMoney: (n:
             )}
           </div>
         </div>
+        {canEditCode && (
+          <div style={{ padding: '0 12px 16px', background: '#fafafa' }}>
+            <ChangeCodeSection
+              rowIndex={rowIndex}
+              currentCode={row.tnVedCode}
+              candidateCodes={row.candidateCodes ?? null}
+              onSetCode={onSetCode}
+            />
+          </div>
+        )}
       </td>
     </tr>
+  );
+}
+
+function ChangeCodeSection({
+  rowIndex,
+  currentCode,
+  candidateCodes,
+  onSetCode,
+}: {
+  rowIndex: number;
+  currentCode: string;
+  candidateCodes: CodeCandidate[] | null;
+  onSetCode: (rowIndex: number, tnVedCode: string) => Promise<void>;
+}) {
+  const [customCode, setCustomCode] = useState('');
+  const [submitting, setSubmitting] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const apply = async (code: string) => {
+    setSubmitting(code);
+    setLocalError(null);
+    try {
+      await onSetCode(rowIndex, code);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Не удалось применить код';
+      setLocalError(msg === 'setRowCode failed' ? null : msg);
+    } finally {
+      setSubmitting(null);
+    }
+  };
+
+  const customValid = /^\d{10}$/.test(customCode.trim());
+
+  return (
+    <div
+      style={{
+        border: '1px solid #fcd34d',
+        background: '#fffbeb',
+        borderRadius: 8,
+        padding: 14,
+      }}
+    >
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#92400e', marginBottom: 10 }}>
+        Изменить код ТН ВЭД
+      </div>
+      {candidateCodes && candidateCodes.length > 0 && (
+        <>
+          <div style={{ fontSize: 12, color: '#78350f', marginBottom: 8 }}>
+            Варианты, которые рассматривал AI при классификации:
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+              gap: 8,
+              marginBottom: 12,
+            }}
+          >
+            {candidateCodes.map((cand) => {
+              const isCurrent = cand.code === currentCode;
+              const isSubmitting = submitting === cand.code;
+              return (
+                <div
+                  key={cand.code}
+                  style={{
+                    border: isCurrent ? '2px solid #16a34a' : '1px solid #fcd34d',
+                    borderRadius: 6,
+                    padding: 10,
+                    background: '#fff',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <code style={{ fontSize: 13, fontWeight: 600 }}>{cand.code}</code>
+                    <span style={{ fontSize: 11, color: '#6b7280' }}>
+                      conf {cand.confidence.toFixed(2)}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#374151', lineHeight: 1.3 }}>
+                    {cand.description}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#6b7280' }}>
+                    Пошлина {cand.dutyRate}
+                    {cand.dutyRateUnit ? ` ${cand.dutyRateUnit}` : '%'}
+                    {' · '}НДС {cand.vatRate}%
+                    {cand.exciseRate > 0 && ` · Акциз ${cand.exciseRate}%`}
+                  </div>
+                  {cand.reasoning && (
+                    <div style={{ fontSize: 11, color: '#92400e', fontStyle: 'italic' }}>
+                      {cand.reasoning}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => apply(cand.code)}
+                    disabled={isCurrent || submitting !== null}
+                    style={{
+                      marginTop: 'auto',
+                      padding: '4px 10px',
+                      fontSize: 12,
+                      borderRadius: 4,
+                      border: 'none',
+                      cursor: isCurrent || submitting !== null ? 'not-allowed' : 'pointer',
+                      background: isCurrent ? '#dcfce7' : '#2563eb',
+                      color: isCurrent ? '#15803d' : '#fff',
+                      fontWeight: 500,
+                    }}
+                  >
+                    {isCurrent ? 'Текущий код' : isSubmitting ? 'Применяется...' : 'Выбрать'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <label style={{ fontSize: 12, color: '#78350f' }}>Свой код:</label>
+        <input
+          type="text"
+          value={customCode}
+          onChange={(e) => setCustomCode(e.target.value.replace(/\D/g, '').slice(0, 10))}
+          placeholder="10 цифр"
+          maxLength={10}
+          style={{
+            padding: '4px 8px',
+            border: '1px solid #fcd34d',
+            borderRadius: 4,
+            fontSize: 13,
+            width: 130,
+            fontFamily: 'monospace',
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => apply(customCode.trim())}
+          disabled={!customValid || submitting !== null}
+          style={{
+            padding: '4px 12px',
+            fontSize: 12,
+            borderRadius: 4,
+            border: 'none',
+            cursor: customValid && submitting === null ? 'pointer' : 'not-allowed',
+            background: customValid && submitting === null ? '#2563eb' : '#9ca3af',
+            color: '#fff',
+            fontWeight: 500,
+          }}
+        >
+          {submitting === customCode.trim() ? 'Применяется...' : 'Применить'}
+        </button>
+        {!candidateCodes?.length && (
+          <span style={{ fontSize: 11, color: '#78350f' }}>
+            AI не предложил альтернатив — введите код вручную.
+          </span>
+        )}
+      </div>
+      {localError && (
+        <div style={{ marginTop: 8, fontSize: 12, color: '#dc2626' }}>{localError}</div>
+      )}
+    </div>
   );
 }
 

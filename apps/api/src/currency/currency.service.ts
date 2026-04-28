@@ -40,6 +40,51 @@ export class CurrencyService {
     return Math.round(amount * rate * 100) / 100;
   }
 
+  /**
+   * Курсы вида «1 единица валюты X → доля валюты документа», для каждой валюты
+   * из `currencies` (плюс сама валюта документа). Pipeline calculator использует
+   * их, чтобы привести specific-ставки в EUR/USD/CNY к валюте позиции.
+   *
+   * Если курс валюты документа недоступен в ЦБ — возвращаем единичную карту,
+   * остальные ставки calculator пометит estimated с blocker-note.
+   */
+  async buildCurrencyToDocRates(
+    docCurrency: string,
+    currencies: readonly string[],
+  ): Promise<Record<string, number>> {
+    const targets = Array.from(new Set([docCurrency, ...currencies]));
+    const fetched = await Promise.all(
+      targets.map(async (c) => {
+        if (c === 'RUB') return [c, 1] as const;
+        try {
+          return [c, await this.getRate(c)] as const;
+        } catch {
+          return [c, null] as const;
+        }
+      }),
+    );
+    const rubPerUnit = Object.fromEntries(fetched.filter((e) => e[1] != null)) as Record<
+      string,
+      number
+    >;
+
+    const docInRub = rubPerUnit[docCurrency];
+    if (docInRub == null) {
+      this.logger.warn(
+        `Rate for document currency ${docCurrency} unavailable — only ad valorem duties will be exact`,
+      );
+      return { [docCurrency]: 1 };
+    }
+
+    const rates: Record<string, number> = { [docCurrency]: 1 };
+    for (const [c, rub] of Object.entries(rubPerUnit)) {
+      if (c === docCurrency) continue;
+      const r = rub / docInRub;
+      if (Number.isFinite(r) && r > 0) rates[c] = r;
+    }
+    return rates;
+  }
+
   private async getRates(): Promise<Map<string, number>> {
     if (this.cache && Date.now() - this.cache.fetchedAt < CACHE_TTL) {
       return this.cache.rates;

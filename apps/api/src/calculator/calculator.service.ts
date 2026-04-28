@@ -15,6 +15,7 @@ import type {
   DutyInterpretation,
   SpecificPart,
 } from '../duty-interpreter/interfaces';
+import type { RegulatoryReport } from '../regulatory/interfaces';
 
 /**
  * Вход калькулятора. Обычно это InterpretedProduct (после duty-interpreter),
@@ -45,6 +46,8 @@ export interface CalculatedProduct extends ClassifiedProduct {
   /** Итоговый статус расчёта, выведенный из notes: exact / partial / needs_info / error */
   calculationStatus: CalculationStatus;
   notes: ProductNote[];
+  /** Разрешительные документы и ограничения (заполняется в pipeline после Calculator). */
+  regulatoryReport?: RegulatoryReport | null;
 }
 
 export interface CalculationSummary {

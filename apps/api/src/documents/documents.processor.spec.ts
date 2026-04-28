@@ -203,6 +203,7 @@ function createProcessor(opts: Opts = {}) {
       return Promise.resolve(opts.rate ?? 90);
     }),
     toRubSync: jest.fn().mockImplementation((v: number, rate: number) => v * rate),
+    buildCurrencyToDocRates: jest.fn().mockResolvedValue({}),
   };
 
   const calculationLogs = {
@@ -220,6 +221,21 @@ function createProcessor(opts: Opts = {}) {
     recordDocumentVersion: jest.fn().mockResolvedValue(1),
   };
 
+  const regulatoryService = {
+    buildReport: jest.fn().mockResolvedValue({
+      certifications: [],
+      permits: [],
+      licenses: [],
+      marking: [],
+      traceability: [],
+      utilizationFee: [],
+      strategicAndDualUse: [],
+      countryRestrictions: [],
+      other: [],
+      totalCount: 0,
+    }),
+  };
+
   const processor = new DocumentsProcessor(
     repo as any,
     notificationQueue as any,
@@ -230,6 +246,7 @@ function createProcessor(opts: Opts = {}) {
     currencyService as any,
     calculationLogs as any,
     audit as any,
+    regulatoryService as any,
   );
 
   return {

@@ -224,6 +224,23 @@ export interface ProductNote {
 
 export type CalculationStatus = 'exact' | 'partial' | 'needs_info' | 'error';
 
+/**
+ * Один из вариантов кода ТН ВЭД, который Claude рассматривал во время классификации.
+ * Включает уже подгруженные ставки — оператор видит dutyRate/vatRate/exciseRate каждой
+ * альтернативы без дополнительного запроса.
+ */
+export interface CodeCandidate {
+  code: string;
+  description: string;
+  dutyRate: number;
+  dutyRateUnit: string | null;
+  vatRate: number;
+  exciseRate: number;
+  confidence: number;
+  reasoning: string;
+  reasoningLocalized?: string;
+}
+
 export interface DocumentResultRow {
   description: string;
   quantity: number;
@@ -246,6 +263,13 @@ export interface DocumentResultRow {
   dutyAmountIsEstimate?: boolean;
   dutyFormula?: string | null;
   notes?: ProductNote[];
+  regulatoryReport?: RegulatoryReport | null;
+  /**
+   * Топ-3 кодов, между которыми Claude колебался в classify-стадии. Заполняется
+   * только при низкой уверенности — оператор использует список как опору при
+   * ручном выборе кода через `POST /documents/:id/rows/:index/set-code`.
+   */
+  candidateCodes?: CodeCandidate[] | null;
 }
 
 export type SortOrder = 'ASC' | 'DESC';

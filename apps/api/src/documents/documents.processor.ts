@@ -18,10 +18,12 @@ import {
 import { addStageUsage } from '../common/token-usage';
 import { CurrencyService } from '../currency/currency.service';
 import { KNOWN_CURRENCIES } from '../common/normalize-impedi';
+import { buildResultRow } from './result-row.helper';
 import { DEFAULT_COUNTRY_OF_ORIGIN, Document, DocumentStatus } from '../database/entities/document.entity';
 import { DutyInterpreterService } from '../duty-interpreter/duty-interpreter.service';
 import type { Dimension } from '../duty-interpreter/interfaces';
 import { PipelineAuditService } from '../pipeline-audit/pipeline-audit.service';
+import { RegulatoryRequirementsService } from '../regulatory/regulatory-requirements.service';
 import {
   buildDocumentNotificationPayload,
   type DocumentNotification,
@@ -43,6 +45,7 @@ export class DocumentsProcessor extends WorkerHost {
     private currencyService: CurrencyService,
     private calculationLogs: CalculationLogsService,
     private audit: PipelineAuditService,
+    private regulatoryService: RegulatoryRequirementsService,
   ) {
     super();
   }
@@ -87,7 +90,7 @@ export class DocumentsProcessor extends WorkerHost {
       const currency = (doc.currency || 'USD').toUpperCase();
       const [config, currencyToDoc] = await Promise.all([
         this.configService.get(),
-        this.buildCurrencyToDocRates(currency),
+        this.currencyService.buildCurrencyToDocRates(currency, KNOWN_CURRENCIES),
       ]);
       const {
         pricePercent,
@@ -190,6 +193,8 @@ export class DocumentsProcessor extends WorkerHost {
       });
       this.logger.log(`Document ${documentId}: calculation done in ${Date.now() - t2}ms`);
 
+      await this.attachRegulatoryReports(summary.items);
+
       const needsConversion = currency !== 'RUB';
       let exchangeRate = 1;
       if (needsConversion) {
@@ -209,55 +214,16 @@ export class DocumentsProcessor extends WorkerHost {
       }
       doc.exchangeRates = ratesMap;
 
+      const conversion = needsConversion ? { exchangeRate, toRub } : null;
       doc.resultData = summary.items.map((item, i) => {
         item.notes.push(this.buildBreakdownNote(item, currency, needsConversion ? exchangeRate : null));
-        const base = {
-          description: item.description,
-          quantity: item.quantity,
-          price: item.price,
-          weight: item.weight,
-          dimensions: item.dimensions ?? null,
-          tnVedCode: item.tnVedCode,
-          tnVedDescription: item.tnVedDescription,
-          dutyRate: item.dutyRate,
-          dutyRateUnit: item.dutyRateUnit,
-          dutySign: item.dutySign,
-          dutyMin: item.dutyMin,
-          dutyMinUnit: item.dutyMinUnit,
-          dutyRateDisplay: item.dutyRateDisplay,
-          vatRate: item.vatRate,
-          exciseRate: item.exciseRate,
-          matched: item.matched,
-          suggestedCode: item.suggestedCode,
+        return buildResultRow({
+          item,
           // Сохраняем, чтобы recalculate мог пересчитать с другой страной без Claude.
           dutyInterpretation: interpreted[i]?.dutyInterpretation ?? null,
-          totalPrice: item.totalPrice,
-          dutyAmount: item.dutyAmount,
-          dutyAmountIsEstimate: item.dutyAmountIsEstimate,
-          dutyFormula: item.dutyFormula,
-          dutyBase: item.dutyBase,
-          vatAmount: item.vatAmount,
-          exciseAmount: item.exciseAmount,
-          logisticsCommission: item.logisticsCommission,
-          totalCost: item.totalCost,
-          verificationStatus: item.verificationStatus, // устаревшее, для BC
-          calculationStatus: item.calculationStatus,
-          matchConfidence: item.matchConfidence,
-          verified: classified[i]?.verified ?? false,
-          verificationComment: classified[i]?.verificationComment ?? null,
-          notes: item.notes,
-        };
-        if (!needsConversion) return base;
-        return {
-          ...base,
-          totalPriceRub: toRub(item.totalPrice),
-          dutyAmountRub: toRub(item.dutyAmount),
-          vatAmountRub: toRub(item.vatAmount),
-          exciseAmountRub: toRub(item.exciseAmount),
-          logisticsCommissionRub: toRub(item.logisticsCommission),
-          totalCostRub: toRub(item.totalCost),
-          exchangeRate,
-        };
+          candidateCodes: classified[i]?.candidateCodes ?? null,
+          conversion,
+        });
       });
       let hasRowErrors = false;
       const lowConfidenceReasonsData: RejectionReasonData[] = [];
@@ -394,7 +360,7 @@ export class DocumentsProcessor extends WorkerHost {
       const currency = (doc.currency || 'USD').toUpperCase();
       const [config, currencyToDoc] = await Promise.all([
         this.configService.get(),
-        this.buildCurrencyToDocRates(currency),
+        this.currencyService.buildCurrencyToDocRates(currency, KNOWN_CURRENCIES),
       ]);
       const { pricePercent, weightRate, fixedFee, sendResultFile, confidenceThreshold } = config;
       const commission = { pricePercent, weightRate, fixedFee };
@@ -537,37 +503,28 @@ export class DocumentsProcessor extends WorkerHost {
   }
 
   /**
-   * Собирает курсы всех валют, в которых TKS выдаёт specific-ставки,
-   * выраженные в единицах валюты документа. Недоступные в ЦБ РФ валюты пропускаются —
-   * для них ставки будут помечены estimated с blocker-note.
+   * Заполняет CalculatedProduct.regulatoryReport для каждой позиции с известным
+   * `tnvedRaw`. RegulatoryReport дешёвый (regex+поиск стран по in-memory map), но
+   * в нём асинхронный резолв OKSMT — поэтому Promise.all. Позиции без tnvedRaw
+   * (нет матча TKS) получают null — UI покажет пустую секцию.
    */
-  private async buildCurrencyToDocRates(docCurrency: string): Promise<Record<string, number>> {
-    const targets = Array.from(new Set([docCurrency, ...KNOWN_CURRENCIES]));
-    const fetched = await Promise.all(
-      targets.map(async (c) => {
-        if (c === 'RUB') return [c, 1] as const;
+  private async attachRegulatoryReports(items: CalculatedProduct[]): Promise<void> {
+    await Promise.all(
+      items.map(async (item) => {
+        if (!item.tnvedRaw) {
+          item.regulatoryReport = null;
+          return;
+        }
         try {
-          return [c, await this.currencyService.getRate(c)] as const;
-        } catch {
-          return [c, null] as const;
+          item.regulatoryReport = await this.regulatoryService.buildReport(item.tnvedRaw);
+        } catch (err) {
+          this.logger.warn(
+            `Regulatory report failed for ${item.tnVedCode}: ${errMsg(err)}`,
+          );
+          item.regulatoryReport = null;
         }
       }),
     );
-    const rubPerUnit = Object.fromEntries(fetched.filter((e) => e[1] != null)) as Record<string, number>;
-
-    const docInRub = rubPerUnit[docCurrency];
-    if (docInRub == null) {
-      this.logger.warn(`Rate for document currency ${docCurrency} unavailable — only ad valorem duties will be exact`);
-      return { [docCurrency]: 1 };
-    }
-
-    const rates: Record<string, number> = { [docCurrency]: 1 };
-    for (const [c, rub] of Object.entries(rubPerUnit)) {
-      if (c === docCurrency) continue;
-      const r = rub / docInRub;
-      if (Number.isFinite(r) && r > 0) rates[c] = r;
-    }
-    return rates;
   }
 
   private buildBreakdownNote(

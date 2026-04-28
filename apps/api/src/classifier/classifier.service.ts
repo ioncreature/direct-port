@@ -64,6 +64,29 @@ export interface ClassifiedProduct extends ProductRow {
   suggestedCode: string | null;
   verificationComment: string;
   notes: ProductNote[];
+  /**
+   * Топ-3 кодов, которые Claude рассматривал во время классификации (выбранный + до 2 альтернатив).
+   * Заполняется только при низкой уверенности — оператор использует список как опору
+   * при ручном выборе кода через `POST /documents/:id/rows/:index/set-code`.
+   */
+  candidateCodes?: CodeCandidate[];
+}
+
+/**
+ * Один из вариантов кода ТН ВЭД, который Claude рассматривал в classify-стадии.
+ * Включает уже подгруженные ставки из TKS, чтобы оператор сразу видел dutyRate/vatRate/exciseRate
+ * без дополнительного запроса.
+ */
+export interface CodeCandidate {
+  code: string;
+  description: string;
+  dutyRate: number;
+  dutyRateUnit: string | null;
+  vatRate: number;
+  exciseRate: number;
+  confidence: number;
+  reasoning: string;
+  reasoningLocalized?: string;
 }
 
 /**
@@ -78,6 +101,13 @@ export interface TksCandidate {
   confidence: number;
 }
 
+export interface ClaudeAlternative {
+  tnVedCode: string;
+  confidence: number;
+  reasoning: string;
+  reasoning_localized?: string;
+}
+
 export interface ClaudeSelection {
   index: number;
   tnVedCode: string;
@@ -85,6 +115,12 @@ export interface ClaudeSelection {
   comment: string;
   comment_localized?: string;
   fromCandidates: boolean;
+  /**
+   * До 2 альтернативных кодов, которые Claude также рассматривал в classify-стадии.
+   * Заполняется когда уверенность ниже `confidenceThreshold` (порог из CalculationConfig
+   * передаётся в user-prompt) либо когда несколько кандидатов TKS близки по релевантности.
+   */
+  alternatives?: ClaudeAlternative[];
 }
 
 /**
@@ -148,6 +184,7 @@ rawContext — это набор именованных пар "имя_коло�
 - Если указан hsCode (код от автора файла) — это предложенный код. Проверь его соответствие описанию и контексту. Если подходит — подтверди (fromCandidates: false, высокий confidence). Если не подходит — выбери правильный код и объясни в comment почему предложенный не подходит
 - confidence: 0.0-1.0 — твоя уверенность в выбранном коде
 - comment: краткое пояснение выбора на русском
+- alternatives: верни до 2 альтернативных кодов, которые ты всерьёз рассматривал, если confidence ниже confidenceThreshold (поле передаётся вместе с описанием каждого товара) ИЛИ если несколько кандидатов TKS близки по релевантности. Это коды, между которыми ты колебался. Для каждой альтернативы укажи tnVedCode, свою уверенность в ней и одну короткую фразу: чем она отличается от выбранного и почему ты её не выбрал. При высокой уверенности (заметно выше порога) alternatives оставляй пустым.
 
 Ориентиры по разделам ТН ВЭД (для быстрой локализации группы):
 - 01-05 — живые животные и продукты животного происхождения
@@ -214,6 +251,33 @@ const CLASSIFY_TOOL: Anthropic.Messages.Tool = {
             comment: { type: 'string', description: 'Пояснение на русском' },
             comment_localized: { type: 'string', description: 'Пояснение на языке пользователя' },
             fromCandidates: { type: 'boolean' },
+            alternatives: {
+              type: 'array',
+              maxItems: 2,
+              description:
+                'До 2 альтернативных 10-значных кодов, которые ты также рассматривал в этой классификации. ' +
+                'Заполняй ТОЛЬКО если confidence ниже confidenceThreshold (поле передаётся в каждом item) ' +
+                'или если несколько кандидатов TKS близки по релевантности. ' +
+                'При высокой уверенности (заметно выше порога) оставляй пустым.',
+              items: {
+                type: 'object',
+                properties: {
+                  tnVedCode: { type: 'string', description: '10-значный код ТН ВЭД альтернативы' },
+                  confidence: { type: 'number', description: '0.0-1.0 — твоя уверенность в этой альтернативе' },
+                  reasoning: {
+                    type: 'string',
+                    description:
+                      'Одна короткая фраза на русском: чем альтернатива отличается от выбранного кода ' +
+                      'и почему ты её всё-таки не выбрал.',
+                  },
+                  reasoning_localized: {
+                    type: 'string',
+                    description: 'То же на языке пользователя (если language≠ru)',
+                  },
+                },
+                required: ['tnVedCode', 'confidence', 'reasoning'],
+              },
+            },
           },
           required: ['index', 'tnVedCode', 'confidence', 'comment', 'fromCandidates'],
         },
@@ -408,6 +472,7 @@ export class ClassifierService {
         validatedHsCodeSet,
         language,
         auditContext,
+        confidenceThreshold,
       );
       tokenUsage = mergeTokenUsage(tokenUsage, result.tokenUsage);
 
@@ -442,6 +507,11 @@ export class ClassifierService {
       const sel = selections[i];
       const code = sel?.tnVedCode || candidatesByProduct[i]?.[0]?.code;
       if (code && !tnvedByCode.has(code)) codesToLoad.add(code);
+      // Альтернативы Claude — подгружаем их ставки сразу, чтобы оператор в админке
+      // увидел dutyRate/vatRate/exciseRate каждого варианта без отдельного запроса.
+      for (const alt of sel?.alternatives ?? []) {
+        if (alt.tnVedCode && !tnvedByCode.has(alt.tnVedCode)) codesToLoad.add(alt.tnVedCode);
+      }
     }
     const loadedRates = await this.loadTnvedRates([...codesToLoad]);
     for (const [code, tnved] of loadedRates) {
@@ -485,6 +555,7 @@ export class ClassifierService {
           retryItems,
           language,
           auditContext,
+          confidenceThreshold,
         );
         tokenUsage = mergeTokenUsage(tokenUsage, retryUsage);
 
@@ -500,6 +571,11 @@ export class ClassifierService {
           });
           if (newSel.tnVedCode && !tnvedByCode.has(newSel.tnVedCode)) {
             newCodesToLoad.add(newSel.tnVedCode);
+          }
+          for (const alt of newSel.alternatives ?? []) {
+            if (alt.tnVedCode && !tnvedByCode.has(alt.tnVedCode)) {
+              newCodesToLoad.add(alt.tnVedCode);
+            }
           }
         }
 
@@ -770,6 +846,7 @@ export class ClassifierService {
     validatedHsCodes: Set<string>,
     language?: string,
     auditContext: AuditContext | null = null,
+    confidenceThreshold: number = DEFAULT_CONFIDENCE_THRESHOLD,
   ): Promise<{ selections: (ClaudeSelection | null)[]; tokenUsage: TokenUsageMap }> {
     const allSelections: (ClaudeSelection | null)[] = new Array(products.length).fill(null);
     let totalUsage = emptyTokenUsageMap();
@@ -801,6 +878,7 @@ export class ClassifierService {
           language,
           useCache,
           auditContext,
+          { confidenceThreshold },
         );
         totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
         for (const sel of selections) {
@@ -819,7 +897,7 @@ export class ClassifierService {
       const group = remaining.slice(g, g + CLAUDE_CONCURRENCY);
       const results = await Promise.all(
         group.map((items) =>
-          this.callClaude(items, language, useCache, auditContext).catch((err) => {
+          this.callClaude(items, language, useCache, auditContext, { confidenceThreshold }).catch((err) => {
             this.logger.error('Claude classify+verify batch failed', err);
             return { selections: [] as ClaudeSelection[], tokenUsage: emptyTokenUsageMap() };
           }),
@@ -847,6 +925,7 @@ export class ClassifierService {
     }[],
     language: string | undefined,
     auditContext: AuditContext | null,
+    confidenceThreshold: number = DEFAULT_CONFIDENCE_THRESHOLD,
   ): Promise<{ selections: Map<number, ClaudeSelection>; tokenUsage: TokenUsageMap }> {
     const newSelections = new Map<number, ClaudeSelection>();
     let totalUsage = emptyTokenUsageMap();
@@ -871,7 +950,11 @@ export class ClassifierService {
           language,
           useCache,
           auditContext,
-          { purpose: 'classify_retry', promptIntro: CLASSIFIER_RETRY_PROMPT_INTRO },
+          {
+            purpose: 'classify_retry',
+            promptIntro: CLASSIFIER_RETRY_PROMPT_INTRO,
+            confidenceThreshold,
+          },
         );
         totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
         for (const sel of selections) {
@@ -892,7 +975,11 @@ export class ClassifierService {
     language?: string,
     useCache = false,
     auditContext: AuditContext | null = null,
-    opts: { purpose?: AiCallPurpose; promptIntro?: string } = {},
+    opts: {
+      purpose?: AiCallPurpose;
+      promptIntro?: string;
+      confidenceThreshold?: number;
+    } = {},
   ): Promise<{ selections: ClaudeSelection[]; tokenUsage: TokenUsageMap }> {
     const model = await this.aiConfig.getClassifierModel();
     const needsLocalized = language && language !== 'ru';
@@ -902,7 +989,12 @@ export class ClassifierService {
 
     const purpose: AiCallPurpose = opts.purpose ?? 'classify';
     const intro = opts.promptIntro ?? 'Классифицируй товары по ТН ВЭД';
-    const userPrompt = `${intro}: ${JSON.stringify(items, null, 2)}${localizedInstruction}`;
+    const threshold = opts.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
+    // Прокидываем порог уверенности в каждый item, чтобы Claude применял его при
+    // решении заполнять ли alternatives. Положили внутрь JSON (а не отдельным
+    // постфиксом), чтобы клиент-парсеры user-prompt в тестах продолжали работать.
+    const itemsWithThreshold = items.map((it) => ({ ...it, confidenceThreshold: threshold }));
+    const userPrompt = `${intro}: ${JSON.stringify(itemsWithThreshold, null, 2)}${localizedInstruction}`;
 
     const response = await this.audit.trackAiCall(
       {
@@ -1021,6 +1113,13 @@ export class ClassifierService {
       }
 
       const suggestedCode = sel && !sel.fromCandidates ? sel.tnVedCode : null;
+      const candidateCodes = this.buildCandidateCodes(
+        sel,
+        tnved,
+        confidence,
+        confidenceThreshold,
+        tnvedByCode,
+      );
 
       return {
         ...product,
@@ -1040,8 +1139,60 @@ export class ClassifierService {
         suggestedCode,
         verificationComment: sel?.comment ?? '',
         notes,
+        ...(candidateCodes ? { candidateCodes } : {}),
       };
     });
+  }
+
+  /**
+   * Собирает список вариантов кода (выбранный + альтернативы Claude) с подгруженными
+   * ставками, до 3 штук. Возвращает undefined для уверенных классификаций без альтернатив —
+   * админка тогда не показывает блок «Альтернативные коды» (но инпут «Свой код» доступен всегда).
+   */
+  private buildCandidateCodes(
+    sel: ClaudeSelection | null,
+    chosenTnved: TnvedCode,
+    confidence: number,
+    confidenceThreshold: number,
+    tnvedByCode: Map<string, TnvedCode>,
+  ): CodeCandidate[] | undefined {
+    const alternatives = sel?.alternatives ?? [];
+    const isLowConfidence = confidence < confidenceThreshold;
+    if (alternatives.length === 0 && !isLowConfidence) return undefined;
+
+    const chosenRates = chosenTnved.TNVED ?? {};
+    const list: CodeCandidate[] = [
+      {
+        code: chosenTnved.CODE,
+        description: chosenTnved.KR_NAIM,
+        dutyRate: chosenRates.IMP ?? 0,
+        dutyRateUnit: normalizeImpediUnit(chosenRates.IMPEDI),
+        vatRate: chosenRates.NDS ?? 20,
+        exciseRate: chosenRates.AKC ?? 0,
+        confidence,
+        reasoning: sel?.comment ?? '',
+        ...(sel?.comment_localized ? { reasoningLocalized: sel.comment_localized } : {}),
+      },
+    ];
+
+    for (const alt of alternatives) {
+      const altTnved = tnvedByCode.get(alt.tnVedCode);
+      if (!altTnved || altTnved.CODE === chosenTnved.CODE) continue;
+      const altRates = altTnved.TNVED ?? {};
+      list.push({
+        code: altTnved.CODE,
+        description: altTnved.KR_NAIM,
+        dutyRate: altRates.IMP ?? 0,
+        dutyRateUnit: normalizeImpediUnit(altRates.IMPEDI),
+        vatRate: altRates.NDS ?? 20,
+        exciseRate: altRates.AKC ?? 0,
+        confidence: alt.confidence,
+        reasoning: alt.reasoning,
+        ...(alt.reasoning_localized ? { reasoningLocalized: alt.reasoning_localized } : {}),
+      });
+    }
+
+    return list.slice(0, 3);
   }
 
   private async runVisionRetry(

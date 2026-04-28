@@ -30,8 +30,10 @@ import { FindDocumentsQueryDto } from './dto/find-documents-query.dto';
 import { RecalculateDocumentDto } from './dto/recalculate-document.dto';
 import { RejectDocumentDto } from './dto/reject-document.dto';
 import { ReviewDocumentDto } from './dto/review-document.dto';
+import { SetRowCodeDto } from './dto/set-row-code.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { ExcelExportService } from './excel-export.service';
+import { ManualCodeService } from './manual-code.service';
 
 const SPREADSHEET_UPLOAD: MulterOptions & { defParamCharset?: string } = {
   limits: { fileSize: 40 * 1024 * 1024 },
@@ -58,6 +60,7 @@ export class DocumentsController {
     private excelExport: ExcelExportService,
     private calculationLogs: CalculationLogsService,
     private diagnostics: DiagnosticsService,
+    private manualCode: ManualCodeService,
   ) {}
 
   @Post()
@@ -162,6 +165,22 @@ export class DocumentsController {
     return this.service.recalculate(id, dto);
   }
 
+  /**
+   * Ручная установка кода ТН ВЭД оператором для конкретной строки документа.
+   * Доступно для статусов CODE_REVIEW_REQUIRED и PROCESSED_WITH_ERRORS.
+   * Если все строки документа после правки получают confident-код — статус
+   * автоматически переводится в PROCESSED.
+   */
+  @Post(':id/rows/:index/set-code')
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  setRowCode(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('index', ParseIntPipe) index: number,
+    @Body() dto: SetRowCodeDto,
+  ) {
+    return this.manualCode.setRowCode(id, index, dto.tnVedCode);
+  }
+
   @Get(':id')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   findOne(@Param('id', ParseUUIDPipe) id: string) {
@@ -178,6 +197,15 @@ export class DocumentsController {
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   stageRuns(@Param('id', ParseUUIDPipe) id: string) {
     return this.diagnostics.findStageRunsByDocument(id);
+  }
+
+  @Get(':id/regulatory-explanations')
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  regulatoryExplanations(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('lang') lang?: string,
+  ) {
+    return this.service.getRegulatoryExplanations(id, lang);
   }
 
   @Get(':id/ai-calls/:callId')

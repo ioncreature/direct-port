@@ -18,7 +18,10 @@ import { DocumentsController } from './documents.controller';
 import { DocumentsProcessor } from './documents.processor';
 import { DocumentsService } from './documents.service';
 import { ExcelExportService } from './excel-export.service';
+import { ManualCodeService } from './manual-code.service';
 import { PhotoStorageModule } from '../photo-storage/photo-storage.module';
+import { RegulatoryModule } from '../regulatory/regulatory.module';
+import { TksModule } from '../tks/tks.module';
 
 @Module({
   imports: [
@@ -36,8 +39,16 @@ import { PhotoStorageModule } from '../photo-storage/photo-storage.module';
     CountriesModule,
     DiagnosticsModule,
     PhotoStorageModule,
+    RegulatoryModule,
+    TksModule,
   ],
   controllers: [DocumentsController],
-  providers: [DocumentsService, DocumentsProcessor, DocumentsParsingProcessor, ExcelExportService],
+  providers: [
+    DocumentsService,
+    DocumentsProcessor,
+    DocumentsParsingProcessor,
+    ExcelExportService,
+    ManualCodeService,
+  ],
 })
 export class DocumentsModule {}
