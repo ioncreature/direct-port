@@ -51,11 +51,11 @@ export class NormalizeModelFamilies1778000000000 implements MigrationInterface {
     await queryRunner.query(`
       UPDATE documents
       SET token_usage = (
-        SELECT jsonb_object_agg(stage_key, normalized_models)
+        SELECT COALESCE(jsonb_object_agg(stage_key, normalized_models), '{}'::jsonb)
         FROM (
           SELECT s.key AS stage_key,
                  (
-                   SELECT jsonb_object_agg(family, summed)
+                   SELECT COALESCE(jsonb_object_agg(family, summed), '{}'::jsonb)
                    FROM (
                      SELECT pg_temp_model_family(m.key) AS family,
                             jsonb_build_object(
@@ -69,16 +69,19 @@ export class NormalizeModelFamilies1778000000000 implements MigrationInterface {
                    ) inner_agg
                  ) AS normalized_models
           FROM jsonb_each(documents.token_usage) s
+          WHERE jsonb_typeof(s.value) = 'object'
         ) stages
       )
-      WHERE token_usage IS NOT NULL AND token_usage <> '{}'::jsonb
+      WHERE token_usage IS NOT NULL
+        AND jsonb_typeof(token_usage) = 'object'
+        AND token_usage <> '{}'::jsonb
     `);
 
     // pipeline_stage_run.token_usage — одноуровневый JSONB { model: usage }.
     await queryRunner.query(`
       UPDATE pipeline_stage_run
       SET token_usage = (
-        SELECT jsonb_object_agg(family, summed)
+        SELECT COALESCE(jsonb_object_agg(family, summed), '{}'::jsonb)
         FROM (
           SELECT pg_temp_model_family(m.key) AS family,
                  jsonb_build_object(
@@ -91,7 +94,9 @@ export class NormalizeModelFamilies1778000000000 implements MigrationInterface {
           GROUP BY pg_temp_model_family(m.key)
         ) sub
       )
-      WHERE token_usage IS NOT NULL AND token_usage <> '{}'::jsonb
+      WHERE token_usage IS NOT NULL
+        AND jsonb_typeof(token_usage) = 'object'
+        AND token_usage <> '{}'::jsonb
     `);
 
     // duty_interpretation_cache: model входит в составной первичный ключ.

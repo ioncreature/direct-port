@@ -34,14 +34,44 @@ export class AddModelFamilyFunction1778100000000 implements MigrationInterface {
       `UPDATE ai_call SET model = model_family(model) WHERE model_family(model) <> model`,
     );
 
+    // Pre-step: подчистить «битые» token_usage, которые могла оставить
+    // NormalizeModelFamilies1778000000000. Если у документа был stage с пустым
+    // объектом значений, jsonb_object_agg(family, summed) возвращал NULL, и
+    // внешний jsonb_object_agg(stage_key, NULL) записывал в БД `{"parse": null}`.
+    // Здесь оставляем только stages, где значение — объект; остальные дроп.
     await queryRunner.query(`
       UPDATE documents
       SET token_usage = (
-        SELECT jsonb_object_agg(stage_key, normalized_models)
+        SELECT COALESCE(jsonb_object_agg(s.key, s.value), '{}'::jsonb)
+        FROM jsonb_each(documents.token_usage) s
+        WHERE jsonb_typeof(s.value) = 'object'
+      )
+      WHERE token_usage IS NOT NULL
+        AND jsonb_typeof(token_usage) = 'object'
+        AND EXISTS (
+          SELECT 1 FROM jsonb_each(documents.token_usage) s
+          WHERE jsonb_typeof(s.value) <> 'object'
+        )
+    `);
+
+    // Тот же риск NULL после агрегации применим и к pipeline_stage_run, хоть
+    // там JSONB одноуровневый: subquery без GROUP-строк вернёт NULL.
+    // jsonb_typeof guard ниже + COALESCE на пустой объект делают апдейт
+    // идемпотентным.
+    await queryRunner.query(`
+      UPDATE pipeline_stage_run
+      SET token_usage = '{}'::jsonb
+      WHERE token_usage IS NOT NULL AND jsonb_typeof(token_usage) <> 'object'
+    `);
+
+    await queryRunner.query(`
+      UPDATE documents
+      SET token_usage = (
+        SELECT COALESCE(jsonb_object_agg(stage_key, normalized_models), '{}'::jsonb)
         FROM (
           SELECT s.key AS stage_key,
                  (
-                   SELECT jsonb_object_agg(family, summed)
+                   SELECT COALESCE(jsonb_object_agg(family, summed), '{}'::jsonb)
                    FROM (
                      SELECT model_family(m.key) AS family,
                             jsonb_build_object(
@@ -55,15 +85,18 @@ export class AddModelFamilyFunction1778100000000 implements MigrationInterface {
                    ) inner_agg
                  ) AS normalized_models
           FROM jsonb_each(documents.token_usage) s
+          WHERE jsonb_typeof(s.value) = 'object'
         ) stages
       )
-      WHERE token_usage IS NOT NULL AND token_usage <> '{}'::jsonb
+      WHERE token_usage IS NOT NULL
+        AND jsonb_typeof(token_usage) = 'object'
+        AND token_usage <> '{}'::jsonb
     `);
 
     await queryRunner.query(`
       UPDATE pipeline_stage_run
       SET token_usage = (
-        SELECT jsonb_object_agg(family, summed)
+        SELECT COALESCE(jsonb_object_agg(family, summed), '{}'::jsonb)
         FROM (
           SELECT model_family(m.key) AS family,
                  jsonb_build_object(
@@ -76,7 +109,9 @@ export class AddModelFamilyFunction1778100000000 implements MigrationInterface {
           GROUP BY model_family(m.key)
         ) sub
       )
-      WHERE token_usage IS NOT NULL AND token_usage <> '{}'::jsonb
+      WHERE token_usage IS NOT NULL
+        AND jsonb_typeof(token_usage) = 'object'
+        AND token_usage <> '{}'::jsonb
     `);
   }
 
