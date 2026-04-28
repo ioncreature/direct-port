@@ -11,7 +11,7 @@ import {
   totalTokensFromStages,
 } from '@/lib/format';
 import { th, td, btnOutline } from '@/lib/table-styles';
-import type { DailyTokenStats, TokenStats, TokenStatsPeriod } from '@/lib/types';
+import type { DailyTokenStats, TokenStats, TokenStatsPeriod, TokenUsageMap } from '@/lib/types';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -222,6 +222,7 @@ function DailyChart({ data }: { data: DailyTokenStats[] }) {
   const maxCost = Math.max(...costs, 0.01);
   const total = costs.reduce((s, c) => s + c, 0);
   const todayStr = new Date().toISOString().slice(0, 10);
+  const [activeIdx, setActiveIdx] = useState<number | null>(null);
 
   return (
     <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 20 }}>
@@ -229,28 +230,34 @@ function DailyChart({ data }: { data: DailyTokenStats[] }) {
         <span>Последние {data.length} дней</span>
         <span style={{ fontWeight: 600 }}>Итого: {fmtCost(total)}</span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: CHART_HEIGHT_PX }}>
+      <div
+        style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: CHART_HEIGHT_PX, position: 'relative' }}
+        onMouseLeave={() => setActiveIdx(null)}
+      >
         {data.map((d, i) => {
           const cost = costs[i];
           // Высота в px: проценты от неопределённой высоты parent давали 0.
           const heightPx = cost > 0 ? Math.max((cost / maxCost) * CHART_HEIGHT_PX, 2) : 0;
           const isToday = d.date === todayStr;
+          const isActive = activeIdx === i;
           return (
             <div
               key={d.date}
-              style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'center' }}
-              title={`${d.date}: ${fmtCost(cost)}`}
+              style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'center', alignItems: 'flex-end', alignSelf: 'stretch', position: 'relative', cursor: 'pointer' }}
+              onMouseEnter={() => setActiveIdx(i)}
+              onClick={() => setActiveIdx((prev) => (prev === i ? null : i))}
             >
               <div
                 style={{
                   width: '100%',
                   maxWidth: 24,
                   height: heightPx,
-                  background: isToday ? '#2563eb' : '#93c5fd',
+                  background: isToday ? '#2563eb' : isActive ? '#60a5fa' : '#93c5fd',
                   borderRadius: '3px 3px 0 0',
-                  transition: 'height 0.3s',
+                  transition: 'height 0.3s, background 0.15s',
                 }}
               />
+              {isActive && <BarTooltip date={d.date} cost={cost} models={d.models} />}
             </div>
           );
         })}
@@ -272,6 +279,37 @@ function DailyChart({ data }: { data: DailyTokenStats[] }) {
           <span>{data[data.length - 1]?.date.slice(5)}</span>
         </div>
       )}
+    </div>
+  );
+}
+
+function BarTooltip({ date, cost, models }: { date: string; cost: number; models: TokenUsageMap }) {
+  const entries = Object.entries(models).filter(([, u]) => u.inputTokens || u.outputTokens);
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        bottom: 'calc(100% + 6px)',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        background: '#111',
+        color: '#fff',
+        padding: '6px 10px',
+        borderRadius: 6,
+        fontSize: 12,
+        whiteSpace: 'nowrap',
+        pointerEvents: 'none',
+        zIndex: 10,
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+      }}
+    >
+      <div style={{ fontWeight: 600 }}>{date}</div>
+      <div style={{ marginTop: 2 }}>{fmtCost(cost)}</div>
+      {entries.map(([model, usage]) => (
+        <div key={model} style={{ marginTop: 2, color: '#bbb' }}>
+          {modelLabel(model)}: {fmtTokens(usage.inputTokens)} in / {fmtTokens(usage.outputTokens)} out
+        </div>
+      ))}
     </div>
   );
 }
