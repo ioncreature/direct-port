@@ -217,9 +217,21 @@ function PeriodCard({ label, period }: { label: string; period: TokenStatsPeriod
 
 const CHART_HEIGHT_PX = 120;
 
+/** Округляет maxCost вверх до «красивого» шага (1, 2, 5 × 10ⁿ), чтобы верхняя
+ *  граница диапазона читалась (вместо $8.43 → $10.00). saneMax ≥ raw. */
+function niceCeil(raw: number): number {
+  if (raw <= 0) return 1;
+  const exp = Math.floor(Math.log10(raw));
+  const pow = Math.pow(10, exp);
+  const norm = raw / pow;
+  const step = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+  return step * pow;
+}
+
 function DailyChart({ data }: { data: DailyTokenStats[] }) {
   const costs = data.map((d) => calcAiCostFromMap(d.models));
-  const maxCost = Math.max(...costs, 0.01);
+  const rawMax = Math.max(...costs, 0);
+  const axisMax = niceCeil(rawMax);
   const total = costs.reduce((s, c) => s + c, 0);
   const todayStr = new Date().toISOString().slice(0, 10);
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
@@ -227,7 +239,10 @@ function DailyChart({ data }: { data: DailyTokenStats[] }) {
   return (
     <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 20 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, fontSize: 13, color: '#666' }}>
-        <span>Последние {data.length} дней</span>
+        <span>
+          Последние {data.length} дней{' '}
+          <span style={{ color: '#aaa' }}>· шкала {fmtCost(0)} – {fmtCost(axisMax)}</span>
+        </span>
         <span style={{ fontWeight: 600 }}>Итого: {fmtCost(total)}</span>
       </div>
       <div
@@ -237,7 +252,7 @@ function DailyChart({ data }: { data: DailyTokenStats[] }) {
         {data.map((d, i) => {
           const cost = costs[i];
           // Высота в px: проценты от неопределённой высоты parent давали 0.
-          const heightPx = cost > 0 ? Math.max((cost / maxCost) * CHART_HEIGHT_PX, 2) : 0;
+          const heightPx = cost > 0 ? Math.max((cost / axisMax) * CHART_HEIGHT_PX, 2) : 0;
           const isToday = d.date === todayStr;
           const isActive = activeIdx === i;
           return (
