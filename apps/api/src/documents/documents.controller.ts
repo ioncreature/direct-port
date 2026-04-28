@@ -25,6 +25,7 @@ import { DocumentStatus } from '../database/entities/document.entity';
 import { UserRole } from '../database/entities/user.entity';
 import { DiagnosticsService } from '../diagnostics/diagnostics.service';
 import { DocumentsService } from './documents.service';
+import { ClarifyRowDto } from './dto/clarify-row.dto';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { FindDocumentsQueryDto } from './dto/find-documents-query.dto';
 import { RecalculateDocumentDto } from './dto/recalculate-document.dto';
@@ -179,6 +180,25 @@ export class DocumentsController {
     @Body() dto: SetRowCodeDto,
   ) {
     return this.manualCode.setRowCode(id, index, dto.tnVedCode);
+  }
+
+  // *-internal: auth через X-Internal-Key (без @Roles), клиент бота сам выбирает код или отправляет уточнение.
+  @Post(':id/rows/:index/set-code-internal')
+  setRowCodeInternal(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('index', ParseIntPipe) index: number,
+    @Body() dto: SetRowCodeDto,
+  ) {
+    return this.manualCode.setRowCode(id, index, dto.tnVedCode);
+  }
+
+  @Post(':id/rows/:index/clarify-internal')
+  clarifyRowInternal(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('index', ParseIntPipe) index: number,
+    @Body() dto: ClarifyRowDto,
+  ) {
+    return this.manualCode.clarifyRow(id, index, dto.userNote);
   }
 
   @Get(':id')

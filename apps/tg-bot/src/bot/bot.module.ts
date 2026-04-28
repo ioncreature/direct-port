@@ -10,6 +10,7 @@ import { HelpHandler } from './handlers/help.handler';
 import { MenuHandler } from './handlers/menu.handler';
 import { NotificationHandler } from './handlers/notification.handler';
 import { LanguageHandler } from './handlers/language.handler';
+import { RowClarifyHandler } from './handlers/row-clarify.handler';
 import { StartHandler } from './handlers/start.handler';
 import { ConversationStateModule } from './state/conversation-state.module';
 
@@ -38,6 +39,7 @@ import { ConversationStateModule } from './state/conversation-state.module';
     CallbackQueryHandler,
     NotificationHandler,
     LanguageHandler,
+    RowClarifyHandler,
   ],
 })
 export class BotModule {}

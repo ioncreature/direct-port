@@ -126,3 +126,41 @@ error-AI_TIMEOUT = AI-обработка не уложилась во время
 error-FILE_CORRUPTED = Не получилось открыть файл — возможно, он повреждён или защищён паролем. Откройте его в Excel, сохраните копию заново и попробуйте ещё раз.
 error-FILE_TOO_BIG = Содержимое файла слишком большое для AI. Уберите лишний текст из ячеек или разделите файл на части.
 error-unknown = Произошла непредвиденная ошибка. Попробуйте ещё раз — если повторится, напишите оператору.
+error-INVALID_STATUS_FOR_CLARIFY = Этот документ уже не в режиме точечной правки — возможно, он только что был обработан или отклонён.
+error-INVALID_STATUS_FOR_SET_CODE = Этот документ уже не в режиме точечной правки.
+error-USER_NOTE_TOO_SHORT = Уточнение слишком короткое. Опишите товар подробнее.
+error-UNKNOWN_ROW = Эта строка не найдена в документе. Похоже, документ обновился — попробуйте начать заново.
+error-UNKNOWN_TNVED_CODE = Такого кода нет в справочнике ТН ВЭД. Проверьте, что вы ввели ровно 10 цифр действующего кода.
+
+# Точечное уточнение проблемных строк документа
+notif-code-review-intro =
+    🔍 По { $count } позициям я не уверен в коде ТН ВЭД.
+
+    Уточните их по одной — я повторно классифицирую только эти строки, без полного перезапуска. Это быстрее и дешевле, чем загружать файл заново.
+notif-code-review-overflow = Ещё { $count } позиций нуждаются в уточнении — отправьте после первой партии оператору, чтобы продолжить в админке.
+row-clarify-header = 📌 <b>Позиция #{ $row }</b>
+row-clarify-description = Описание: <i>{ $description }</i>
+row-clarify-current-code = Текущий код: <code>{ $code }</code> (уверенность { $confidence })
+row-clarify-no-code = Код пока не подобран.
+row-clarify-missing-prompt = Нужно уточнить: { $categories }.
+row-clarify-missing-material = материал
+row-clarify-missing-composition = состав
+row-clarify-missing-purpose = назначение
+row-clarify-missing-dimensions = размеры или мощность
+row-clarify-missing-electrical = наличие электрики
+row-clarify-missing-age_group = возрастная группа
+row-clarify-missing-form_factor = тип конструкции
+row-clarify-missing-origin = страна или производитель
+row-clarify-missing-application = отрасль применения
+row-clarify-candidates-header = Возможные коды (тапните, чтобы скопировать):
+row-clarify-btn-text = 📝 Описать подробнее
+row-clarify-btn-code = 🔢 Ввести код вручную
+row-clarify-btn-skip = ⏭ Пропустить
+row-clarify-input-text-prompt = Опишите позицию #{ $row } подробнее: материал, состав, назначение, отрасль применения. Можно одной фразой.
+row-clarify-input-code-prompt = Введите 10-значный код ТН ВЭД для позиции #{ $row }.
+row-clarify-skipped = Пропущено
+row-clarify-applied-text = ✅ Уточнение для позиции #{ $row } принято. Перепроверяю код…
+row-clarify-applied-code = ✅ Код { $code } установлен для позиции #{ $row }.
+row-clarify-text-too-short = Слишком коротко. Добавьте детали: материал, размер, назначение.
+row-clarify-invalid-code = Это не похоже на код ТН ВЭД. Введите ровно 10 цифр.
+row-clarify-error = Не получилось применить уточнение. Попробуйте ещё раз.

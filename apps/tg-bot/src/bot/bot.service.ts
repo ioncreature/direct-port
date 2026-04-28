@@ -7,6 +7,7 @@ import { FileUploadHandler } from './handlers/file-upload.handler';
 import { HelpHandler } from './handlers/help.handler';
 import { LanguageHandler } from './handlers/language.handler';
 import { MenuHandler } from './handlers/menu.handler';
+import { CLARIFY_CALLBACK_PREFIX, RowClarifyHandler } from './handlers/row-clarify.handler';
 import { StartHandler } from './handlers/start.handler';
 import { type BotContext, i18n, SUPPORTED_LOCALES } from './i18n';
 import { ConversationStateService } from './state/conversation-state.service';
@@ -24,6 +25,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     private fileUploadHandler: FileUploadHandler,
     private callbackQueryHandler: CallbackQueryHandler,
     private languageHandler: LanguageHandler,
+    private rowClarifyHandler: RowClarifyHandler,
     private stateService: ConversationStateService,
   ) {
     const token = this.config.get<string>('TELEGRAM_BOT_TOKEN');
@@ -67,16 +69,24 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     this.bot.command('language', (ctx) => this.languageHandler.handleCommand(ctx));
 
     // Callback queries
-    this.bot.on('callback_query:data', (ctx) => {
+    this.bot.on('callback_query:data', async (ctx) => {
       const data = ctx.callbackQuery.data;
       if (data.startsWith('lang_')) {
         return this.languageHandler.handleCallback(ctx);
+      }
+      if (data.startsWith(CLARIFY_CALLBACK_PREFIX)) {
+        await this.rowClarifyHandler.handleCallback(ctx);
+        return;
       }
       return this.callbackQueryHandler.handle(ctx);
     });
 
     // Document upload
     this.bot.on('message:document', (ctx) => this.fileUploadHandler.handle(ctx));
+
+    this.bot.on('message:text', async (ctx) => {
+      await this.rowClarifyHandler.handleText(ctx);
+    });
 
     this.bot.catch((err) => {
       const ctx = err.ctx;

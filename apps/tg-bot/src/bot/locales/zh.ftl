@@ -126,3 +126,41 @@ error-AI_TIMEOUT = AI 处理超时。文件很可能过大 — 请将其拆分�
 error-FILE_CORRUPTED = 无法打开文件 — 可能已损坏或受密码保护。请在 Excel 中打开后另存为新副本，再重新上传。
 error-FILE_TOO_BIG = 文件内容对 AI 来说过大。请删除单元格中的多余文本，或将文件拆分为若干部分。
 error-unknown = 发生意外错误。请重试 — 若反复出现，请联系操作员。
+error-INVALID_STATUS_FOR_CLARIFY = 该文档已不在逐项更正状态 — 可能刚刚处理完毕或被拒绝。
+error-INVALID_STATUS_FOR_SET_CODE = 该文档已不在逐项更正状态。
+error-USER_NOTE_TOO_SHORT = 补充说明过短，请更详细地描述商品。
+error-UNKNOWN_ROW = 在文档中找不到该行。文档可能已更新 — 请重新开始。
+error-UNKNOWN_TNVED_CODE = 该编码不在 HS 编码目录中。请确认是否准确输入了 10 位有效编码。
+
+# 逐项澄清存在问题的行
+notif-code-review-intro =
+    🔍 系统对 { $count } 项商品的 HS 编码不够确定。
+
+    请逐项进行补充说明 — 我只会重新分类这些行，不会重新处理整个文档。比重新上传文件更快、更省。
+notif-code-review-overflow = 还有 { $count } 项需要补充说明 — 处理完本批后，请联系操作员在管理后台继续。
+row-clarify-header = 📌 <b>商品 #{ $row }</b>
+row-clarify-description = 描述：<i>{ $description }</i>
+row-clarify-current-code = 当前编码：<code>{ $code }</code>（置信度 { $confidence }）
+row-clarify-no-code = 尚未匹配到编码。
+row-clarify-missing-prompt = 需要补充：{ $categories }。
+row-clarify-missing-material = 材料
+row-clarify-missing-composition = 成分
+row-clarify-missing-purpose = 用途
+row-clarify-missing-dimensions = 尺寸或功率
+row-clarify-missing-electrical = 是否含电气部件
+row-clarify-missing-age_group = 适用年龄
+row-clarify-missing-form_factor = 形态/结构
+row-clarify-missing-origin = 原产国或制造商
+row-clarify-missing-application = 应用领域
+row-clarify-candidates-header = 候选编码（点击可复制）：
+row-clarify-btn-text = 📝 详细描述
+row-clarify-btn-code = 🔢 手动输入编码
+row-clarify-btn-skip = ⏭ 跳过
+row-clarify-input-text-prompt = 请更详细地描述商品 #{ $row }：材料、成分、用途、应用领域。一句话即可。
+row-clarify-input-code-prompt = 请输入商品 #{ $row } 的 10 位 HS 编码。
+row-clarify-skipped = 已跳过
+row-clarify-applied-text = ✅ 商品 #{ $row } 的补充说明已接收，正在重新检查编码…
+row-clarify-applied-code = ✅ 已为商品 #{ $row } 设置编码 { $code }。
+row-clarify-text-too-short = 太短了。请补充：材料、尺寸、用途等细节。
+row-clarify-invalid-code = 这看起来不像 HS 编码。请输入 10 位数字。
+row-clarify-error = 应用补充说明失败，请重试。

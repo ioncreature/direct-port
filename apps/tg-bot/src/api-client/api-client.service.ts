@@ -110,6 +110,18 @@ export class ApiClientService {
     });
     return Buffer.from(data);
   }
+
+  async clarifyRow(documentId: string, rowIndex: number, userNote: string): Promise<void> {
+    await this.client.post(`/documents/${documentId}/rows/${rowIndex}/clarify-internal`, {
+      userNote,
+    });
+  }
+
+  async setRowCode(documentId: string, rowIndex: number, tnVedCode: string): Promise<void> {
+    await this.client.post(`/documents/${documentId}/rows/${rowIndex}/set-code-internal`, {
+      tnVedCode,
+    });
+  }
 }
 
 export interface TnVedResult {

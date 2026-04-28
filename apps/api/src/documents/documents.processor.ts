@@ -26,7 +26,9 @@ import { PipelineAuditService } from '../pipeline-audit/pipeline-audit.service';
 import { RegulatoryRequirementsService } from '../regulatory/regulatory-requirements.service';
 import {
   buildDocumentNotificationPayload,
+  extractProblemRows,
   type DocumentNotification,
+  type ProblemRowSummary,
 } from './notification';
 
 export type { DocumentNotification };
@@ -222,6 +224,7 @@ export class DocumentsProcessor extends WorkerHost {
           // Сохраняем, чтобы recalculate мог пересчитать с другой страной без Claude.
           dutyInterpretation: interpreted[i]?.dutyInterpretation ?? null,
           candidateCodes: classified[i]?.candidateCodes ?? null,
+          missingDataCategories: classified[i]?.missingDataCategories ?? null,
           conversion,
         });
       });
@@ -275,7 +278,11 @@ export class DocumentsProcessor extends WorkerHost {
         } else {
           doc.status = DocumentStatus.CODE_REVIEW_REQUIRED;
           await this.repo.save(doc);
-          await this.notify({ doc, status: 'code_review_required' });
+          const problemRows = extractProblemRows(
+            (doc.resultData ?? []) as Record<string, unknown>[],
+            confidenceThreshold,
+          );
+          await this.notify({ doc, status: 'code_review_required', problemRows });
         }
       } else {
         doc.status = hasRowErrors
@@ -594,6 +601,7 @@ export class DocumentsProcessor extends WorkerHost {
     sendResultFile?: boolean;
     rejectionReasons?: string[];
     rejectionReasonsLocalized?: string[];
+    problemRows?: ProblemRowSummary[];
   }): Promise<void> {
     const payload = buildDocumentNotificationPayload(opts.doc, opts.status, {
       errorMessage: opts.errorMessage,
@@ -601,6 +609,7 @@ export class DocumentsProcessor extends WorkerHost {
       rejectionReasons: opts.rejectionReasons,
       rejectionReasonsLocalized: opts.rejectionReasonsLocalized,
       sendResultFile: opts.sendResultFile,
+      problemRows: opts.problemRows,
     });
     if (!payload) return;
 

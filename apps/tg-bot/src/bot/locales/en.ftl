@@ -126,3 +126,41 @@ error-AI_TIMEOUT = AI processing took too long. The file is most likely too larg
 error-FILE_CORRUPTED = Could not open the file — it may be corrupted or password-protected. Open it in Excel, save a fresh copy, and try again.
 error-FILE_TOO_BIG = The file content is too large for the AI. Remove extra text from cells or split the file into parts.
 error-unknown = An unexpected error occurred. Please try again — if it keeps happening, contact an operator.
+error-INVALID_STATUS_FOR_CLARIFY = This document is no longer in spot-fix mode — it may have just been processed or rejected.
+error-INVALID_STATUS_FOR_SET_CODE = This document is no longer in spot-fix mode.
+error-USER_NOTE_TOO_SHORT = The clarification is too short. Please describe the product in more detail.
+error-UNKNOWN_ROW = That row is not found in the document. The document may have been updated — try starting over.
+error-UNKNOWN_TNVED_CODE = This code is not in the HS code reference. Make sure you entered exactly 10 digits of a valid code.
+
+# Per-row clarification for problem items
+notif-code-review-intro =
+    🔍 I'm not confident about the HS code for { $count } items.
+
+    Clarify them one by one — I'll re-classify only those rows, without rerunning the whole document. That's faster and cheaper than uploading the file again.
+notif-code-review-overflow = Another { $count } items need clarification — after this batch, ask an operator to continue in the admin panel.
+row-clarify-header = 📌 <b>Item #{ $row }</b>
+row-clarify-description = Description: <i>{ $description }</i>
+row-clarify-current-code = Current code: <code>{ $code }</code> (confidence { $confidence })
+row-clarify-no-code = No code matched yet.
+row-clarify-missing-prompt = What needs clarification: { $categories }.
+row-clarify-missing-material = material
+row-clarify-missing-composition = composition
+row-clarify-missing-purpose = purpose
+row-clarify-missing-dimensions = dimensions or power
+row-clarify-missing-electrical = whether it's electrical
+row-clarify-missing-age_group = age group
+row-clarify-missing-form_factor = form factor
+row-clarify-missing-origin = country of origin / manufacturer
+row-clarify-missing-application = field of application
+row-clarify-candidates-header = Candidate codes (tap to copy):
+row-clarify-btn-text = 📝 Describe in detail
+row-clarify-btn-code = 🔢 Enter code manually
+row-clarify-btn-skip = ⏭ Skip
+row-clarify-input-text-prompt = Describe item #{ $row } in more detail: material, composition, purpose, field of application. One sentence is fine.
+row-clarify-input-code-prompt = Enter the 10-digit HS code for item #{ $row }.
+row-clarify-skipped = Skipped
+row-clarify-applied-text = ✅ Clarification for item #{ $row } accepted. Re-checking the code…
+row-clarify-applied-code = ✅ Code { $code } set for item #{ $row }.
+row-clarify-text-too-short = Too short. Add details: material, size, purpose.
+row-clarify-invalid-code = That doesn't look like an HS code. Enter exactly 10 digits.
+row-clarify-error = Could not apply the clarification. Please try again.

@@ -1,5 +1,5 @@
 import type { CalculatedProduct } from '../calculator/calculator.service';
-import type { CodeCandidate } from '../classifier/classifier.service';
+import type { CodeCandidate, MissingDataCategory } from '../classifier/classifier.service';
 import type { DutyInterpretation } from '../duty-interpreter/interfaces';
 
 export interface ResultRowConversion {
@@ -17,9 +17,10 @@ export function buildResultRow(opts: {
   item: CalculatedProduct;
   dutyInterpretation: DutyInterpretation | null;
   candidateCodes: CodeCandidate[] | null;
+  missingDataCategories: MissingDataCategory[] | null;
   conversion: ResultRowConversion | null;
 }): Record<string, unknown> {
-  const { item, dutyInterpretation, candidateCodes, conversion } = opts;
+  const { item, dutyInterpretation, candidateCodes, missingDataCategories, conversion } = opts;
   const base: Record<string, unknown> = {
     description: item.description,
     quantity: item.quantity,
@@ -54,6 +55,7 @@ export function buildResultRow(opts: {
     verified: item.verified,
     verificationComment: item.verificationComment,
     candidateCodes,
+    missingDataCategories,
     notes: item.notes,
     regulatoryReport: item.regulatoryReport ?? null,
   };

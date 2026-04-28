@@ -1,6 +1,22 @@
 import { buildOutputFileName, getDocumentClientName } from '../common/output-filename';
 import { Document } from '../database/entities/document.entity';
 
+// Wire-format: должен совпадать с ProblemRowSummary в apps/tg-bot/src/bot/handlers/notification.handler.ts.
+export interface ProblemRowSummary {
+  rowIndex: number;
+  description: string;
+  tnVedCode?: string;
+  matchConfidence?: number;
+  missingDataCategories?: string[];
+  candidateCodes?: Array<{
+    code: string;
+    description: string;
+    confidence: number;
+    dutyRate: number;
+    vatRate: number;
+  }>;
+}
+
 export interface DocumentNotification {
   documentId: string;
   telegramUserId: string;
@@ -31,6 +47,8 @@ export interface DocumentNotification {
   rejectionReasonsLocalized?: string[];
   /** Количество позиций в документе — для stage_classifying. */
   itemCount?: number;
+  /** Заполняется только при status='code_review_required'. */
+  problemRows?: ProblemRowSummary[];
   language?: string;
   outputFileName?: string;
   sendResultFile?: boolean;
@@ -46,6 +64,7 @@ export function buildDocumentNotificationPayload(
     rejectionReasonsLocalized?: string[];
     sendResultFile?: boolean;
     itemCount?: number;
+    problemRows?: ProblemRowSummary[];
   } = {},
 ): DocumentNotification | null {
   const telegramId = doc.telegramUser?.telegramId;
@@ -61,8 +80,46 @@ export function buildDocumentNotificationPayload(
     rejectionReasons: extra.rejectionReasons,
     rejectionReasonsLocalized: extra.rejectionReasonsLocalized,
     itemCount: extra.itemCount,
+    problemRows: extra.problemRows,
     language: doc.language ?? doc.telegramUser?.language,
     outputFileName: buildOutputFileName(doc.createdAt, clientName),
     sendResultFile: extra.sendResultFile,
   };
+}
+
+export function extractProblemRows(
+  rows: Record<string, unknown>[],
+  threshold: number,
+): ProblemRowSummary[] {
+  const result: ProblemRowSummary[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const matched = Boolean(row.matched);
+    const confidence = Number(row.matchConfidence) || 0;
+    if (matched && confidence >= threshold) continue;
+
+    const candidates = Array.isArray(row.candidateCodes)
+      ? (row.candidateCodes as Array<Record<string, unknown>>).slice(0, 3).map((c) => ({
+          code: String(c.code ?? ''),
+          description: String(c.description ?? ''),
+          confidence: Number(c.confidence) || 0,
+          dutyRate: Number(c.dutyRate) || 0,
+          vatRate: Number(c.vatRate) || 0,
+        }))
+      : undefined;
+
+    const missing = Array.isArray(row.missingDataCategories)
+      ? (row.missingDataCategories as unknown[]).filter((v): v is string => typeof v === 'string')
+      : undefined;
+
+    result.push({
+      rowIndex: i,
+      description: String(row.description ?? ''),
+      tnVedCode: typeof row.tnVedCode === 'string' && row.tnVedCode ? row.tnVedCode : undefined,
+      matchConfidence: confidence || undefined,
+      ...(missing && missing.length ? { missingDataCategories: missing } : {}),
+      ...(candidates && candidates.length ? { candidateCodes: candidates } : {}),
+    });
+  }
+  return result;
 }

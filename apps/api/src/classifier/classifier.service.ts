@@ -70,7 +70,24 @@ export interface ClassifiedProduct extends ProductRow {
    * при ручном выборе кода через `POST /documents/:id/rows/:index/set-code`.
    */
   candidateCodes?: CodeCandidate[];
+  missingDataCategories?: MissingDataCategory[];
 }
+
+// Жёсткий enum, чтобы бот мог сматчить категорию с локализованной подсказкой.
+// Добавляя категорию, добавь и ключ `row-clarify-missing-{key}` во все .ftl-локали бота.
+export const MISSING_DATA_CATEGORIES = [
+  'material',
+  'composition',
+  'purpose',
+  'dimensions',
+  'electrical',
+  'age_group',
+  'form_factor',
+  'origin',
+  'application',
+] as const;
+
+export type MissingDataCategory = (typeof MISSING_DATA_CATEGORIES)[number];
 
 /**
  * Один из вариантов кода ТН ВЭД, который Claude рассматривал в classify-стадии.
@@ -121,6 +138,7 @@ export interface ClaudeSelection {
    * передаётся в user-prompt) либо когда несколько кандидатов TKS близки по релевантности.
    */
   alternatives?: ClaudeAlternative[];
+  missingDataCategories?: MissingDataCategory[];
 }
 
 /**
@@ -185,6 +203,17 @@ rawContext — это набор именованных пар "имя_коло�
 - confidence: 0.0-1.0 — твоя уверенность в выбранном коде
 - comment: краткое пояснение выбора на русском
 - alternatives: верни до 2 альтернативных кодов, которые ты всерьёз рассматривал, если confidence ниже confidenceThreshold (поле передаётся вместе с описанием каждого товара) ИЛИ если несколько кандидатов TKS близки по релевантности. Это коды, между которыми ты колебался. Для каждой альтернативы укажи tnVedCode, свою уверенность в ней и одну короткую фразу: чем она отличается от выбранного и почему ты её не выбрал. При высокой уверенности (заметно выше порога) alternatives оставляй пустым.
+- missingDataCategories: если confidence < confidenceThreshold, верни 1–3 кода категорий данных, которых тебе не хватило для уверенной классификации. Это критически важное поле — клиент видит твой ответ как точечный вопрос «уточните <категория>». Допустимые значения (выбирай только из этого списка):
+  - material — основной материал товара (пластик/металл/ткань/дерево...)
+  - composition — состав смеси/процентное соотношение материалов (актуально для текстиля и сплавов)
+  - purpose — назначение товара (что им делают, для чего он)
+  - dimensions — габариты/объём/мощность/масса/ёмкость
+  - electrical — есть ли электрическая часть / питание / встроенный мотор
+  - age_group — возрастная группа (детское/взрослое — критично для одежды и игрушек)
+  - form_factor — форм-фактор / тип конструкции (готовое изделие vs запчасть, упаковка vs содержимое)
+  - origin — страна/тип производителя (актуально для квот и преференций)
+  - application — отрасль применения (бытовое/промышленное/медицинское/декоративное)
+  Не выдумывай категории вне списка. При высокой уверенности оставляй массив пустым.
 
 Ориентиры по разделам ТН ВЭД (для быстрой локализации группы):
 - 01-05 — живые животные и продукты животного происхождения
@@ -276,6 +305,19 @@ const CLASSIFY_TOOL: Anthropic.Messages.Tool = {
                   },
                 },
                 required: ['tnVedCode', 'confidence', 'reasoning'],
+              },
+            },
+            missingDataCategories: {
+              type: 'array',
+              maxItems: 3,
+              description:
+                'Категории данных, которых тебе не хватило для уверенной классификации. ' +
+                'Заполняй ТОЛЬКО при confidence < confidenceThreshold. Выбирай 1-3 наиболее критичные. ' +
+                'Используй только значения из enum, не выдумывай новые. ' +
+                'При confidence заметно выше порога оставляй массив пустым.',
+              items: {
+                type: 'string',
+                enum: [...MISSING_DATA_CATEGORIES],
               },
             },
           },
@@ -1121,6 +1163,12 @@ export class ClassifierService {
         tnvedByCode,
       );
 
+      const missingDataCategories = this.normalizeMissingDataCategories(
+        sel?.missingDataCategories,
+        confidence,
+        confidenceThreshold,
+      );
+
       return {
         ...product,
         tnVedCode: tnved.CODE,
@@ -1140,8 +1188,27 @@ export class ClassifierService {
         verificationComment: sel?.comment ?? '',
         notes,
         ...(candidateCodes ? { candidateCodes } : {}),
+        ...(missingDataCategories.length ? { missingDataCategories } : {}),
       };
     });
+  }
+
+  /**
+   * Фильтрует категории, которые Claude вернул, по жёсткому enum (защита от галлюцинаций),
+   * и обнуляет их для confidence ≥ threshold — на уверенных строках они только мешают
+   * (пользователю не нужно «уточнять» то, что уже корректно классифицировано).
+   */
+  private normalizeMissingDataCategories(
+    raw: string[] | undefined,
+    confidence: number,
+    threshold: number,
+  ): MissingDataCategory[] {
+    if (!raw || raw.length === 0) return [];
+    if (confidence >= threshold) return [];
+    const allowed = new Set<string>(MISSING_DATA_CATEGORIES);
+    const filtered = raw.filter((c): c is MissingDataCategory => allowed.has(c));
+    // dedup, ограничиваем 3 — bot всё равно выдаст не больше 3 в подсказке.
+    return [...new Set(filtered)].slice(0, 3);
   }
 
   /**
