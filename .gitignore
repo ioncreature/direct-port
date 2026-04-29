@@ -1,6 +1,6 @@
 .idea
 temp
-
+.claude/scheduled_tasks.lock
 examples
 
 .DS_Store
