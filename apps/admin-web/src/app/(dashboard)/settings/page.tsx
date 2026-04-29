@@ -143,9 +143,13 @@ function ConfidenceSection({ config, loading, saving, error, save }: CalcConfigP
               style={{ marginTop: 3 }}
             />
             <div>
-              <div style={{ fontWeight: 500, fontSize: 14 }}>Отправить на проверку оператору</div>
-              <div style={{ fontSize: 13, color: '#666', marginTop: 2 }}>
-                Документ получит статус «Проверка кодов». Оператор примет его как есть или отклонит.
+              <div style={{ fontWeight: 500, fontSize: 14 }}>Запросить уточнение у пользователя в Telegram</div>
+              <div style={{ fontSize: 13, color: '#666', marginTop: 2, lineHeight: 1.5 }}>
+                Бот пришлёт пользователю карточку на каждую сомнительную позицию с тремя
+                действиями: <strong>уточнить описание текстом</strong>, <strong>ввести код ТН ВЭД вручную</strong>{' '}
+                или <strong>пропустить</strong>. Система пересчитает только эти строки —
+                файл загружать заново не нужно. Документ также появится в админке со статусом
+                «Проверка кодов» — оператор может вмешаться и одобрить или отклонить.
               </div>
             </div>
           </label>
@@ -159,8 +163,9 @@ function ConfidenceSection({ config, loading, saving, error, save }: CalcConfigP
             />
             <div>
               <div style={{ fontWeight: 500, fontSize: 14 }}>Сразу отклонять</div>
-              <div style={{ fontSize: 13, color: '#666', marginTop: 2 }}>
-                Пользователь получит сообщение с перечислением сомнительных строк.
+              <div style={{ fontSize: 13, color: '#666', marginTop: 2, lineHeight: 1.5 }}>
+                Пользователь получит сводку сомнительных строк с просьбой исправить файл и
+                загрузить заново. Уточнить позиции в чате будет нельзя.
               </div>
             </div>
           </label>
