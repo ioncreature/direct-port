@@ -12,6 +12,12 @@ export const CLARIFY_ACTION = {
   CODE: 'clarify_code',
   SKIP: 'clarify_skip',
 } as const;
+
+// Telegram при копировании из <code>…</code> на части клиентов вставляет невидимые
+// маркеры (ZWSP/ZWNJ/ZWJ, WJ, BOM), которые String.prototype.trim() не убирает и
+// ломают strict-regex /^\d{10}$/ при ручном вводе кода ТН ВЭД.
+const INVISIBLE_CHARS_RE = /[\s\u200B-\u200D\u2060\uFEFF]/g;
+
 @Injectable()
 export class RowClarifyHandler {
   private logger = new Logger(RowClarifyHandler.name);
@@ -110,16 +116,17 @@ export class RowClarifyHandler {
           `Row clarify text applied by ${user}: doc=${documentId} row=${rowIndex} note=${text.length}ch`,
         );
       } else if (step === CLARIFY_STEP.CODE) {
-        if (!/^\d{10}$/.test(text)) {
+        const cleaned = text.replace(INVISIBLE_CHARS_RE, '');
+        if (!/^\d{10}$/.test(cleaned)) {
           await ctx.reply(ctx.t('row-clarify-invalid-code'));
           return true; // оставляем state — клиент попробует снова
         }
-        await this.apiClient.setRowCode(documentId, rowIndex, text);
+        await this.apiClient.setRowCode(documentId, rowIndex, cleaned);
         await ctx.reply(
-          ctx.t('row-clarify-applied-code', { row: String(rowIndex + 1), code: text }),
+          ctx.t('row-clarify-applied-code', { row: String(rowIndex + 1), code: cleaned }),
         );
         this.logger.log(
-          `Row code applied by ${user}: doc=${documentId} row=${rowIndex} code=${text}`,
+          `Row code applied by ${user}: doc=${documentId} row=${rowIndex} code=${cleaned}`,
         );
       } else {
         return false;
