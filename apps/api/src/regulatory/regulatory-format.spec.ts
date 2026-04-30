@@ -80,30 +80,51 @@ describe('formatRegulatoryReportLong', () => {
     );
   });
 
-  it('включает основание (документ + дата) и срок действия', () => {
+  it('скрывает основание и срок действия для сертификации', () => {
     const report = makeReport([
       makeItem({
         category: 'certification',
-        regulation: 'ТР ТС 010/2011',
-        form: 'certificate',
+        regulation: 'ТР ТС 020/2011',
+        form: 'declaration',
         documentRef: { number: '123-Р', date: '2024-03-15' },
         validFrom: '2024-04-01',
         validTo: '2030-12-31',
       }),
     ]);
     const out = formatRegulatoryReportLong(report);
-    expect(out).toContain('Основание: № 123-Р от 15.03.2024');
-    expect(out).toContain('Действует с 01.04.2024');
-    expect(out).toContain('По 31.12.2030');
+    expect(out).not.toContain('Основание');
+    expect(out).not.toContain('Действует с');
+    expect(out).not.toContain('По 31.12.2030');
   });
 
-  it('маркировка: дата вступления в заголовке, не дублируется в подробностях', () => {
+  it('сохраняет основание и срок действия для маркировки', () => {
     const report = makeReport([
-      makeItem({ category: 'marking', validFrom: '2026-05-01' }),
+      makeItem({
+        category: 'marking',
+        validFrom: '2026-05-01',
+        validTo: '2027-04-30',
+        documentRef: { number: '1458', date: '2025-09-20' },
+      }),
     ]);
     const out = formatRegulatoryReportLong(report);
-    expect(out).toBe('Маркировка:\n• Маркировка с 01.05.2026');
-    expect(out).not.toContain('Действует с');
+    expect(out).toContain('Маркировка с 01.05.2026');
+    expect(out).toContain('Основание: № 1458 от 20.09.2025');
+    expect(out).toContain('По 30.04.2027');
+    expect(out).not.toContain('Действует с 01.05.2026'); // уже в заголовке
+  });
+
+  it('сохраняет основание и срок действия для странового запрета', () => {
+    const report = makeReport([
+      makeItem({
+        category: 'country_export_ban',
+        countryName: 'СОЕДИНЕННОЕ КОРОЛЕВСТВО',
+        countryCode: '826',
+        documentRef: { number: 'САНК_24', date: '2022-11-01' },
+      }),
+    ]);
+    const out = formatRegulatoryReportLong(report);
+    expect(out).toContain('Запрет вывоза: СОЕДИНЕННОЕ КОРОЛЕВСТВО');
+    expect(out).toContain('Основание: № САНК_24 от 01.11.2022');
   });
 
   it('утильсбор форматирует ставку с разделителями', () => {
@@ -126,7 +147,7 @@ describe('formatRegulatoryReportLong', () => {
     expect(formatRegulatoryReportLong(exportBan)).toContain('Запрет вывоза: США');
   });
 
-  it('помечает меры с broad-применимостью', () => {
+  it('broad-precision показывается коротким маркером в заголовке', () => {
     const report = makeReport([
       makeItem({
         category: 'certification',
@@ -135,18 +156,116 @@ describe('formatRegulatoryReportLong', () => {
         matchPrecision: 'broad',
       }),
     ]);
-    expect(formatRegulatoryReportLong(report)).toContain(
-      'Применимость: широкая — проверьте по конкретному коду товара',
+    const out = formatRegulatoryReportLong(report);
+    expect(out).toContain('ТР ТС 020/2011 — декларация о соответствии ⚠ широкое применение');
+    expect(out).not.toContain('Применимость: широкая');
+  });
+
+  it('дедуплицирует меры с разными documentRef/validFrom как одну', () => {
+    const report = makeReport([
+      makeItem({
+        category: 'certification',
+        regulation: 'ТР ТС 007/2011',
+        form: 'declaration',
+        documentRef: { number: '28', date: '2013-03-05' },
+        validFrom: '2013-04-05',
+      }),
+      makeItem({
+        category: 'certification',
+        regulation: 'ТР ТС 007/2011',
+        form: 'declaration',
+        documentRef: { number: '4114', date: '2024-09-10' },
+        validFrom: '2022-10-03',
+      }),
+      makeItem({
+        category: 'certification',
+        regulation: 'ТР ТС 007/2011',
+        form: 'declaration',
+        documentRef: { number: '28', date: '2013-03-05' },
+        validFrom: '2020-01-26',
+      }),
+    ]);
+    expect(formatRegulatoryReportLong(report)).toBe(
+      'Сертификация / декларирование:\n• ТР ТС 007/2011 — декларация о соответствии',
     );
   });
 
-  it('дедуплицирует одинаковые блоки внутри группы', () => {
+  it('дедупликация игнорирует precision: при наличии exact и broad оставляет одну (exact)', () => {
     const report = makeReport([
-      makeItem({ category: 'certification', regulation: 'ТР ТС 020/2011', form: 'declaration' }),
-      makeItem({ category: 'certification', regulation: 'ТР ТС 020/2011', form: 'declaration' }),
+      makeItem({
+        category: 'certification',
+        regulation: 'ТР ТС 020/2011',
+        form: 'declaration',
+        matchPrecision: 'exact',
+      }),
+      makeItem({
+        category: 'certification',
+        regulation: 'ТР ТС 020/2011',
+        form: 'declaration',
+        matchPrecision: 'broad',
+      }),
+    ]);
+    const out = formatRegulatoryReportLong(report);
+    expect(out).toBe(
+      'Сертификация / декларирование:\n• ТР ТС 020/2011 — декларация о соответствии',
+    );
+  });
+
+  it('сворачивает 2+ generic-записей без regulation в одну строку', () => {
+    const report = makeReport([
+      makeItem({ category: 'certification', authority: 'Минпромторг А' }),
+      makeItem({ category: 'certification', authority: 'Минпромторг Б' }),
+      makeItem({ category: 'certification', authority: 'Минпромторг В' }),
     ]);
     expect(formatRegulatoryReportLong(report)).toBe(
-      'Сертификация / декларирование:\n• ТР ТС 020/2011 — декларация о соответствии',
+      'Сертификация / декларирование:\n+ 3 записей без явного регламента',
+    );
+  });
+
+  it('одну generic-запись оставляет полноценным блоком', () => {
+    const report = makeReport([
+      makeItem({
+        category: 'certification',
+        title: 'Подтверждение соответствия',
+        authority: 'Минпромторг России',
+      }),
+    ]);
+    expect(formatRegulatoryReportLong(report)).toBe(
+      [
+        'Сертификация / декларирование:',
+        '• Подтверждение соответствия',
+        '   Регулятор: Минпромторг России',
+      ].join('\n'),
+    );
+  });
+
+  it('смешивает regulation-меры и generic-сворачивание в одной группе', () => {
+    const report = makeReport([
+      makeItem({ category: 'certification', regulation: 'ТР ТС 019/2011', form: 'declaration' }),
+      makeItem({ category: 'certification', authority: 'Минпромторг А' }),
+      makeItem({ category: 'certification', authority: 'Минпромторг Б' }),
+    ]);
+    expect(formatRegulatoryReportLong(report)).toBe(
+      [
+        'Сертификация / декларирование:',
+        '• ТР ТС 019/2011 — декларация о соответствии',
+        '+ 2 записей без явного регламента',
+      ].join('\n'),
+    );
+  });
+
+  it('утильсбор со ставкой не считается generic, без ставки — считается', () => {
+    const report = makeReport([
+      makeItem({ category: 'utilization', values: { min: 5162, max: null, unit: null } }),
+      makeItem({ category: 'utilization', authority: 'Росприроднадзор' }),
+      makeItem({ category: 'utilization', authority: 'Росприроднадзор', regulationTitle: 'Иное' }),
+    ]);
+    expect(formatRegulatoryReportLong(report)).toBe(
+      [
+        'Утилизационный / экологический сбор:',
+        '• Утильсбор 5 162 ₽ за единицу',
+        '+ 2 записей без явного регламента',
+      ].join('\n'),
     );
   });
 

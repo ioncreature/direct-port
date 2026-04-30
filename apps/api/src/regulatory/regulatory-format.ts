@@ -26,6 +26,12 @@ const GROUPS: Array<[GroupKey, string]> = [
   ['other', 'Прочее'],
 ];
 
+// Группы, в которых юридические подробности (основание, срок действия) полезны
+// в Excel: маркировка — оператору важно знать постановление и срок ввода;
+// страновые запреты — нужен номер санкционного решения и дата.
+// Для остальных групп те же поля шумят, в админке они доступны через summary.
+const GROUPS_WITH_LEGAL_DETAILS: ReadonlySet<GroupKey> = new Set(['marking', 'countryRestrictions']);
+
 // Intl.NumberFormat возвращает NBSP (U+00A0) как разделитель тысяч —
 // заменяем на обычный пробел, чтобы текст в Excel и тестах был предсказуемым.
 const NUMBER_FORMATTER = new Intl.NumberFormat('ru-RU');
@@ -33,7 +39,26 @@ function formatNumber(n: number): string {
   return NUMBER_FORMATTER.format(n).replaceAll("\u00A0", " ");
 }
 
-function itemHeadline(item: RegulatoryItem): string {
+/**
+ * Generic — мера, которая в Excel неотличима от названия категории
+ * (нет regulation, нет уникальной суммы/страны). Их сворачиваем в одну строку
+ * `+ N записей без явного регламента`, чтобы не плодить копии «Подтверждение
+ * соответствия» / «Прочие меры регулирования».
+ */
+function isGeneric(item: RegulatoryItem): boolean {
+  if (item.regulation) return false;
+  if (item.category === 'marking') return false;
+  if (item.category === 'utilization' && item.values.min != null && item.values.min > 0) return false;
+  if (
+    (item.category === 'country_import_ban' || item.category === 'country_export_ban') &&
+    item.countryName
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function itemHeadlineBase(item: RegulatoryItem): string {
   if (item.regulation) {
     const formStr = FORM_LONG[item.form];
     return formStr ? `${item.regulation} — ${formStr}` : item.regulation;
@@ -70,17 +95,23 @@ function itemHeadline(item: RegulatoryItem): string {
   }
 }
 
-function itemDetails(item: RegulatoryItem): string[] {
+function itemHeadline(item: RegulatoryItem): string {
+  const base = itemHeadlineBase(item);
+  return item.matchPrecision === 'broad' ? `${base} ⚠ широкое применение` : base;
+}
+
+function itemDetails(item: RegulatoryItem, groupKey: GroupKey): string[] {
   const lines: string[] = [];
 
   if (item.regulationTitle) lines.push(item.regulationTitle);
   if (item.authority) lines.push(`Регулятор: ${item.authority}`);
 
+  if (!GROUPS_WITH_LEGAL_DETAILS.has(groupKey)) return lines;
+
   if (item.documentRef && item.documentRef.number) {
     const dateStr = item.documentRef.date ? ` от ${formatIsoDate(item.documentRef.date)}` : '';
     lines.push(`Основание: № ${item.documentRef.number}${dateStr}`);
   }
-
   // validFrom для маркировки уже в заголовке — не дублируем
   if (item.validFrom && item.category !== 'marking') {
     lines.push(`Действует с ${formatIsoDate(item.validFrom)}`);
@@ -89,26 +120,32 @@ function itemDetails(item: RegulatoryItem): string[] {
     lines.push(`По ${formatIsoDate(item.validTo)}`);
   }
 
-  if (item.matchPrecision === 'broad') {
-    lines.push('Применимость: широкая — проверьте по конкретному коду товара');
-  }
-
   return lines;
 }
 
-function formatItemLong(item: RegulatoryItem): string {
+function formatItemLong(item: RegulatoryItem, groupKey: GroupKey): string {
   const lines = ['• ' + itemHeadline(item)];
-  for (const detail of itemDetails(item)) {
+  for (const detail of itemDetails(item, groupKey)) {
     lines.push('   ' + detail);
   }
   return lines.join('\n');
 }
 
 /**
+ * Ключ для дедупликации. Не включает documentRef/validFrom/validTo и precision —
+ * одна и та же мера, утверждённая разными постановлениями или с разной точностью
+ * совпадения, в Excel должна выводиться один раз.
+ */
+function dedupeKey(item: RegulatoryItem): string {
+  return [itemHeadlineBase(item), item.regulationTitle ?? '', item.authority ?? ''].join('||');
+}
+
+/**
  * Многострочный, человекочитаемый формат отчёта для Excel-колонки.
- * Группирует меры по категориям, дедуплицирует одинаковые блоки внутри группы
- * (один и тот же ТР повторяется в TKS — выводим раз). Возвращает '' если
- * report пуст. Высота строк не ограничена — формат рассчитан на wrapText.
+ * Сильная дедупликация (по идентичности меры, не по полному блоку), generic-записи
+ * без regulation сворачиваются в `+ N записей …`. Юридические подробности
+ * (основание, срок) показываем только для маркировки и страновых запретов.
+ * Возвращает '' если report пуст. Формат рассчитан на wrapText в Excel.
  */
 export function formatRegulatoryReportLong(report: RegulatoryReport | null | undefined): string {
   if (!report || report.totalCount === 0) return '';
@@ -120,15 +157,32 @@ export function formatRegulatoryReportLong(report: RegulatoryReport | null | und
     if (!Array.isArray(items) || items.length === 0) continue;
 
     const seen = new Set<string>();
-    const itemBlocks: string[] = [];
+    const unique: RegulatoryItem[] = [];
     for (const item of items) {
-      const block = formatItemLong(item);
-      if (seen.has(block)) continue;
-      seen.add(block);
-      itemBlocks.push(block);
+      const key = dedupeKey(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(item);
     }
-    if (itemBlocks.length === 0) continue;
 
+    const withRegulation: RegulatoryItem[] = [];
+    const generic: RegulatoryItem[] = [];
+    for (const item of unique) {
+      if (isGeneric(item)) generic.push(item);
+      else withRegulation.push(item);
+    }
+
+    const itemBlocks: string[] = [];
+    for (const item of withRegulation) {
+      itemBlocks.push(formatItemLong(item, groupKey));
+    }
+    if (generic.length === 1) {
+      itemBlocks.push(formatItemLong(generic[0], groupKey));
+    } else if (generic.length > 1) {
+      itemBlocks.push(`+ ${generic.length} записей без явного регламента`);
+    }
+
+    if (itemBlocks.length === 0) continue;
     groupBlocks.push(`${groupTitle}:\n${itemBlocks.join('\n')}`);
   }
 
