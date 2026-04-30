@@ -562,66 +562,51 @@ main {
   box-shadow: 0 8px 16px -4px rgba(26, 86, 219, 0.45);
 }
 
-/* ===== Channels (two ways) ===== */
-.channel {
-  position: relative;
-  border-radius: var(--radius-lg);
-  padding: 36px;
-  border: 1px solid var(--border);
-  overflow: hidden;
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease,
-    border-color 0.2s ease;
-}
-
-.channel:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-md);
-  border-color: #d4dbf5;
-}
-
-.channel-bot {
-  background: linear-gradient(135deg, #e6efff 0%, #ffffff 65%);
-}
-
-.channel-admin {
-  background: linear-gradient(135deg, #f1ecff 0%, #ffffff 65%);
-}
-
-.channel h3 {
-  margin: 18px 0 10px;
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: -0.01em;
-}
-
-.channel > p {
-  color: var(--text-soft);
-  margin: 0 0 22px;
-  line-height: 1.6;
-  font-size: 15px;
-}
-
-.channel ul {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 26px;
+/* ===== Detect cards (signals) ===== */
+.detect-card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
 }
 
-.channel li {
+.detect-card > p {
+  margin-bottom: 18px;
+}
+
+.detect-signals {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px dashed var(--border);
+}
+
+.detect-signals-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.detect-signals ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detect-signals li {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  color: var(--text);
-  font-size: 15px;
+  gap: 8px;
+  color: var(--text-soft);
+  font-size: 14px;
   line-height: 1.5;
 }
 
-.channel li svg {
+.detect-signals li svg {
   flex: none;
   margin-top: 3px;
   color: var(--primary);

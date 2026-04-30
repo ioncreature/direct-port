@@ -7,7 +7,8 @@ import {
 } from './_brand';
 
 const TELEGRAM_BOT_URL = process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL || 'https://t.me/DirectPortBot';
-const ADMIN_URL = process.env.NEXT_PUBLIC_ADMIN_URL || '/admin';
+const CONTACT_EMAIL = 'hello@directport.ru';
+const CONTACT_EMAIL_HREF = `mailto:${CONTACT_EMAIL}`;
 
 export default function LandingPage() {
   return (
@@ -16,8 +17,8 @@ export default function LandingPage() {
       <main>
         <Hero />
         <HowItWorks />
+        <WhatWeDetect />
         <WhatIsCalculated />
-        <Channels />
         <TnVed />
         <FinalCta />
       </main>
@@ -36,13 +37,13 @@ function Header() {
         </a>
         <nav className="nav-links" aria-label="Основная навигация">
           <a href="#how">Как работает</a>
+          <a href="#detect">Что определяем</a>
           <a href="#calc">Расчёт</a>
-          <a href="#channels">Способы</a>
           <a href="#tnved">Справочник</a>
         </nav>
         <div className="header-cta">
-          <a href={ADMIN_URL} className="btn btn-secondary">
-            Войти
+          <a href={CONTACT_EMAIL_HREF} className="btn btn-secondary">
+            Связаться
           </a>
           <a
             href={TELEGRAM_BOT_URL}
@@ -72,7 +73,8 @@ function Hero() {
           </h1>
           <p className="lede">
             Загрузите прайс-лист — на любом языке и в любой валюте. Получите готовый Excel
-            с пошлинами, НДС, акцизами и логистикой по каждой позиции.
+            с пошлинами, НДС, акцизами, логистикой и разрешительными требованиями
+            по каждой позиции.
           </p>
           <div className="hero-ctas">
             <a
@@ -84,8 +86,9 @@ function Hero() {
               <IconTelegram />
               Открыть бота в Telegram
             </a>
-            <a href={ADMIN_URL} className="btn btn-secondary btn-lg">
-              Войти в админку
+            <a href={CONTACT_EMAIL_HREF} className="btn btn-secondary btn-lg">
+              <IconMail />
+              {CONTACT_EMAIL}
             </a>
           </div>
           <div className="hero-trust">
@@ -169,13 +172,13 @@ function HowItWorks() {
       num: 3,
       icon: <IconChart />,
       title: 'Классификация ТН ВЭД',
-      text: 'Поиск кодов в справочнике ФТС через TKS API + AI-верификация в один заход. Спорные коды попадают на ручную проверку в админку.',
+      text: 'Поиск кодов в справочнике ФТС через TKS API + AI-верификация в один заход. При сомнениях AI смотрит на фото товара из xlsx и подтверждает код.',
     },
     {
       num: 4,
       icon: <IconDownload />,
       title: 'Готовый Excel',
-      text: 'Пошлины, НДС, акцизы, логистика и итог — в исходной валюте и в рублях. Подсветка позиций, требующих проверки.',
+      text: 'Пошлины, НДС, акцизы, логистика, разрешительные требования и итог — в исходной валюте и в рублях.',
     },
   ];
   return (
@@ -185,8 +188,8 @@ function HowItWorks() {
           <span className="label">Как это работает</span>
           <h2>От прайса до готового расчёта — четыре шага</h2>
           <p>
-            Pipeline полностью автоматизирован. Ручная проверка нужна только для пограничных
-            случаев, и для них есть удобный интерфейс в админке.
+            Pipeline полностью автоматизирован: парсинг, классификация, интерпретация правил
+            пошлин и расчёт — без участия оператора.
           </p>
         </div>
         <div className="grid grid-2">
@@ -198,6 +201,94 @@ function HowItWorks() {
               </div>
               <h3>{s.title}</h3>
               <p>{s.text}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function WhatWeDetect() {
+  const items = [
+    {
+      icon: <IconColumns />,
+      title: 'Структура таблицы и валюта',
+      text: 'Какие колонки — наименование, цена, вес, количество. Любой порядок, любые заголовки.',
+      signals: ['Содержимое первых строк', 'Типы данных в колонках', 'Символы валют (¥, $, €) и коды (CNY, USD)'],
+    },
+    {
+      icon: <IconTranslate />,
+      title: 'Язык и перевод наименований',
+      text: 'Китайские и английские названия переводятся на русский — без точного описания нет точного кода ТН ВЭД.',
+      signals: ['Исходный язык по символам и словарю', 'Доменные сокращения и единицы измерения'],
+    },
+    {
+      icon: <IconGlobe />,
+      title: 'Страна происхождения',
+      text: 'Определяется, даже если в файле явно не указана. При желании выбирается вручную и пересчёт за один клик.',
+      signals: [
+        'Явное указание в строке',
+        'Язык наименований (китайский → Китай)',
+        'Валюта документа',
+        'Дефолт — Китай',
+      ],
+    },
+    {
+      icon: <IconHash />,
+      title: 'Код ТН ВЭД',
+      text: 'Поиск в справочнике ФТС через TKS API + AI-верификация в одном запросе Claude. Спорные коды помечаются жёлтым.',
+      signals: [
+        'Переведённое наименование',
+        'Единица измерения и категория',
+        'Контекст партии',
+      ],
+    },
+    {
+      icon: <IconEye />,
+      title: 'Распознавание по фото',
+      text: 'Если в xlsx встроены изображения товаров и уверенность в коде низкая — vision-модель Claude смотрит на товар и подтверждает или корректирует код.',
+      signals: ['Изображения, привязанные к строкам прайса', 'Сравнение с описанием и текущим кодом'],
+    },
+    {
+      icon: <IconShield />,
+      title: 'Разрешительные требования',
+      text: 'Сертификация ТР ТС/ЕАЭС, лицензии, маркировка «Честный знак», утильсбор, страновые запреты — компактной сводкой в Excel.',
+      signals: [
+        'Флаги PRIZNAK в карточке кода ФТС',
+        'Тексты NOTE про техрегламенты',
+        'Страна происхождения',
+      ],
+    },
+  ];
+  return (
+    <section className="section section-alt" id="detect">
+      <div className="container">
+        <div className="section-head">
+          <span className="label">Что определяем по вашему файлу</span>
+          <h2>Шесть слоёв распознавания — и видно, по каким признакам</h2>
+          <p>
+            На вход — обычный прайс-лист. Дальше pipeline извлекает всё, что нужно для
+            таможенного расчёта, и показывает, на чём основано каждое решение.
+          </p>
+        </div>
+        <div className="grid grid-3">
+          {items.map((it, i) => (
+            <div key={it.title} className={`card detect-card fade-up delay-${(i % 3) + 1}`}>
+              <span className="icon-wrap">{it.icon}</span>
+              <h3>{it.title}</h3>
+              <p>{it.text}</p>
+              <div className="detect-signals">
+                <span className="detect-signals-label">Признаки</span>
+                <ul>
+                  {it.signals.map((s) => (
+                    <li key={s}>
+                      <IconCheckSmall />
+                      <span>{s}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
           ))}
         </div>
@@ -224,9 +315,9 @@ function WhatIsCalculated() {
       text: 'НДС считается на сумму товара, пошлины и акциза вместе — как требует таможня. Без перепутанной базы.',
     },
     {
-      icon: <IconGlobe />,
-      title: 'Страна происхождения',
-      text: 'Автоопределение по языку наименований и валюте. Можно вручную выбрать другую страну и пересчитать в один клик.',
+      icon: <IconBook />,
+      title: 'Условные правила',
+      text: 'Ставки, которые меняются в зависимости от страны происхождения или подакцизного признака, AI распознаёт и применяет автоматически.',
     },
     {
       icon: <IconCurrency />,
@@ -240,7 +331,7 @@ function WhatIsCalculated() {
     },
   ];
   return (
-    <section className="section section-alt" id="calc">
+    <section className="section" id="calc">
       <div className="container">
         <div className="section-head">
           <span className="label">Что внутри расчёта</span>
@@ -258,70 +349,6 @@ function WhatIsCalculated() {
               <p>{it.text}</p>
             </div>
           ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Channels() {
-  return (
-    <section className="section" id="channels">
-      <div className="container">
-        <div className="section-head">
-          <span className="label">Способы работать</span>
-          <h2>Бот для скорости, админка для контроля</h2>
-          <p>
-            Загрузите файл за 30 секунд через Telegram или работайте полным интерфейсом
-            с историей и ручной модерацией.
-          </p>
-        </div>
-        <div className="grid grid-2">
-          <div className="channel channel-bot fade-up delay-1">
-            <span className="icon-wrap">
-              <IconTelegram />
-            </span>
-            <h3>Telegram-бот</h3>
-            <p>
-              Самый быстрый путь — отправили файл, получили готовый Excel. Подходит, если
-              у вас простой регулярный поток.
-            </p>
-            <ul>
-              <li><IconCheckSmall />Три языка: русский, китайский, английский</li>
-              <li><IconCheckSmall />Автодетект языка по настройкам Telegram</li>
-              <li><IconCheckSmall />Двуязычные замечания в Excel для не-русских пользователей</li>
-              <li><IconCheckSmall />Уведомления о готовности расчёта</li>
-            </ul>
-            <a
-              href={TELEGRAM_BOT_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-primary"
-            >
-              Открыть бота
-              <IconArrow />
-            </a>
-          </div>
-          <div className="channel channel-admin fade-up delay-2">
-            <span className="icon-wrap">
-              <IconDashboard />
-            </span>
-            <h3>Веб-админка</h3>
-            <p>
-              Полный интерфейс для работы команды: ручная проверка спорных позиций, история
-              расчётов, настройки и аудит.
-            </p>
-            <ul>
-              <li><IconCheckSmall />Ручная проверка наименований и кодов ТН ВЭД</li>
-              <li><IconCheckSmall />История расчётов и пересчёт с другими параметрами</li>
-              <li><IconCheckSmall />Диагностика AI-вызовов и стоимости токенов</li>
-              <li><IconCheckSmall />Настройки формулы логистики и порогов уверенности</li>
-            </ul>
-            <a href={ADMIN_URL} className="btn btn-secondary">
-              Войти в админку
-              <IconArrow />
-            </a>
-          </div>
         </div>
       </div>
     </section>
@@ -359,6 +386,13 @@ function TnVed() {
               <div>
                 <h4>Калькулятор пошлин</h4>
                 <p>Любая единица измерения: килограммы, литры, м², м³, штуки. Видны и ввозная пошлина, и НДС, и акциз.</p>
+              </div>
+            </div>
+            <div className="tnved-item">
+              <span className="icon-wrap"><IconShield /></span>
+              <div>
+                <h4>Разрешительные документы</h4>
+                <p>Сертификаты, лицензии, маркировка, утильсбор и страновые запреты — со сводкой и AI-выжимкой по каждой записи.</p>
               </div>
             </div>
           </div>
@@ -412,7 +446,10 @@ function FinalCta() {
     <section className="cta-section">
       <div className="container cta-inner">
         <h2>Готовы попробовать?</h2>
-        <p>Первый файл — бесплатно. Регистрация не нужна — просто откройте бот в Telegram.</p>
+        <p>
+          Первый файл — бесплатно. Регистрация не нужна — откройте бот в Telegram
+          или напишите нам на {CONTACT_EMAIL}.
+        </p>
         <div className="cta-buttons">
           <a
             href={TELEGRAM_BOT_URL}
@@ -423,8 +460,9 @@ function FinalCta() {
             <IconTelegram />
             Открыть бота в Telegram
           </a>
-          <a href={ADMIN_URL} className="btn btn-ghost-on-dark btn-lg">
-            Войти в админку
+          <a href={CONTACT_EMAIL_HREF} className="btn btn-ghost-on-dark btn-lg">
+            <IconMail />
+            Написать на email
           </a>
         </div>
       </div>
@@ -438,8 +476,8 @@ function Footer() {
       <div className="container footer-inner">
         <span>{BRAND_NAME} &copy; {new Date().getFullYear()}</span>
         <div className="footer-links">
+          <a href={CONTACT_EMAIL_HREF}>{CONTACT_EMAIL}</a>
           <a href={TELEGRAM_BOT_URL} target="_blank" rel="noopener noreferrer">Telegram</a>
-          <a href={ADMIN_URL}>Админка</a>
         </div>
       </div>
     </footer>
@@ -466,6 +504,15 @@ function IconTelegram() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
       <path d="M21.4 3.7c-.3-.2-.7-.3-1-.2L2.5 10.4c-.6.2-1 .8-1 1.5s.4 1.2 1 1.4l4 1.4 1.6 5.1c.1.3.4.5.7.6h.2c.3 0 .5-.1.7-.3l2.7-2.7 4.7 3.4c.2.1.5.2.7.2.1 0 .3 0 .4-.1.4-.1.7-.5.8-.9L22 5c.1-.5-.1-1-.6-1.3zM10 14.6l-1 3-1-3.4 9.5-5.6L10 14.6z" />
+    </svg>
+  );
+}
+
+function IconMail() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <polyline points="3 7 12 13 21 7" />
     </svg>
   );
 }
@@ -570,13 +617,51 @@ function IconTruck() {
   );
 }
 
-function IconDashboard() {
+function IconColumns() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="3" width="8" height="10" rx="1" />
-      <rect x="13" y="3" width="8" height="6" rx="1" />
-      <rect x="13" y="11" width="8" height="10" rx="1" />
-      <rect x="3" y="15" width="8" height="6" rx="1" />
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <line x1="9" y1="3" x2="9" y2="21" />
+      <line x1="15" y1="3" x2="15" y2="21" />
+    </svg>
+  );
+}
+
+function IconHash() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="4" y1="9" x2="20" y2="9" />
+      <line x1="4" y1="15" x2="20" y2="15" />
+      <line x1="10" y1="3" x2="8" y2="21" />
+      <line x1="16" y1="3" x2="14" y2="21" />
+    </svg>
+  );
+}
+
+function IconEye() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function IconShield() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3l8 3v6c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V6l8-3z" />
+      <polyline points="9 12 11 14 15 10" />
+    </svg>
+  );
+}
+
+function IconBook() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 0-2 2V5z" />
+      <line x1="8" y1="7" x2="15" y2="7" />
+      <line x1="8" y1="11" x2="15" y2="11" />
     </svg>
   );
 }
@@ -613,15 +698,6 @@ function IconCalculator() {
       <line x1="8" y1="19" x2="9" y2="19" />
       <line x1="12" y1="19" x2="12" y2="19" />
       <line x1="16" y1="19" x2="16" y2="19" />
-    </svg>
-  );
-}
-
-function IconArrow() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <line x1="5" y1="12" x2="19" y2="12" />
-      <polyline points="13 6 19 12 13 18" />
     </svg>
   );
 }
