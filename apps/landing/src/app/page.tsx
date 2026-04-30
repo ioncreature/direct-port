@@ -6,7 +6,7 @@ import {
   TAGLINE,
 } from './_brand';
 
-const TELEGRAM_BOT_URL = process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL || 'https://t.me/DirectPortBot';
+const TELEGRAM_BOT_URL = process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL || 'https://t.me/direct_port_tage_bot';
 const CONTACT_EMAIL = 'hello@directport.ru';
 const CONTACT_EMAIL_HREF = `mailto:${CONTACT_EMAIL}`;
 
