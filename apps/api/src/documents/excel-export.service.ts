@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import * as ExcelJS from 'exceljs';
-import { humanizeUnit, normalizePer } from '../calculator/calculator.service';
+import { normalizePer } from '../calculator/calculator.service';
 import type { CalculationStatus, ProductNote } from '../common/product-notes';
 import { Document } from '../database/entities/document.entity';
 import type { Dimension } from '../duty-interpreter/interfaces';
 import type { RegulatoryReport } from '../regulatory/interfaces';
-import { formatRegulatoryReportShort } from '../regulatory/regulatory-format';
+import { formatRegulatoryReportLong } from '../regulatory/regulatory-format';
 
 interface ResultRow {
   description: string;
@@ -37,8 +37,6 @@ interface ResultRow {
   /** Новое: агрегированный статус расчёта */
   calculationStatus?: CalculationStatus;
   dutyAmountIsEstimate?: boolean;
-  dutyFormula?: string | null;
-  dutyBase?: string | null;
   notes?: ProductNote[];
   regulatoryReport?: RegulatoryReport | null;
 }
@@ -88,8 +86,6 @@ function buildColumns(
     { header: 'Ставка НДС (%)', key: 'vatRate', width: 16, numFmt: '0.00' },
     { header: `Сумма (${currency})`, key: 'totalPrice', width: 16, numFmt: '#,##0.00' },
     { header: `Пошлина (${currency})`, key: 'dutyAmount', width: 16, numFmt: '#,##0.00' },
-    { header: 'База пошлины', key: 'dutyBase', width: 14 },
-    { header: 'Формула пошлины', key: 'dutyFormula', width: 40 },
     { header: `НДС (${currency})`, key: 'vatAmount', width: 14, numFmt: '#,##0.00' },
     { header: `Акциз (${currency})`, key: 'exciseAmount', width: 14, numFmt: '#,##0.00' },
     { header: `Комиссия (${currency})`, key: 'logisticsCommission', width: 16, numFmt: '#,##0.00' },
@@ -109,7 +105,7 @@ function buildColumns(
   }
 
   columns.push({ header: 'Статус', key: 'calculationStatus', width: 20 });
-  columns.push({ header: 'Разрешительные документы', key: 'regulatoryShort', width: 50 });
+  columns.push({ header: 'Разрешительные документы', key: 'regulatoryDetails', width: 70 });
   columns.push({ header: 'Замечания', key: 'notesText', width: 60 });
 
   if (language && language !== 'ru' && LOCALIZED_NOTES_HEADERS[language]) {
@@ -176,6 +172,9 @@ const HEADER_FONT: Partial<ExcelJS.Font> = {
   size: 11,
 };
 
+const ROW_HEIGHT_PER_LINE = 15;
+const ROW_HEIGHT_PADDING = 5;
+
 @Injectable()
 export class ExcelExportService {
   async generate(doc: Document): Promise<ExcelJS.Buffer> {
@@ -218,13 +217,13 @@ export class ExcelExportService {
 
     const statusColIdx = COLUMNS.findIndex((c) => c.key === 'calculationStatus') + 1;
     const notesColIdx = COLUMNS.findIndex((c) => c.key === 'notesText') + 1;
-    const formulaColIdx = COLUMNS.findIndex((c) => c.key === 'dutyFormula') + 1;
-    const regulatoryColIdx = COLUMNS.findIndex((c) => c.key === 'regulatoryShort') + 1;
+    const regulatoryColIdx = COLUMNS.findIndex((c) => c.key === 'regulatoryDetails') + 1;
 
     for (let rowIdx = 0; rowIdx < data.length; rowIdx++) {
       const row = data[rowIdx];
       const status = resolveStatus(row);
       const notesText = formatNotes(row.notes);
+      const regulatoryText = formatRegulatoryReportLong(row.regulatoryReport);
 
       const volumePerUnit = volumesPerUnit[rowIdx];
       const rowData: Record<string, unknown> = {
@@ -241,14 +240,12 @@ export class ExcelExportService {
         vatRate: row.vatRate,
         totalPrice: row.totalPrice,
         dutyAmount: row.dutyAmount,
-        dutyBase: humanizeUnit(row.dutyBase),
-        dutyFormula: row.dutyFormula ?? '',
         vatAmount: row.vatAmount,
         exciseAmount: row.exciseAmount,
         logisticsCommission: row.logisticsCommission,
         totalCost: row.totalCost,
         calculationStatus: STATUS_LABELS[status],
-        regulatoryShort: formatRegulatoryReportShort(row.regulatoryReport),
+        regulatoryDetails: regulatoryText,
         notesText,
       };
 
@@ -277,13 +274,6 @@ export class ExcelExportService {
       statusCell.font = { bold: true, color: { argb: STATUS_FONT_COLORS[status] } };
       statusCell.alignment = { vertical: 'middle', horizontal: 'center' };
 
-      if (row.dutyFormula) {
-        const formulaCell = excelRow.getCell(formulaColIdx);
-        formulaCell.font = { italic: true, color: { argb: STATUS_FONT_COLORS.needs_info } };
-        formulaCell.alignment = { wrapText: true, vertical: 'middle' };
-      }
-
-      // Замечания — перенос строк, если есть
       if (notesText) {
         const notesCell = excelRow.getCell(notesColIdx);
         notesCell.alignment = { wrapText: true, vertical: 'top' };
@@ -291,15 +281,19 @@ export class ExcelExportService {
           notesCell.fill = STATUS_FILLS[status];
           notesCell.font = { color: { argb: STATUS_FONT_COLORS[status] } };
         }
-        // Увеличиваем высоту строки, чтобы заметки не обрезались
-        const lineCount = notesText.split('\n').length;
-        if (lineCount > 1) {
-          excelRow.height = Math.min(15 * lineCount + 5, 120);
-        }
       }
 
       const regulatoryCell = excelRow.getCell(regulatoryColIdx);
       regulatoryCell.alignment = { wrapText: true, vertical: 'top' };
+
+      // Высота — по самой высокой из многострочных колонок, иначе ExcelJS не
+      // подбирает её автоматически и многострочный текст обрезается.
+      const notesLines = notesText ? notesText.split('\n').length : 0;
+      const regulatoryLines = regulatoryText ? regulatoryText.split('\n').length : 0;
+      const maxLines = Math.max(notesLines, regulatoryLines);
+      if (maxLines > 1) {
+        excelRow.height = ROW_HEIGHT_PER_LINE * maxLines + ROW_HEIGHT_PADDING;
+      }
     }
 
     sheet.autoFilter = {
