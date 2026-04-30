@@ -71,7 +71,18 @@ export class RowClarifyHandler {
         action === CLARIFY_ACTION.TEXT
           ? 'row-clarify-input-text-prompt'
           : 'row-clarify-input-code-prompt';
-      await ctx.reply(ctx.t(promptKey, { row: String(rowIndex + 1) }));
+      const placeholderKey =
+        action === CLARIFY_ACTION.TEXT
+          ? 'row-clarify-input-text-placeholder'
+          : 'row-clarify-input-code-placeholder';
+      // ForceReply подцепляет ввод к карточке позиции (Telegram показывает «Ответ на …»),
+      // поэтому пользователь не теряет контекст, когда выше уже накопились другие карточки.
+      await ctx.reply(ctx.t(promptKey, { row: String(rowIndex + 1) }), {
+        reply_markup: {
+          force_reply: true,
+          input_field_placeholder: ctx.t(placeholderKey),
+        },
+      });
       this.logger.log(
         `Row clarify ${action} requested by ${user}: doc=${documentId} row=${rowIndex}`,
       );
