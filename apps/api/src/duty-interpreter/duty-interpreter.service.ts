@@ -8,7 +8,7 @@ import { DutyInterpretationCache } from '../database/entities/duty-interpretatio
 import {
   CLAUDE_TIMEOUT_PIPELINE_MS,
   cacheTools,
-  extractToolInput,
+  extractToolInputArrayField,
   systemPrompt,
 } from '../common/claude';
 import { errMsg } from '../common/errors';
@@ -628,10 +628,14 @@ ${JSON.stringify(codesData, null, 2)}
         ),
     );
 
-    const result = extractToolInput<{ items: DutyInterpretation[] }>(response);
-    return {
-      results: result.items,
-      tokenUsage: tokenUsageFromResponse(model, response.usage),
-    };
+    const results = extractToolInputArrayField<DutyInterpretation>(response, 'items');
+    const tokenUsage = tokenUsageFromResponse(model, response.usage);
+    if (!results) {
+      this.logger.error(
+        `Claude interpret response missing "items" array (batch=${items.length}, stop=${response.stop_reason})`,
+      );
+      return { results: [], tokenUsage };
+    }
+    return { results, tokenUsage };
   }
 }

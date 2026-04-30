@@ -11,6 +11,7 @@ import {
   CLAUDE_TIMEOUT_PIPELINE_MS,
   cacheTools,
   extractToolInput,
+  extractToolInputArrayField,
   systemPrompt,
 } from '../common/claude';
 import { DEFAULT_CONFIDENCE_THRESHOLD } from '../common/confidence';
@@ -827,14 +828,22 @@ export class ClassifierService {
         ),
     );
 
-    const result = extractToolInput<{ products: Array<{ index: number; queries: string[] }> }>(
+    const products = extractToolInputArrayField<{ index: number; queries: string[] }>(
       response,
+      'products',
     );
     const queryMap = new Map<number, string[]>();
-    for (const p of result.products) {
+    const tokenUsage = tokenUsageFromResponse(model, response.usage);
+    if (!products) {
+      this.logger.error(
+        `Claude formulate_queries response missing "products" array (batch=${items.length}, stop=${response.stop_reason})`,
+      );
+      return { queries: queryMap, tokenUsage };
+    }
+    for (const p of products) {
       queryMap.set(p.index, p.queries);
     }
-    return { queries: queryMap, tokenUsage: tokenUsageFromResponse(model, response.usage) };
+    return { queries: queryMap, tokenUsage };
   }
 
   // --- Phase 1: TKS Search (multiple queries per product) ---
@@ -1068,11 +1077,15 @@ export class ClassifierService {
         ),
     );
 
-    const result = extractToolInput<{ items: ClaudeSelection[] }>(response);
-    return {
-      selections: result.items,
-      tokenUsage: tokenUsageFromResponse(model, response.usage),
-    };
+    const selections = extractToolInputArrayField<ClaudeSelection>(response, 'items');
+    const tokenUsage = tokenUsageFromResponse(model, response.usage);
+    if (!selections) {
+      this.logger.error(
+        `Claude classify response missing "items" array (purpose=${purpose}, batch=${items.length}, stop=${response.stop_reason})`,
+      );
+      return { selections: [], tokenUsage };
+    }
+    return { selections, tokenUsage };
   }
 
   // --- Phase 3: Load TNVED Rates ---

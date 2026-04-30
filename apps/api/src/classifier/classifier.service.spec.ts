@@ -884,6 +884,145 @@ describe('ClassifierService', () => {
     });
   });
 
+  describe('Устойчивость к malformed ответам Claude', () => {
+    // Регрессия: TypeError: selections is not iterable, когда tool_use приходит без items (max_tokens).
+    it('classify_products без items: батч падает в TKS-fallback, остальные не задеты', async () => {
+      const products = Array.from({ length: 25 }, (_, i) => makeProduct(`Товар ${i}`));
+      const tksApi = {
+        searchGoodsGrouped: jest.fn().mockImplementation(() =>
+          Promise.resolve({ data: [{ CODE: '5555555555', KR_NAIM: 'TKS top', CNT: 80 }], hm: 100 }),
+        ),
+        getTnvedCode: jest.fn().mockImplementation((code: string) =>
+          Promise.resolve(makeTnvedCode(code)),
+        ),
+      };
+
+      let classifyCallIdx = 0;
+      const anthropic = {
+        messages: {
+          create: jest.fn().mockImplementation((params: any) => {
+            const toolName = params.tools?.[0]?.name;
+            if (toolName === 'formulate_search_queries') {
+              const userContent = JSON.parse(params.messages[0].content);
+              const productsResp = userContent.map((item: any) => ({
+                index: item.index,
+                queries: [item.description],
+              }));
+              return Promise.resolve({
+                content: [
+                  { type: 'tool_use', id: 'q', name: 'formulate_search_queries', input: { products: productsResp } },
+                ],
+                usage: { input_tokens: 50, output_tokens: 30, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+              });
+            }
+            // classify_products
+            const idx = classifyCallIdx++;
+            if (idx === 1) {
+              // Второй (параллельный) батч: tool_use с пустым input — имитация max_tokens
+              return Promise.resolve({
+                content: [{ type: 'tool_use', id: 'c-bad', name: 'classify_products', input: {} }],
+                usage: { input_tokens: 100, output_tokens: 4096, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+                stop_reason: 'max_tokens',
+              });
+            }
+            const userContent = JSON.parse(params.messages[0].content.replace(/^[^[{]+/, ''));
+            const items = userContent.map((it: any) => ({
+              index: it.index,
+              tnVedCode: '5555555555',
+              confidence: 0.9,
+              comment: 'ok',
+              fromCandidates: true,
+            }));
+            return Promise.resolve({
+              content: [{ type: 'tool_use', id: 'c-ok', name: 'classify_products', input: { items } }],
+              usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+            });
+          }),
+        },
+      };
+      const aiConfig = {
+        getClassifierModel: jest.fn().mockResolvedValue('claude-opus-4-7'),
+        getQueryFormulationModel: jest.fn().mockResolvedValue('claude-opus-4-7'),
+      };
+      const audit = {
+        trackAiCall: jest.fn().mockImplementation(async (_p: any, fn: any) => fn()),
+        recordAiCall: jest.fn(),
+      };
+      const service = new ClassifierService(tksApi as any, anthropic as any, aiConfig as any, audit as any);
+
+      // Главное: не должно бросать TypeError
+      const result = await service.classify(products);
+
+      expect(result.products).toHaveLength(25);
+      // Первые 20 — успешный батч с verified=true
+      for (let i = 0; i < 20; i++) {
+        expect(result.products[i].tnVedCode).toBe('5555555555');
+        expect(result.products[i].verified).toBe(true);
+      }
+      // Последние 5 — malformed batch → TKS top кандидат, verified=false
+      for (let i = 20; i < 25; i++) {
+        expect(result.products[i].tnVedCode).toBe('5555555555');
+        expect(result.products[i].verified).toBe(false);
+      }
+    });
+
+    it('formulate_search_queries без products: fallback на raw description', async () => {
+      const tksApi = {
+        searchGoodsGrouped: jest.fn().mockResolvedValue({
+          data: [{ CODE: '6666666666', KR_NAIM: 'TKS', CNT: 80 }],
+          hm: 100,
+        }),
+        getTnvedCode: jest.fn().mockImplementation((code: string) =>
+          Promise.resolve(makeTnvedCode(code)),
+        ),
+      };
+      const anthropic = {
+        messages: {
+          create: jest.fn().mockImplementation((params: any) => {
+            const toolName = params.tools?.[0]?.name;
+            if (toolName === 'formulate_search_queries') {
+              return Promise.resolve({
+                content: [{ type: 'tool_use', id: 'q-bad', name: 'formulate_search_queries', input: {} }],
+                usage: { input_tokens: 50, output_tokens: 30, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+                stop_reason: 'max_tokens',
+              });
+            }
+            return Promise.resolve({
+              content: [
+                {
+                  type: 'tool_use',
+                  id: 'c',
+                  name: 'classify_products',
+                  input: {
+                    items: [
+                      makeClaudeSelection({ tnVedCode: '6666666666', confidence: 0.9, comment: 'ok' }),
+                    ],
+                  },
+                },
+              ],
+              usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+            });
+          }),
+        },
+      };
+      const aiConfig = {
+        getClassifierModel: jest.fn().mockResolvedValue('claude-opus-4-7'),
+        getQueryFormulationModel: jest.fn().mockResolvedValue('claude-opus-4-7'),
+      };
+      const audit = {
+        trackAiCall: jest.fn().mockImplementation(async (_p: any, fn: any) => fn()),
+        recordAiCall: jest.fn(),
+      };
+      const service = new ClassifierService(tksApi as any, anthropic as any, aiConfig as any, audit as any);
+
+      const result = await service.classify([makeProduct('Чайник')]);
+
+      expect(result.products[0].tnVedCode).toBe('6666666666');
+      // Поиск шёл по raw description, т.к. formulate вернул пустую map
+      expect(tksApi.searchGoodsGrouped).toHaveBeenCalledWith('Чайник');
+    });
+  });
+
   describe('usedFallback', () => {
     it('false — товар сопоставлен и верифицирован', async () => {
       const { service } = createService({

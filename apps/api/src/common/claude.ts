@@ -39,6 +39,22 @@ export function extractToolInput<T>(response: Anthropic.Message): T {
 }
 
 /**
+ * Извлекает массив-поле из tool_use input. Возвращает undefined, если поле
+ * отсутствует или не массив — наблюдается при stop_reason=max_tokens, когда
+ * Claude обрезает генерацию tool_use input. Без этой проверки for-of по полю
+ * летит TypeError и роняет весь батч (включая параллельные вызовы вне try/catch).
+ * Caller логирует контекст и сам решает fallback.
+ */
+export function extractToolInputArrayField<T>(
+  response: Anthropic.Message,
+  field: string,
+): T[] | undefined {
+  const input = extractToolInput<Record<string, unknown>>(response);
+  const arr = input?.[field];
+  return Array.isArray(arr) ? (arr as T[]) : undefined;
+}
+
+/**
  * @deprecated Используй tool_use + extractToolInput вместо текстового парсинга JSON.
  *
  * Claude периодически возвращает JSON в markdown-обёртке ```json ... ```
