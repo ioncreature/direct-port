@@ -1,4 +1,3 @@
-import { formatIsoDate } from '../common/format-date';
 import type { AssessmentForm, RegulatoryItem, RegulatoryReport } from './interfaces';
 
 const FORM_LONG: Record<AssessmentForm, string> = {
@@ -14,45 +13,31 @@ const FORM_LONG: Record<AssessmentForm, string> = {
 
 type GroupKey = keyof Omit<RegulatoryReport, 'totalCount'>;
 
+// Маркировку, страновые запреты и «прочее» в Excel не выводим: в админке они
+// полезны (полный контекст, summary, даты), а в строке документа дают шум —
+// generic-записи, запреты по странам, не относящимся к этому товару, и т. п.
 const GROUPS: Array<[GroupKey, string]> = [
   ['certifications', 'Сертификация / декларирование'],
   ['permits', 'Разрешения'],
   ['licenses', 'Лицензии'],
-  ['marking', 'Маркировка'],
   ['traceability', 'Прослеживаемость'],
   ['utilizationFee', 'Утилизационный / экологический сбор'],
   ['strategicAndDualUse', 'Двойное назначение / стратегические товары'],
-  ['countryRestrictions', 'Страновые ограничения'],
-  ['other', 'Прочее'],
 ];
 
-// Группы, в которых юридические подробности (основание, срок действия) полезны
-// в Excel: маркировка — оператору важно знать постановление и срок ввода;
-// страновые запреты — нужен номер санкционного решения и дата.
-// Для остальных групп те же поля шумят, в админке они доступны через summary.
-const GROUPS_WITH_LEGAL_DETAILS: ReadonlySet<GroupKey> = new Set(['marking', 'countryRestrictions']);
-
-// Intl.NumberFormat возвращает NBSP (U+00A0) как разделитель тысяч —
-// заменяем на обычный пробел, чтобы текст в Excel и тестах был предсказуемым.
+// Intl.NumberFormat ru-RU использует NBSP как разделитель тысяч — заменяем
+// на обычный пробел, чтобы текст в Excel и тестах был предсказуемым.
 const NUMBER_FORMATTER = new Intl.NumberFormat('ru-RU');
 function formatNumber(n: number): string {
-  return NUMBER_FORMATTER.format(n).replaceAll("\u00A0", " ");
+  return NUMBER_FORMATTER.format(n).replaceAll('\u00A0', ' ');
 }
 
-/**
- * Generic — мера, которая в Excel неотличима от названия категории
- * (нет regulation, нет уникальной суммы/страны). Их сворачиваем в одну строку
- * `+ N записей без явного регламента`, чтобы не плодить копии «Подтверждение
- * соответствия» / «Прочие меры регулирования».
- */
+// Generic — мера без regulation и без уникального идентификатора (суммы, страны).
+// 2+ таких записей сворачиваем в одну строку, иначе они плодят копии
+// «Подтверждение соответствия» / «Лицензия».
 function isGeneric(item: RegulatoryItem): boolean {
   if (item.regulation) return false;
-  if (item.category === 'marking') return false;
-  if (item.category === 'utilization' && item.values.min != null && item.values.min > 0) return false;
-  if (
-    (item.category === 'country_import_ban' || item.category === 'country_export_ban') &&
-    item.countryName
-  ) {
+  if (item.category === 'utilization' && item.values.min != null && item.values.min > 0) {
     return false;
   }
   return true;
@@ -64,10 +49,6 @@ function itemHeadlineBase(item: RegulatoryItem): string {
     return formStr ? `${item.regulation} — ${formStr}` : item.regulation;
   }
   switch (item.category) {
-    case 'marking': {
-      const since = item.validFrom ? ` с ${formatIsoDate(item.validFrom)}` : '';
-      return `Маркировка${since}`;
-    }
     case 'utilization': {
       const rate = item.values.min;
       return rate != null && rate > 0
@@ -80,10 +61,6 @@ function itemHeadlineBase(item: RegulatoryItem): string {
     case 'permit_import':
     case 'permit_export':
       return 'Разрешение';
-    case 'country_import_ban':
-      return item.countryName ? `Запрет ввоза: ${item.countryName}` : 'Запрет ввоза';
-    case 'country_export_ban':
-      return item.countryName ? `Запрет вывоза: ${item.countryName}` : 'Запрет вывоза';
     case 'traceability':
       return 'Прослеживаемость';
     case 'strategic':
@@ -100,52 +77,33 @@ function itemHeadline(item: RegulatoryItem): string {
   return item.matchPrecision === 'broad' ? `${base} ⚠ широкое применение` : base;
 }
 
-function itemDetails(item: RegulatoryItem, groupKey: GroupKey): string[] {
+function itemDetails(item: RegulatoryItem): string[] {
   const lines: string[] = [];
-
   if (item.regulationTitle) lines.push(item.regulationTitle);
   if (item.authority) lines.push(`Регулятор: ${item.authority}`);
-
-  if (!GROUPS_WITH_LEGAL_DETAILS.has(groupKey)) return lines;
-
-  if (item.documentRef && item.documentRef.number) {
-    const dateStr = item.documentRef.date ? ` от ${formatIsoDate(item.documentRef.date)}` : '';
-    lines.push(`Основание: № ${item.documentRef.number}${dateStr}`);
-  }
-  // validFrom для маркировки уже в заголовке — не дублируем
-  if (item.validFrom && item.category !== 'marking') {
-    lines.push(`Действует с ${formatIsoDate(item.validFrom)}`);
-  }
-  if (item.validTo) {
-    lines.push(`По ${formatIsoDate(item.validTo)}`);
-  }
-
   return lines;
 }
 
-function formatItemLong(item: RegulatoryItem, groupKey: GroupKey): string {
+function formatItemLong(item: RegulatoryItem): string {
   const lines = ['• ' + itemHeadline(item)];
-  for (const detail of itemDetails(item, groupKey)) {
+  for (const detail of itemDetails(item)) {
     lines.push('   ' + detail);
   }
   return lines.join('\n');
 }
 
-/**
- * Ключ для дедупликации. Не включает documentRef/validFrom/validTo и precision —
- * одна и та же мера, утверждённая разными постановлениями или с разной точностью
- * совпадения, в Excel должна выводиться один раз.
- */
+// Ключ дедупликации без precision и юридических подробностей: одна и та же
+// мера, утверждённая разными постановлениями или совпавшая с разной точностью,
+// в Excel должна выводиться один раз.
 function dedupeKey(item: RegulatoryItem): string {
   return [itemHeadlineBase(item), item.regulationTitle ?? '', item.authority ?? ''].join('||');
 }
 
 /**
- * Многострочный, человекочитаемый формат отчёта для Excel-колонки.
- * Сильная дедупликация (по идентичности меры, не по полному блоку), generic-записи
- * без regulation сворачиваются в `+ N записей …`. Юридические подробности
- * (основание, срок) показываем только для маркировки и страновых запретов.
- * Возвращает '' если report пуст. Формат рассчитан на wrapText в Excel.
+ * Многострочный формат регуляторных мер для Excel-колонки. Группирует по
+ * категориям, дедуплицирует по идентичности меры, generic-записи без regulation
+ * сворачиваются в `+ N записей …`. Возвращает '' если report пуст.
+ * Формат рассчитан на wrapText.
  */
 export function formatRegulatoryReportLong(report: RegulatoryReport | null | undefined): string {
   if (!report || report.totalCount === 0) return '';
@@ -174,10 +132,10 @@ export function formatRegulatoryReportLong(report: RegulatoryReport | null | und
 
     const itemBlocks: string[] = [];
     for (const item of withRegulation) {
-      itemBlocks.push(formatItemLong(item, groupKey));
+      itemBlocks.push(formatItemLong(item));
     }
     if (generic.length === 1) {
-      itemBlocks.push(formatItemLong(generic[0], groupKey));
+      itemBlocks.push(formatItemLong(generic[0]));
     } else if (generic.length > 1) {
       itemBlocks.push(`+ ${generic.length} записей без явного регламента`);
     }

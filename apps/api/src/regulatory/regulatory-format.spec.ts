@@ -80,7 +80,7 @@ describe('formatRegulatoryReportLong', () => {
     );
   });
 
-  it('скрывает основание и срок действия для сертификации', () => {
+  it('не показывает юридические подробности (основание, срок действия)', () => {
     const report = makeReport([
       makeItem({
         category: 'certification',
@@ -97,34 +97,24 @@ describe('formatRegulatoryReportLong', () => {
     expect(out).not.toContain('По 31.12.2030');
   });
 
-  it('сохраняет основание и срок действия для маркировки', () => {
+  it('не выводит блоки маркировки, страновых запретов и «прочее»', () => {
     const report = makeReport([
-      makeItem({
-        category: 'marking',
-        validFrom: '2026-05-01',
-        validTo: '2027-04-30',
-        documentRef: { number: '1458', date: '2025-09-20' },
-      }),
+      makeItem({ category: 'marking', validFrom: '2026-05-01' }),
+      makeItem({ category: 'country_export_ban', countryName: 'СОЕДИНЕННОЕ КОРОЛЕВСТВО' }),
+      makeItem({ category: 'other', title: 'Прочие меры регулирования' }),
     ]);
-    const out = formatRegulatoryReportLong(report);
-    expect(out).toContain('Маркировка с 01.05.2026');
-    expect(out).toContain('Основание: № 1458 от 20.09.2025');
-    expect(out).toContain('По 30.04.2027');
-    expect(out).not.toContain('Действует с 01.05.2026'); // уже в заголовке
+    expect(formatRegulatoryReportLong(report)).toBe('');
   });
 
-  it('сохраняет основание и срок действия для странового запрета', () => {
+  it('выводит только разрешённые группы, скрытые игнорирует', () => {
     const report = makeReport([
-      makeItem({
-        category: 'country_export_ban',
-        countryName: 'СОЕДИНЕННОЕ КОРОЛЕВСТВО',
-        countryCode: '826',
-        documentRef: { number: 'САНК_24', date: '2022-11-01' },
-      }),
+      makeItem({ category: 'certification', regulation: 'ТР ТС 020/2011', form: 'declaration' }),
+      makeItem({ category: 'marking', validFrom: '2026-05-01' }),
+      makeItem({ category: 'other', title: 'Прочее' }),
     ]);
-    const out = formatRegulatoryReportLong(report);
-    expect(out).toContain('Запрет вывоза: СОЕДИНЕННОЕ КОРОЛЕВСТВО');
-    expect(out).toContain('Основание: № САНК_24 от 01.11.2022');
+    expect(formatRegulatoryReportLong(report)).toBe(
+      'Сертификация / декларирование:\n• ТР ТС 020/2011 — декларация о соответствии',
+    );
   });
 
   it('утильсбор форматирует ставку с разделителями', () => {
@@ -133,18 +123,6 @@ describe('formatRegulatoryReportLong', () => {
     ]);
     const out = formatRegulatoryReportLong(report);
     expect(out).toContain('Утильсбор 32 874 ₽ за единицу');
-  });
-
-  it('страновой запрет: ввоз и вывоз различаются в заголовке', () => {
-    const importBan = makeReport([
-      makeItem({ category: 'country_import_ban', countryName: 'ЯПОНИЯ', countryCode: '392' }),
-    ]);
-    expect(formatRegulatoryReportLong(importBan)).toContain('Запрет ввоза: ЯПОНИЯ');
-
-    const exportBan = makeReport([
-      makeItem({ category: 'country_export_ban', countryName: 'США', countryCode: '840' }),
-    ]);
-    expect(formatRegulatoryReportLong(exportBan)).toContain('Запрет вывоза: США');
   });
 
   it('broad-precision показывается коротким маркером в заголовке', () => {
@@ -274,7 +252,7 @@ describe('formatRegulatoryReportLong', () => {
       makeItem({ category: 'utilization', values: { min: 32874, max: null, unit: null } }),
       makeItem({ category: 'license_import' }),
       makeItem({ category: 'certification', regulation: 'ТР ТС 020/2011', form: 'declaration' }),
-      makeItem({ category: 'marking', validFrom: '2026-05-01' }),
+      makeItem({ category: 'traceability' }),
     ]);
     expect(formatRegulatoryReportLong(report)).toBe(
       [
@@ -284,8 +262,8 @@ describe('formatRegulatoryReportLong', () => {
         'Лицензии:',
         '• Лицензия',
         '',
-        'Маркировка:',
-        '• Маркировка с 01.05.2026',
+        'Прослеживаемость:',
+        '• Прослеживаемость',
         '',
         'Утилизационный / экологический сбор:',
         '• Утильсбор 32 874 ₽ за единицу',
