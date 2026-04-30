@@ -29,6 +29,7 @@ help =
     /language — 更改语言
 
 # 文件上传
+upload-via-attachment = 请通过 📎 附件夹上传文件（.xlsx 或 .csv），不再需要单独按钮。
 unsupported-format = 仅支持 .xlsx 和 .csv 格式。请将文件另存为其中一种格式后重新发送。
 file-too-large = 文件大于 40 MB。如果其中包含较多图片，请另存为不含图片的版本；如行数过多，请拆分为多个文件。
 uploading = 📥 正在下载文件…
