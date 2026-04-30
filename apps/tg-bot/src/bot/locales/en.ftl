@@ -29,7 +29,6 @@ help =
     /language — change language
 
 # File upload
-upload-via-attachment = Attach the file (.xlsx or .csv) via the paperclip 📎 — the dedicated button is no longer needed.
 unsupported-format = Only .xlsx and .csv are supported. Save the file in one of these formats and try again.
 file-too-large = The file is larger than 40 MB. If it contains many images — re-save it without them; if many rows — split it into several files.
 uploading = 📥 Downloading file…

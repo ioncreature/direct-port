@@ -12,11 +12,6 @@ import { StartHandler } from './handlers/start.handler';
 import { type BotContext, i18n, SUPPORTED_LOCALES } from './i18n';
 import { ConversationStateService } from './state/conversation-state.service';
 
-// Тексты старой reply-кнопки «Загрузить файл» (ключ btn-upload удалён). Хардкодим
-// явно, чтобы можно было ловить нажатия у клиентов с закешированной legacy-клавой
-// и заменять её актуальной версией.
-const LEGACY_UPLOAD_TEXTS = ['📁 Загрузить файл', '📁 Upload file', '📁 上传文件'];
-
 @Injectable()
 export class BotService implements OnModuleInit, OnModuleDestroy {
   private logger = new Logger(BotService.name);
@@ -65,13 +60,6 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     // Reply keyboard text handlers — match all locale variants
     const helpTexts = SUPPORTED_LOCALES.map((l) => i18n.t(l, 'btn-help'));
     this.bot.hears(helpTexts, (ctx) => this.menuHandler.handleHelp(ctx));
-
-    // Legacy «Upload file» reply-кнопка удалена, но у клиентов, получивших
-    // /start до деплоя, она ещё видна. Перехватываем старые тексты, чтобы при
-    // нажатии переслать обновлённую клавиатуру и тем самым стереть legacy.
-    this.bot.hears(LEGACY_UPLOAD_TEXTS, (ctx) =>
-      this.menuHandler.handleLegacyUpload(ctx),
-    );
 
     // Commands
     this.bot.command('start', (ctx) => this.startHandler.handle(ctx));
