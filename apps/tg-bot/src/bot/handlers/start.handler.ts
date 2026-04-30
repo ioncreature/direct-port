@@ -49,11 +49,7 @@ export class StartHandler {
       );
     }
 
-    const keyboard = new Keyboard()
-      .text(ctx.t('btn-upload'))
-      .row()
-      .text(ctx.t('btn-help'))
-      .resized();
+    const keyboard = new Keyboard().text(ctx.t('btn-help')).resized();
 
     await ctx.reply(ctx.t('welcome'), { reply_markup: keyboard });
   }

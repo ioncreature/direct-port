@@ -1,5 +1,4 @@
 # Buttons
-btn-upload = 📁 Upload file
 btn-help = ❓ Help
 
 # /start
@@ -28,9 +27,6 @@ help =
     /start — welcome
     /help — this help
     /language — change language
-
-# Menu
-upload-prompt = Send me a file in .xlsx or .csv format
 
 # File upload
 unsupported-format = Only .xlsx and .csv are supported. Save the file in one of these formats and try again.

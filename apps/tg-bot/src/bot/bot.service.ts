@@ -58,9 +58,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     });
 
     // Reply keyboard text handlers — match all locale variants
-    const uploadTexts = SUPPORTED_LOCALES.map((l) => i18n.t(l, 'btn-upload'));
     const helpTexts = SUPPORTED_LOCALES.map((l) => i18n.t(l, 'btn-help'));
-    this.bot.hears(uploadTexts, (ctx) => this.menuHandler.handleUpload(ctx));
     this.bot.hears(helpTexts, (ctx) => this.menuHandler.handleHelp(ctx));
 
     // Commands

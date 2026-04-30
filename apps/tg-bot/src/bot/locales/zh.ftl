@@ -1,5 +1,4 @@
 # 按钮
-btn-upload = 📁 上传文件
 btn-help = ❓ 帮助
 
 # /start
@@ -28,9 +27,6 @@ help =
     /start — 欢迎
     /help — 帮助信息
     /language — 更改语言
-
-# 菜单
-upload-prompt = 请发送 .xlsx 或 .csv 格式的文件
 
 # 文件上传
 unsupported-format = 仅支持 .xlsx 和 .csv 格式。请将文件另存为其中一种格式后重新发送。
