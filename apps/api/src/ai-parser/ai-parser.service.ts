@@ -107,7 +107,17 @@ const VALID_CURRENCIES = new Set([
 
 const round4 = (v: number) => Math.round(v * 10000) / 10000;
 
-const MAX_ROWS = 400;
+const MAX_ROWS_DEFAULT = 700;
+
+function readMaxRowsFromEnv(): number {
+  const raw = process.env.MAX_PRODUCT_ROWS_PER_FILE;
+  if (!raw) return MAX_ROWS_DEFAULT;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0) return MAX_ROWS_DEFAULT;
+  return n;
+}
+
+const MAX_ROWS = readMaxRowsFromEnv();
 const CHUNK_SIZE = 100;
 const CHUNK_CONCURRENCY = 2;
 const SAMPLE_ROWS = 5;

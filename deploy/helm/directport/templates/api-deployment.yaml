@@ -47,6 +47,8 @@ spec:
               value: {{ .Values.api.env.CORS_ORIGIN | quote }}
             - name: JWT_ACCESS_EXPIRATION
               value: {{ .Values.api.env.JWT_ACCESS_EXPIRATION | quote }}
+            - name: MAX_PRODUCT_ROWS_PER_FILE
+              value: {{ .Values.api.env.MAX_PRODUCT_ROWS_PER_FILE | quote }}
           livenessProbe:
             httpGet:
               path: /api

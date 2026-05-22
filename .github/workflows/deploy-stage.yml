@@ -84,6 +84,8 @@ jobs:
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy with Helm
+        env:
+          MAX_PRODUCT_ROWS_PER_FILE: ${{ vars.MAX_PRODUCT_ROWS_PER_FILE }}
         run: |
           set -euo pipefail
 
@@ -104,6 +106,12 @@ jobs:
             telegramBotToken: "${{ secrets.TELEGRAM_BOT_TOKEN }}"
           EOF
 
+          # Если переменная не задана в GitHub Environment variables — используем дефолт из values.yaml.
+          EXTRA_HELM_ARGS=()
+          if [ -n "${MAX_PRODUCT_ROWS_PER_FILE:-}" ]; then
+            EXTRA_HELM_ARGS+=(--set-string "api.env.MAX_PRODUCT_ROWS_PER_FILE=${MAX_PRODUCT_ROWS_PER_FILE}")
+          fi
+
           helm upgrade --install directport-stage ./deploy/helm/directport \
             --namespace directport-stage \
             --create-namespace \
@@ -119,6 +127,7 @@ jobs:
             --set landing.image.tag=${{ github.sha }} \
             --set postgresql.auth.password="$DB_PASSWORD" \
             --set global.postgresql.auth.password="$DB_PASSWORD" \
+            "${EXTRA_HELM_ARGS[@]}" \
             --wait --timeout 7m
 
           rm -f /tmp/helm-secrets.yaml

@@ -19,6 +19,9 @@ api:
   env:
     CORS_ORIGIN: '*'
     JWT_ACCESS_EXPIRATION: '30m'
+    # Максимальное число товарных позиций (строк таблицы) в загружаемом файле.
+    # Переопределяется через GitHub Environment variable MAX_PRODUCT_ROWS_PER_FILE в deploy-workflow.
+    MAX_PRODUCT_ROWS_PER_FILE: '700'
 
 adminWeb:
   replicaCount: 1

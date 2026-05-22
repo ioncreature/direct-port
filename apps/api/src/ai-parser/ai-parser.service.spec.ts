@@ -97,15 +97,15 @@ describe('AiParserService', () => {
       await expect(service.parse(Buffer.from(''), 'test.xlsx')).rejects.toThrow(BadRequestException);
     });
 
-    it('rejected если файл слишком большой (>400 строк)', async () => {
-      const rows = Array.from({ length: 402 }, (_, i) => [`row ${i}`]);
+    it('rejected если файл слишком большой (>700 строк)', async () => {
+      const rows = Array.from({ length: 702 }, (_, i) => [`row ${i}`]);
       const { service } = createService({
         spreadsheetData: { rows, columnCount: 1, images: [] },
       });
 
       const result = await service.parse(Buffer.from(''), 'test.xlsx');
       expect(result.feasibility).toBe('rejected');
-      expect(result.rejectionReasons[0]).toContain('400');
+      expect(result.rejectionReasons[0]).toContain('700');
     });
 
     it('rejected если файл пустой (< 2 строк)', async () => {
