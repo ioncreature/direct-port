@@ -61,6 +61,22 @@ interface ColumnDef {
   numFmt?: string;
 }
 
+/** Жёстко конвертирует значение в number. Возвращает null, если значение
+ *  отсутствует или нечитаемо. Принимает строки с запятой/точкой как
+ *  разделителем, чтобы Excel в любой локали распознал ячейку как число. */
+function toNumber(value: unknown): number | null {
+  if (value == null) return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const normalized = trimmed.replace(/ |\s/g, '').replace(',', '.');
+    const n = Number(normalized);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
 const LOCALIZED_NOTES_HEADERS: Record<string, string> = {
   zh: '备注（翻译）',
   en: 'Notes (translated)',
@@ -74,7 +90,7 @@ function buildColumns(
 ): ColumnDef[] {
   const columns: ColumnDef[] = [
     { header: 'Наименование', key: 'description', width: 40 },
-    { header: 'Количество', key: 'quantity', width: 12 },
+    { header: 'Количество', key: 'quantity', width: 12, numFmt: '#,##0.####' },
     { header: `Цена (${currency})`, key: 'price', width: 14, numFmt: '#,##0.00' },
     { header: 'Вес (кг)', key: 'weight', width: 12, numFmt: '#,##0.00' },
     ...(hasVolume
@@ -226,24 +242,30 @@ export class ExcelExportService {
       const regulatoryText = formatRegulatoryReportLong(row.regulatoryReport);
 
       const volumePerUnit = volumesPerUnit[rowIdx];
+      const quantityNum = toNumber(row.quantity);
       const rowData: Record<string, unknown> = {
         description: row.description,
-        quantity: row.quantity,
-        price: row.price,
-        weight: row.weight,
+        quantity: quantityNum,
+        price: toNumber(row.price),
+        weight: toNumber(row.weight),
         ...(hasVolume
-          ? { volume: volumePerUnit != null ? volumePerUnit * row.quantity : null }
+          ? {
+              volume:
+                volumePerUnit != null && quantityNum != null
+                  ? volumePerUnit * quantityNum
+                  : null,
+            }
           : {}),
         tnVedCode: row.tnVedCode || '—',
         tnVedDescription: row.tnVedDescription || '—',
         dutyRateDisplay: row.dutyRateDisplay ?? (row.dutyRate ? `${row.dutyRate}%` : '—'),
-        vatRate: row.vatRate,
-        totalPrice: row.totalPrice,
-        dutyAmount: row.dutyAmount,
-        vatAmount: row.vatAmount,
-        exciseAmount: row.exciseAmount,
-        logisticsCommission: row.logisticsCommission,
-        totalCost: row.totalCost,
+        vatRate: toNumber(row.vatRate),
+        totalPrice: toNumber(row.totalPrice),
+        dutyAmount: toNumber(row.dutyAmount),
+        vatAmount: toNumber(row.vatAmount),
+        exciseAmount: toNumber(row.exciseAmount),
+        logisticsCommission: toNumber(row.logisticsCommission),
+        totalCost: toNumber(row.totalCost),
         calculationStatus: STATUS_LABELS[status],
         regulatoryDetails: regulatoryText,
         notesText,
@@ -254,13 +276,13 @@ export class ExcelExportService {
       }
 
       if (hasRub) {
-        rowData.totalPriceRub = row.totalPriceRub;
-        rowData.dutyAmountRub = row.dutyAmountRub;
-        rowData.vatAmountRub = row.vatAmountRub;
-        rowData.exciseAmountRub = row.exciseAmountRub;
-        rowData.logisticsCommissionRub = row.logisticsCommissionRub;
-        rowData.totalCostRub = row.totalCostRub;
-        rowData.exchangeRate = row.exchangeRate;
+        rowData.totalPriceRub = toNumber(row.totalPriceRub);
+        rowData.dutyAmountRub = toNumber(row.dutyAmountRub);
+        rowData.vatAmountRub = toNumber(row.vatAmountRub);
+        rowData.exciseAmountRub = toNumber(row.exciseAmountRub);
+        rowData.logisticsCommissionRub = toNumber(row.logisticsCommissionRub);
+        rowData.totalCostRub = toNumber(row.totalCostRub);
+        rowData.exchangeRate = toNumber(row.exchangeRate);
       }
 
       const excelRow = sheet.addRow(rowData);
@@ -314,8 +336,20 @@ export class ExcelExportService {
     if (data.length > 0) {
       const headers = Object.keys(data[0]);
       sheet.addRow(headers);
+      // price/weight/quantity всегда числа; hsCode/code/description оставляем
+      // как есть, чтобы не потерять leading zeros в кодах ТН ВЭД.
+      const NUMERIC_KEYS = new Set(['price', 'weight', 'quantity']);
       for (const row of data) {
-        sheet.addRow(headers.map((h) => row[h]));
+        sheet.addRow(
+          headers.map((h) => {
+            const v = row[h];
+            if (NUMERIC_KEYS.has(h)) {
+              const n = toNumber(v);
+              return n != null ? n : v;
+            }
+            return v;
+          }),
+        );
       }
     }
     return workbook.xlsx.writeBuffer();

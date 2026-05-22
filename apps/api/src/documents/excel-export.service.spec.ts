@@ -573,5 +573,144 @@ describe('ExcelExportService', () => {
       expect(sheet.getRow(2).getCell(priceIdx + 1).value).toBe(100.5);
       expect(sheet.getRow(2).getCell(qtyIdx + 1).value).toBe(10);
     });
+
+    it('числовые строки с точкой ("6.5") конвертируются в number', async () => {
+      const doc = makeDocument({
+        resultData: [
+          makeResultRow({
+            weight: '6.5',
+            price: '100.5',
+            totalCost: '1430.75',
+          }),
+        ],
+      });
+      const buffer = await service.generate(doc);
+      const wb = await readWorkbook(buffer as ArrayBuffer);
+      const sheet = wb.getWorksheet('Результат')!;
+      const headers = getHeaders(sheet);
+      const weightIdx = headers.indexOf('Вес (кг)');
+      const priceIdx = headers.indexOf('Цена (USD)');
+      const totalIdx = headers.indexOf('Итого (USD)');
+
+      expect(typeof sheet.getRow(2).getCell(weightIdx + 1).value).toBe('number');
+      expect(sheet.getRow(2).getCell(weightIdx + 1).value).toBe(6.5);
+      expect(typeof sheet.getRow(2).getCell(priceIdx + 1).value).toBe('number');
+      expect(sheet.getRow(2).getCell(priceIdx + 1).value).toBe(100.5);
+      expect(typeof sheet.getRow(2).getCell(totalIdx + 1).value).toBe('number');
+      expect(sheet.getRow(2).getCell(totalIdx + 1).value).toBe(1430.75);
+    });
+
+    it('числовые строки с запятой ("6,5") конвертируются в number', async () => {
+      const doc = makeDocument({
+        resultData: [
+          makeResultRow({
+            weight: '6,5',
+            price: '100,5',
+          }),
+        ],
+      });
+      const buffer = await service.generate(doc);
+      const wb = await readWorkbook(buffer as ArrayBuffer);
+      const sheet = wb.getWorksheet('Результат')!;
+      const headers = getHeaders(sheet);
+      const weightIdx = headers.indexOf('Вес (кг)');
+      const priceIdx = headers.indexOf('Цена (USD)');
+
+      expect(typeof sheet.getRow(2).getCell(weightIdx + 1).value).toBe('number');
+      expect(sheet.getRow(2).getCell(weightIdx + 1).value).toBe(6.5);
+      expect(sheet.getRow(2).getCell(priceIdx + 1).value).toBe(100.5);
+    });
+
+    it('у колонки "Количество" задан numFmt', async () => {
+      const doc = makeDocument({
+        resultData: [makeResultRow({ quantity: 10 })],
+      });
+      const buffer = await service.generate(doc);
+      const wb = await readWorkbook(buffer as ArrayBuffer);
+      const sheet = wb.getWorksheet('Результат')!;
+      const headers = getHeaders(sheet);
+      const qtyIdx = headers.indexOf('Количество');
+
+      const cell = sheet.getRow(2).getCell(qtyIdx + 1);
+      expect(cell.numFmt).toBeTruthy();
+    });
+
+    it('все числовые денежные колонки имеют numFmt с десятичной частью', async () => {
+      const row = makeResultRow({
+        totalPriceRub: 90000,
+        dutyAmountRub: 13500,
+        vatAmountRub: 20700,
+        exciseAmountRub: 0,
+        logisticsCommissionRub: 4500,
+        totalCostRub: 128700,
+        exchangeRate: 90,
+      });
+      const doc = makeDocument({ currency: 'USD', resultData: [row] });
+      const buffer = await service.generate(doc);
+      const wb = await readWorkbook(buffer as ArrayBuffer);
+      const sheet = wb.getWorksheet('Результат')!;
+      const headers = getHeaders(sheet);
+
+      const moneyHeaders = headers.filter(
+        (h) =>
+          h.startsWith('Цена ') ||
+          h.startsWith('Сумма ') ||
+          h.startsWith('Пошлина ') ||
+          h.startsWith('НДС ') ||
+          h.startsWith('Акциз ') ||
+          h.startsWith('Комиссия ') ||
+          h.startsWith('Итого '),
+      );
+      // Каждая денежная колонка должна иметь numFmt
+      for (const header of moneyHeaders) {
+        const idx = headers.indexOf(header);
+        const cell = sheet.getRow(2).getCell(idx + 1);
+        expect(cell.numFmt).toBeTruthy();
+        expect(typeof cell.value).toBe('number');
+      }
+    });
+
+    it('пустые/невалидные числовые значения становятся null, не текстом', async () => {
+      const row = makeResultRow({ price: 'abc', weight: null });
+      const doc = makeDocument({ resultData: [row] });
+      const buffer = await service.generate(doc);
+      const wb = await readWorkbook(buffer as ArrayBuffer);
+      const sheet = wb.getWorksheet('Результат')!;
+      const headers = getHeaders(sheet);
+      const priceIdx = headers.indexOf('Цена (USD)');
+      const weightIdx = headers.indexOf('Вес (кг)');
+
+      // null означает пустую ячейку — Excel не воспринимает её как текст
+      expect(sheet.getRow(2).getCell(priceIdx + 1).value).toBeNull();
+      expect(sheet.getRow(2).getCell(weightIdx + 1).value).toBeNull();
+    });
+  });
+
+  describe('generateRaw — числовые поля', () => {
+    it('конвертирует строковые числа в parsedData в number', async () => {
+      const doc = makeDocument({
+        resultData: null,
+        parsedData: [{ description: 'Товар', price: '100.5', weight: '6,5', quantity: '10' }],
+      });
+      const buffer = await service.generate(doc);
+      const wb = await readWorkbook(buffer as ArrayBuffer);
+      const sheet = wb.getWorksheet('Результат')!;
+
+      expect(getRowValues(sheet, 2)).toEqual(['Товар', 100.5, 6.5, 10]);
+    });
+
+    it('сохраняет строковые поля с ведущими нулями (например, hsCode)', async () => {
+      const doc = makeDocument({
+        resultData: null,
+        parsedData: [
+          { description: 'Товар', hsCode: '0201100001', price: 100, weight: 5, quantity: 1 },
+        ],
+      });
+      const buffer = await service.generate(doc);
+      const wb = await readWorkbook(buffer as ArrayBuffer);
+      const sheet = wb.getWorksheet('Результат')!;
+
+      expect(getRowValues(sheet, 2)).toEqual(['Товар', '0201100001', 100, 5, 1]);
+    });
   });
 });
