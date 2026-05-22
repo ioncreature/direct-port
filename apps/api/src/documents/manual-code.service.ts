@@ -143,6 +143,7 @@ export class ManualCodeService {
       currencyToDoc,
       confidenceThreshold: config.confidenceThreshold,
       countryOfOrigin: doc.countryOfOrigin,
+      language,
     });
     const calculated = summary.items[0];
 
@@ -329,6 +330,7 @@ export class ManualCodeService {
       currencyToDoc,
       confidenceThreshold: config.confidenceThreshold,
       countryOfOrigin: doc.countryOfOrigin,
+      language: language ?? undefined,
     });
     const calculated = summary.items[0];
     calculated.regulatoryReport = regulatoryReport;

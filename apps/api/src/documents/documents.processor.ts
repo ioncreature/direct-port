@@ -192,6 +192,7 @@ export class DocumentsProcessor extends WorkerHost {
         currencyToDoc,
         confidenceThreshold,
         countryOfOrigin: doc.countryOfOrigin,
+        language: doc.language,
       });
       this.logger.log(`Document ${documentId}: calculation done in ${Date.now() - t2}ms`);
 
@@ -417,6 +418,7 @@ export class DocumentsProcessor extends WorkerHost {
         currencyToDoc,
         confidenceThreshold,
         countryOfOrigin: doc.countryOfOrigin,
+        language: doc.language,
       });
 
       const needsConversion = currency !== 'RUB';

@@ -488,6 +488,412 @@ describe('CalculatorService', () => {
       // duty = 5% + 3% = 80
       expect(result.items[0].dutyAmount).toBe(80);
     });
+
+    it('несколько vat-charges от AI сворачиваются в один (НДС не удваивается)', () => {
+      // Регрессия: коды с льготными ставками НДС (медизделия/детские товары/etc)
+      // получали 2-3 vat-charges от AI, все они суммировались — НДС 44%/66%.
+      const charges: DutyChargeRule[] = [
+        {
+          type: 'import_duty',
+          label: 'Ввоз',
+          method: { kind: 'ad_valorem', rate: 6.5 },
+          base: 'customs_value',
+        },
+        {
+          type: 'vat',
+          label: 'НДС (стандартная)',
+          method: { kind: 'ad_valorem', rate: 22 },
+          base: 'customs_value_plus_duty_plus_excise',
+        },
+        {
+          type: 'vat',
+          label: 'НДС 10% (медизделия)',
+          method: { kind: 'ad_valorem', rate: 10 },
+          base: 'customs_value_plus_duty_plus_excise',
+        },
+        {
+          type: 'vat',
+          label: 'НДС 0% (ТСР инвалидов)',
+          method: { kind: 'ad_valorem', rate: 0 },
+          base: 'customs_value_plus_duty_plus_excise',
+        },
+      ];
+      const product = makeProduct({
+        vatRate: 22,
+        dutyInterpretation: { tnvedCode: '3926200000', charges, reasoning: '' },
+      });
+      const result = service.calculate([product], ZERO_COMMISSION);
+      // totalPrice=1000, duty=65, vat=22% от 1065 = 234.3 (а НЕ 234.3+106.5+0=340.8)
+      expect(result.items[0].dutyAmount).toBe(65);
+      expect(result.items[0].vatAmount).toBeCloseTo(234.3);
+      const warning = result.items[0].notes.find(
+        (n) => n.severity === 'info' && n.field === 'vat',
+      );
+      expect(warning).toBeDefined();
+      expect(warning!.message).toMatch(/альтернативные ставки|льготн/i);
+      // Применённая ставка 22% — должна быть указана. Дубликат базовой 22%
+      // отсутствует, упомянуты только реальные альтернативы (10%, 0%).
+      expect(warning!.message).toContain('22%');
+      expect(warning!.message).toContain('10%');
+      expect(warning!.message).toContain('0%');
+    });
+
+    it('один vat-charge с неверной ставкой подменяется на vatRate из TKS и появляется warning', () => {
+      // AI вернул НДС 20%, а в TKS уже 22% (с 2026 г.). Должна применяться 22%,
+      // и оператор должен увидеть, что AI предлагал альтернативу 20% (это
+      // часто означает устаревшую интерпретацию AI до повышения ставки).
+      const charges: DutyChargeRule[] = [
+        {
+          type: 'vat',
+          label: 'НДС',
+          method: { kind: 'ad_valorem', rate: 20 },
+          base: 'customs_value_plus_duty_plus_excise',
+        },
+      ];
+      const product = makeProduct({
+        dutyRate: 0,
+        vatRate: 22,
+        dutyInterpretation: { tnvedCode: 'x', charges, reasoning: '' },
+      });
+      const result = service.calculate([product], ZERO_COMMISSION);
+      expect(result.items[0].vatAmount).toBeCloseTo(220); // 22% от 1000
+      const warning = result.items[0].notes.find(
+        (n) => n.severity === 'info' && n.field === 'vat',
+      );
+      expect(warning).toBeDefined();
+      expect(warning!.message).toContain('20%');
+      expect(warning!.message).toContain('22%');
+    });
+
+    it('один vat-charge с уже правильной ставкой не меняется и не порождает warning', () => {
+      const charges: DutyChargeRule[] = [
+        {
+          type: 'import_duty',
+          label: 'Ввоз',
+          method: { kind: 'ad_valorem', rate: 10 },
+          base: 'customs_value',
+        },
+        {
+          type: 'vat',
+          label: 'НДС',
+          method: { kind: 'ad_valorem', rate: 22 },
+          base: 'customs_value_plus_duty_plus_excise',
+        },
+      ];
+      const product = makeProduct({
+        vatRate: 22,
+        dutyInterpretation: { tnvedCode: 'x', charges, reasoning: '' },
+      });
+      const result = service.calculate([product], ZERO_COMMISSION);
+      // duty=100, vat=22% × 1100 = 242
+      expect(result.items[0].vatAmount).toBeCloseTo(242);
+      expect(
+        result.items[0].notes.find((n) => n.severity === 'info' && n.field === 'vat'),
+      ).toBeUndefined();
+    });
+
+    it('vatRate=0 — AI vat-charges дропаются, NDS=0 авторитативно из TKS', () => {
+      // Граничный случай: код без НДС в TKS (vatRate=0). AI vat-charges считаются
+      // галлюцинацией и не применяются. Оператор получает warning со списком
+      // альтернатив (чтобы знать, что AI что-то нашёл).
+      const charges: DutyChargeRule[] = [
+        {
+          type: 'vat',
+          label: 'НДС A',
+          method: { kind: 'ad_valorem', rate: 5 },
+          base: 'customs_value_plus_duty_plus_excise',
+        },
+        {
+          type: 'vat',
+          label: 'НДС B',
+          method: { kind: 'ad_valorem', rate: 5 },
+          base: 'customs_value_plus_duty_plus_excise',
+        },
+      ];
+      const product = makeProduct({
+        dutyRate: 0,
+        vatRate: 0,
+        dutyInterpretation: { tnvedCode: 'x', charges, reasoning: '' },
+      });
+      const result = service.calculate([product], ZERO_COMMISSION);
+      expect(result.items[0].vatAmount).toBe(0);
+      // Сохраняем audit-trail: оператор должен увидеть, что AI вернул vat-charges,
+      // несмотря на TKS NDS=0.
+      const note = result.items[0].notes.find(
+        (n) => n.severity === 'info' && n.field === 'vat',
+      );
+      expect(note).toBeDefined();
+      // Сообщение для vatRate=0 НЕ должно содержать «льготу» — это абсурд (ниже 0% не бывает).
+      expect(note!.message).not.toMatch(/льгот/i);
+      expect(note!.message).toMatch(/NDS\s*=\s*0|не применяется/i);
+    });
+
+    it('NaN vatRate — Calculator не падает и не пишет NaN в результат', () => {
+      // Защита от NaN: если upstream parse-логика когда-нибудь даст NaN (Number('')
+      // от пустой колонки), Calculator должен обработать это как «НДС не применяется»,
+      // а не размножать NaN по vatAmount/totalCost.
+      const product = makeProduct({ vatRate: NaN as unknown as number });
+      const result = service.calculate([product], ZERO_COMMISSION);
+      expect(Number.isFinite(result.items[0].vatAmount)).toBe(true);
+      expect(result.items[0].vatAmount).toBe(0);
+      expect(Number.isFinite(result.items[0].totalCost)).toBe(true);
+    });
+
+    it('rate как строка ("22") от JSONB-кэша — НЕ попадает в dropped как ложная альтернатива', () => {
+      // Anthropic SDK не приводит типы из tool_use input; TypeORM JSONB сохраняет
+      // shape. Если когда-нибудь rate окажется строкой '22', строгое сравнение
+      // '22' !== 22 ложно срабатывало бы. Защита через Number().
+      const charges: DutyChargeRule[] = [
+        {
+          type: 'vat',
+          label: 'НДС',
+          method: { kind: 'ad_valorem', rate: '22' as unknown as number },
+          base: 'customs_value_plus_duty_plus_excise',
+        },
+      ];
+      const product = makeProduct({
+        vatRate: 22,
+        dutyInterpretation: { tnvedCode: 'x', charges, reasoning: '' },
+      });
+      const result = service.calculate([product], ZERO_COMMISSION);
+      expect(result.items[0].vatAmount).toBeCloseTo(220); // 22% × 1000
+      // Note не должен порождаться: ставка совпала после приведения типов.
+      expect(
+        result.items[0].notes.find((n) => n.severity === 'info' && n.field === 'vat'),
+      ).toBeUndefined();
+    });
+
+    it('AI не вернул vat при vatRate>0 — Calculator синтезирует НДС', () => {
+      // Если AI забыл vat-charge, а TKS говорит NDS=22, должен быть посчитан 22%.
+      const charges: DutyChargeRule[] = [
+        {
+          type: 'import_duty',
+          label: 'Ввоз',
+          method: { kind: 'ad_valorem', rate: 10 },
+          base: 'customs_value',
+        },
+      ];
+      const product = makeProduct({
+        vatRate: 22,
+        dutyInterpretation: { tnvedCode: 'x', charges, reasoning: '' },
+      });
+      const result = service.calculate([product], ZERO_COMMISSION);
+      expect(result.items[0].dutyAmount).toBe(100); // 10% × 1000
+      expect(result.items[0].vatAmount).toBeCloseTo(242); // 22% × 1100
+    });
+
+    it('non-ad_valorem vat-charge от AI (галлюцинация) полностью игнорируется', () => {
+      // НДС в РФ всегда адвалорный; specific/combined-vat — это галлюцинация,
+      // расчёт должен использовать авторитативный vatRate из TKS.
+      const charges: DutyChargeRule[] = [
+        {
+          type: 'vat',
+          label: 'НДС',
+          method: { kind: 'specific', amount: 5, unit: 'EUR', per: 'kg' },
+          base: 'customs_value',
+        },
+      ];
+      const product = makeProduct({
+        vatRate: 22,
+        dutyInterpretation: { tnvedCode: 'x', charges, reasoning: '' },
+      });
+      const result = service.calculate([product], ZERO_COMMISSION);
+      expect(result.items[0].vatAmount).toBeCloseTo(220); // 22% × 1000, а не 5 EUR × kg
+    });
+
+    it('vat помещается ПОСЛЕ всех non-vat charges, даже если AI вернул его раньше', () => {
+      // Регрессия: до фикса collapseVatCharges клал vat на позицию ПЕРВОГО vat
+      // в input. Если AI вернул [vat, duty], НДС считался от голой суммы,
+      // без учёта пошлины — недосчёт ~7%.
+      const charges: DutyChargeRule[] = [
+        {
+          type: 'vat',
+          label: 'НДС (раньше пошлины)',
+          method: { kind: 'ad_valorem', rate: 22 },
+          base: 'customs_value_plus_duty_plus_excise',
+        },
+        {
+          type: 'import_duty',
+          label: 'Ввоз',
+          method: { kind: 'ad_valorem', rate: 7.5 },
+          base: 'customs_value',
+        },
+      ];
+      const product = makeProduct({
+        vatRate: 22,
+        dutyInterpretation: { tnvedCode: 'x', charges, reasoning: '' },
+      });
+      const result = service.calculate([product], ZERO_COMMISSION);
+      expect(result.items[0].dutyAmount).toBe(75); // 7.5% × 1000
+      // НДС 22% от (1000 + 75) = 236.5, а НЕ 22% × 1000 = 220.
+      expect(result.items[0].vatAmount).toBeCloseTo(236.5);
+    });
+
+    it('messageLocalized для bot users (en/zh) на vat-warning', () => {
+      const charges: DutyChargeRule[] = [
+        {
+          type: 'vat',
+          label: 'НДС',
+          method: { kind: 'ad_valorem', rate: 22 },
+          base: 'customs_value_plus_duty_plus_excise',
+        },
+        {
+          type: 'vat',
+          label: 'НДС 10% (медизделия)',
+          method: { kind: 'ad_valorem', rate: 10 },
+          base: 'customs_value_plus_duty_plus_excise',
+        },
+      ];
+      const productEn = makeProduct({
+        vatRate: 22,
+        dutyInterpretation: { tnvedCode: 'x', charges, reasoning: '' },
+      });
+      const en = service.calculate([productEn], ZERO_COMMISSION, { language: 'en' });
+      const enWarning = en.items[0].notes.find((n) => n.severity === 'info' && n.field === 'vat');
+      expect(enWarning?.messageLocalized).toBeDefined();
+      expect(enWarning!.messageLocalized).toMatch(/VAT|alternative|reduced/i);
+
+      const zh = service.calculate([productEn], ZERO_COMMISSION, { language: 'zh' });
+      const zhWarning = zh.items[0].notes.find((n) => n.severity === 'info' && n.field === 'vat');
+      expect(zhWarning?.messageLocalized).toBeDefined();
+      expect(zhWarning!.messageLocalized).toContain('增值税');
+    });
+
+    it('dropped не содержит дубликаты той же ставки vatRate (только реальные альтернативы)', () => {
+      // На stage встречаются коды с AI-галлюцинацией: [vat 22%, vat 22%] —
+      // дубликат базовой ставки. В warning об этом писать нечего.
+      const charges: DutyChargeRule[] = [
+        {
+          type: 'vat',
+          label: 'НДС',
+          method: { kind: 'ad_valorem', rate: 22 },
+          base: 'customs_value_plus_duty_plus_excise',
+        },
+        {
+          type: 'vat',
+          label: 'НДС (стандартная ставка)',
+          method: { kind: 'ad_valorem', rate: 22 },
+          base: 'customs_value_plus_duty_plus_excise',
+        },
+      ];
+      const product = makeProduct({
+        vatRate: 22,
+        dutyInterpretation: { tnvedCode: '4201000000', charges, reasoning: '' },
+      });
+      const result = service.calculate([product], ZERO_COMMISSION);
+      expect(result.items[0].vatAmount).toBeCloseTo(220);
+      // Дубликат базовой ставки — warning не порождается, оператора не нужно
+      // отвлекать на это.
+      expect(
+        result.items[0].notes.find((n) => n.severity === 'info' && n.field === 'vat'),
+      ).toBeUndefined();
+    });
+
+    // Регрессии с реальных stage-кодов: до фикса для каждого AI возвращал N vat-charges,
+    // НДС умножался на N. После фикса должен применяться только базовый vatRate.
+    type StageCase = {
+      label: string;
+      code: string;
+      vatRate: number;
+      dutyRate: number;
+      preferentialVatRates: number[];
+      expectedDuty: number;
+      expectedVat: number;
+    };
+    const stageCases: StageCase[] = [
+      // 3926200000 (детская одежда из пластмасс): 22% + 10% (детское) + 10% (медиз)
+      {
+        label: '3926200000 — три vat-charges (22+10+10)',
+        code: '3926200000',
+        vatRate: 22,
+        dutyRate: 6.5,
+        preferentialVatRates: [10, 10],
+        expectedDuty: 65,
+        expectedVat: 234.3, // 22% × 1065
+      },
+      // 9503004900 (детские игрушки): 22% + 10% (детское) + 0% (ТСР)
+      {
+        label: '9503004900 — три vat-charges (22+10+0)',
+        code: '9503004900',
+        vatRate: 22,
+        dutyRate: 0,
+        preferentialVatRates: [10, 0],
+        expectedDuty: 0,
+        expectedVat: 220, // 22% × 1000
+      },
+      // 3923100000 (упаковка из пластмасс): 22% + 10% (медиз)
+      {
+        label: '3923100000 — два vat-charges (22+10)',
+        code: '3923100000',
+        vatRate: 22,
+        dutyRate: 6.5,
+        preferentialVatRates: [10],
+        expectedDuty: 65,
+        expectedVat: 234.3,
+      },
+      // 4820200000 (тетради): порядок vat-charges обратный (льготная первая, базовая второй)
+      {
+        label: '4820200000 — порядок [vat-льгота, vat-база, ...]',
+        code: '4820200000',
+        vatRate: 22,
+        dutyRate: 5,
+        preferentialVatRates: [10],
+        expectedDuty: 50,
+        expectedVat: 231, // 22% × 1050
+      },
+    ];
+
+    it.each(stageCases)(
+      'регрессия: $label — НДС не удваивается',
+      ({ code, vatRate, dutyRate, preferentialVatRates, expectedDuty, expectedVat }) => {
+        // Для 4820200000 порядок vat-charges специально обратный (льготная первая,
+        // базовая второй) — проверяем, что collapseVatCharges всегда строит
+        // синтетический vat-charge со ставкой из vatRate (TKS), независимо от того,
+        // в каком порядке AI их отдал.
+        const isReversed = code === '4820200000';
+        const baseVat = {
+          type: 'vat' as const,
+          label: `НДС (база ${vatRate}%)`,
+          method: { kind: 'ad_valorem' as const, rate: vatRate },
+          base: 'customs_value_plus_duty_plus_excise' as const,
+        };
+        const prefVats = preferentialVatRates.map((rate) => ({
+          type: 'vat' as const,
+          label: `НДС (льгота ${rate}%)`,
+          method: { kind: 'ad_valorem' as const, rate },
+          base: 'customs_value_plus_duty_plus_excise' as const,
+        }));
+        const charges: DutyChargeRule[] = [
+          ...(dutyRate > 0
+            ? [
+                {
+                  type: 'import_duty' as const,
+                  label: 'Ввоз',
+                  method: { kind: 'ad_valorem' as const, rate: dutyRate },
+                  base: 'customs_value' as const,
+                },
+              ]
+            : []),
+          ...(isReversed ? [...prefVats, baseVat] : [baseVat, ...prefVats]),
+        ];
+        const product = makeProduct({
+          dutyRate: 0, // не используется, есть dutyInterpretation
+          vatRate,
+          dutyInterpretation: { tnvedCode: code, charges, reasoning: '' },
+        });
+        const result = service.calculate([product], ZERO_COMMISSION);
+        expect(result.items[0].dutyAmount).toBeCloseTo(expectedDuty);
+        expect(result.items[0].vatAmount).toBeCloseTo(expectedVat);
+        const warning = result.items[0].notes.find(
+          (n) => n.severity === 'info' && n.field === 'vat',
+        );
+        expect(warning).toBeDefined();
+        // Проверяем, что в note упомянуты ВСЕ выкинутые льготные ставки.
+        for (const r of preferentialVatRates) {
+          expect(warning!.message).toContain(`${r}%`);
+        }
+      },
+    );
   });
 
   describe('Фильтрация charges по стране происхождения', () => {

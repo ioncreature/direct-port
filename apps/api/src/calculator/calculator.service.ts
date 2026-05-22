@@ -236,15 +236,21 @@ export class CalculatorService {
       /** OKSMT-код страны происхождения товаров в документе.
        *  Используется для фильтрации charges с appliesWhen.country. */
       countryOfOrigin?: string | null;
+      /** Язык документа (ru/en/zh). Используется для локализации заметок,
+       *  которые пойдут в Excel-колонку «Notes (translated)» для не-ru пользователей бота. */
+      language?: string | null;
     },
   ): CalculationSummary {
     const threshold = options?.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
     const currencyRates = this.buildCurrencyRates(options);
     const countryOfOrigin = options?.countryOfOrigin ?? null;
+    const language = options?.language ?? undefined;
     this.logger.log(
       `Calculating ${products.length} products, commission: ${JSON.stringify(commission)}, rates=${JSON.stringify(currencyRates)}, confidenceThreshold=${threshold}, country=${countryOfOrigin ?? '—'}`,
     );
-    const items = products.map((p) => this.calculateOne(p, commission, currencyRates, threshold, countryOfOrigin));
+    const items = products.map((p) =>
+      this.calculateOne(p, commission, currencyRates, threshold, countryOfOrigin, language),
+    );
     const summary = this.summarize(items);
     this.logger.log(`Calculation done: grandTotal=${summary.grandTotal.toFixed(2)}, duty=${summary.totalDuty.toFixed(2)}, vat=${summary.totalVat.toFixed(2)}`);
     return summary;
@@ -283,18 +289,27 @@ export class CalculatorService {
     currencyRates: Record<string, number>,
     confidenceThreshold: number,
     countryOfOrigin: string | null,
+    language?: string,
   ): CalculatedProduct {
     const notes: ProductNote[] = [...p.notes];
     const totalPrice = p.price * p.quantity;
 
     // Источник правил: AI-интерпретация либо детерминистический fallback из полей TKS.
     // НДС всегда синхронизируется с rates.NDS (AI-интерпретация может быть неверной,
-    // например, после повышения стандартной ставки в РФ до 22% с 2026 г.).
-    const usingFallback = !p.dutyInterpretation?.charges.length;
-    const rawCharges: DutyChargeRule[] = this.ensureAuthoritativeVatRate(
-      usingFallback ? this.buildChargesFromRates(p) : p.dutyInterpretation!.charges,
+    // например, после повышения стандартной ставки в РФ до 22% с 2026 г.). Если AI
+    // вернул несколько vat-charges (галлюцинация на льготных ставках из TNVEDALL[3]) —
+    // схлопываем в один, иначе НДС умножается на их число.
+    const usingFallback = !p.dutyInterpretation?.charges?.length;
+    const sourceCharges = usingFallback
+      ? this.buildChargesFromRates(p)
+      : p.dutyInterpretation!.charges;
+    const { charges: rawCharges, droppedVatCharges } = this.collapseVatCharges(
+      sourceCharges,
       p.vatRate,
     );
+    if (droppedVatCharges.length > 0) {
+      notes.push(this.buildDuplicateVatNote(droppedVatCharges, p.vatRate, language));
+    }
     const charges = this.filterChargesByCountry(rawCharges, countryOfOrigin, notes);
 
     let dutyAmount = 0;
@@ -539,23 +554,127 @@ export class CalculatorService {
   }
 
   /**
-   * Подменяет ставку НДС в charges на rates.NDS из TKS, чтобы не зависеть от
-   * эвристик AI-интерпретатора. NDS в TKS — это непосредственная процентная ставка
-   * (после реформы 2026 г. стандартная ставка = 22%).
+   * Возвращает charges с РОВНО ОДНИМ vat-charge: {kind:'ad_valorem', rate:vatRate}.
+   *
+   * AI-интерпретатор иногда возвращает:
+   *   - несколько vat-charges (галлюцинация на льготных ставках из TNVEDALL[3] —
+   *     медизделия, детские товары, книги, ТСР инвалидов);
+   *   - дубликаты той же базовой ставки 22% (бесполезный шум);
+   *   - vat с method.kind, отличным от 'ad_valorem' (НДС в РФ всегда адвалорный);
+   *   - вообще ни одного vat, при том что TKS.NDS > 0;
+   *   - vat в позиции ДО какого-нибудь import_duty/excise (порядок в массиве важен:
+   *     calculateOne аккумулирует dutyAmount/exciseAmount по ходу, и resolveBase для
+     *     `customs_value_plus_duty_plus_excise` читает текущие значения. Если vat
+   *     встретится раньше duty — НДС посчитается от голой суммы товара).
+   *
+   * Чтобы единый кэш этих сценариев не давал серебряную пулю, нормализуем:
+   *   1. Все vat-charges изымаются из исходного порядка;
+   *   2. Не-vat-charges сохраняют свой относительный порядок;
+   *   3. Если vatRate > 0 — добавляем СИНТЕТИЧЕСКИЙ vat в конец массива (всегда
+   *      ad_valorem(vatRate) с базой customs_value_plus_duty_plus_excise). Это
+   *      гарантирует и правильную ставку, и правильную позицию в цикле;
+   *   4. Если vatRate <= 0 — все vat-charges уходят в dropped (асимметрия с
+   *      авторитативным NDS не нужна — TKS = 0 значит «нет НДС»);
+   *   5. dropped включает только те vat-charges, ставка которых ОТЛИЧАЕТСЯ от vatRate
+   *      (одинаковые — это пустые дубликаты, бессмысленно показывать оператору).
+   *
+   * Льготные ставки НДС (10% для медизделий/детских товаров, 0% для ТСР) калькулятор
+   * не применяет автоматически — признак применимости (регистрационное удостоверение,
+   * возрастная категория и т. п.) не виден из данных таблицы. droppedVatCharges
+   * формируют warning-note со списком альтернатив, чтобы оператор знал о льготе.
    */
-  private ensureAuthoritativeVatRate(
+  private collapseVatCharges(
     charges: DutyChargeRule[],
     vatRate: number,
-  ): DutyChargeRule[] {
-    if (vatRate <= 0) return charges;
-    return charges.map((charge) => {
-      if (charge.type !== 'vat' || charge.method.kind !== 'ad_valorem') return charge;
-      if (charge.method.rate === vatRate) return charge;
-      return {
-        ...charge,
-        method: { ...charge.method, rate: vatRate },
-      };
-    });
+  ): { charges: DutyChargeRule[]; droppedVatCharges: DutyChargeRule[] } {
+    const nonVat = charges.filter((c) => c.type !== 'vat');
+    const vatCharges = charges.filter((c) => c.type === 'vat');
+    // Сравнение со ставкой устойчиво к JSON-десериализации, где число могло
+    // прийти строкой ('22'): принудительно приводим к number.
+    const sameAsApplied = (c: DutyChargeRule, applied: number) =>
+      c.method.kind === 'ad_valorem' && Number(c.method.rate) === applied;
+
+    // Защита от NaN/Infinity: если ставка не конечная, ведём себя как при
+    // vatRate<=0 — НДС не считаем, vat-charges идут в dropped как сигнал
+    // оператору, что с данными что-то не так.
+    if (!Number.isFinite(vatRate) || vatRate <= 0) {
+      const dropped = vatCharges.filter((c) => !sameAsApplied(c, 0));
+      return { charges: nonVat, droppedVatCharges: dropped };
+    }
+
+    const synthetic: DutyChargeRule = {
+      type: 'vat',
+      label: 'НДС',
+      method: { kind: 'ad_valorem', rate: vatRate },
+      base: 'customs_value_plus_duty_plus_excise',
+    };
+    // В dropped попадают только реальные «альтернативы», т. е. ставки, отличные
+    // от применённой. Дубликаты той же ставки (vatRate==method.rate) выкидываем
+    // молча — оператору про них рассказывать нечего.
+    const dropped = vatCharges.filter((c) => !sameAsApplied(c, vatRate));
+    return { charges: [...nonVat, synthetic], droppedVatCharges: dropped };
+  }
+
+  /**
+   * Note об альтернативных ставках НДС, которые AI вернул, но Calculator не применил
+   * (он всегда берёт авторитативный TKS.NDS). severity='info' — это не блокер и не
+   * деградация качества расчёта: расчёт точный, а note даёт оператору audit-trail.
+   * Использование 'warning' раньше задирало calculationStatus до 'partial' (жёлтый
+   * статус по UI), что было шумом по умолчанию для каждой регулируемой категории.
+   *
+   * messageLocalized строится rate-only — без AI-label, потому что label всегда
+   * по-русски и иначе вставлялся бы в середину английского/китайского текста.
+   */
+  private buildDuplicateVatNote(
+    droppedVatCharges: DutyChargeRule[],
+    appliedVatRate: number,
+    language?: string,
+  ): ProductNote {
+    const formatRate = (c: DutyChargeRule) =>
+      c.method.kind === 'ad_valorem' || c.method.kind === 'fixed_rate'
+        ? `${c.method.rate}%`
+        : formatMethod(c.method);
+    const rateOnly = droppedVatCharges.map(formatRate).join('; ');
+    const formatRu = (c: DutyChargeRule) => {
+      const rate = formatRate(c);
+      const label = c.label && c.label !== 'НДС' ? ` (${c.label})` : '';
+      return `${rate}${label}`;
+    };
+    const alternativesRu = droppedVatCharges.map(formatRu).join('; ');
+    // При vatRate<=0 фраза «Если товар подпадает под льготу» абсурдна: ниже 0% льгот
+    // не бывает. Делаем нейтральную формулировку.
+    const isNoVat = appliedVatRate <= 0;
+    const ruTail = isNoVat
+      ? `НДС не применяется (TKS NDS = 0). Альтернативные ставки выше — это, ` +
+        `скорее всего, галлюцинация AI; проверьте код в справочнике.`
+      : `Применена базовая ставка ${appliedVatRate}%. Если товар подпадает под льготу ` +
+        `(например, медицинское изделие с регистрационным удостоверением, ` +
+        `детский товар, школьная принадлежность), проверьте условия и пересчитайте.`;
+    const enTail = isNoVat
+      ? `VAT does not apply (TKS NDS = 0). The alternative rates above are likely ` +
+        `an AI hallucination; verify the code in the reference.`
+      : `The base rate ${appliedVatRate}% was applied. If the product qualifies for a ` +
+        `reduced rate (e.g. a registered medical device, children's goods, school supplies), ` +
+        `check the conditions and recalculate.`;
+    const zhTail = isNoVat
+      ? `不适用增值税 (TKS NDS = 0)。上述替代税率很可能是 AI 误判，请核对参考目录中的编码。`
+      : `已应用基本税率 ${appliedVatRate}%。如果商品符合减免条件` +
+        `（例如已注册的医疗器械、儿童用品、学习用品），请核对条件后重新计算。`;
+    const note: ProductNote = {
+      stage: 'calculate',
+      severity: 'info',
+      field: 'vat',
+      message:
+        `AI вернул альтернативные ставки НДС: ${alternativesRu}. ${ruTail}`,
+    };
+    if (language === 'en') {
+      note.messageLocalized =
+        `AI returned alternative VAT rates: ${rateOnly}. ${enTail}`;
+    } else if (language === 'zh') {
+      note.messageLocalized =
+        `AI 返回了替代增值税税率: ${rateOnly}。${zhTail}`;
+    }
+    return note;
   }
 
   private resolveBase(base: BaseType, totalPrice: number, duty: number, excise: number): number {

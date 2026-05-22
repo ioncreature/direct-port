@@ -277,6 +277,35 @@ describe('DutyInterpreterService', () => {
   });
 
   describe('интерпретация через Claude', () => {
+    it('SYSTEM_PROMPT содержит правило 8a про РОВНО ОДИН vat-charge', async () => {
+      // Защита от случайного удаления правила, без которого AI снова начнёт
+      // плодить vat-charges для льготных ставок НДС (см. PurgeMultiVatInterpretations
+      // и calculator.service.ts:collapseVatCharges).
+      const { service, messagesCreate } = createService({
+        items: [makeInterpretation('1234567890')],
+      });
+      const product = makeNonTrivialProduct({ tnVedCode: '1234567890' });
+
+      await service.interpret([product]);
+
+      expect(messagesCreate).toHaveBeenCalledTimes(1);
+      const systemArg = messagesCreate.mock.calls[0][0].system;
+      // Фильтруем по type — на случай, если в будущем system начнёт включать
+      // блоки другого типа (cache_control wrapper и т. п.), чтобы тест давал
+      // чистую ошибку «нет text-блоков», а не silent 'undefined'-join.
+      const systemText = Array.isArray(systemArg)
+        ? systemArg
+            .filter((b: { type?: string }) => b?.type === 'text')
+            .map((b: { text: string }) => b.text)
+            .join('\n')
+        : String(systemArg);
+      expect(systemText).toMatch(/8a/);
+      expect(systemText).toMatch(/РОВНО ОДИН/);
+      expect(systemText).toMatch(/vat/);
+      // Промпт должен явно упоминать TNVEDALL\[3\] и запрет на отдельные charges.
+      expect(systemText).toMatch(/conditions\['3'\]|TNVEDALL\[3\]/);
+    });
+
     it('передаёт результат Claude в dutyInterpretation продукта', async () => {
       const interp = makeInterpretation('1234567890', {
         charges: [

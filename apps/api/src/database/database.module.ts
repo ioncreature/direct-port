@@ -48,6 +48,7 @@ import { NormalizeModelFamilies1778000000000 } from './migrations/1778000000000-
 import { AddModelFamilyFunction1778100000000 } from './migrations/1778100000000-AddModelFamilyFunction';
 import { AddRegulatoryInterpreterModel1778200000000 } from './migrations/1778200000000-AddRegulatoryInterpreterModel';
 import { AddRegulatoryInterpretationCache1778300000000 } from './migrations/1778300000000-AddRegulatoryInterpretationCache';
+import { PurgeMultiVatInterpretations1778400000000 } from './migrations/1778400000000-PurgeMultiVatInterpretations';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -108,6 +109,7 @@ import { SeedService } from './seeds/seed.service';
           AddModelFamilyFunction1778100000000,
           AddRegulatoryInterpreterModel1778200000000,
           AddRegulatoryInterpretationCache1778300000000,
+          PurgeMultiVatInterpretations1778400000000,
         ],
         migrationsRun: true,
       }),
