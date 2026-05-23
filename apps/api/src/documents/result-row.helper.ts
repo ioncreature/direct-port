@@ -41,6 +41,7 @@ export function buildResultRow(opts: {
     suggestedCode: item.suggestedCode,
     dutyInterpretation,
     totalPrice: item.totalPrice,
+    freightShare: item.freightShare,
     dutyAmount: item.dutyAmount,
     dutyAmountIsEstimate: item.dutyAmountIsEstimate,
     dutyFormula: item.dutyFormula,
@@ -64,6 +65,7 @@ export function buildResultRow(opts: {
   return {
     ...base,
     totalPriceRub: toRub(item.totalPrice),
+    freightShareRub: toRub(item.freightShare),
     dutyAmountRub: toRub(item.dutyAmount),
     vatAmountRub: toRub(item.vatAmount),
     exciseAmountRub: toRub(item.exciseAmount),

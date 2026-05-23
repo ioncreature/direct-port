@@ -252,6 +252,8 @@ export interface DocumentResultRow {
   vatRate: number;
   exciseRate: number;
   totalPrice: number;
+  freightShare?: number;
+  freightShareRub?: number;
   dutyAmount: number;
   vatAmount: number;
   exciseAmount: number;
@@ -306,6 +308,10 @@ export interface Document {
   countryOfOrigin: string | null;
   countryOriginSource: CountryOriginSource | null;
   countryDetectionReason: string | null;
+  /** Стоимость доставки до границы (общая для документа). Распределяется на позиции пропорционально весу нетто. */
+  freightCost: number | null;
+  /** Валюта freightCost. */
+  freightCurrency: 'USD' | 'CNY' | 'RUB' | 'EUR' | null;
   createdAt: string;
   updatedAt: string;
 }

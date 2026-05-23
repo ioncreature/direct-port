@@ -8,7 +8,11 @@ import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 import { normalizeOksmtCode } from '../common/oksmt';
 import { CountriesService } from '../countries/countries.service';
 import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
-import { Document, DocumentStatus } from '../database/entities/document.entity';
+import {
+  Document,
+  DocumentStatus,
+  type FreightCurrency,
+} from '../database/entities/document.entity';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
 import { PipelineAuditService } from '../pipeline-audit/pipeline-audit.service';
 import type { RegulatoryExplanation, RegulatoryItem, RegulatoryReport } from '../regulatory/interfaces';
@@ -84,6 +88,7 @@ export class DocumentsService {
     buffer: Buffer,
     fileName: string,
     source: { telegramUserId: string } | { uploadedByUserId: string },
+    options: { freightCost?: number; freightCurrency?: FreightCurrency } = {},
   ): Promise<Document> {
     let language: string | null = null;
     if ('telegramUserId' in source) {
@@ -94,6 +99,8 @@ export class DocumentsService {
       language = tgUser?.language ?? null;
     }
 
+    const freight = this.normalizeFreightInput(options);
+
     const doc = this.repo.create({
       ...('telegramUserId' in source
         ? { telegramUserId: source.telegramUserId }
@@ -101,6 +108,8 @@ export class DocumentsService {
       originalFileName: fileName,
       fileBuffer: buffer,
       language,
+      freightCost: freight.freightCost,
+      freightCurrency: freight.freightCurrency,
       status: DocumentStatus.PARSING,
     });
 
@@ -146,8 +155,17 @@ export class DocumentsService {
    * классификация+интерпретация не запускаются. Источник страны = 'manual', потому что
    * операция инициирована человеком.
    */
-  async recalculate(id: string, dto: { countryOfOrigin?: string }): Promise<Document> {
-    this.logger.log(`Recalculating document ${id} with country=${dto.countryOfOrigin ?? '(unchanged)'}`);
+  async recalculate(
+    id: string,
+    dto: {
+      countryOfOrigin?: string;
+      freightCost?: number;
+      freightCurrency?: FreightCurrency;
+    },
+  ): Promise<Document> {
+    this.logger.log(
+      `Recalculating document ${id} with country=${dto.countryOfOrigin ?? '(unchanged)'}, freight=${dto.freightCost ?? '(unchanged)'} ${dto.freightCurrency ?? ''}`,
+    );
     const doc = await this.findOne(id);
 
     if (!doc.resultData || doc.resultData.length === 0) {
@@ -174,11 +192,44 @@ export class DocumentsService {
       doc.countryDetectionReason = null;
     }
 
+    if (dto.freightCost !== undefined || dto.freightCurrency !== undefined) {
+      const freight = this.normalizeFreightInput({
+        freightCost: dto.freightCost ?? doc.freightCost ?? undefined,
+        freightCurrency: dto.freightCurrency ?? doc.freightCurrency ?? undefined,
+      });
+      doc.freightCost = freight.freightCost;
+      doc.freightCurrency = freight.freightCurrency;
+    }
+
     doc.status = DocumentStatus.PENDING;
     doc.errorMessage = null;
     const saved = await this.repo.save(doc);
     await this.processingQueue.add('recalculate-document', { documentId: saved.id });
     return saved;
+  }
+
+  /**
+   * Приводит пару (freightCost, freightCurrency) к консистентной форме:
+   * - cost > 0 без валюты → 400 (валюта обязательна — иначе не сможем сконвертировать);
+   * - cost ≤ 0 / undefined → оба null, какой бы ни была валюта (нет фрахта; пред-заполненная
+   *   валюта от старого значения документа в recalculate просто игнорируется, чтобы «сброс»
+   *   через freightCost=0 не падал из-за прилипшей валюты).
+   */
+  private normalizeFreightInput(options: {
+    freightCost?: number | null;
+    freightCurrency?: FreightCurrency | null;
+  }): { freightCost: number | null; freightCurrency: FreightCurrency | null } {
+    const cost = options.freightCost;
+    const currency = options.freightCurrency;
+    const hasCost = cost !== undefined && cost !== null && cost > 0;
+    if (!hasCost) return { freightCost: null, freightCurrency: null };
+    if (currency == null) {
+      throw new BadRequestException({
+        code: ErrorCode.INVALID_FREIGHT,
+        message: 'freightCost is set but freightCurrency is missing',
+      });
+    }
+    return { freightCost: cost!, freightCurrency: currency };
   }
 
   async reprocess(id: string): Promise<Document> {

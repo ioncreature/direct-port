@@ -20,12 +20,14 @@ interface ResultRow {
   vatRate: number;
   exciseRate: number;
   totalPrice: number;
+  freightShare?: number;
   dutyAmount: number;
   vatAmount: number;
   exciseAmount: number;
   logisticsCommission: number;
   totalCost: number;
   totalPriceRub?: number;
+  freightShareRub?: number;
   dutyAmountRub?: number;
   vatAmountRub?: number;
   exciseAmountRub?: number;
@@ -86,6 +88,7 @@ function buildColumns(
   currency: string,
   hasRub: boolean,
   hasVolume: boolean,
+  hasFreight: boolean,
   language?: string | null,
 ): ColumnDef[] {
   const columns: ColumnDef[] = [
@@ -101,6 +104,9 @@ function buildColumns(
     { header: 'Ставка пошлины', key: 'dutyRateDisplay', width: 20 },
     { header: 'Ставка НДС (%)', key: 'vatRate', width: 16, numFmt: '0.00' },
     { header: `Сумма (${currency})`, key: 'totalPrice', width: 16, numFmt: '#,##0.00' },
+    ...(hasFreight
+      ? [{ header: `Фрахт до границы (${currency})`, key: 'freightShare', width: 18, numFmt: '#,##0.00' } as ColumnDef]
+      : []),
     { header: `Пошлина (${currency})`, key: 'dutyAmount', width: 16, numFmt: '#,##0.00' },
     { header: `НДС (${currency})`, key: 'vatAmount', width: 14, numFmt: '#,##0.00' },
     { header: `Акциз (${currency})`, key: 'exciseAmount', width: 14, numFmt: '#,##0.00' },
@@ -111,6 +117,9 @@ function buildColumns(
   if (hasRub) {
     columns.push(
       { header: 'Сумма (RUB)', key: 'totalPriceRub', width: 16, numFmt: '#,##0.00' },
+      ...(hasFreight
+        ? [{ header: 'Фрахт до границы (RUB)', key: 'freightShareRub', width: 18, numFmt: '#,##0.00' } as ColumnDef]
+        : []),
       { header: 'Пошлина (RUB)', key: 'dutyAmountRub', width: 16, numFmt: '#,##0.00' },
       { header: 'НДС (RUB)', key: 'vatAmountRub', width: 14, numFmt: '#,##0.00' },
       { header: 'Акциз (RUB)', key: 'exciseAmountRub', width: 14, numFmt: '#,##0.00' },
@@ -209,8 +218,14 @@ export class ExcelExportService {
     const hasRub = currency !== 'RUB' && data.length > 0 && 'totalCostRub' in data[0];
     const volumesPerUnit = data.map(rowVolumePerUnit);
     const hasVolume = volumesPerUnit.some((v) => v != null);
+    // Колонку фрахта добавляем только если хотя бы у одной строки он >0 —
+    // иначе она будет пустой и зашумит выгрузку для legacy-документов.
+    const hasFreight = data.some((r) => {
+      const v = toNumber(r.freightShare);
+      return v != null && v > 0;
+    });
     const language = doc.language || null;
-    const COLUMNS = buildColumns(currency, hasRub, hasVolume, language);
+    const COLUMNS = buildColumns(currency, hasRub, hasVolume, hasFreight, language);
     const hasLocalizedNotes = language != null && language !== 'ru';
 
     sheet.columns = COLUMNS.map((col) => ({
@@ -261,6 +276,7 @@ export class ExcelExportService {
         dutyRateDisplay: row.dutyRateDisplay ?? (row.dutyRate ? `${row.dutyRate}%` : '—'),
         vatRate: toNumber(row.vatRate),
         totalPrice: toNumber(row.totalPrice),
+        ...(hasFreight ? { freightShare: toNumber(row.freightShare) } : {}),
         dutyAmount: toNumber(row.dutyAmount),
         vatAmount: toNumber(row.vatAmount),
         exciseAmount: toNumber(row.exciseAmount),
@@ -277,6 +293,7 @@ export class ExcelExportService {
 
       if (hasRub) {
         rowData.totalPriceRub = toNumber(row.totalPriceRub);
+        if (hasFreight) rowData.freightShareRub = toNumber(row.freightShareRub);
         rowData.dutyAmountRub = toNumber(row.dutyAmountRub);
         rowData.vatAmountRub = toNumber(row.vatAmountRub);
         rowData.exciseAmountRub = toNumber(row.exciseAmountRub);

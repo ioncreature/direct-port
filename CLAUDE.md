@@ -54,7 +54,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
   - Tks — shared-инфраструктура: TksApiClient + PgTksCacheStore (PostgreSQL-кэш TKS API)
 - Common: PaginationQueryDto, PaginatedResponse, ErrorCode (коды ошибок для i18n), ProductNote (messageLocalized), note-translations, token-usage (утилиты для TokenUsageByStage) — shared инфраструктура
 - Очереди BullMQ: document-parsing (AI-парсинг), document-processing (классификация/расчёт), document-notifications (уведомления в Telegram)
-- Entities: User, RefreshToken, TnVedCode, TelegramUser (+ language), Document (+ language, countryOfOrigin, tokenUsage), CalculationConfig, CalculationLog, TksCache, AiConfig, AiUsageLog
+- Entities: User, RefreshToken, TnVedCode, TelegramUser (+ language), Document (+ language, countryOfOrigin, tokenUsage, freightCost+freightCurrency), CalculationConfig, CalculationLog, TksCache, AiConfig, AiUsageLog
 - Миграции и seed через TypeORM CLI (tsx)
 - AI-учёт токенов: `Document.tokenUsage` (JSONB per-stage per-model) + таблица `ai_usage_log` (для translate вне pipeline). Агрегируется через endpoints `/documents/token-stats*`. См. `docs/AI_USAGE_TRACKING.md`
 
@@ -119,7 +119,7 @@ BullMQ очереди: `document-parsing` → `document-processing` → `documen
 
 Переобработка: `POST /documents/:id/reprocess` — если есть parsedData → document-processing, если нет (но есть fileBuffer) → document-parsing.
 
-Пересчёт: `POST /documents/:id/recalculate` — повторно прогнать классификатор/калькулятор с новыми параметрами (например, явно указать страну происхождения), не парся файл заново.
+Пересчёт: `POST /documents/:id/recalculate` — повторно прогнать классификатор/калькулятор с новыми параметрами (страна происхождения, стоимость фрахта), не парся файл заново. Body: `countryOfOrigin?`, `freightCost?`, `freightCurrency?` (USD/CNY/RUB/EUR). Если поле не передано — берётся сохранённое значение из документа.
 
 ### Статусы документа (`DocumentStatus`)
 
@@ -141,7 +141,7 @@ BullMQ очереди: `document-parsing` → `document-processing` → `documen
 |---|---|---|---|
 | POST | `/` | — | Создать документ из готового parsedData (служебный) |
 | POST | `/upload` | X-Internal-Key | Загрузка из Telegram-бота |
-| POST | `/upload-admin` | ADMIN, CUSTOMS | Загрузка из админки |
+| POST | `/upload-admin` | ADMIN, CUSTOMS | Загрузка из админки (multipart: file + опц. `freightCost` + `freightCurrency`) |
 | GET | `/` | ADMIN, CUSTOMS | Список с пагинацией/фильтром/сортировкой |
 | GET | `/status-counts` | ADMIN, CUSTOMS | Счётчики по статусам (для бейджей в UI) |
 | GET | `/token-stats` | ADMIN | Сводка AI-токенов (today/week/month/total + by user + recent) |
@@ -207,17 +207,25 @@ interface ProductRow {
 
 ### Формула расчёта
 
+Если у документа задан фрахт до границы (`Document.freightCost` + `freightCurrency`), он конвертируется в валюту документа по курсу ЦБ РФ и распределяется по позициям пропорционально весу нетто (weight × quantity). Доля попадает в **таможенную стоимость** и через неё — в базу пошлины, акциза и НДС (ТК ЕАЭС).
+
 ```
 totalPrice     = price × quantity
-dutyAmount     = totalPrice × (dutyRate / 100)
+freightShare   = freightInDocCurrency × (weight × quantity) / Σ(weight × quantity)   // 0 для legacy-документов без фрахта
+customsValue   = totalPrice + freightShare
+dutyAmount     = customsValue × (dutyRate / 100)
                  // для комбинированных ставок (dutySign='>'): max(dutyAmount, dutyMin × weight × quantity)
-exciseAmount   = totalPrice × (exciseRate / 100)
-vatAmount      = (totalPrice + dutyAmount + exciseAmount) × (vatRate / 100)
+exciseAmount   = customsValue × (exciseRate / 100)
+vatAmount      = (customsValue + dutyAmount + exciseAmount) × (vatRate / 100)
 logisticsComm  = totalPrice × (pricePercent / 100) + weight × quantity × weightRate + fixedFee
-totalCost      = totalPrice + dutyAmount + vatAmount + exciseAmount + logisticsCommission
+totalCost      = totalPrice + freightShare + dutyAmount + vatAmount + exciseAmount + logisticsCommission
 ```
 
 verificationStatus = matched AND matchConfidence >= 0.7 ? 'exact' : 'review'
+
+**Где задаётся фрахт:** форма загрузки в админке `/documents/upload` (поля «Стоимость фрахта» + валюта USD/CNY/RUB/EUR, по умолчанию USD) и модалка `Пересчитать` на странице деталей документа. Telegram-бот фрахт не запрашивает — для документов из бота `freightShare = 0` и формула эквивалентна legacy. Чтобы сбросить ранее заданный фрахт через recalculate, передайте `freightCost = 0`.
+
+**Распределение в processor.ts:** общий объём `freightInDocCurrency = freightCost × курсCБ(freightCurrency → documentCurrency)`. Если курс недоступен или общий вес нетто = 0 — фрахт игнорируется с warning-логом, расчёт идёт без него (документ не падает).
 
 ## Команды
 

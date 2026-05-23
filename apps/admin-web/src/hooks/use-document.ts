@@ -56,9 +56,17 @@ export function useDocument(id: string) {
   }, [id, fetch]);
 
   const recalculate = useCallback(
-    async (countryOfOrigin?: string) => {
+    async (params: {
+      countryOfOrigin?: string;
+      freightCost?: number;
+      freightCurrency?: 'USD' | 'CNY' | 'RUB' | 'EUR';
+    } = {}) => {
       try {
-        await api.post(`/documents/${id}/recalculate`, countryOfOrigin ? { countryOfOrigin } : {});
+        const body: Record<string, unknown> = {};
+        if (params.countryOfOrigin) body.countryOfOrigin = params.countryOfOrigin;
+        if (params.freightCost !== undefined) body.freightCost = params.freightCost;
+        if (params.freightCurrency !== undefined) body.freightCurrency = params.freightCurrency;
+        await api.post(`/documents/${id}/recalculate`, body);
         await fetch();
       } catch {
         setError('Не удалось пересчитать документ');

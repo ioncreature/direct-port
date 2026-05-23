@@ -174,6 +174,7 @@ export class DocumentsProcessor extends WorkerHost {
         for (const p of interpreted) p.notes.push(defaultCountryWarningNote());
       }
 
+      const freightShares = this.computeFreightShares(doc, interpreted, currencyToDoc);
       currentStageRunId = await this.audit.startStageRun({
         documentId,
         stage: 'calculate',
@@ -185,6 +186,9 @@ export class DocumentsProcessor extends WorkerHost {
           confidenceThreshold,
           commission,
           currencyToDoc,
+          freight: doc.freightCost
+            ? { cost: doc.freightCost, currency: doc.freightCurrency }
+            : null,
         },
       });
       const t2 = Date.now();
@@ -193,6 +197,7 @@ export class DocumentsProcessor extends WorkerHost {
         confidenceThreshold,
         countryOfOrigin: doc.countryOfOrigin,
         language: doc.language,
+        freightShares,
       });
       this.logger.log(`Document ${documentId}: calculation done in ${Date.now() - t2}ms`);
 
@@ -311,6 +316,9 @@ export class DocumentsProcessor extends WorkerHost {
             totalVat: summary.totalVat,
             totalExcise: summary.totalExcise,
             totalLogistics: summary.totalLogistics,
+            totalFreight: summary.totalFreight,
+            freightCost: doc.freightCost,
+            freightCurrency: doc.freightCurrency,
             currency: currency,
           },
         })
@@ -414,11 +422,13 @@ export class DocumentsProcessor extends WorkerHost {
         for (const p of inputs) p.notes.push(defaultCountryWarningNote());
       }
 
+      const freightShares = this.computeFreightShares(doc, inputs, currencyToDoc);
       const summary = this.calculator.calculate(inputs, commission, {
         currencyToDoc,
         confidenceThreshold,
         countryOfOrigin: doc.countryOfOrigin,
         language: doc.language,
+        freightShares,
       });
 
       const needsConversion = currency !== 'RUB';
@@ -434,6 +444,7 @@ export class DocumentsProcessor extends WorkerHost {
           dutyRate: item.dutyRate,
           dutyRateDisplay: item.dutyRateDisplay,
           totalPrice: item.totalPrice,
+          freightShare: item.freightShare,
           dutyAmount: item.dutyAmount,
           dutyAmountIsEstimate: item.dutyAmountIsEstimate,
           dutyFormula: item.dutyFormula,
@@ -450,6 +461,7 @@ export class DocumentsProcessor extends WorkerHost {
         return {
           ...base,
           totalPriceRub: toRub(item.totalPrice),
+          freightShareRub: toRub(item.freightShare),
           dutyAmountRub: toRub(item.dutyAmount),
           vatAmountRub: toRub(item.vatAmount),
           exciseAmountRub: toRub(item.exciseAmount),
@@ -497,6 +509,9 @@ export class DocumentsProcessor extends WorkerHost {
             totalVat: summary.totalVat,
             totalExcise: summary.totalExcise,
             totalLogistics: summary.totalLogistics,
+            totalFreight: summary.totalFreight,
+            freightCost: doc.freightCost,
+            freightCurrency: doc.freightCurrency,
             currency,
           },
         })
@@ -539,6 +554,44 @@ export class DocumentsProcessor extends WorkerHost {
         }
       }),
     );
+  }
+
+  /**
+   * Конвертирует Document.freightCost в валюту документа и распределяет его
+   * по строкам пропорционально весу нетто (weight × quantity).
+   *
+   * Возвращает undefined, если у документа нет фрахта (legacy) — в этом случае
+   * calculator подставит нули и работает как раньше.
+   *
+   * Возвращает массив нулей с warning-логом, если суммарный вес = 0 (распределить
+   * пропорционально нечему) или курс валюты фрахта неизвестен. В этих случаях фрахт
+   * не учитывается в расчёте, но мы не падаем: пользователь увидит расхождение в
+   * выгрузке и сможет поправить вес или валюту.
+   */
+  private computeFreightShares(
+    doc: Document,
+    products: Array<{ weight: number; quantity: number }>,
+    currencyToDoc: Record<string, number>,
+  ): number[] | undefined {
+    if (!doc.freightCost || doc.freightCost <= 0 || !doc.freightCurrency) {
+      return undefined;
+    }
+    const rate = currencyToDoc[doc.freightCurrency];
+    if (!rate || !Number.isFinite(rate) || rate <= 0) {
+      this.logger.warn(
+        `Document ${doc.id}: freight ${doc.freightCost} ${doc.freightCurrency} ignored — no rate to document currency ${doc.currency ?? '?'}`,
+      );
+      return new Array(products.length).fill(0);
+    }
+    const freightInDocCurrency = doc.freightCost * rate;
+    const totalNetWeight = products.reduce((s, p) => s + p.weight * p.quantity, 0);
+    if (totalNetWeight <= 0) {
+      this.logger.warn(
+        `Document ${doc.id}: freight ${doc.freightCost} ${doc.freightCurrency} not distributed — total net weight is 0`,
+      );
+      return new Array(products.length).fill(0);
+    }
+    return products.map((p) => (freightInDocCurrency * p.weight * p.quantity) / totalNetWeight);
   }
 
   private buildBreakdownNote(

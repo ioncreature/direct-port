@@ -41,6 +41,7 @@ interface ResultTotals {
   totalVat: number;
   totalExcise: number;
   totalLogistics: number;
+  totalFreight: number;
 }
 
 // Формат rawContext — `ключ=значение; ключ=значение`, его задаёт SYSTEM_PROMPT классификатора.
@@ -139,11 +140,14 @@ export class ManualCodeService {
     const interpretResult = await this.dutyInterpreter.interpret([classified], language);
     const interpreted = interpretResult.products[0];
 
+    const freightShares = this.computeRowFreightShare(doc, rows, rowIndex, currencyToDoc);
+
     const summary = this.calculator.calculate([interpreted], commission, {
       currencyToDoc,
       confidenceThreshold: config.confidenceThreshold,
       countryOfOrigin: doc.countryOfOrigin,
       language,
+      freightShares,
     });
     const calculated = summary.items[0];
 
@@ -207,7 +211,12 @@ export class ManualCodeService {
         fileName: saved.originalFileName,
         itemsCount: updatedRows.length,
         trigger: 'recalculate',
-        resultSummary: { ...this.sumResultTotals(updatedRows), currency },
+        resultSummary: {
+          ...this.sumResultTotals(updatedRows),
+          freightCost: saved.freightCost,
+          freightCurrency: saved.freightCurrency,
+          currency,
+        },
       })
       .catch((err) => this.logger.warn(`Failed to write calculation log for ${saved.id}`, err));
 
@@ -326,11 +335,14 @@ export class ManualCodeService {
     doc.tokenUsage = addStageUsage(doc.tokenUsage, 'interpreter', interpretResult.tokenUsage);
     const interpreted = interpretResult.products[0];
 
+    const freightShares = this.computeRowFreightShare(doc, rows, rowIndex, currencyToDoc);
+
     const summary = this.calculator.calculate([interpreted], commission, {
       currencyToDoc,
       confidenceThreshold: config.confidenceThreshold,
       countryOfOrigin: doc.countryOfOrigin,
       language: language ?? undefined,
+      freightShares,
     });
     const calculated = summary.items[0];
     calculated.regulatoryReport = regulatoryReport;
@@ -384,7 +396,12 @@ export class ManualCodeService {
         fileName: saved.originalFileName,
         itemsCount: updatedRows.length,
         trigger: 'recalculate',
-        resultSummary: { ...this.sumResultTotals(updatedRows), currency },
+        resultSummary: {
+          ...this.sumResultTotals(updatedRows),
+          freightCost: saved.freightCost,
+          freightCurrency: saved.freightCurrency,
+          currency,
+        },
       })
       .catch((err) => this.logger.warn(`Failed to write calculation log for ${saved.id}`, err));
 
@@ -392,6 +409,45 @@ export class ManualCodeService {
       `Document ${saved.id} row ${rowIndex} clarified (note=${trimmedNote.length}ch, code=${classified.tnVedCode}, confidence=${classified.matchConfidence.toFixed(2)}, status=${saved.status})`,
     );
     return saved;
+  }
+
+  /**
+   * Считает долю фрахта только для строки rowIndex, но на основе ВСЕХ строк документа
+   * (общий вес знаменателя). Возвращает массив из одного элемента — формат, который
+   * принимает CalculatorService.calculate (он применяет шары параллельно products).
+   *
+   * Возвращает undefined, если у документа фрахта нет (legacy) — calculator подставит 0.
+   */
+  private computeRowFreightShare(
+    doc: Document,
+    rows: Record<string, unknown>[],
+    rowIndex: number,
+    currencyToDoc: Record<string, number>,
+  ): number[] | undefined {
+    if (!doc.freightCost || doc.freightCost <= 0 || !doc.freightCurrency) {
+      return undefined;
+    }
+    const rate = currencyToDoc[doc.freightCurrency];
+    if (!rate || !Number.isFinite(rate) || rate <= 0) {
+      this.logger.warn(
+        `Document ${doc.id}: freight ${doc.freightCost} ${doc.freightCurrency} ignored — no rate to document currency`,
+      );
+      return [0];
+    }
+    const freightInDocCurrency = doc.freightCost * rate;
+    const totalNetWeight = rows.reduce(
+      (s, r) => s + (Number(r.weight) || 0) * (Number(r.quantity) || 0),
+      0,
+    );
+    const row = rows[rowIndex];
+    const rowNet = (Number(row?.weight) || 0) * (Number(row?.quantity) || 0);
+    if (totalNetWeight <= 0 || rowNet <= 0) {
+      this.logger.warn(
+        `Document ${doc.id}: freight not distributed for row ${rowIndex} — zero net weight`,
+      );
+      return [0];
+    }
+    return [(freightInDocCurrency * rowNet) / totalNetWeight];
   }
 
   private sumResultTotals(rows: Record<string, unknown>[]): ResultTotals {
@@ -402,8 +458,9 @@ export class ManualCodeService {
         totalVat: acc.totalVat + (Number(r.vatAmount) || 0),
         totalExcise: acc.totalExcise + (Number(r.exciseAmount) || 0),
         totalLogistics: acc.totalLogistics + (Number(r.logisticsCommission) || 0),
+        totalFreight: acc.totalFreight + (Number(r.freightShare) || 0),
       }),
-      { grandTotal: 0, totalDuty: 0, totalVat: 0, totalExcise: 0, totalLogistics: 0 },
+      { grandTotal: 0, totalDuty: 0, totalVat: 0, totalExcise: 0, totalLogistics: 0, totalFreight: 0 },
     );
   }
 

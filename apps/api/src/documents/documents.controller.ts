@@ -32,6 +32,7 @@ import { RecalculateDocumentDto } from './dto/recalculate-document.dto';
 import { RejectDocumentDto } from './dto/reject-document.dto';
 import { ReviewDocumentDto } from './dto/review-document.dto';
 import { SetRowCodeDto } from './dto/set-row-code.dto';
+import { UploadAdminDto } from './dto/upload-admin.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { ExcelExportService } from './excel-export.service';
 import { ManualCodeService } from './manual-code.service';
@@ -87,6 +88,7 @@ export class DocumentsController {
   @UseInterceptors(FileInterceptor('file', SPREADSHEET_UPLOAD))
   async uploadAdmin(
     @UploadedFile() file: Express.Multer.File,
+    @Body() dto: UploadAdminDto,
     @CurrentUser() user: { id: string },
   ) {
     if (!file)
@@ -94,9 +96,12 @@ export class DocumentsController {
         code: ErrorCode.FILE_REQUIRED,
         message: 'File is required',
       });
-    return this.service.createFromFile(file.buffer, file.originalname, {
-      uploadedByUserId: user.id,
-    });
+    return this.service.createFromFile(
+      file.buffer,
+      file.originalname,
+      { uploadedByUserId: user.id },
+      { freightCost: dto.freightCost, freightCurrency: dto.freightCurrency },
+    );
   }
 
   @Get()

@@ -217,9 +217,12 @@ export default function DocumentDetailPage() {
   const [rejecting, setRejecting] = useState(false);
   const [recalculating, setRecalculating] = useState(false);
   const [countryDraft, setCountryDraft] = useState<string>('');
+  const [freightCostDraft, setFreightCostDraft] = useState<string>('');
+  const [freightCurrencyDraft, setFreightCurrencyDraft] = useState<'USD' | 'CNY' | 'RUB' | 'EUR'>('USD');
   // Polling каждые 3с обновляет doc — без отслеживания last-synced серверного значения
   // ввод оператора затирался бы при каждом опросе.
   const lastSyncedCountry = useRef<string | null | undefined>(undefined);
+  const lastSyncedFreight = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     const server = doc?.countryOfOrigin ?? null;
@@ -229,16 +232,46 @@ export default function DocumentDetailPage() {
     }
   }, [doc?.countryOfOrigin]);
 
+  useEffect(() => {
+    // Сравниваем по строковому ключу — иначе float-сравнение doc.freightCost
+    // и draft даёт ложные срабатывания.
+    const serverKey = `${doc?.freightCost ?? ''}|${doc?.freightCurrency ?? 'USD'}`;
+    if (lastSyncedFreight.current !== serverKey) {
+      setFreightCostDraft(doc?.freightCost != null ? String(doc.freightCost) : '');
+      setFreightCurrencyDraft((doc?.freightCurrency as 'USD' | 'CNY' | 'RUB' | 'EUR') ?? 'USD');
+      lastSyncedFreight.current = serverKey;
+    }
+  }, [doc?.freightCost, doc?.freightCurrency]);
+
   const handleRecalculate = useCallback(async () => {
     setRecalculating(true);
     try {
-      await recalculate(countryDraft || undefined);
+      const parsed = freightCostDraft.trim()
+        ? Number(freightCostDraft.replace(',', '.'))
+        : 0;
+      const params: {
+        countryOfOrigin?: string;
+        freightCost?: number;
+        freightCurrency?: 'USD' | 'CNY' | 'RUB' | 'EUR';
+      } = {};
+      if (countryDraft) params.countryOfOrigin = countryDraft;
+      // Отправляем freight только если поле редактировалось пользователем
+      // (отличается от сохранённого) — иначе сервер использует текущее значение.
+      const currentCost = doc?.freightCost ?? null;
+      const currentCurrency = doc?.freightCurrency ?? null;
+      const draftCost = parsed > 0 ? parsed : 0;
+      const draftCurrency = parsed > 0 ? freightCurrencyDraft : null;
+      if (draftCost !== (currentCost ?? 0) || draftCurrency !== currentCurrency) {
+        params.freightCost = draftCost;
+        if (draftCost > 0) params.freightCurrency = freightCurrencyDraft;
+      }
+      await recalculate(params);
     } catch {
       /* error выставлен в хуке */
     } finally {
       setRecalculating(false);
     }
-  }, [recalculate, countryDraft]);
+  }, [recalculate, countryDraft, freightCostDraft, freightCurrencyDraft, doc?.freightCost, doc?.freightCurrency]);
 
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const toggleRow = useCallback(
@@ -307,6 +340,7 @@ export default function DocumentDetailPage() {
       rows.reduce(
         (acc, r) => {
           acc.totalPrice += r.totalPrice;
+          acc.freightShare += r.freightShare ?? 0;
           acc.dutyAmount += r.dutyAmount;
           acc.vatAmount += r.vatAmount;
           acc.exciseAmount += r.exciseAmount;
@@ -316,6 +350,7 @@ export default function DocumentDetailPage() {
         },
         {
           totalPrice: 0,
+          freightShare: 0,
           dutyAmount: 0,
           vatAmount: 0,
           exciseAmount: 0,
@@ -568,6 +603,12 @@ export default function DocumentDetailPage() {
         />
         <InfoCard label="Строк" value={String(doc.rowCount)} />
         {doc.currency && <InfoCard label="Валюта" value={doc.currency} />}
+        {doc.freightCost != null && doc.freightCost > 0 && doc.freightCurrency && (
+          <InfoCard
+            label="Фрахт до границы"
+            value={`${fmt(doc.freightCost)} ${doc.freightCurrency}`}
+          />
+        )}
         <InfoCard label="Пользователь" value={getDocumentUploaderName(doc)} />
         <InfoCard label="Создан" value={fmtDateTimeLocale(doc.createdAt)} />
         <InfoCard label="Обновлён" value={fmtDateTimeLocale(doc.updatedAt)} />
@@ -805,15 +846,24 @@ export default function DocumentDetailPage() {
         </>
       )}
 
-      {/* Country of origin selector */}
+      {/* Country of origin + freight selector */}
       {rows.length > 0 && (() => {
-        const recalculateDisabled = recalculating || countryDraft === (doc.countryOfOrigin ?? '');
+        const countryChanged = countryDraft !== (doc.countryOfOrigin ?? '');
+        const parsedFreight = freightCostDraft.trim()
+          ? Number(freightCostDraft.replace(',', '.'))
+          : 0;
+        const currentCost = doc.freightCost ?? 0;
+        const currentCurrency = doc.freightCurrency ?? null;
+        const freightChanged =
+          parsedFreight !== currentCost ||
+          (parsedFreight > 0 && freightCurrencyDraft !== currentCurrency);
+        const recalculateDisabled = recalculating || (!countryChanged && !freightChanged);
         return (
           <div
             style={{
               display: 'flex',
               gap: 12,
-              alignItems: 'center',
+              alignItems: 'flex-end',
               flexWrap: 'wrap',
               padding: 12,
               marginBottom: 16,
@@ -843,6 +893,48 @@ export default function DocumentDetailPage() {
                   </option>
                 ))}
               </select>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Фрахт до границы</div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  min="0"
+                  placeholder="0"
+                  value={freightCostDraft}
+                  onChange={(e) => setFreightCostDraft(e.target.value)}
+                  style={{
+                    padding: '6px 10px',
+                    fontSize: 14,
+                    borderRadius: 4,
+                    border: '1px solid #ddd',
+                    background: '#fff',
+                    width: 140,
+                  }}
+                />
+                <select
+                  aria-label="Валюта фрахта"
+                  value={freightCurrencyDraft}
+                  onChange={(e) =>
+                    setFreightCurrencyDraft(e.target.value as 'USD' | 'CNY' | 'RUB' | 'EUR')
+                  }
+                  style={{
+                    padding: '6px 10px',
+                    fontSize: 14,
+                    borderRadius: 4,
+                    border: '1px solid #ddd',
+                    background: '#fff',
+                  }}
+                >
+                  {(['USD', 'CNY', 'RUB', 'EUR'] as const).map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div style={{ flex: 1, minWidth: 200, fontSize: 12, color: '#6b7280' }}>
               {doc.countryOriginSource && (
@@ -1127,6 +1219,9 @@ function ResultDetail({
               Расчёт
             </div>
             <CalcLine label="Сумма товара" value={fmtMoney(row.totalPrice)} />
+            {row.freightShare != null && row.freightShare > 0 && (
+              <CalcLine label="Фрахт до границы" value={fmtMoney(row.freightShare)} />
+            )}
             <CalcLine
               label="Пошлина"
               value={fmtMoney(row.dutyAmount)}

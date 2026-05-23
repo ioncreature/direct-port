@@ -1,20 +1,28 @@
 'use client';
 
-import { useUploadDocument } from '@/hooks/use-upload-document';
+import { useUploadDocument, type FreightCurrency } from '@/hooks/use-upload-document';
 import { fmtFileSize } from '@/lib/format';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
+
+const FREIGHT_CURRENCIES: FreightCurrency[] = ['USD', 'CNY', 'RUB', 'EUR'];
 
 export default function UploadDocumentPage() {
   const router = useRouter();
   const { upload, uploading, error, progress } = useUploadDocument();
   const [file, setFile] = useState<File | null>(null);
+  const [freightCost, setFreightCost] = useState('');
+  const [freightCurrency, setFreightCurrency] = useState<FreightCurrency>('USD');
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!file) return;
+    const cost = freightCost.trim() ? Number(freightCost.replace(',', '.')) : 0;
     try {
-      const doc = await upload(file);
+      const doc = await upload(file, {
+        freightCost: cost > 0 ? cost : undefined,
+        freightCurrency: cost > 0 ? freightCurrency : undefined,
+      });
       router.push(`/documents/${doc.id}`);
     } catch {
       /* noop */
@@ -44,6 +52,40 @@ export default function UploadDocumentPage() {
             {file.size > 40 * 1024 * 1024 && ' — превышает лимит 40 МБ'}
           </p>
         )}
+        <div style={{ marginBottom: 16 }}>
+          <label htmlFor="freightCost" style={{ display: 'block', marginBottom: 4 }}>
+            Стоимость доставки до границы (фрахт)
+          </label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              id="freightCost"
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              min="0"
+              placeholder="0"
+              value={freightCost}
+              onChange={(e) => setFreightCost(e.target.value)}
+              style={{ flex: 1, padding: 8, boxSizing: 'border-box' }}
+            />
+            <select
+              aria-label="Валюта фрахта"
+              value={freightCurrency}
+              onChange={(e) => setFreightCurrency(e.target.value as FreightCurrency)}
+              style={{ padding: 8 }}
+            >
+              {FREIGHT_CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p style={{ fontSize: 12, color: '#666', marginTop: 4, marginBottom: 0 }}>
+            Распределится по позициям пропорционально весу нетто и войдёт в таможенную
+            стоимость для пошлины и НДС. Оставьте пустым, если фрахт неизвестен.
+          </p>
+        </div>
         {error && <p style={{ color: 'red', marginBottom: 16 }}>{error}</p>}
         {uploading && progress && (
           <div style={{ marginBottom: 16 }}>

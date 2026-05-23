@@ -8,12 +8,19 @@ const MAX_FILE_SIZE = 40 * 1024 * 1024; // 40 МБ — совпадает с л�
 
 export type UploadProgress = { loaded: number; total: number };
 
+export type FreightCurrency = 'USD' | 'CNY' | 'RUB' | 'EUR';
+
+export interface UploadOptions {
+  freightCost?: number;
+  freightCurrency?: FreightCurrency;
+}
+
 export function useUploadDocument() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
 
-  const upload = useCallback(async (file: File): Promise<Document> => {
+  const upload = useCallback(async (file: File, options: UploadOptions = {}): Promise<Document> => {
     setUploading(true);
     setError(null);
     setProgress({ loaded: 0, total: file.size });
@@ -28,6 +35,10 @@ export function useUploadDocument() {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      if (options.freightCost != null && options.freightCost > 0 && options.freightCurrency) {
+        formData.append('freightCost', String(options.freightCost));
+        formData.append('freightCurrency', options.freightCurrency);
+      }
       const { data } = await api.post<Document>('/documents/upload-admin', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 120_000,

@@ -1130,6 +1130,77 @@ describe('CalculatorService', () => {
     });
   });
 
+  describe('Freight (фрахт до границы)', () => {
+    it('legacy: без freightShares freightShare=0 на каждой позиции и totalFreight=0', () => {
+      const product = makeProduct({ price: 1000, quantity: 1, weight: 1, vatRate: 22 });
+      const result = service.calculate([product], ZERO_COMMISSION);
+      expect(result.items[0].freightShare).toBe(0);
+      expect(result.totalFreight).toBe(0);
+      // legacy формула: duty = 1000 * 0.075 = 75; vat = (1000+75)*0.22 = 236.5
+      expect(result.items[0].dutyAmount).toBeCloseTo(75, 5);
+      expect(result.items[0].vatAmount).toBeCloseTo(236.5, 5);
+      expect(result.items[0].totalCost).toBeCloseTo(1000 + 75 + 236.5, 5);
+    });
+
+    it('freightShare включается в базу пошлины, НДС и в totalCost (ТК ЕАЭС)', () => {
+      const product = makeProduct({ price: 1000, quantity: 1, weight: 1, dutyRate: 10, vatRate: 22 });
+      const result = service.calculate([product], ZERO_COMMISSION, { freightShares: [100] });
+      const item = result.items[0];
+      // customs_value = 1000 + 100 = 1100; duty = 1100 * 0.10 = 110;
+      // vat = (1100 + 110) * 0.22 = 266.2; totalCost = 1000 + 100 + 110 + 266.2 = 1476.2
+      expect(item.freightShare).toBe(100);
+      expect(item.dutyAmount).toBeCloseTo(110, 5);
+      expect(item.vatAmount).toBeCloseTo(266.2, 5);
+      expect(item.totalCost).toBeCloseTo(1476.2, 5);
+      expect(result.totalFreight).toBe(100);
+    });
+
+    it('массив freightShares неверной длины игнорируется (все нули)', () => {
+      const products = [
+        makeProduct({ price: 1000, quantity: 1, dutyRate: 10, vatRate: 22 }),
+        makeProduct({ price: 500, quantity: 1, dutyRate: 10, vatRate: 22 }),
+      ];
+      // длина 1 вместо 2 → calculator подставит [0,0]
+      const result = service.calculate(products, ZERO_COMMISSION, { freightShares: [100] });
+      expect(result.items[0].freightShare).toBe(0);
+      expect(result.items[1].freightShare).toBe(0);
+      expect(result.totalFreight).toBe(0);
+    });
+
+    it('NaN/Infinity/отрицательные значения в freightShares заменяются на 0', () => {
+      const products = [
+        makeProduct({ price: 1000, dutyRate: 10, vatRate: 22 }),
+        makeProduct({ price: 1000, dutyRate: 10, vatRate: 22 }),
+        makeProduct({ price: 1000, dutyRate: 10, vatRate: 22 }),
+        makeProduct({ price: 1000, dutyRate: 10, vatRate: 22 }),
+      ];
+      const result = service.calculate(products, ZERO_COMMISSION, {
+        freightShares: [NaN, Infinity, -50, 100],
+      });
+      expect(result.items[0].freightShare).toBe(0);
+      expect(result.items[1].freightShare).toBe(0);
+      expect(result.items[2].freightShare).toBe(0);
+      expect(result.items[3].freightShare).toBe(100);
+      expect(result.totalFreight).toBe(100);
+    });
+
+    it('акциз тоже считается от (цена + фрахт)', () => {
+      const product = makeProduct({
+        price: 1000,
+        quantity: 1,
+        dutyRate: 10,
+        exciseRate: 5,
+        vatRate: 22,
+      });
+      const result = service.calculate([product], ZERO_COMMISSION, { freightShares: [200] });
+      const item = result.items[0];
+      // customs_value = 1200; duty = 120; excise = 60; vat = (1200+120+60)*0.22 = 303.6
+      expect(item.dutyAmount).toBeCloseTo(120, 5);
+      expect(item.exciseAmount).toBeCloseTo(60, 5);
+      expect(item.vatAmount).toBeCloseTo(303.6, 5);
+    });
+  });
+
   describe('eurToDoc по умолчанию', () => {
     it('eurToDoc=1 если не передан', () => {
       // specific: 0.5 EUR/кг, без eurToDoc → 0.5*1*20 = 10
