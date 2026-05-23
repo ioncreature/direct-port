@@ -28,6 +28,9 @@ export type CalculatorInput = ClassifiedProduct & {
 
 export interface CalculatedProduct extends ClassifiedProduct {
   totalPrice: number;
+  /** Доля общей стоимости фрахта до границы, приходящаяся на эту позицию (в валюте документа).
+   *  Распределяется пропорционально (weight × quantity). 0, если у документа фрахт не задан. */
+  freightShare: number;
   dutyAmount: number;
   /** true если dutyAmount — неполная оценка (например, применена только адвалорная часть комбинированной ставки) */
   dutyAmountIsEstimate: boolean;
@@ -56,6 +59,7 @@ export interface CalculationSummary {
   totalVat: number;
   totalExcise: number;
   totalLogistics: number;
+  totalFreight: number;
   grandTotal: number;
   /** true → хотя бы один товар рассчитан через fallback (оценочная пошлина или неточный статус). */
   usedFallback: boolean;
@@ -239,21 +243,39 @@ export class CalculatorService {
       /** Язык документа (ru/en/zh). Используется для локализации заметок,
        *  которые пойдут в Excel-колонку «Notes (translated)» для не-ru пользователей бота. */
       language?: string | null;
+      /** Уже распределённые по позициям доли общей стоимости фрахта в валюте документа.
+       *  Длина массива должна совпадать с products.length; иначе игнорируется и freightShare=0
+       *  на каждой позиции (поведение для legacy-документов без фрахта). */
+      freightShares?: number[];
     },
   ): CalculationSummary {
     const threshold = options?.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
     const currencyRates = this.buildCurrencyRates(options);
     const countryOfOrigin = options?.countryOfOrigin ?? null;
     const language = options?.language ?? undefined;
+    const freightShares = this.resolveFreightShares(products.length, options?.freightShares);
     this.logger.log(
-      `Calculating ${products.length} products, commission: ${JSON.stringify(commission)}, rates=${JSON.stringify(currencyRates)}, confidenceThreshold=${threshold}, country=${countryOfOrigin ?? '—'}`,
+      `Calculating ${products.length} products, commission: ${JSON.stringify(commission)}, rates=${JSON.stringify(currencyRates)}, confidenceThreshold=${threshold}, country=${countryOfOrigin ?? '—'}, freightTotal=${freightShares.reduce((s, v) => s + v, 0).toFixed(2)}`,
     );
-    const items = products.map((p) =>
-      this.calculateOne(p, commission, currencyRates, threshold, countryOfOrigin, language),
+    const items = products.map((p, i) =>
+      this.calculateOne(p, commission, currencyRates, threshold, countryOfOrigin, language, freightShares[i]),
     );
     const summary = this.summarize(items);
-    this.logger.log(`Calculation done: grandTotal=${summary.grandTotal.toFixed(2)}, duty=${summary.totalDuty.toFixed(2)}, vat=${summary.totalVat.toFixed(2)}`);
+    this.logger.log(`Calculation done: grandTotal=${summary.grandTotal.toFixed(2)}, duty=${summary.totalDuty.toFixed(2)}, vat=${summary.totalVat.toFixed(2)}, freight=${summary.totalFreight.toFixed(2)}`);
     return summary;
+  }
+
+  /**
+   * Распределение фрахта вызывающая сторона делает сама (processor.ts знает обо всех
+   * строках документа). Здесь — только защита от длины массива, отрицательных значений
+   * и NaN/Infinity. Если что-то не сходится — отдаём нули, чтобы расчёт не упал и
+   * совпал с legacy-поведением.
+   */
+  private resolveFreightShares(productsCount: number, raw?: number[]): number[] {
+    if (!raw || raw.length !== productsCount) {
+      return new Array(productsCount).fill(0);
+    }
+    return raw.map((v) => (Number.isFinite(v) && v > 0 ? v : 0));
   }
 
   /**
@@ -278,6 +300,7 @@ export class CalculatorService {
       totalVat: items.reduce((s, i) => s + i.vatAmount, 0),
       totalExcise: items.reduce((s, i) => s + i.exciseAmount, 0),
       totalLogistics: items.reduce((s, i) => s + i.logisticsCommission, 0),
+      totalFreight: items.reduce((s, i) => s + i.freightShare, 0),
       grandTotal: items.reduce((s, i) => s + i.totalCost, 0),
       usedFallback: items.some((i) => i.dutyAmountIsEstimate || i.calculationStatus !== 'exact'),
     };
@@ -290,9 +313,13 @@ export class CalculatorService {
     confidenceThreshold: number,
     countryOfOrigin: string | null,
     language?: string,
+    freightShare: number = 0,
   ): CalculatedProduct {
     const notes: ProductNote[] = [...p.notes];
     const totalPrice = p.price * p.quantity;
+    // Таможенная стоимость = цена товара + распределённая доля фрахта до границы (ТК ЕАЭС).
+    // Используется как база для пошлины/акциза, и через customs_value_plus_* — для НДС.
+    const customsValue = totalPrice + freightShare;
 
     // Источник правил: AI-интерпретация либо детерминистический fallback из полей TKS.
     // НДС всегда синхронизируется с rates.NDS (AI-интерпретация может быть неверной,
@@ -320,7 +347,7 @@ export class CalculatorService {
     let dutyAmountIsEstimate = false;
 
     for (const charge of charges) {
-      const baseValue = this.resolveBase(charge.base, totalPrice, dutyAmount, exciseAmount);
+      const baseValue = this.resolveBase(charge.base, customsValue, dutyAmount, exciseAmount);
       const result = this.resolveMethod(charge.method, baseValue, p, currencyRates);
 
       if (result.estimated && result.blockerMessage) {
@@ -374,7 +401,10 @@ export class CalculatorService {
       p.weight * p.quantity * commission.weightRate +
       commission.fixedFee;
 
-    const totalCost = totalPrice + dutyAmount + vatAmount + exciseAmount + logisticsCommission;
+    // Фрахт входит в стоимость товара для клиента: он уже потратил эти деньги на доставку
+    // до границы. Включаем в totalCost, чтобы итог отражал полные затраты.
+    const totalCost =
+      totalPrice + freightShare + dutyAmount + vatAmount + exciseAmount + logisticsCommission;
 
     const verificationStatus: 'exact' | 'review' =
       p.matched && p.matchConfidence >= confidenceThreshold ? 'exact' : 'review';
@@ -385,6 +415,7 @@ export class CalculatorService {
     return {
       ...p,
       totalPrice,
+      freightShare,
       dutyAmount,
       dutyAmountIsEstimate,
       dutyFormula,
@@ -677,14 +708,20 @@ export class CalculatorService {
     return note;
   }
 
-  private resolveBase(base: BaseType, totalPrice: number, duty: number, excise: number): number {
+  /**
+   * customsValue = price × qty + freightShare (доля фрахта до границы). Так определена
+   * таможенная стоимость в ТК ЕАЭС. Все остальные базы (customs_value_plus_duty,
+   * customs_value_plus_duty_plus_excise) строятся поверх неё, поэтому фрахт автоматически
+   * попадает в базу пошлины, акциза и НДС.
+   */
+  private resolveBase(base: BaseType, customsValue: number, duty: number, excise: number): number {
     switch (base) {
       case 'customs_value_plus_duty':
-        return totalPrice + duty;
+        return customsValue + duty;
       case 'customs_value_plus_duty_plus_excise':
-        return totalPrice + duty + excise;
+        return customsValue + duty + excise;
       case 'customs_value':
-        return totalPrice;
+        return customsValue;
     }
   }
 

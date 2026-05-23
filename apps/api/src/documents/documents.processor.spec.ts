@@ -71,6 +71,7 @@ function makeCalculated(overrides: Partial<CalculatedProduct> = {}): CalculatedP
   return {
     ...makeClassified(),
     totalPrice: 1000,
+    freightShare: 0,
     dutyAmount: 150,
     dutyAmountIsEstimate: false,
     dutyFormula: null,
@@ -94,6 +95,7 @@ function makeSummary(items: CalculatedProduct[]): CalculationSummary {
     totalVat: items.reduce((s, i) => s + i.vatAmount, 0),
     totalExcise: items.reduce((s, i) => s + i.exciseAmount, 0),
     totalLogistics: items.reduce((s, i) => s + i.logisticsCommission, 0),
+    totalFreight: items.reduce((s, i) => s + i.freightShare, 0),
     grandTotal: items.reduce((s, i) => s + i.totalCost, 0),
     usedFallback: items.some((i) => i.dutyAmountIsEstimate || i.calculationStatus !== 'exact'),
   };

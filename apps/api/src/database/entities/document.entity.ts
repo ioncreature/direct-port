@@ -51,6 +51,15 @@ export type CountryOriginSource =
 
 export const DEFAULT_COUNTRY_OF_ORIGIN = '156'; // Китай (OKSMT)
 
+/** Поддерживаемые валюты для freightCost. Допустимые символьные коды совпадают с ЦБ РФ. */
+export type FreightCurrency = 'USD' | 'CNY' | 'RUB' | 'EUR';
+export const FREIGHT_CURRENCIES: readonly FreightCurrency[] = ['USD', 'CNY', 'RUB', 'EUR'];
+
+const nullableDecimalTransformer = {
+  to: (value: number | null | undefined) => value ?? null,
+  from: (value: string | null) => (value === null ? null : parseFloat(value)),
+};
+
 @Entity('documents')
 export class Document {
   @PrimaryGeneratedColumn('uuid')
@@ -91,6 +100,22 @@ export class Document {
 
   @Column({ type: 'text', name: 'country_detection_reason', nullable: true })
   countryDetectionReason: string | null;
+
+  /** Общая стоимость доставки до границы (фрахт). Распределяется по позициям пропорционально
+   *  весу нетто (weight × qty) и включается в таможенную стоимость для расчёта пошлины/НДС. */
+  @Column({
+    type: 'decimal',
+    precision: 14,
+    scale: 4,
+    name: 'freight_cost',
+    nullable: true,
+    transformer: nullableDecimalTransformer,
+  })
+  freightCost: number | null;
+
+  /** Валюта freightCost (USD/CNY/RUB/EUR). Конвертируется в валюту документа по курсу ЦБ РФ. */
+  @Column({ type: 'varchar', length: 3, name: 'freight_currency', nullable: true })
+  freightCurrency: FreightCurrency | null;
 
   @Column({ type: 'jsonb', name: 'parsed_data', nullable: true })
   parsedData: Record<string, unknown>[] | null;
