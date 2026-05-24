@@ -1,20 +1,15 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
-import {
-  CLAUDE_TIMEOUT_PIPELINE_MS,
-  CLAUDE_TIMEOUT_STRUCTURE_MS,
-  cacheTools,
-  extractToolInput,
-  systemPrompt,
-} from '../common/claude';
+import { CLAUDE_TIMEOUT_STRUCTURE_MS, extractToolInput } from '../common/claude';
+import { callClaudeTool } from '../common/claude-tool-call';
 import { errMsg } from '../common/errors';
 import { normalizeOksmtCode } from '../common/oksmt';
 import {
   type RejectionReasonData,
   formatRejectionReason,
 } from '../common/rejection-reasons';
-import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, tokenUsageFromResponse } from '../common/token-usage';
+import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage } from '../common/token-usage';
 import type { Dimension } from '../duty-interpreter/interfaces';
 import type { AiCallPurpose } from '../database/entities/ai-call.entity';
 import { PipelineAuditService, type AuditContext } from '../pipeline-audit/pipeline-audit.service';
@@ -844,39 +839,25 @@ export class AiParserService {
   ): Promise<{ raw: unknown; tokenUsage: TokenUsageMap }> {
     const model = await this.aiConfig.getParserModel();
     const maxTokens = opts.maxTokens ?? 16384;
-    const auditContext = opts.audit?.context ?? null;
-    const purpose: AiCallPurpose = opts.audit?.purpose ?? 'parse_products';
-    const attempt = opts.audit?.attempt ?? 1;
     try {
-      const response = await this.audit.trackAiCall(
+      const { response, tokenUsage } = await callClaudeTool(
+        this.anthropic!,
+        this.audit,
         {
-          context: auditContext,
-          purpose,
           model,
-          attempt,
-          request: {
-            model,
-            max_tokens: maxTokens,
-            system: sysPrompt,
-            messages: [{ role: 'user', content: prompt }],
-            tools: [tool.name],
-            tool_choice: 'any',
-          },
+          systemPrompt: sysPrompt,
+          userMessage: prompt,
+          tool,
+          maxTokens,
+          useCache,
+          timeoutMs: opts.timeout,
         },
-        () =>
-          this.anthropic!.messages.create(
-            {
-              model,
-              max_tokens: maxTokens,
-              system: systemPrompt(sysPrompt),
-              messages: [{ role: 'user', content: prompt }],
-              tools: cacheTools([tool], useCache),
-              tool_choice: { type: 'any' },
-            },
-            { timeout: opts.timeout ?? CLAUDE_TIMEOUT_PIPELINE_MS },
-          ),
+        {
+          context: opts.audit?.context ?? null,
+          purpose: opts.audit?.purpose ?? 'parse_products',
+          attempt: opts.audit?.attempt ?? 1,
+        },
       );
-      const tokenUsage = tokenUsageFromResponse(model, response.usage);
       return { raw: extractToolInput(response), tokenUsage };
     } catch (err) {
       this.logger.error(`Anthropic API error: ${errMsg(err)}`, err);
@@ -1007,32 +988,20 @@ ${mappingInfo}
 Не включай в issues то, что распознано правильно.`;
 
     try {
-      const response = await this.audit.trackAiCall(
+      const { response, tokenUsage } = await callClaudeTool(
+        this.anthropic!,
+        this.audit,
+        {
+          model,
+          systemPrompt: VALIDATION_SYSTEM_PROMPT,
+          userMessage: prompt,
+          tool: VALIDATE_TOOL,
+          maxTokens: 8192,
+        },
         {
           context: auditContext,
           purpose: 'parse_validate',
-          model,
-          request: {
-            model,
-            max_tokens: 8192,
-            system: VALIDATION_SYSTEM_PROMPT,
-            messages: [{ role: 'user', content: prompt }],
-            tools: [VALIDATE_TOOL.name],
-            tool_choice: 'any',
-          },
         },
-        () =>
-          this.anthropic!.messages.create(
-            {
-              model,
-              max_tokens: 8192,
-              system: systemPrompt(VALIDATION_SYSTEM_PROMPT),
-              messages: [{ role: 'user', content: prompt }],
-              tools: [VALIDATE_TOOL],
-              tool_choice: { type: 'any' },
-            },
-            { timeout: CLAUDE_TIMEOUT_PIPELINE_MS },
-          ),
       );
 
       const parsed = extractToolInput<{ valid: boolean; issues: unknown[] }>(response);
@@ -1041,7 +1010,7 @@ ${mappingInfo}
       return {
         valid: parsed.valid === true || (rawIssues.length > 0 && issues.length === 0),
         issues,
-        tokenUsage: tokenUsageFromResponse(model, response.usage),
+        tokenUsage,
       };
     } catch (err) {
       this.logger.warn(`AI validation call failed, treating as unvalidated: ${errMsg(err)}`);
