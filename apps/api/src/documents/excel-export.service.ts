@@ -72,7 +72,7 @@ function toNumber(value: unknown): number | null {
   if (typeof value === 'string') {
     const trimmed = value.trim();
     if (!trimmed) return null;
-    const normalized = trimmed.replace(/ |\s/g, '').replace(',', '.');
+    const normalized = trimmed.replace(/\u00a0|\s/g, '').replace(',', '.');
     const n = Number(normalized);
     return Number.isFinite(n) ? n : null;
   }
