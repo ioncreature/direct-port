@@ -35,6 +35,7 @@ import {
   buildRateFields,
   type MissingDataCategory,
 } from './classification-assembler';
+import { TtlMap } from './classification-cache';
 
 /**
  * Вход классификатора. Содержит минимум для поиска в TKS + опциональные
@@ -417,8 +418,14 @@ const VISION_TOOL: Anthropic.Messages.Tool = {
 @Injectable()
 export class ClassifierService {
   private logger = new Logger(ClassifierService.name);
-  private classificationCache = new Map<string, { data: ClaudeSelection; expiresAt: number }>();
-  private visionCache = new Map<string, { data: VisionResult; expiresAt: number }>();
+  private classificationCache = new TtlMap<ClaudeSelection>(
+    CLASSIFICATION_CACHE_TTL,
+    CLASSIFICATION_CACHE_MAX,
+  );
+  private visionCache = new TtlMap<VisionResult>(
+    CLASSIFICATION_CACHE_TTL,
+    CLASSIFICATION_CACHE_MAX,
+  );
 
   constructor(
     private tksApi: TksApiClient,
@@ -488,9 +495,9 @@ export class ClassifierService {
     const now = Date.now();
     for (let i = 0; i < uniqueProducts.length; i++) {
       const cacheKey = this.buildProductKey(uniqueProducts[i], classifierModel);
-      const cached = this.classificationCache.get(cacheKey);
-      if (cached && cached.expiresAt > now) {
-        uniqueSelections[i] = cached.data;
+      const cached = this.classificationCache.get(cacheKey, now);
+      if (cached) {
+        uniqueSelections[i] = cached;
       } else {
         uncached.push({ idx: i, product: uniqueProducts[i], candidates: uniqueCandidates[i] });
       }
@@ -518,13 +525,9 @@ export class ClassifierService {
         uniqueSelections[uncached[i].idx] = sel;
         if (sel) {
           const cacheKey = this.buildProductKey(uncached[i].product, classifierModel);
-          this.classificationCache.set(cacheKey, {
-            data: sel,
-            expiresAt: now + CLASSIFICATION_CACHE_TTL,
-          });
+          this.classificationCache.set(cacheKey, sel, now);
         }
       }
-      this.evictExpiredCache();
     } else if (!this.anthropic) {
       this.logger.warn('ANTHROPIC_API_KEY not set, using TKS-only classification');
     }
@@ -602,10 +605,7 @@ export class ClassifierService {
           if (!newSel) continue;
           uniqueSelections[item.uniqueIdx] = newSel;
           const cacheKey = this.buildProductKey(item.product, classifierModel);
-          this.classificationCache.set(cacheKey, {
-            data: newSel,
-            expiresAt: now + CLASSIFICATION_CACHE_TTL,
-          });
+          this.classificationCache.set(cacheKey, newSel, now);
           if (newSel.tnVedCode && !tnvedByCode.has(newSel.tnVedCode)) {
             newCodesToLoad.add(newSel.tnVedCode);
           }
@@ -674,14 +674,6 @@ export class ClassifierService {
     ];
     if (model) parts.push(model);
     return parts.join('\x1F');
-  }
-
-  private evictExpiredCache(): void {
-    if (this.classificationCache.size <= CLASSIFICATION_CACHE_MAX) return;
-    const now = Date.now();
-    for (const [key, entry] of this.classificationCache) {
-      if (entry.expiresAt <= now) this.classificationCache.delete(key);
-    }
   }
 
   // --- Phase 0: HS Code Validation ---
@@ -1155,9 +1147,9 @@ export class ClassifierService {
           const product = assembled[t.index];
           const cacheKey = [t.photo.imageHash, product.tnVedCode, language ?? 'ru', model].join('\x1F');
           const now = Date.now();
-          const cached = this.visionCache.get(cacheKey);
-          if (cached && cached.expiresAt > now) {
-            return { task: t, result: cached.data, tokenUsage: emptyTokenUsageMap() };
+          const cached = this.visionCache.get(cacheKey, now);
+          if (cached) {
+            return { task: t, result: cached, tokenUsage: emptyTokenUsageMap() };
           }
           try {
             const { result, tokenUsage } = await this.executeVisionCall(
@@ -1168,10 +1160,7 @@ export class ClassifierService {
               auditContext,
             );
             if (result) {
-              this.visionCache.set(cacheKey, {
-                data: result,
-                expiresAt: now + CLASSIFICATION_CACHE_TTL,
-              });
+              this.visionCache.set(cacheKey, result, now);
             }
             return { task: t, result, tokenUsage };
           } catch (err) {
@@ -1219,7 +1208,6 @@ export class ClassifierService {
       }
     }
 
-    this.evictExpiredVisionCache();
     const applied = confirmed + corrected;
     this.logger.log(
       `Vision retry done: tasks=${tasks.length}, confirmed=${confirmed}, corrected=${corrected}, emptyResults=${emptyResults}, codesNotInTks=${codesNotInTks}`,
@@ -1370,14 +1358,6 @@ export class ClassifierService {
       verificationComment: vision.comment,
       notes: [...product.notes, note],
     };
-  }
-
-  private evictExpiredVisionCache(): void {
-    if (this.visionCache.size <= CLASSIFICATION_CACHE_MAX) return;
-    const now = Date.now();
-    for (const [key, entry] of this.visionCache) {
-      if (entry.expiresAt <= now) this.visionCache.delete(key);
-    }
   }
 
 }
