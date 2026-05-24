@@ -5,18 +5,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { AiConfigService } from '../ai-config/ai-config.service';
 import { DutyInterpretationCache } from '../database/entities/duty-interpretation-cache.entity';
-import {
-  CLAUDE_TIMEOUT_PIPELINE_MS,
-  cacheTools,
-  extractToolInputArrayField,
-  systemPrompt,
-} from '../common/claude';
+import { extractToolInputArrayField } from '../common/claude';
+import { callClaudeTool } from '../common/claude-tool-call';
 import { errMsg } from '../common/errors';
 import { localizedLanguageName } from '../common/i18n';
 import { isFlatCurrencyUnit } from '../common/normalize-impedi';
 import { getStaticNoteTranslation } from '../common/note-translations';
 import type { ProductNote } from '../common/product-notes';
-import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, modelFamily, tokenUsageFromResponse } from '../common/token-usage';
+import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, modelFamily } from '../common/token-usage';
 import type { VerifiedProduct } from '../classifier/classifier.service';
 import { PipelineAuditService, type AuditContext } from '../pipeline-audit/pipeline-audit.service';
 import { DutyInterpretation, InterpretedProduct } from './interfaces';
@@ -600,37 +596,25 @@ export class DutyInterpreterService {
 ${JSON.stringify(codesData, null, 2)}
 </codes>${localizedInstruction}`;
 
-    const response = await this.audit.trackAiCall(
+    const { response, tokenUsage } = await callClaudeTool(
+      this.anthropic!,
+      this.audit,
+      {
+        model,
+        systemPrompt: SYSTEM_PROMPT,
+        userMessage: userPrompt,
+        tool: INTERPRET_TOOL,
+        maxTokens: 8192,
+        useCache,
+      },
       {
         context: auditContext,
         purpose: 'interpret',
-        model,
-        request: {
-          model,
-          max_tokens: 8192,
-          system: SYSTEM_PROMPT,
-          messages: [{ role: 'user', content: userPrompt }],
-          tools: [INTERPRET_TOOL.name],
-          tool_choice: 'any',
-          codes: items.map((i) => i.code),
-        },
+        extraRequest: { codes: items.map((i) => i.code) },
       },
-      () =>
-        this.anthropic!.messages.create(
-          {
-            model,
-            max_tokens: 8192,
-            system: systemPrompt(SYSTEM_PROMPT),
-            messages: [{ role: 'user', content: userPrompt }],
-            tools: cacheTools([INTERPRET_TOOL], useCache),
-            tool_choice: { type: 'any' },
-          },
-          { timeout: CLAUDE_TIMEOUT_PIPELINE_MS },
-        ),
     );
 
     const results = extractToolInputArrayField<DutyInterpretation>(response, 'items');
-    const tokenUsage = tokenUsageFromResponse(model, response.usage);
     if (!results) {
       this.logger.error(
         `Claude interpret response missing "items" array (batch=${items.length}, stop=${response.stop_reason})`,
