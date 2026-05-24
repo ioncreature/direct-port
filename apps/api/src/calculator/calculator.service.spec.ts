@@ -1131,7 +1131,7 @@ describe('CalculatorService', () => {
   });
 
   describe('Freight (фрахт до границы)', () => {
-    it('legacy: без freightShares freightShare=0 на каждой позиции и totalFreight=0', () => {
+    it('legacy: без freight-опции freightShare=0 на каждой позиции и totalFreight=0', () => {
       const product = makeProduct({ price: 1000, quantity: 1, weight: 1, vatRate: 22 });
       const result = service.calculate([product], ZERO_COMMISSION);
       expect(result.items[0].freightShare).toBe(0);
@@ -1143,11 +1143,12 @@ describe('CalculatorService', () => {
     });
 
     it('freightShare включается в базу пошлины, НДС и в totalCost (ТК ЕАЭС)', () => {
+      // 1 строка, weight*qty = 1*1 = 1, denominator=1 → вся сумма фрахта (100) идёт на эту строку.
       const product = makeProduct({ price: 1000, quantity: 1, weight: 1, dutyRate: 10, vatRate: 22 });
-      const result = service.calculate([product], ZERO_COMMISSION, { freightShares: [100] });
+      const result = service.calculate([product], ZERO_COMMISSION, {
+        freight: { totalInDocCurrency: 100, weightDenominator: 1 },
+      });
       const item = result.items[0];
-      // customs_value = 1000 + 100 = 1100; duty = 1100 * 0.10 = 110;
-      // vat = (1100 + 110) * 0.22 = 266.2; totalCost = 1000 + 100 + 110 + 266.2 = 1476.2
       expect(item.freightShare).toBe(100);
       expect(item.dutyAmount).toBeCloseTo(110, 5);
       expect(item.vatAmount).toBeCloseTo(266.2, 5);
@@ -1155,44 +1156,66 @@ describe('CalculatorService', () => {
       expect(result.totalFreight).toBe(100);
     });
 
-    it('массив freightShares неверной длины игнорируется (все нули)', () => {
+    it('распределение по двум строкам пропорционально weight × quantity', () => {
       const products = [
-        makeProduct({ price: 1000, quantity: 1, dutyRate: 10, vatRate: 22 }),
-        makeProduct({ price: 500, quantity: 1, dutyRate: 10, vatRate: 22 }),
+        makeProduct({ price: 1000, quantity: 1, weight: 3, dutyRate: 10, vatRate: 22 }),
+        makeProduct({ price: 1000, quantity: 2, weight: 1, dutyRate: 10, vatRate: 22 }),
       ];
-      // длина 1 вместо 2 → calculator подставит [0,0]
-      const result = service.calculate(products, ZERO_COMMISSION, { freightShares: [100] });
-      expect(result.items[0].freightShare).toBe(0);
-      expect(result.items[1].freightShare).toBe(0);
-      expect(result.totalFreight).toBe(0);
+      // веса × qty: 3 и 2, знаменатель=5; всего фрахта=500 → 300 и 200.
+      const result = service.calculate(products, ZERO_COMMISSION, {
+        freight: { totalInDocCurrency: 500, weightDenominator: 5 },
+      });
+      expect(result.items[0].freightShare).toBeCloseTo(300, 5);
+      expect(result.items[1].freightShare).toBeCloseTo(200, 5);
+      expect(result.totalFreight).toBeCloseTo(500, 5);
     });
 
-    it('NaN/Infinity/отрицательные значения в freightShares заменяются на 0', () => {
+    it('weightDenominator=0 → нули по всем строкам (защита от деления на ноль)', () => {
       const products = [
-        makeProduct({ price: 1000, dutyRate: 10, vatRate: 22 }),
-        makeProduct({ price: 1000, dutyRate: 10, vatRate: 22 }),
-        makeProduct({ price: 1000, dutyRate: 10, vatRate: 22 }),
-        makeProduct({ price: 1000, dutyRate: 10, vatRate: 22 }),
+        makeProduct({ price: 1000, quantity: 1, weight: 1, dutyRate: 10, vatRate: 22 }),
       ];
       const result = service.calculate(products, ZERO_COMMISSION, {
-        freightShares: [NaN, Infinity, -50, 100],
+        freight: { totalInDocCurrency: 100, weightDenominator: 0 },
       });
       expect(result.items[0].freightShare).toBe(0);
-      expect(result.items[1].freightShare).toBe(0);
-      expect(result.items[2].freightShare).toBe(0);
-      expect(result.items[3].freightShare).toBe(100);
-      expect(result.totalFreight).toBe(100);
+    });
+
+    it('totalInDocCurrency=NaN → нули по всем строкам', () => {
+      const products = [makeProduct({ price: 1000, dutyRate: 10, vatRate: 22 })];
+      const result = service.calculate(products, ZERO_COMMISSION, {
+        freight: { totalInDocCurrency: NaN, weightDenominator: 1 },
+      });
+      expect(result.items[0].freightShare).toBe(0);
+    });
+
+    it('строка с weight=0 не получает фрахт; знаменатель учитывает только остальных', () => {
+      // Этот сценарий моделирует manual-code (calculator получает одну строку, но
+      // denominator от всех 3 строк документа). Для строки с weight=0 share=0.
+      const zeroWeightRow = makeProduct({
+        price: 1000,
+        quantity: 1,
+        weight: 0,
+        dutyRate: 10,
+        vatRate: 22,
+      });
+      const result = service.calculate([zeroWeightRow], ZERO_COMMISSION, {
+        freight: { totalInDocCurrency: 100, weightDenominator: 10 },
+      });
+      expect(result.items[0].freightShare).toBe(0);
     });
 
     it('акциз тоже считается от (цена + фрахт)', () => {
       const product = makeProduct({
         price: 1000,
         quantity: 1,
+        weight: 1,
         dutyRate: 10,
         exciseRate: 5,
         vatRate: 22,
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { freightShares: [200] });
+      const result = service.calculate([product], ZERO_COMMISSION, {
+        freight: { totalInDocCurrency: 200, weightDenominator: 1 },
+      });
       const item = result.items[0];
       // customs_value = 1200; duty = 120; excise = 60; vat = (1200+120+60)*0.22 = 303.6
       expect(item.dutyAmount).toBeCloseTo(120, 5);

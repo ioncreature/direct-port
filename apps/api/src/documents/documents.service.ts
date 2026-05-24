@@ -4,6 +4,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
 import { FindOptionsWhere, Repository } from 'typeorm';
 import { ErrorCode } from '../common/error-codes';
+import {
+  InvalidFreightError,
+  normalizeFreightInput,
+  type NormalizedFreight,
+} from '../common/freight';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 import { normalizeOksmtCode } from '../common/oksmt';
 import { CountriesService } from '../countries/countries.service';
@@ -99,7 +104,7 @@ export class DocumentsService {
       language = tgUser?.language ?? null;
     }
 
-    const freight = this.normalizeFreightInput(options);
+    const freight = this.normalizeFreightOrThrow(options);
 
     const doc = this.repo.create({
       ...('telegramUserId' in source
@@ -193,7 +198,7 @@ export class DocumentsService {
     }
 
     if (dto.freightCost !== undefined || dto.freightCurrency !== undefined) {
-      const freight = this.normalizeFreightInput({
+      const freight = this.normalizeFreightOrThrow({
         freightCost: dto.freightCost ?? doc.freightCost ?? undefined,
         freightCurrency: dto.freightCurrency ?? doc.freightCurrency ?? undefined,
       });
@@ -208,28 +213,23 @@ export class DocumentsService {
     return saved;
   }
 
-  /**
-   * Приводит пару (freightCost, freightCurrency) к консистентной форме:
-   * - cost > 0 без валюты → 400 (валюта обязательна — иначе не сможем сконвертировать);
-   * - cost ≤ 0 / undefined → оба null, какой бы ни была валюта (нет фрахта; пред-заполненная
-   *   валюта от старого значения документа в recalculate просто игнорируется, чтобы «сброс»
-   *   через freightCost=0 не падал из-за прилипшей валюты).
-   */
-  private normalizeFreightInput(options: {
+  /** Тонкая обёртка вокруг чистого helper'а из common/freight: переводит
+   *  InvalidFreightError в HTTP-ответ с кодом INVALID_FREIGHT. */
+  private normalizeFreightOrThrow(options: {
     freightCost?: number | null;
     freightCurrency?: FreightCurrency | null;
-  }): { freightCost: number | null; freightCurrency: FreightCurrency | null } {
-    const cost = options.freightCost;
-    const currency = options.freightCurrency;
-    const hasCost = cost !== undefined && cost !== null && cost > 0;
-    if (!hasCost) return { freightCost: null, freightCurrency: null };
-    if (currency == null) {
-      throw new BadRequestException({
-        code: ErrorCode.INVALID_FREIGHT,
-        message: 'freightCost is set but freightCurrency is missing',
-      });
+  }): NormalizedFreight {
+    try {
+      return normalizeFreightInput(options);
+    } catch (err) {
+      if (err instanceof InvalidFreightError) {
+        throw new BadRequestException({
+          code: ErrorCode.INVALID_FREIGHT,
+          message: err.message,
+        });
+      }
+      throw err;
     }
-    return { freightCost: cost!, freightCurrency: currency };
   }
 
   async reprocess(id: string): Promise<Document> {

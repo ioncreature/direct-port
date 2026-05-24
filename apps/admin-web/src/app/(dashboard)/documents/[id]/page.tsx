@@ -935,6 +935,9 @@ export default function DocumentDetailPage() {
                   ))}
                 </select>
               </div>
+              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+                Введите 0 или очистите поле, чтобы сбросить фрахт.
+              </div>
             </div>
             <div style={{ flex: 1, minWidth: 200, fontSize: 12, color: '#6b7280' }}>
               {doc.countryOriginSource && (

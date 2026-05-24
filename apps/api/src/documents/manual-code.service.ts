@@ -14,6 +14,7 @@ import {
 } from '../classifier/classifier.service';
 import { ErrorCode } from '../common/error-codes';
 import { errMsg } from '../common/errors';
+import { computeWeightDenominator, resolveFreightTotalInDocCurrency } from '../common/freight';
 import { KNOWN_CURRENCIES, normalizeImpediUnit } from '../common/normalize-impedi';
 import type { ProductNote } from '../common/product-notes';
 import {
@@ -140,14 +141,14 @@ export class ManualCodeService {
     const interpretResult = await this.dutyInterpreter.interpret([classified], language);
     const interpreted = interpretResult.products[0];
 
-    const freightShares = this.computeRowFreightShare(doc, rows, rowIndex, currencyToDoc);
+    const freight = this.buildFreightOption(doc, rows, currencyToDoc);
 
     const summary = this.calculator.calculate([interpreted], commission, {
       currencyToDoc,
       confidenceThreshold: config.confidenceThreshold,
       countryOfOrigin: doc.countryOfOrigin,
       language,
-      freightShares,
+      freight,
     });
     const calculated = summary.items[0];
 
@@ -335,14 +336,14 @@ export class ManualCodeService {
     doc.tokenUsage = addStageUsage(doc.tokenUsage, 'interpreter', interpretResult.tokenUsage);
     const interpreted = interpretResult.products[0];
 
-    const freightShares = this.computeRowFreightShare(doc, rows, rowIndex, currencyToDoc);
+    const freight = this.buildFreightOption(doc, rows, currencyToDoc);
 
     const summary = this.calculator.calculate([interpreted], commission, {
       currencyToDoc,
       confidenceThreshold: config.confidenceThreshold,
       countryOfOrigin: doc.countryOfOrigin,
       language: language ?? undefined,
-      freightShares,
+      freight,
     });
     const calculated = summary.items[0];
     calculated.regulatoryReport = regulatoryReport;
@@ -412,42 +413,25 @@ export class ManualCodeService {
   }
 
   /**
-   * Считает долю фрахта только для строки rowIndex, но на основе ВСЕХ строк документа
-   * (общий вес знаменателя). Возвращает массив из одного элемента — формат, который
-   * принимает CalculatorService.calculate (он применяет шары параллельно products).
-   *
-   * Возвращает undefined, если у документа фрахта нет (legacy) — calculator подставит 0.
+   * Готовит freight-опцию для Calculator: общая сумма в валюте документа и знаменатель
+   * по ВСЕМ строкам документа (а не только по пересчитываемой), чтобы share единственной
+   * строки совпала с долей, которую полный pipeline дал бы той же строке.
    */
-  private computeRowFreightShare(
+  private buildFreightOption(
     doc: Document,
-    rows: Record<string, unknown>[],
-    rowIndex: number,
+    rows: ReadonlyArray<{ weight?: number | null; quantity?: number | null }>,
     currencyToDoc: Record<string, number>,
-  ): number[] | undefined {
-    if (!doc.freightCost || doc.freightCost <= 0 || !doc.freightCurrency) {
+  ): { totalInDocCurrency: number; weightDenominator: number } | undefined {
+    const total = resolveFreightTotalInDocCurrency(doc, currencyToDoc);
+    if (total == null) {
+      if (doc.freightCost && doc.freightCurrency) {
+        this.logger.warn(
+          `Document ${doc.id}: freight ${doc.freightCost} ${doc.freightCurrency} ignored — no rate to document currency`,
+        );
+      }
       return undefined;
     }
-    const rate = currencyToDoc[doc.freightCurrency];
-    if (!rate || !Number.isFinite(rate) || rate <= 0) {
-      this.logger.warn(
-        `Document ${doc.id}: freight ${doc.freightCost} ${doc.freightCurrency} ignored — no rate to document currency`,
-      );
-      return [0];
-    }
-    const freightInDocCurrency = doc.freightCost * rate;
-    const totalNetWeight = rows.reduce(
-      (s, r) => s + (Number(r.weight) || 0) * (Number(r.quantity) || 0),
-      0,
-    );
-    const row = rows[rowIndex];
-    const rowNet = (Number(row?.weight) || 0) * (Number(row?.quantity) || 0);
-    if (totalNetWeight <= 0 || rowNet <= 0) {
-      this.logger.warn(
-        `Document ${doc.id}: freight not distributed for row ${rowIndex} — zero net weight`,
-      );
-      return [0];
-    }
-    return [(freightInDocCurrency * rowNet) / totalNetWeight];
+    return { totalInDocCurrency: total, weightDenominator: computeWeightDenominator(rows) };
   }
 
   private sumResultTotals(rows: Record<string, unknown>[]): ResultTotals {

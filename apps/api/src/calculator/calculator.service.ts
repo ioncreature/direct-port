@@ -243,17 +243,20 @@ export class CalculatorService {
       /** Язык документа (ru/en/zh). Используется для локализации заметок,
        *  которые пойдут в Excel-колонку «Notes (translated)» для не-ru пользователей бота. */
       language?: string | null;
-      /** Уже распределённые по позициям доли общей стоимости фрахта в валюте документа.
-       *  Длина массива должна совпадать с products.length; иначе игнорируется и freightShare=0
-       *  на каждой позиции (поведение для legacy-документов без фрахта). */
-      freightShares?: number[];
+      /** Общая стоимость фрахта документа (уже в валюте документа) и знаменатель
+       *  распределения. Calculator сам разделит фрахт между переданными products
+       *  пропорционально (weight × quantity), используя weightDenominator как
+       *  ОБЩИЙ вес — он может приходить от всех строк документа (если calculator
+       *  считает одну строку — для manual code edit), а не только от products.
+       *  Если undefined — freightShare=0 на всех позициях (legacy). */
+      freight?: { totalInDocCurrency: number; weightDenominator: number };
     },
   ): CalculationSummary {
     const threshold = options?.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
     const currencyRates = this.buildCurrencyRates(options);
     const countryOfOrigin = options?.countryOfOrigin ?? null;
     const language = options?.language ?? undefined;
-    const freightShares = this.resolveFreightShares(products.length, options?.freightShares);
+    const freightShares = this.distributeFreight(products, options?.freight);
     this.logger.log(
       `Calculating ${products.length} products, commission: ${JSON.stringify(commission)}, rates=${JSON.stringify(currencyRates)}, confidenceThreshold=${threshold}, country=${countryOfOrigin ?? '—'}, freightTotal=${freightShares.reduce((s, v) => s + v, 0).toFixed(2)}`,
     );
@@ -266,16 +269,35 @@ export class CalculatorService {
   }
 
   /**
-   * Распределение фрахта вызывающая сторона делает сама (processor.ts знает обо всех
-   * строках документа). Здесь — только защита от длины массива, отрицательных значений
-   * и NaN/Infinity. Если что-то не сходится — отдаём нули, чтобы расчёт не упал и
-   * совпал с legacy-поведением.
+   * Распределение фрахта по позициям пропорционально (weight × quantity).
+   * Защита от мусорных входов: NaN/Infinity/<=0 totalInDocCurrency, отсутствующий
+   * или некорректный weightDenominator → нули по всем строкам с warning-логом (чтобы
+   * регрессия не прошла молча, как было в первой версии).
    */
-  private resolveFreightShares(productsCount: number, raw?: number[]): number[] {
-    if (!raw || raw.length !== productsCount) {
-      return new Array(productsCount).fill(0);
+  private distributeFreight(
+    products: CalculatorInput[],
+    freight?: { totalInDocCurrency: number; weightDenominator: number },
+  ): number[] {
+    const zeros = () => new Array(products.length).fill(0);
+    if (!freight) return zeros();
+    const { totalInDocCurrency, weightDenominator } = freight;
+    if (!Number.isFinite(totalInDocCurrency) || totalInDocCurrency <= 0) {
+      this.logger.warn(
+        `Freight total invalid (got ${totalInDocCurrency}); skipping distribution`,
+      );
+      return zeros();
     }
-    return raw.map((v) => (Number.isFinite(v) && v > 0 ? v : 0));
+    if (!Number.isFinite(weightDenominator) || weightDenominator <= 0) {
+      this.logger.warn(
+        `Freight total=${totalInDocCurrency} requested but weightDenominator=${weightDenominator}; freight ignored`,
+      );
+      return zeros();
+    }
+    return products.map((p) => {
+      const net = (p.weight || 0) * (p.quantity || 0);
+      if (net <= 0) return 0;
+      return (totalInDocCurrency * net) / weightDenominator;
+    });
   }
 
   /**
