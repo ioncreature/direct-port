@@ -7,13 +7,8 @@ import {
 } from '@direct-port/tks-api';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AiConfigService } from '../ai-config/ai-config.service';
-import {
-  CLAUDE_TIMEOUT_PIPELINE_MS,
-  cacheTools,
-  extractToolInput,
-  extractToolInputArrayField,
-  systemPrompt,
-} from '../common/claude';
+import { extractToolInput, extractToolInputArrayField } from '../common/claude';
+import { callClaudeTool } from '../common/claude-tool-call';
 import { DEFAULT_CONFIDENCE_THRESHOLD } from '../common/confidence';
 import { errMsg } from '../common/errors';
 import { localizedLanguageName } from '../common/i18n';
@@ -21,7 +16,6 @@ import type { ProductNote } from '../common/product-notes';
 import {
   emptyTokenUsageMap,
   mergeTokenUsage,
-  tokenUsageFromResponse,
   type TokenUsageMap,
 } from '../common/token-usage';
 import type { AiCallPurpose } from '../database/entities/ai-call.entity';
@@ -784,34 +778,25 @@ export class ClassifierService {
     auditContext: AuditContext | null,
   ): Promise<{ queries: Map<number, string[]>; tokenUsage: TokenUsageMap }> {
     const model = await this.aiConfig.getQueryFormulationModel();
-    const response = await this.audit.trackAiCall(
+    const { response, tokenUsage } = await callClaudeTool(
+      this.anthropic!,
+      this.audit,
+      {
+        model,
+        systemPrompt: QUERY_FORMULATION_SYSTEM,
+        userMessage: JSON.stringify(items),
+        tool: FORMULATE_QUERIES_TOOL,
+        maxTokens: 16384,
+        useCache,
+      },
       {
         context: auditContext,
         purpose: 'classify_formulate_queries',
-        model,
-        request: {
-          model,
-          max_tokens: 16384,
-          system: QUERY_FORMULATION_SYSTEM,
-          messages: [{ role: 'user', content: JSON.stringify(items) }],
-          tools: [FORMULATE_QUERIES_TOOL.name],
-          tool_choice: 'any',
+        extraRequest: {
           batchSize: items.length,
           indices: items.map((i) => i.index),
         },
       },
-      () =>
-        this.anthropic!.messages.create(
-          {
-            model,
-            max_tokens: 16384,
-            system: systemPrompt(QUERY_FORMULATION_SYSTEM),
-            messages: [{ role: 'user', content: JSON.stringify(items) }],
-            tools: cacheTools([FORMULATE_QUERIES_TOOL], useCache),
-            tool_choice: { type: 'any' },
-          },
-          { timeout: CLAUDE_TIMEOUT_PIPELINE_MS },
-        ),
     );
 
     const products = extractToolInputArrayField<{ index: number; queries: string[] }>(
@@ -819,7 +804,6 @@ export class ClassifierService {
       'products',
     );
     const queryMap = new Map<number, string[]>();
-    const tokenUsage = tokenUsageFromResponse(model, response.usage);
     if (!products) {
       this.logger.error(
         `Claude formulate_queries response missing "products" array (batch=${items.length}, stop=${response.stop_reason})`,
@@ -1033,38 +1017,28 @@ export class ClassifierService {
     const itemsWithThreshold = items.map((it) => ({ ...it, confidenceThreshold: threshold }));
     const userPrompt = `${intro}: ${JSON.stringify(itemsWithThreshold, null, 2)}${localizedInstruction}`;
 
-    const response = await this.audit.trackAiCall(
+    const { response, tokenUsage } = await callClaudeTool(
+      this.anthropic!,
+      this.audit,
+      {
+        model,
+        systemPrompt: SYSTEM_PROMPT,
+        userMessage: userPrompt,
+        tool: CLASSIFY_TOOL,
+        maxTokens: 4096,
+        useCache,
+      },
       {
         context: auditContext,
         purpose,
-        model,
-        request: {
-          model,
-          max_tokens: 4096,
-          system: SYSTEM_PROMPT,
-          messages: [{ role: 'user', content: userPrompt }],
-          tools: [CLASSIFY_TOOL.name],
-          tool_choice: 'any',
+        extraRequest: {
           batchSize: items.length,
           indices: items.map((i) => i.index),
         },
       },
-      () =>
-        this.anthropic!.messages.create(
-          {
-            model,
-            max_tokens: 4096,
-            system: systemPrompt(SYSTEM_PROMPT),
-            messages: [{ role: 'user', content: userPrompt }],
-            tools: cacheTools([CLASSIFY_TOOL], useCache),
-            tool_choice: { type: 'any' },
-          },
-          { timeout: CLAUDE_TIMEOUT_PIPELINE_MS },
-        ),
     );
 
     const selections = extractToolInputArrayField<ClaudeSelection>(response, 'items');
-    const tokenUsage = tokenUsageFromResponse(model, response.usage);
     if (!selections) {
       this.logger.error(
         `Claude classify response missing "items" array (purpose=${purpose}, batch=${items.length}, stop=${response.stop_reason})`,
@@ -1258,36 +1232,30 @@ export class ClassifierService {
 
     // В audit пишем легковесный request — без base64-байтов, иначе ai_call.request
     // распухнет на ~270 KB на каждый vision-вызов.
-    const auditRequest = {
-      model,
-      max_tokens: 1024,
-      system: VISION_SYSTEM_PROMPT,
-      prompt: userText,
-      photoHash: photo.imageHash,
-      photoSizeBytes: photo.bytes.length,
-      tools: [VISION_TOOL.name],
-      tool_choice: 'any',
-    };
-
-    const response = await this.audit.trackAiCall(
+    const { response, tokenUsage } = await callClaudeTool(
+      this.anthropic!,
+      this.audit,
+      {
+        model,
+        systemPrompt: VISION_SYSTEM_PROMPT,
+        userMessage: sdkMessages,
+        tool: VISION_TOOL,
+        maxTokens: 1024,
+      },
       {
         context: auditContext,
         purpose: 'classify_vision',
-        model,
-        request: auditRequest,
+        auditRequestOverride: {
+          model,
+          max_tokens: 1024,
+          system: VISION_SYSTEM_PROMPT,
+          prompt: userText,
+          photoHash: photo.imageHash,
+          photoSizeBytes: photo.bytes.length,
+          tools: [VISION_TOOL.name],
+          tool_choice: 'any',
+        },
       },
-      () =>
-        this.anthropic!.messages.create(
-          {
-            model,
-            max_tokens: 1024,
-            system: systemPrompt(VISION_SYSTEM_PROMPT),
-            messages: sdkMessages,
-            tools: [VISION_TOOL],
-            tool_choice: { type: 'any' },
-          },
-          { timeout: CLAUDE_TIMEOUT_PIPELINE_MS },
-        ),
     );
 
     const parsed = extractToolInput<{
@@ -1305,7 +1273,7 @@ export class ClassifierService {
           ? String(parsed.comment_localized)
           : undefined,
       },
-      tokenUsage: tokenUsageFromResponse(model, response.usage),
+      tokenUsage,
     };
   }
 
