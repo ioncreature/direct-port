@@ -11,6 +11,9 @@
  * (in-memory), поэтому отдельный @Injectable не нужен — это просто
  * структура данных, инстанциируемая в полях сервиса.
  */
+export const CLASSIFICATION_CACHE_TTL_MS = 86_400_000; // 24 hours
+export const CLASSIFICATION_CACHE_MAX = 1000;
+
 export class TtlMap<V> {
   private data = new Map<string, { data: V; expiresAt: number }>();
 
