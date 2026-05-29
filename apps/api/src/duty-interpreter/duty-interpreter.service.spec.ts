@@ -132,7 +132,7 @@ function createService(opts: ServiceOpts = {}) {
   const tksApi = { getTnvedCode };
 
   const aiConfig = {
-    getInterpreterModel: jest.fn().mockResolvedValue('claude-opus-4-7'),
+    getInterpreterModel: jest.fn().mockResolvedValue('claude-opus-4-8'),
   };
 
   const audit = {

@@ -2,7 +2,19 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { AiCallPurpose } from '../database/entities/ai-call.entity';
 import type { AuditContext, PipelineAuditService } from '../pipeline-audit/pipeline-audit.service';
 import { CLAUDE_TIMEOUT_PIPELINE_MS, cacheTools, systemPrompt } from './claude';
-import { tokenUsageFromResponse, type TokenUsageMap } from './token-usage';
+import { modelFamily, tokenUsageFromResponse, type TokenUsageMap } from './token-usage';
+
+/**
+ * effort для всех pipeline-вызовов Claude. Управляет глубиной reasoning и общим
+ * расходом токенов; дефолт API — 'high'. Ставим 'medium' (баланс качество/стоимость)
+ * для одношаговых structured-tool вызовов DirectPort. Допустимые значения:
+ * 'low' | 'medium' | 'high' | 'max' ('max' — только Opus-tier; 'xhigh' появился
+ * на Opus 4.7, но типами SDK 0.82.0 ещё не описан).
+ *
+ * НЕ применяется к семейству Haiku — оно возвращает 400 на любой effort. queryFormulation
+ * по умолчанию идёт на haiku, поэтому гейтим по семейству модели (см. callClaudeTool).
+ */
+const PIPELINE_EFFORT = 'medium' as const;
 
 export interface ClaudeToolCallParams {
   /** Модель Claude (резолвится через AiConfigService.getXxxModel()). */
@@ -60,6 +72,12 @@ export async function callClaudeTool(
       ? [{ role: 'user', content: call.userMessage }]
       : call.userMessage;
 
+  // Семейство Haiku не поддерживает effort (вернёт 400) — применяем только к Opus/Sonnet.
+  const effortConfig =
+    modelFamily(call.model) === 'haiku'
+      ? {}
+      : { output_config: { effort: PIPELINE_EFFORT } };
+
   const auditRequest =
     auditParams.auditRequestOverride ?? {
       model: call.model,
@@ -68,6 +86,7 @@ export async function callClaudeTool(
       messages,
       tools: [call.tool.name],
       tool_choice: 'any',
+      ...effortConfig,
       ...auditParams.extraRequest,
     };
 
@@ -88,6 +107,7 @@ export async function callClaudeTool(
           messages,
           tools: cacheTools([call.tool], call.useCache ?? false),
           tool_choice: { type: 'any' },
+          ...effortConfig,
         },
         { timeout: call.timeoutMs ?? CLAUDE_TIMEOUT_PIPELINE_MS },
       ),

@@ -308,7 +308,7 @@ export class DutyInterpreterService {
     let dbHits = 0;
     // model в DB-кэше хранится как семейство (sonnet/opus/haiku) — см. миграцию
     // NormalizeModelFamilies. Конкретный version ID интерпретатора (например
-    // `claude-opus-4-7`) не должен инвалидировать persistent cache при минорных
+    // `claude-opus-4-8`) не должен инвалидировать persistent cache при минорных
     // апдейтах: интерпретация ставок ТН ВЭД от точечной версии семейства
     // практически не зависит.
     const cacheModelKey = modelFamily(interpreterModel);

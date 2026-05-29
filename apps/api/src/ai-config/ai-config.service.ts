@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { AiConfig, type AiModelTier } from '../database/entities/ai-config.entity';
 
 const MODEL_IDS: Record<AiModelTier, string> = {
-  opus: 'claude-opus-4-7',
+  opus: 'claude-opus-4-8',
   sonnet: 'claude-sonnet-4-6',
   haiku: 'claude-haiku-4-5-20251001',
 };

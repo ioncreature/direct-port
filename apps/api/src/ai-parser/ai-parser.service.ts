@@ -351,7 +351,7 @@ const PARSE_CHUNK_TOOL: Anthropic.Messages.Tool = {
   },
 };
 
-// Opus 4.7 периодически оборачивает tool_use input в лишний ключ `structure`,
+// Opus периодически оборачивает tool_use input в лишний ключ `structure`,
 // несмотря на то что schema определяет поля на верхнем уровне. Разворачиваем,
 // чтобы валидация не отбрасывала корректный ответ (и вместе с ним countrySuggestion).
 function unwrapStructure(raw: Record<string, unknown>): Record<string, unknown> {
