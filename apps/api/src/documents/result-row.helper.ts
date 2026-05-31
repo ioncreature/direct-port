@@ -1,6 +1,7 @@
 import type { CalculatedProduct } from '../calculator/calculator.service';
 import type { CodeCandidate, MissingDataCategory } from '../classifier/classifier.service';
 import type { DutyInterpretation } from '../duty-interpreter/interfaces';
+import { roundMoney } from '../common/money';
 
 export interface ResultRowConversion {
   exchangeRate: number;
@@ -61,16 +62,41 @@ export function buildResultRow(opts: {
     regulatoryReport: item.regulatoryReport ?? null,
   };
   if (!conversion) return base;
+  return { ...base, ...buildRubFields(item, conversion) };
+}
+
+/**
+ * Конвертирует денежные поля позиции в рубли. Каждый компонент округляется независимо,
+ * а totalCostRub собирается как сумма уже округлённых компонентов — тогда он точно равен
+ * сумме построчных рублёвых значений (#4), а не отдельному округлению totalCost × rate.
+ * Общий блок для основного pipeline (через buildResultRow) и для recalculate в processor.
+ */
+export function buildRubFields(
+  item: CalculatedProduct,
+  conversion: ResultRowConversion,
+): Record<string, number> {
   const { exchangeRate, toRub } = conversion;
+  const totalPriceRub = toRub(item.totalPrice);
+  const freightShareRub = toRub(item.freightShare);
+  const dutyAmountRub = toRub(item.dutyAmount);
+  const vatAmountRub = toRub(item.vatAmount);
+  const exciseAmountRub = toRub(item.exciseAmount);
+  const logisticsCommissionRub = toRub(item.logisticsCommission);
   return {
-    ...base,
-    totalPriceRub: toRub(item.totalPrice),
-    freightShareRub: toRub(item.freightShare),
-    dutyAmountRub: toRub(item.dutyAmount),
-    vatAmountRub: toRub(item.vatAmount),
-    exciseAmountRub: toRub(item.exciseAmount),
-    logisticsCommissionRub: toRub(item.logisticsCommission),
-    totalCostRub: toRub(item.totalCost),
+    totalPriceRub,
+    freightShareRub,
+    dutyAmountRub,
+    vatAmountRub,
+    exciseAmountRub,
+    logisticsCommissionRub,
+    totalCostRub: roundMoney(
+      totalPriceRub +
+        freightShareRub +
+        dutyAmountRub +
+        vatAmountRub +
+        exciseAmountRub +
+        logisticsCommissionRub,
+    ),
     exchangeRate,
   };
 }

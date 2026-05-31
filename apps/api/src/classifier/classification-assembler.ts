@@ -1,5 +1,6 @@
 import type { TnvedCode } from '@direct-port/tks-api';
 import { normalizeImpediUnit } from '../common/normalize-impedi';
+import { DEFAULT_VAT_RATE } from '../common/vat';
 import { getStaticNoteTranslation } from '../common/note-translations';
 import type { ProductNote } from '../common/product-notes';
 import type {
@@ -108,7 +109,7 @@ export function assembleResults(
       dutySign: rates.IMPSIGN ?? null,
       dutyMin: rates.IMP2 ?? null,
       dutyMinUnit: normalizeImpediUnit(rates.IMPEDI2),
-      vatRate: rates.NDS ?? 20,
+      vatRate: rates.NDS ?? DEFAULT_VAT_RATE,
       exciseRate: rates.AKC ?? 0,
       matchConfidence: confidence,
       matched: true,
@@ -143,7 +144,7 @@ export function buildRateFields(tnved: TnvedCode): {
     dutySign: rates?.IMPSIGN ?? null,
     dutyMin: rates?.IMP2 ?? null,
     dutyMinUnit: normalizeImpediUnit(rates?.IMPEDI2),
-    vatRate: rates?.NDS ?? 20,
+    vatRate: rates?.NDS ?? DEFAULT_VAT_RATE,
     exciseRate: rates?.AKC ?? 0,
   };
 }
@@ -169,7 +170,7 @@ function unmatched(
     dutySign: null,
     dutyMin: null,
     dutyMinUnit: null,
-    vatRate: 20,
+    vatRate: DEFAULT_VAT_RATE,
     exciseRate: 0,
     matchConfidence: 0,
     matched: false,
@@ -212,7 +213,7 @@ function buildCandidateCodes(
       description: chosenTnved.KR_NAIM,
       dutyRate: chosenRates.IMP ?? 0,
       dutyRateUnit: normalizeImpediUnit(chosenRates.IMPEDI),
-      vatRate: chosenRates.NDS ?? 20,
+      vatRate: chosenRates.NDS ?? DEFAULT_VAT_RATE,
       exciseRate: chosenRates.AKC ?? 0,
       confidence,
       reasoning: sel?.comment ?? '',
@@ -229,7 +230,7 @@ function buildCandidateCodes(
       description: altTnved.KR_NAIM,
       dutyRate: altRates.IMP ?? 0,
       dutyRateUnit: normalizeImpediUnit(altRates.IMPEDI),
-      vatRate: altRates.NDS ?? 20,
+      vatRate: altRates.NDS ?? DEFAULT_VAT_RATE,
       exciseRate: altRates.AKC ?? 0,
       confidence: alt.confidence,
       reasoning: alt.reasoning,

@@ -17,6 +17,7 @@ import { errMsg } from '../common/errors';
 import { normalizeImpediUnit } from '../common/normalize-impedi';
 import { normalizeOksmtCode } from '../common/oksmt';
 import { modelFamily } from '../common/token-usage';
+import { DEFAULT_VAT_RATE } from '../common/vat';
 import { CountriesService } from '../countries/countries.service';
 import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
 import { TnVedCode } from '../database/entities/tn-ved-code.entity';
@@ -400,7 +401,7 @@ export class TnVedService {
                 dutySign: null,
                 dutyMin: null,
                 dutyMinUnit: null,
-                vatRate: 20,
+                vatRate: DEFAULT_VAT_RATE,
                 exciseRate: 0,
                 exciseRateUnit: null,
                 exciseSign: null,
@@ -427,7 +428,7 @@ export class TnVedService {
       dutySign: rates.IMPSIGN ?? null,
       dutyMin: rates.IMP2 ?? null,
       dutyMinUnit: normalizeImpediUnit(rates.IMPEDI2),
-      vatRate: rates.NDS ?? 20,
+      vatRate: rates.NDS ?? DEFAULT_VAT_RATE,
       exciseRate: rates.AKC ?? 0,
       exciseRateUnit: normalizeImpediUnit(rates.AKCEDI),
       exciseSign: rates.AKCSIGN ?? null,

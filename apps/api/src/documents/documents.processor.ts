@@ -19,7 +19,7 @@ import {
 import { addStageUsage } from '../common/token-usage';
 import { CurrencyService } from '../currency/currency.service';
 import { KNOWN_CURRENCIES } from '../common/normalize-impedi';
-import { buildResultRow } from './result-row.helper';
+import { buildResultRow, buildRubFields } from './result-row.helper';
 import { DEFAULT_COUNTRY_OF_ORIGIN, Document, DocumentStatus } from '../database/entities/document.entity';
 import { DutyInterpreterService } from '../duty-interpreter/duty-interpreter.service';
 import type { Dimension } from '../duty-interpreter/interfaces';
@@ -459,17 +459,7 @@ export class DocumentsProcessor extends WorkerHost {
           notes: item.notes,
         };
         if (!needsConversion) return base;
-        return {
-          ...base,
-          totalPriceRub: toRub(item.totalPrice),
-          freightShareRub: toRub(item.freightShare),
-          dutyAmountRub: toRub(item.dutyAmount),
-          vatAmountRub: toRub(item.vatAmount),
-          exciseAmountRub: toRub(item.exciseAmount),
-          logisticsCommissionRub: toRub(item.logisticsCommission),
-          totalCostRub: toRub(item.totalCost),
-          exchangeRate,
-        };
+        return { ...base, ...buildRubFields(item, { exchangeRate, toRub }) };
       });
 
       const hasRowErrors = summary.items.some((i) => i.calculationStatus === 'error');

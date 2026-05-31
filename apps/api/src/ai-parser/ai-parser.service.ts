@@ -1209,6 +1209,12 @@ ${tsv}
       return { products: [], currency, columnMapping };
     }
 
+    // #6: кап на абсурдные числовые значения из файла/AI; не-finite (NaN/Infinity,
+    // например из "1e999") схлопывается в min, чтобы не протечь в Calculator.
+    const MAX_FIELD_VALUE = 1e12;
+    const cap = (n: number, min = 0) =>
+      Number.isFinite(n) ? Math.min(Math.max(min, n), MAX_FIELD_VALUE) : min;
+
     const products: ParsedProduct[] = [];
     for (const item of obj.products) {
       const p = item as Record<string, unknown>;
@@ -1219,16 +1225,18 @@ ${tsv}
       const weight = Number(p.weight);
       const quantity = Number(p.quantity);
 
-      if (isNaN(price) || isNaN(quantity)) continue;
+      // #6: Number.isFinite (а не isNaN) отсекает и NaN, и Infinity (например "1e999"),
+      // иначе бесконечность протекла бы в Calculator и дала NaN/Infinity в суммах.
+      if (!Number.isFinite(price) || !Number.isFinite(quantity)) continue;
 
       const hsCodeRaw = typeof p.hsCode === 'string' ? p.hsCode.replace(/\D/g, '') : undefined;
       const dimensions = this.normalizeDimensions(p.dimensions);
 
       products.push({
         description,
-        price: round4(Math.max(0, price)),
-        weight: round4(isNaN(weight) ? 0 : Math.max(0, weight)),
-        quantity: Math.max(1, quantity),
+        price: round4(cap(price)),
+        weight: round4(cap(weight)),
+        quantity: cap(quantity, 1),
         ...(hsCodeRaw && hsCodeRaw.length >= 6 ? { hsCode: hsCodeRaw } : {}),
         ...(dimensions.length > 0 ? { dimensions } : {}),
       });

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { ClassifiedProduct } from '../classifier/classifier.service';
 import { DEFAULT_CONFIDENCE_THRESHOLD } from '../common/confidence';
+import { roundMoney } from '../common/money';
 import { extractCurrency, isFlatCurrencyUnit, isSpecificDutyUnit } from '../common/normalize-impedi';
 import { normalizeOksmtCode } from '../common/oksmt';
 import {
@@ -316,15 +317,56 @@ export class CalculatorService {
   }
 
   private summarize(items: CalculatedProduct[]): CalculationSummary {
+    // Построчные суммы уже округлены до копеек; roundMoney на итогах снимает остаточный
+    // двоичный шум сложения, чтобы Σ(строк) точно совпадала с итогом (#4).
     return {
       items,
-      totalDuty: items.reduce((s, i) => s + i.dutyAmount, 0),
-      totalVat: items.reduce((s, i) => s + i.vatAmount, 0),
-      totalExcise: items.reduce((s, i) => s + i.exciseAmount, 0),
-      totalLogistics: items.reduce((s, i) => s + i.logisticsCommission, 0),
-      totalFreight: items.reduce((s, i) => s + i.freightShare, 0),
-      grandTotal: items.reduce((s, i) => s + i.totalCost, 0),
+      totalDuty: roundMoney(items.reduce((s, i) => s + i.dutyAmount, 0)),
+      totalVat: roundMoney(items.reduce((s, i) => s + i.vatAmount, 0)),
+      totalExcise: roundMoney(items.reduce((s, i) => s + i.exciseAmount, 0)),
+      totalLogistics: roundMoney(items.reduce((s, i) => s + i.logisticsCommission, 0)),
+      totalFreight: roundMoney(items.reduce((s, i) => s + i.freightShare, 0)),
+      grandTotal: roundMoney(items.reduce((s, i) => s + i.totalCost, 0)),
       usedFallback: items.some((i) => i.dutyAmountIsEstimate || i.calculationStatus !== 'exact'),
+    };
+  }
+
+  /** #6: цена/вес/количество должны быть конечными и неотрицательными. */
+  private hasValidNumericInputs(p: CalculatorInput): boolean {
+    return (
+      Number.isFinite(p.price) &&
+      p.price >= 0 &&
+      Number.isFinite(p.quantity) &&
+      p.quantity >= 0 &&
+      Number.isFinite(p.weight) &&
+      p.weight >= 0
+    );
+  }
+
+  /** Нулевой результат с blocker-note для строки с некорректными числовыми данными (#6). */
+  private zeroResult(p: CalculatorInput, notes: ProductNote[]): CalculatedProduct {
+    notes.push({
+      stage: 'calculate',
+      severity: 'blocker',
+      field: 'price',
+      message: 'Некорректные числовые данные (цена/вес/количество) — расчёт по строке невозможен.',
+    });
+    return {
+      ...p,
+      totalPrice: 0,
+      freightShare: 0,
+      dutyAmount: 0,
+      dutyAmountIsEstimate: false,
+      dutyFormula: null,
+      dutyBase: null,
+      dutyRateDisplay: '—',
+      vatAmount: 0,
+      exciseAmount: 0,
+      logisticsCommission: 0,
+      totalCost: 0,
+      verificationStatus: 'review',
+      calculationStatus: resolveCalculationStatus(notes),
+      notes,
     };
   }
 
@@ -338,10 +380,21 @@ export class CalculatorService {
     freightShare: number = 0,
   ): CalculatedProduct {
     const notes: ProductNote[] = [...p.notes];
-    const totalPrice = p.price * p.quantity;
+
+    // #6: входные числа должны быть конечными и неотрицательными. Мусорный parsedData
+    // (NaN/Infinity/отрицательное от AI-парсера) иначе протёк бы во все суммы и ушёл бы
+    // в PROCESSED с битыми цифрами. Помечаем blocker и считаем строку как нулевую.
+    if (!this.hasValidNumericInputs(p)) {
+      return this.zeroResult(p, notes);
+    }
+
+    // Единая денежная политика (#4/#5): каждый платёж округляем до копеек в валюте
+    // документа, НДС считаем от уже округлённой базы, итог — сумма округлённых.
+    const totalPrice = roundMoney(p.price * p.quantity);
+    const roundedFreight = roundMoney(freightShare);
     // Таможенная стоимость = цена товара + распределённая доля фрахта до границы (ТК ЕАЭС).
     // Используется как база для пошлины/акциза, и через customs_value_plus_* — для НДС.
-    const customsValue = totalPrice + freightShare;
+    const customsValue = roundMoney(totalPrice + roundedFreight);
 
     // Источник правил: AI-интерпретация либо детерминистический fallback из полей TKS.
     // НДС всегда синхронизируется с rates.NDS (AI-интерпретация может быть неверной,
@@ -371,6 +424,10 @@ export class CalculatorService {
     for (const charge of charges) {
       const baseValue = this.resolveBase(charge.base, customsValue, dutyAmount, exciseAmount);
       const result = this.resolveMethod(charge.method, baseValue, p, currencyRates);
+      // Округляем каждый платёж сразу: накопленные dutyAmount/exciseAmount служат
+      // базой НДС (vat-charge всегда последний), поэтому НДС считается от округлённых
+      // пошлины и акциза (#5).
+      const amount = roundMoney(result.amount);
 
       if (result.estimated && result.blockerMessage) {
         notes.push({
@@ -386,7 +443,7 @@ export class CalculatorService {
         case 'antidumping':
         case 'compensatory':
         case 'temp_duty':
-          dutyAmount += result.amount;
+          dutyAmount += amount;
           if (charge.type === 'import_duty') {
             if (result.base) dutyBase = result.base;
             if (result.estimated) {
@@ -410,23 +467,26 @@ export class CalculatorService {
           }
           break;
         case 'excise':
-          exciseAmount += result.amount;
+          exciseAmount += amount;
           break;
         case 'vat':
-          vatAmount += result.amount;
+          vatAmount += amount;
           break;
       }
     }
 
-    const logisticsCommission =
+    const logisticsCommission = roundMoney(
       totalPrice * (commission.pricePercent / 100) +
-      p.weight * p.quantity * commission.weightRate +
-      commission.fixedFee;
+        p.weight * p.quantity * commission.weightRate +
+        commission.fixedFee,
+    );
 
     // Фрахт входит в стоимость товара для клиента: он уже потратил эти деньги на доставку
-    // до границы. Включаем в totalCost, чтобы итог отражал полные затраты.
-    const totalCost =
-      totalPrice + freightShare + dutyAmount + vatAmount + exciseAmount + logisticsCommission;
+    // до границы. Включаем в totalCost, чтобы итог отражал полные затраты. Все слагаемые
+    // уже округлены — totalCost = сумма округлённых компонентов (#4).
+    const totalCost = roundMoney(
+      totalPrice + roundedFreight + dutyAmount + vatAmount + exciseAmount + logisticsCommission,
+    );
 
     const verificationStatus: 'exact' | 'review' =
       p.matched && p.matchConfidence >= confidenceThreshold ? 'exact' : 'review';
@@ -437,7 +497,7 @@ export class CalculatorService {
     return {
       ...p,
       totalPrice,
-      freightShare,
+      freightShare: roundedFreight,
       dutyAmount,
       dutyAmountIsEstimate,
       dutyFormula,

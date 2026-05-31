@@ -17,6 +17,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import type { MulterOptions } from '@nestjs/platform-express/multer/interfaces/multer-options.interface';
 import { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Internal } from '../auth/decorators/internal.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CalculationLogsService } from '../calculation-logs/calculation-logs.service';
 import { ErrorCode } from '../common/error-codes';
@@ -187,8 +188,9 @@ export class DocumentsController {
     return this.manualCode.setRowCode(id, index, dto.tnVedCode);
   }
 
-  // *-internal: auth через X-Internal-Key (без @Roles), клиент бота сам выбирает код или отправляет уточнение.
+  // *-internal: auth ТОЛЬКО через X-Internal-Key (@Internal) — JWT пользователя не принимается.
   @Post(':id/rows/:index/set-code-internal')
+  @Internal()
   setRowCodeInternal(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('index', ParseIntPipe) index: number,
@@ -198,6 +200,7 @@ export class DocumentsController {
   }
 
   @Post(':id/rows/:index/clarify-internal')
+  @Internal()
   clarifyRowInternal(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('index', ParseIntPipe) index: number,
@@ -263,8 +266,9 @@ export class DocumentsController {
     await this.sendExcel(id, res);
   }
 
-  /** Внутренний endpoint для бота (auth через X-Internal-Key, без @Roles) */
+  /** Внутренний endpoint для бота (auth ТОЛЬКО через X-Internal-Key) */
   @Get(':id/download-internal')
+  @Internal()
   async downloadInternal(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response) {
     await this.sendExcel(id, res);
   }

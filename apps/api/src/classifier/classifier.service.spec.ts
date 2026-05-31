@@ -221,7 +221,7 @@ describe('ClassifierService', () => {
       expect(p.tnVedCode).toBe('');
       expect(p.tnVedDescription).toBe('Не найден');
       expect(p.dutyRate).toBe(0);
-      expect(p.vatRate).toBe(20);
+      expect(p.vatRate).toBe(22);
       expect(p.suggestedCode).toBe('9999999999');
       expect(p.notes.some((n) => n.severity === 'blocker' && n.field === 'code')).toBe(true);
     });

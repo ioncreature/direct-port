@@ -34,6 +34,7 @@ import {
   type DocumentNotification,
   type ProblemRowSummary,
 } from './notification';
+import { DEFAULT_VAT_RATE } from '../common/vat';
 import { buildResultRow } from './result-row.helper';
 
 interface ResultTotals {
@@ -481,7 +482,7 @@ export class ManualCodeService {
       dutySign: rates.IMPSIGN ?? null,
       dutyMin: rates.IMP2 ?? null,
       dutyMinUnit: normalizeImpediUnit(rates.IMPEDI2),
-      vatRate: rates.NDS ?? 20,
+      vatRate: rates.NDS ?? DEFAULT_VAT_RATE,
       exciseRate: rates.AKC ?? 0,
       // Ручной выбор оператора = полная уверенность для целей расчёта/статуса.
       matchConfidence: 1,
