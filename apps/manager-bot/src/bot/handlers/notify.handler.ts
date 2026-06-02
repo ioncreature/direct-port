@@ -6,7 +6,7 @@ import { Api, InlineKeyboard } from 'grammy';
 import { escapeHtml } from '../format';
 
 // Wire-format: совпадает с ManagerNotification в apps/api/src/conversations/manager-notification.ts.
-type ManagerEventType =
+export type ManagerEventType =
   | 'new_document'
   | 'client_message'
   | 'pipeline_done'
@@ -14,7 +14,7 @@ type ManagerEventType =
   | 'pipeline_review'
   | 'pipeline_rejected';
 
-interface ManagerNotification {
+export interface ManagerNotification {
   event: ManagerEventType;
   managerTelegramIds: string[];
   clientId: string;
@@ -26,6 +26,54 @@ interface ManagerNotification {
   statusLabel?: string;
   text?: string;
   attachmentType?: string;
+}
+
+/** Текст уведомления менеджеру (HTML) по типу события. */
+export function buildNotificationText(n: ManagerNotification): string {
+  const client = `<b>${escapeHtml(n.clientName)}</b>`;
+  const doc = escapeHtml(n.documentName ?? 'файл');
+  switch (n.event) {
+    case 'new_document':
+      return `📄 Новый файл от ${client}\nФайл: ${doc}`;
+    case 'client_message': {
+      const body = n.text
+        ? escapeHtml(n.text)
+        : n.attachmentType
+          ? `[вложение: ${escapeHtml(n.attachmentType)}]`
+          : '[сообщение]';
+      return `💬 ${client}:\n${body}`;
+    }
+    case 'pipeline_done':
+      return `✅ Расчёт готов — ${doc}\nКлиент: ${client}${n.statusLabel ? `\nСтатус: ${escapeHtml(n.statusLabel)}` : ''}`;
+    case 'pipeline_failed':
+      return `❌ Ошибка обработки — ${doc}\nКлиент: ${client}`;
+    case 'pipeline_review':
+      return `⚠️ Требует проверки — ${doc}\nКлиент: ${client}`;
+    case 'pipeline_rejected':
+      return `🚫 Документ отклонён — ${doc}\nКлиент: ${client}`;
+    default:
+      return `Событие по клиенту ${client}`;
+  }
+}
+
+/** Inline-кнопки уведомления по типу события (deep-link через adminBase). */
+export function buildNotificationKeyboard(
+  n: ManagerNotification,
+  adminBase: string,
+): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  if (n.event === 'new_document') {
+    if (n.documentId) kb.text('🚀 Запустить расчёт', `start:${n.documentId}`).row();
+    if (!n.assigned) kb.text('👤 Взять', `claim:${n.clientId}`).row();
+    if (n.documentId) kb.url('↗️ В админке', `${adminBase}/documents/${n.documentId}`);
+  } else if (n.event === 'client_message') {
+    kb.text('✍️ Ответить', `reply:${n.clientId}`).row();
+    if (!n.assigned) kb.text('👤 Взять', `claim:${n.clientId}`).row();
+    kb.url('↗️ В админке', `${adminBase}/telegram-users/${n.clientId}`);
+  } else if (n.documentId) {
+    kb.url('↗️ Открыть в админке', `${adminBase}/documents/${n.documentId}`);
+  }
+  return kb;
 }
 
 /** Доставляет события клиентов менеджерам (очередь manager-notifications). */
@@ -49,8 +97,8 @@ export class NotifyHandler extends WorkerHost {
       this.logger.warn('Bot token not configured, skipping manager notification');
       return;
     }
-    const text = this.buildText(n);
-    const keyboard = this.buildKeyboard(n);
+    const text = buildNotificationText(n);
+    const keyboard = buildNotificationKeyboard(n, this.adminBase);
     const api = this.tgApi;
     // Broadcast параллельно: каждый sendMessage независим, .catch локализует сбой.
     await Promise.all(
@@ -62,48 +110,5 @@ export class NotifyHandler extends WorkerHost {
           ),
       ),
     );
-  }
-
-  private buildText(n: ManagerNotification): string {
-    const client = `<b>${escapeHtml(n.clientName)}</b>`;
-    const doc = escapeHtml(n.documentName ?? 'файл');
-    switch (n.event) {
-      case 'new_document':
-        return `📄 Новый файл от ${client}\nФайл: ${doc}`;
-      case 'client_message': {
-        const body = n.text
-          ? escapeHtml(n.text)
-          : n.attachmentType
-            ? `[вложение: ${escapeHtml(n.attachmentType)}]`
-            : '[сообщение]';
-        return `💬 ${client}:\n${body}`;
-      }
-      case 'pipeline_done':
-        return `✅ Расчёт готов — ${doc}\nКлиент: ${client}${n.statusLabel ? `\nСтатус: ${escapeHtml(n.statusLabel)}` : ''}`;
-      case 'pipeline_failed':
-        return `❌ Ошибка обработки — ${doc}\nКлиент: ${client}`;
-      case 'pipeline_review':
-        return `⚠️ Требует проверки — ${doc}\nКлиент: ${client}`;
-      case 'pipeline_rejected':
-        return `🚫 Документ отклонён — ${doc}\nКлиент: ${client}`;
-      default:
-        return `Событие по клиенту ${client}`;
-    }
-  }
-
-  private buildKeyboard(n: ManagerNotification): InlineKeyboard {
-    const kb = new InlineKeyboard();
-    if (n.event === 'new_document') {
-      if (n.documentId) kb.text('🚀 Запустить расчёт', `start:${n.documentId}`).row();
-      if (!n.assigned) kb.text('👤 Взять', `claim:${n.clientId}`).row();
-      if (n.documentId) kb.url('↗️ В админке', `${this.adminBase}/documents/${n.documentId}`);
-    } else if (n.event === 'client_message') {
-      kb.text('✍️ Ответить', `reply:${n.clientId}`).row();
-      if (!n.assigned) kb.text('👤 Взять', `claim:${n.clientId}`).row();
-      kb.url('↗️ В админке', `${this.adminBase}/telegram-users/${n.clientId}`);
-    } else if (n.documentId) {
-      kb.url('↗️ Открыть в админке', `${this.adminBase}/documents/${n.documentId}`);
-    }
-    return kb;
   }
 }

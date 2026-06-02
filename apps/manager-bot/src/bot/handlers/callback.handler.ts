@@ -7,6 +7,23 @@ interface ApiError {
   response?: { status?: number; data?: { code?: string } };
 }
 
+/** Машинный код/статус ошибки API → текст для toast менеджеру. */
+export function describeCallbackError(err: unknown): string {
+  const e = err as ApiError;
+  const code = e.response?.data?.code;
+  const status = e.response?.status;
+  if (code === 'CLIENT_ALREADY_CLAIMED' || status === 409) {
+    return 'Клиента уже взял другой менеджер';
+  }
+  if (code === 'MANAGER_NOT_LINKED' || status === 403) {
+    return 'Ваш аккаунт не привязан. Отправьте /start с ссылкой из админки';
+  }
+  if (code === 'INVALID_STATUS_FOR_START') {
+    return 'Документ уже запущен или не в статусе «Входящий»';
+  }
+  return 'Не удалось выполнить действие';
+}
+
 @Injectable()
 export class CallbackHandler {
   private logger = new Logger(CallbackHandler.name);
@@ -44,25 +61,9 @@ export class CallbackHandler {
       }
     } catch (err) {
       await ctx
-        .answerCallbackQuery({ text: this.describeError(err), show_alert: true })
+        .answerCallbackQuery({ text: describeCallbackError(err), show_alert: true })
         .catch(() => undefined);
       this.logger.warn(`Callback "${data}" failed: ${(err as Error).message}`);
     }
-  }
-
-  private describeError(err: unknown): string {
-    const e = err as ApiError;
-    const code = e.response?.data?.code;
-    const status = e.response?.status;
-    if (code === 'CLIENT_ALREADY_CLAIMED' || status === 409) {
-      return 'Клиента уже взял другой менеджер';
-    }
-    if (code === 'MANAGER_NOT_LINKED' || status === 403) {
-      return 'Ваш аккаунт не привязан. Отправьте /start с ссылкой из админки';
-    }
-    if (code === 'INVALID_STATUS_FOR_START') {
-      return 'Документ уже запущен или не в статусе «Входящий»';
-    }
-    return 'Не удалось выполнить действие';
   }
 }
