@@ -7,7 +7,9 @@
 - Монорепозиторий: pnpm 10+ workspaces
 - Backend: NestJS + TypeORM (apps/api, порт 3001)
 - Админка: Next.js (apps/admin-web, порт 3000)
-- Telegram-бот: NestJS + grammY (apps/tg-bot, порт 3002)
+- Клиентский бот: NestJS + grammY (apps/client-bot, порт 3003) — приём файлов от клиентов + чат с менеджером
+- Менеджерский бот: NestJS + grammY (apps/manager-bot, порт 3004) — уведомления, запуск пайплайна, ответы клиентам
+- Telegram-бот self-service: apps/tg-bot, порт 3002 — DEPRECATED, заменён на client-bot + manager-bot (код сохранён, выведен из автозапуска)
 - Библиотеки: libs/tks-api (клиент API таможенного справочника)
 - БД: PostgreSQL 17
 - Очереди: BullMQ + Redis 7
@@ -35,7 +37,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 - JWT-авторизация (access + refresh tokens)
 - Роли: admin, customs
 - Глобальные guards: JwtAuthGuard (пропускает X-Internal-Key), RolesGuard
-- Модули верхнего уровня (app.module.ts): Auth, Users, TnVed, TelegramUsers, Documents, CalculationConfig, AiConfig, Countries, Regulatory
+- Модули верхнего уровня (app.module.ts): Auth, Users, TnVed, TelegramUsers, Documents, Conversations, CalculationConfig, AiConfig, Countries, Regulatory
   - Auth, Users — авторизация и управление пользователями
   - TnVed — справочник ТН ВЭД: поиск по TKS API (searchGoodsGrouped + getTnvedCode), перевод запросов через Claude, обогащение ставками + блок `regulatoryReport` в `codeDetail` (Regulatory)
   - TelegramUsers — регистрация пользователей Telegram, детальный просмотр по UUID, PATCH :telegramId/language
@@ -44,6 +46,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
   - AiConfig — CRUD для выбора моделей Claude (opus/sonnet/haiku) для 4 сценариев AI. См. `docs/AI_CONFIG.md`
   - Countries — справочник стран (OKSMT), используется для страны происхождения товара
   - Regulatory — формирует RegulatoryReport (сертификация, лицензии, маркировка, утильсбор, страновые запреты) из блоков `TnvedCode.TNVEDALL` по PRIZNAK 6/7/11–15/21/27–29/33–35. Парсер NOTE извлекает ТР ТС/ЕАЭС, форму оценки, регулятора. Отдельных запросов к TKS не делает — использует уже загруженный TnvedCode. В pipeline вызывается из `DocumentsProcessor` после Calculator (см. `attachRegulatoryReports`) и сохраняется в `resultData[i].regulatoryReport`. Lazy AI-обогащение через `RegulatoryInterpreterService` (Claude haiku по умолчанию, persistent-кэш `regulatory_interpretation_cache` 180д, ключ — sha256(NOTE)+language+model). Endpoints: `GET /tn-ved/:code/regulatory-explanations?lang=ru` (для справочника) и `GET /documents/:id/regulatory-explanations?lang=ru` (для всех позиций документа одним запросом)
+  - Conversations — API-мост managed-флоу (client-bot ↔ manager-bot). От client-bot (X-Internal-Key): `POST /intake/documents` (managed-документ без автозапуска), `POST /intake/messages`. Для manager-bot (X-Internal-Key): `POST /manager/link`, `GET /manager/clients`, `POST /manager/clients/:id/claim`, `POST /manager/messages`, `POST /manager/documents/:id/start`. Привязка из админки (ADMIN): `POST /managers/:userId/telegram-link-token`, `DELETE /managers/:userId/telegram-link`. История переписки: `GET /telegram-users/by-id/:id/messages`. Очереди `manager-notifications` (→ manager-bot) и `client-bot-outgoing` (→ client-bot). `ManagerNotifyService` резолвит адресата (назначенный менеджер или broadcast по всем привязанным) и ветвит уведомления по `Document.source` ('managed' → менеджеру, 'self_service' → клиенту). Entity `ConversationMessage`; токены привязки в Redis (`RedisModule`)
 - Вложенные модули (внутри DocumentsModule):
   - AiParser — AI-парсинг таблиц (Claude): определение валюты, перевод, извлечение данных, автодетект страны происхождения. Retry + валидация
   - Classifier — классификация+верификация ТН ВЭД: TKS search (батчи по 5) → Claude classify+verify (батчи по 10) → getTnvedCode
@@ -73,7 +76,9 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 - API-клиент с автообновлением токенов
 - Отдельной страницы «Логи расчётов» нет — история доступна на странице деталей документа (вкладка/секция «История расчётов»)
 
-### apps/tg-bot — Telegram-бот
+### apps/tg-bot — Telegram-бот (DEPRECATED)
+
+> Заменён на apps/client-bot + apps/manager-bot (managed-флоу). Код сохранён, но выведен из автозапуска PM2. Описание ниже отражает прежний self-service поток.
 
 - grammY, команды /start, /help, /language
 - Локализация: @grammyjs/i18n + Fluent (.ftl), 3 языка: ru, zh, en
@@ -86,6 +91,22 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 - Состояние диалога в Redis (ConversationStateService, TTL 1 час)
 - Получение уведомлений через BullMQ (document-notifications) → отправка Excel в Telegram
 - API-клиент для связи с backend (X-Internal-Key)
+
+### apps/client-bot — Клиентский бот (managed-флоу)
+
+- grammY + @grammyjs/i18n (ru/zh/en), команды /start, /help, /language. Порт 3003
+- Приём файла: .xlsx/.csv → `POST /intake/documents` (X-Internal-Key) → Document(source=managed, status=INTAKE) **без автозапуска пайплайна**
+- Любой текст/фото/не-таблица → `POST /intake/messages` (релей менеджеру). Первый xlsx/csv становится Document, остальное — вложения переписки
+- Воркер `client-bot-outgoing` (BullMQ) → доставка ответов менеджера клиенту
+- Без выбора колонок/уточнения кодов (это берёт на себя AI-парсер + менеджер). Состояние в Redis `client-conv:<chatId>` {telegramUserId, language}, TTL 24ч
+
+### apps/manager-bot — Менеджерский бот (managed-флоу)
+
+- grammY, ru-only (без i18n). Порт 3004. Команды /start `<token>` (привязка), /clients, /help
+- Привязка: `/start <token>` → `POST /manager/link` → связывает Telegram-аккаунт с User (`managerTelegramId`). Токен генерится в админке на странице менеджера (хранится в Redis, TTL 15 мин)
+- Воркер `manager-notifications` (BullMQ) → уведомления менеджерам с inline-кнопками (🚀 Запустить расчёт, 👤 Взять, ✍️ Ответить, ↗️ В админке — deep-link через ADMIN_WEB_BASE_URL)
+- Callback: `claim:<clientId>` (закрепить клиента), `start:<docId>` (запустить пайплайн), `reply:<clientId>` (режим ответа). Активный диалог в Redis `mgr:active:<chatId>`, TTL 1ч
+- Маршрутизация нового клиента — broadcast всем привязанным менеджерам, первый жмёт «Взять» (claim, атомарно)
 
 ### libs/tks-api — Клиент API таможенного справочника (api1.tks.ru)
 

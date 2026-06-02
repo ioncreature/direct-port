@@ -14,8 +14,8 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import type { MulterOptions } from '@nestjs/platform-express/multer/interfaces/multer-options.interface';
 import { Response } from 'express';
+import { SPREADSHEET_UPLOAD } from '../common/spreadsheet-upload';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Internal } from '../auth/decorators/internal.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -37,24 +37,6 @@ import { UploadAdminDto } from './dto/upload-admin.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { ExcelExportService } from './excel-export.service';
 import { ManualCodeService } from './manual-code.service';
-
-const SPREADSHEET_UPLOAD: MulterOptions & { defParamCharset?: string } = {
-  limits: { fileSize: 40 * 1024 * 1024 },
-  // Иначе busboy парсит filename= как latin1 — не-ASCII имена становятся mojibake.
-  defParamCharset: 'utf8',
-  fileFilter: (_req, file, cb) => {
-    const ext = file.originalname.split('.').pop()?.toLowerCase();
-    if (ext === 'xlsx' || ext === 'csv') cb(null, true);
-    else
-      cb(
-        new BadRequestException({
-          code: ErrorCode.UNSUPPORTED_FORMAT,
-          message: 'Only .xlsx and .csv files are supported',
-        }),
-        false,
-      );
-  },
-};
 
 @Controller('documents')
 export class DocumentsController {
@@ -161,6 +143,13 @@ export class DocumentsController {
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   reprocess(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.reprocess(id);
+  }
+
+  /** Запуск пайплайна для managed-документа в статусе INTAKE (кнопка «Запустить расчёт»). */
+  @Post(':id/start')
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  start(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.startProcessing(id);
   }
 
   @Post(':id/recalculate')

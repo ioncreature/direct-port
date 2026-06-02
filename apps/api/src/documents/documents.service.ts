@@ -16,6 +16,7 @@ import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
 import {
   Document,
   DocumentStatus,
+  type DocumentSource,
   type FreightCurrency,
 } from '../database/entities/document.entity';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
@@ -28,6 +29,7 @@ import { FindDocumentsQueryDto } from './dto/find-documents-query.dto';
 import { RejectDocumentDto } from './dto/reject-document.dto';
 import { ReviewDocumentDto } from './dto/review-document.dto';
 import { buildDocumentNotificationPayload, type DocumentNotification } from './notification';
+import { ManagerNotifyService } from '../conversations/manager-notify.service';
 
 @Injectable()
 export class DocumentsService {
@@ -43,6 +45,7 @@ export class DocumentsService {
     private countriesService: CountriesService,
     private audit: PipelineAuditService,
     private regulatoryInterpreter: RegulatoryInterpreterService,
+    private managerNotify: ManagerNotifyService,
   ) {}
 
   /**
@@ -93,7 +96,14 @@ export class DocumentsService {
     buffer: Buffer,
     fileName: string,
     source: { telegramUserId: string } | { uploadedByUserId: string },
-    options: { freightCost?: number; freightCurrency?: FreightCurrency } = {},
+    options: {
+      freightCost?: number;
+      freightCurrency?: FreightCurrency;
+      /** Источник документа. По умолчанию self_service (текущее поведение). */
+      documentSource?: DocumentSource;
+      /** Запускать ли пайплайн сразу. По умолчанию true. Для managed-intake — false. */
+      autoStart?: boolean;
+    } = {},
   ): Promise<Document> {
     let language: string | null = null;
     if ('telegramUserId' in source) {
@@ -105,6 +115,8 @@ export class DocumentsService {
     }
 
     const freight = this.normalizeFreightOrThrow(options);
+    const documentSource: DocumentSource = options.documentSource ?? 'self_service';
+    const autoStart = options.autoStart ?? true;
 
     const doc = this.repo.create({
       ...('telegramUserId' in source
@@ -113,16 +125,41 @@ export class DocumentsService {
       originalFileName: fileName,
       fileBuffer: buffer,
       language,
+      source: documentSource,
       freightCost: freight.freightCost,
       freightCurrency: freight.freightCurrency,
-      status: DocumentStatus.PARSING,
+      // managed-документ ждёт ручного запуска менеджером (INTAKE), self_service парсится сразу.
+      status: autoStart ? DocumentStatus.PARSING : DocumentStatus.INTAKE,
     });
 
     const saved = await this.repo.save(doc);
-    this.logger.log(`Document created: id=${saved.id}, file="${fileName}", size=${buffer.length} bytes, source=${JSON.stringify(source)}`);
-    await this.parsingQueue.add('parse-document', { documentId: saved.id });
+    this.logger.log(
+      `Document created: id=${saved.id}, file="${fileName}", size=${buffer.length} bytes, source=${documentSource}, autoStart=${autoStart}`,
+    );
+    if (autoStart) {
+      await this.parsingQueue.add('parse-document', { documentId: saved.id });
+    }
     const { fileBuffer: _, ...result } = saved;
     return result as Document;
+  }
+
+  /**
+   * Запуск пайплайна для INTAKE-документа (managed-флоу). Инициируется менеджером
+   * из админки (POST /documents/:id/start) или из manager-bot. INTAKE → PARSING.
+   */
+  async startProcessing(id: string): Promise<Document> {
+    this.logger.log(`Starting processing for intake document ${id}`);
+    const doc = await this.findOne(id);
+    if (doc.status !== DocumentStatus.INTAKE) {
+      throw new BadRequestException({
+        code: ErrorCode.INVALID_STATUS_FOR_START,
+        message: 'Only intake documents can be started',
+      });
+    }
+    doc.status = DocumentStatus.PARSING;
+    const saved = await this.repo.save(doc);
+    await this.parsingQueue.add('parse-document', { documentId: saved.id });
+    return saved;
   }
 
   async findAll(query: FindDocumentsQueryDto): Promise<PaginatedResponse<Document>> {
@@ -361,6 +398,11 @@ export class DocumentsService {
     status: DocumentNotification['status'],
     extra: { errorMessage?: string; rejectionReasons?: string[] } = {},
   ): Promise<void> {
+    // managed-документ: уведомляем менеджера, а не клиента.
+    if (doc.source === 'managed') {
+      await this.managerNotify.notifyDocumentEvent(doc);
+      return;
+    }
     const payload = buildDocumentNotificationPayload(doc, status, extra);
     if (!payload) return;
 

@@ -20,6 +20,7 @@ import { DocumentsModule } from '../src/documents/documents.module';
 import { DocumentsParsingProcessor } from '../src/documents/documents-parsing.processor';
 import { DocumentsProcessor } from '../src/documents/documents.processor';
 import { PipelineAuditModule } from '../src/pipeline-audit/pipeline-audit.module';
+import { RedisModule, REDIS_CLIENT } from '../src/redis/redis.module';
 import { TelegramUsersModule } from '../src/telegram-users/telegram-users.module';
 import { TnVedModule } from '../src/tn-ved/tn-ved.module';
 import { UsersModule } from '../src/users/users.module';
@@ -33,6 +34,7 @@ import { AiCall } from '../src/database/entities/ai-call.entity';
 import { AiConfig } from '../src/database/entities/ai-config.entity';
 import { CalculationConfig } from '../src/database/entities/calculation-config.entity';
 import { CalculationLog } from '../src/database/entities/calculation-log.entity';
+import { ConversationMessage } from '../src/database/entities/conversation-message.entity';
 import { Document } from '../src/database/entities/document.entity';
 import { DocumentVersion } from '../src/database/entities/document-version.entity';
 import { PipelineStageRun } from '../src/database/entities/pipeline-stage-run.entity';
@@ -198,10 +200,12 @@ export async function createTestApp(): Promise<INestApplication> {
           PipelineStageRun,
           AiCall,
           DocumentVersion,
+          ConversationMessage,
         ],
         synchronize: true,
       }),
       BullModule.forRoot({ connection: { host: 'localhost', port: 6380 }, prefix }),
+      RedisModule,
       PipelineAuditModule,
       AuthModule,
       UsersModule,
@@ -224,6 +228,14 @@ export async function createTestApp(): Promise<INestApplication> {
     .useValue(mockAiParser)
     .overrideProvider(CurrencyService)
     .useValue(mockCurrency)
+    // Реальный Redis не нужен для e2e — токены привязки менеджера мокаем.
+    .overrideProvider(REDIS_CLIENT)
+    .useValue({
+      set: jest.fn().mockResolvedValue('OK'),
+      get: jest.fn().mockResolvedValue(null),
+      del: jest.fn().mockResolvedValue(1),
+      quit: jest.fn().mockResolvedValue('OK'),
+    })
     .compile();
 
   const app = moduleRef.createNestApplication();
@@ -242,7 +254,13 @@ export async function createTestApp(): Promise<INestApplication> {
 // Why: NestJS зовёт shutdown hooks в порядке провайдеров, и queue может закрыть
 // свою connection раньше, чем worker успеет завершиться — даёт unhandled error.
 export async function closeTestApp(app: INestApplication): Promise<void> {
-  const queueNames = ['document-parsing', 'document-processing', 'document-notifications'];
+  const queueNames = [
+    'document-parsing',
+    'document-processing',
+    'document-notifications',
+    'manager-notifications',
+    'client-bot-outgoing',
+  ];
 
   const processorClasses = [DocumentsProcessor, DocumentsParsingProcessor];
   for (const ProcessorClass of processorClasses) {

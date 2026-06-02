@@ -11,6 +11,9 @@ import { tdEmpty, td, th } from '@/lib/table-styles';
 import { getTelegramName } from '@/lib/telegram';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { useState } from 'react';
+import { MessagesPanel } from './messages-panel';
+import { TabsNav } from '@/components/tabs-nav';
 
 const sortableColumns: { field: string; label: string }[] = [
   { field: 'originalFileName', label: 'Файл' },
@@ -21,6 +24,7 @@ const sortableColumns: { field: string; label: string }[] = [
 
 export default function TelegramUserDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const [activeTab, setActiveTab] = useState<'documents' | 'messages'>('documents');
   const { user, loading: userLoading, error } = useTelegramUser(id);
   const {
     documents,
@@ -70,9 +74,16 @@ export default function TelegramUserDetailPage() {
         <InfoCard label="Регистрация" value={fmtDateTimeLocale(user.createdAt)} />
       </div>
 
-      <h2>Документы</h2>
+      <TabsNav
+        tabs={['documents', 'messages'] as const}
+        active={activeTab}
+        onChange={setActiveTab}
+        labels={{ documents: 'Документы', messages: 'Переписка' }}
+      />
 
-      {docsLoading ? (
+      {activeTab === 'messages' ? (
+        <MessagesPanel clientId={id} />
+      ) : docsLoading ? (
         <p>Загрузка...</p>
       ) : (
         <>

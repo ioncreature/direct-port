@@ -10,6 +10,7 @@ export const countryOriginSourceLabels: Record<CountryOriginSource, string> = {
 };
 
 export const statusLabels: Record<DocumentStatus, string> = {
+  intake: 'Входящий',
   parsing: 'Распознавание...',
   pending: 'Ожидает',
   processing: 'Обработка...',
@@ -22,6 +23,7 @@ export const statusLabels: Record<DocumentStatus, string> = {
 };
 
 export const statusColors: Record<DocumentStatus, string> = {
+  intake: '#0891b2',
   parsing: '#8b5cf6',
   pending: '#888',
   processing: '#2563eb',

@@ -1,6 +1,7 @@
 'use client';
 
 import { InfoCard } from '@/components/info-card';
+import { TabsNav } from '@/components/tabs-nav';
 import { useCalculationHistory } from '@/hooks/use-calculation-history';
 import { useCountries } from '@/hooks/use-countries';
 import { useDocument } from '@/hooks/use-document';
@@ -56,6 +57,11 @@ function buildStepperStages(status: DocumentStatus): { stages: StepperStage[]; h
   const s = (k: string, label: string, state: StepperStageState): StepperStage => ({ key: k, label, state });
 
   switch (status) {
+    case 'intake':
+      return {
+        stages: [s('u', 'Получен', 'done'), s('r', 'Распознавание', 'pending'), s('p', 'Обработка', 'pending'), s('d', 'Готов', 'pending')],
+        hint: 'Файл получен от клиента — запустите расчёт, когда будете готовы',
+      };
     case 'parsing':
       return {
         stages: [s('u', 'Загружен', 'done'), s('r', 'Распознавание', 'active'), s('p', 'Обработка', 'pending'), s('d', 'Готов', 'pending')],
@@ -208,11 +214,12 @@ function resolveStatus(row: DocumentResultRow): CalculationStatus {
 
 export default function DocumentDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { document: doc, loading, error, reprocess, recalculate, saveParsedData, reject, approve, setRowCode } = useDocument(id);
+  const { document: doc, loading, error, reprocess, recalculate, saveParsedData, reject, approve, start, setRowCode } = useDocument(id);
   const history = useCalculationHistory(id, doc?.updatedAt);
   const { countries } = useCountries();
 
   const [reprocessing, setReprocessing] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [recalculating, setRecalculating] = useState(false);
@@ -301,6 +308,7 @@ export default function DocumentDetailPage() {
 
   const isReview = doc?.status === 'requires_review';
   const isCodeReview = doc?.status === 'code_review_required';
+  const isIntake = doc?.status === 'intake';
   const docCurrency = doc?.currency || 'USD';
   const activeCurrency = displayCurrency || docCurrency;
 
@@ -432,6 +440,22 @@ export default function DocumentDetailPage() {
       >
         <h1 style={{ margin: 0 }}>{doc.originalFileName}</h1>
         <div style={{ display: 'flex', gap: 8 }}>
+          {isIntake && (
+            <button
+              onClick={async () => {
+                setStarting(true);
+                try {
+                  await start();
+                } finally {
+                  setStarting(false);
+                }
+              }}
+              disabled={starting}
+              style={btnSuccess}
+            >
+              {starting ? 'Запуск...' : '🚀 Запустить расчёт'}
+            </button>
+          )}
           {isReview && (
             <button
               onClick={handleApprove}
@@ -485,38 +509,12 @@ export default function DocumentDetailPage() {
 
       <DocumentStatusStepper status={doc.status} />
 
-      <div
-        style={{
-          display: 'flex',
-          gap: 4,
-          borderBottom: '1px solid #e5e7eb',
-          marginBottom: 20,
-        }}
-      >
-        {(['main', 'diagnostics'] as const).map((tab) => {
-          const isActive = activeTab === tab;
-          return (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setActiveTab(tab)}
-              style={{
-                padding: '10px 18px',
-                background: 'none',
-                border: 'none',
-                borderBottom: isActive ? '2px solid #2563eb' : '2px solid transparent',
-                marginBottom: -1,
-                cursor: 'pointer',
-                fontSize: 14,
-                fontWeight: isActive ? 600 : 400,
-                color: isActive ? '#2563eb' : '#6b7280',
-              }}
-            >
-              {tab === 'main' ? 'Основное' : 'Диагностика'}
-            </button>
-          );
-        })}
-      </div>
+      <TabsNav
+        tabs={['main', 'diagnostics'] as const}
+        active={activeTab}
+        onChange={setActiveTab}
+        labels={{ main: 'Основное', diagnostics: 'Диагностика' }}
+      />
 
       {activeTab === 'diagnostics' ? (
         <DiagnosticsPanel documentId={id} />

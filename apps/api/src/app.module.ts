@@ -8,8 +8,10 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { AiConfigModule } from './ai-config/ai-config.module';
 import { CalculationConfigModule } from './calculation-config/calculation-config.module';
+import { ConversationsModule } from './conversations/conversations.module';
 import { CountriesModule } from './countries/countries.module';
 import { DatabaseModule } from './database/database.module';
+import { RedisModule } from './redis/redis.module';
 import { DocumentsModule } from './documents/documents.module';
 import { PipelineAuditModule } from './pipeline-audit/pipeline-audit.module';
 import { TelegramUsersModule } from './telegram-users/telegram-users.module';
@@ -37,12 +39,14 @@ import { UsersModule } from './users/users.module';
       }),
     }),
     DatabaseModule,
+    RedisModule,
     PipelineAuditModule,
     AuthModule,
     UsersModule,
     TnVedModule,
     TelegramUsersModule,
     DocumentsModule,
+    ConversationsModule,
     CalculationConfigModule,
     AiConfigModule,
     CountriesModule,

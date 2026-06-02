@@ -238,6 +238,12 @@ function createProcessor(opts: Opts = {}) {
     }),
   };
 
+  const managerNotify = {
+    notifyDocumentEvent: jest.fn().mockResolvedValue(undefined),
+    notifyNewDocument: jest.fn().mockResolvedValue(undefined),
+    notifyClientMessage: jest.fn().mockResolvedValue(undefined),
+  };
+
   const processor = new DocumentsProcessor(
     repo as any,
     notificationQueue as any,
@@ -249,6 +255,7 @@ function createProcessor(opts: Opts = {}) {
     calculationLogs as any,
     audit as any,
     regulatoryService as any,
+    managerNotify as any,
   );
 
   return {
@@ -263,6 +270,7 @@ function createProcessor(opts: Opts = {}) {
     currencyService,
     calculationLogs,
     audit,
+    managerNotify,
   };
 }
 

@@ -3,6 +3,7 @@ export interface User {
   email: string;
   role: 'admin' | 'customs';
   isActive: boolean;
+  managerTelegramId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -21,6 +22,20 @@ export interface TelegramUser {
   lastName: string | null;
   createdAt: string;
   documentCount?: number;
+  assignedManagerId?: string | null;
+}
+
+export interface ConversationMessage {
+  id: string;
+  clientId: string;
+  direction: 'client_to_manager' | 'manager_to_client';
+  managerId: string | null;
+  manager?: { id: string; email: string } | null;
+  text: string | null;
+  attachmentType: 'document' | 'photo' | 'file' | null;
+  attachmentFileId: string | null;
+  documentId: string | null;
+  createdAt: string;
 }
 
 export interface TnVedCode {
@@ -194,6 +209,7 @@ export interface TnVedSearchResponse {
 }
 
 export type DocumentStatus =
+  | 'intake'
   | 'parsing'
   | 'pending'
   | 'processing'
@@ -296,6 +312,7 @@ export interface Document {
   uploadedBy: { id: string; email: string } | null;
   originalFileName: string;
   status: DocumentStatus;
+  source: 'self_service' | 'managed';
   rowCount: number;
   currency: string | null;
   exchangeRates: Record<string, number> | null;

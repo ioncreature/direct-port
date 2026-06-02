@@ -4,6 +4,7 @@ import { useUsers } from '@/hooks/use-users';
 import type { User } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useState } from 'react';
+import { TelegramLinkSection } from './telegram-link-section';
 
 export default function EditUserPage() {
   const { id } = useParams<{ id: string }>();
@@ -120,6 +121,8 @@ export default function EditUserPage() {
           Отмена
         </button>
       </form>
+
+      <TelegramLinkSection user={user} />
     </div>
   );
 }

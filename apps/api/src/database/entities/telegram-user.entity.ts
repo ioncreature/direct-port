@@ -3,11 +3,14 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  JoinColumn,
+  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 import { Document } from './document.entity';
+import { User } from './user.entity';
 
 @Entity('telegram_users')
 export class TelegramUser {
@@ -29,6 +32,14 @@ export class TelegramUser {
 
   @Column({ type: 'varchar', length: 5, default: 'ru' })
   language: string;
+
+  /** Менеджер, закреплённый за клиентом (claim). null — клиент в общем пуле (broadcast). */
+  @Column({ type: 'uuid', name: 'assigned_manager_id', nullable: true })
+  assignedManagerId: string | null;
+
+  @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'assigned_manager_id' })
+  assignedManager: User | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

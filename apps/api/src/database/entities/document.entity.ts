@@ -12,6 +12,7 @@ import { TelegramUser } from './telegram-user.entity';
 import { User } from './user.entity';
 
 export enum DocumentStatus {
+  INTAKE = 'intake',
   PARSING = 'parsing',
   PENDING = 'pending',
   PROCESSING = 'processing',
@@ -24,6 +25,7 @@ export enum DocumentStatus {
 }
 
 export const documentStatusLabels: Record<DocumentStatus, string> = {
+  [DocumentStatus.INTAKE]: 'Входящий',
   [DocumentStatus.PARSING]: 'Распознавание',
   [DocumentStatus.PENDING]: 'Ожидает обработки',
   [DocumentStatus.PROCESSING]: 'Обработка',
@@ -49,6 +51,11 @@ export type CountryOriginSource =
   | 'manual'
   | 'default';
 
+/** Источник документа:
+ *  - self_service — клиент через self-service бота (tg-bot), пайплайн стартует автоматически
+ *  - managed       — клиент через client-bot, пайплайн запускает менеджер вручную (статус INTAKE) */
+export type DocumentSource = 'self_service' | 'managed';
+
 export const DEFAULT_COUNTRY_OF_ORIGIN = '156'; // Китай (OKSMT)
 
 /** Поддерживаемые валюты для freightCost. Допустимые символьные коды совпадают с ЦБ РФ. */
@@ -70,6 +77,10 @@ export class Document {
 
   @Column({ type: 'uuid', name: 'uploaded_by_user_id', nullable: true })
   uploadedByUserId: string | null;
+
+  /** self_service (автозапуск пайплайна) | managed (запуск менеджером вручную). */
+  @Column({ type: 'varchar', length: 16, default: 'self_service' })
+  source: DocumentSource;
 
   @Column({ type: 'varchar', length: 500, name: 'original_file_name' })
   originalFileName: string;

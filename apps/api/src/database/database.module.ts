@@ -6,6 +6,7 @@ import { AiConfig } from './entities/ai-config.entity';
 import { AiUsageLog } from './entities/ai-usage-log.entity';
 import { CalculationConfig } from './entities/calculation-config.entity';
 import { CalculationLog } from './entities/calculation-log.entity';
+import { ConversationMessage } from './entities/conversation-message.entity';
 import { Document } from './entities/document.entity';
 import { DocumentPhoto } from './entities/document-photo.entity';
 import { DocumentVersion } from './entities/document-version.entity';
@@ -51,6 +52,9 @@ import { AddRegulatoryInterpretationCache1778300000000 } from './migrations/1778
 import { PurgeMultiVatInterpretations1778400000000 } from './migrations/1778400000000-PurgeMultiVatInterpretations';
 import { AddDocumentFreight1778500000000 } from './migrations/1778500000000-AddDocumentFreight';
 import { AddDocumentFreightCheck1778600000000 } from './migrations/1778600000000-AddDocumentFreightCheck';
+import { AddManagedIntake1778700000000 } from './migrations/1778700000000-AddManagedIntake';
+import { AddManagerLinkAndAssignment1778800000000 } from './migrations/1778800000000-AddManagerLinkAndAssignment';
+import { AddConversationMessages1778900000000 } from './migrations/1778900000000-AddConversationMessages';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -77,6 +81,7 @@ import { SeedService } from './seeds/seed.service';
           DutyInterpretationCache,
           DocumentPhoto,
           RegulatoryInterpretationCache,
+          ConversationMessage,
         ],
         synchronize: false,
         migrations: [
@@ -114,6 +119,9 @@ import { SeedService } from './seeds/seed.service';
           PurgeMultiVatInterpretations1778400000000,
           AddDocumentFreight1778500000000,
           AddDocumentFreightCheck1778600000000,
+          AddManagedIntake1778700000000,
+          AddManagerLinkAndAssignment1778800000000,
+          AddConversationMessages1778900000000,
         ],
         migrationsRun: true,
       }),

@@ -90,6 +90,12 @@ function createProcessor(opts: Opts = {}) {
     getByHash: jest.fn().mockResolvedValue([]),
   };
 
+  const managerNotify = {
+    notifyDocumentEvent: jest.fn().mockResolvedValue(undefined),
+    notifyNewDocument: jest.fn().mockResolvedValue(undefined),
+    notifyClientMessage: jest.fn().mockResolvedValue(undefined),
+  };
+
   const processor = new DocumentsParsingProcessor(
     repo as any,
     processingQueue as any,
@@ -97,9 +103,19 @@ function createProcessor(opts: Opts = {}) {
     aiParser as any,
     audit as any,
     photoStorage as any,
+    managerNotify as any,
   );
 
-  return { processor, doc, repo, processingQueue, notificationQueue, aiParser, audit };
+  return {
+    processor,
+    doc,
+    repo,
+    processingQueue,
+    notificationQueue,
+    aiParser,
+    audit,
+    managerNotify,
+  };
 }
 
 function fakeJob(documentId: string): Job<{ documentId: string }> {

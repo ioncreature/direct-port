@@ -111,6 +111,15 @@ export function useDocument(id: string) {
     }
   }, [id, fetch]);
 
+  const start = useCallback(async () => {
+    try {
+      await api.post(`/documents/${id}/start`);
+      await fetch();
+    } catch {
+      setError('Не удалось запустить расчёт');
+    }
+  }, [id, fetch]);
+
   const setRowCode = useCallback(
     async (rowIndex: number, tnVedCode: string) => {
       try {
@@ -131,5 +140,5 @@ export function useDocument(id: string) {
     [id, fetch],
   );
 
-  return { document, loading, error, refetch: fetch, reprocess, recalculate, saveParsedData, reject, approve, setRowCode };
+  return { document, loading, error, refetch: fetch, reprocess, recalculate, saveParsedData, reject, approve, start, setRowCode };
 }

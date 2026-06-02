@@ -22,6 +22,7 @@ import { ManualCodeService } from './manual-code.service';
 import { PhotoStorageModule } from '../photo-storage/photo-storage.module';
 import { RegulatoryModule } from '../regulatory/regulatory.module';
 import { TksModule } from '../tks/tks.module';
+import { ManagerNotifyModule } from '../conversations/manager-notify.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { TksModule } from '../tks/tks.module';
     PhotoStorageModule,
     RegulatoryModule,
     TksModule,
+    ManagerNotifyModule,
   ],
   controllers: [DocumentsController],
   providers: [
@@ -50,5 +52,6 @@ import { TksModule } from '../tks/tks.module';
     ExcelExportService,
     ManualCodeService,
   ],
+  exports: [DocumentsService],
 })
 export class DocumentsModule {}

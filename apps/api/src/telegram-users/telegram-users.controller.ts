@@ -15,11 +15,15 @@ import { UserRole } from '../database/entities/user.entity';
 import { FindTelegramUsersQueryDto } from './dto/find-telegram-users-query.dto';
 import { RegisterTelegramUserDto } from './dto/register-telegram-user.dto';
 import { UpdateLanguageDto } from './dto/update-language.dto';
+import { ConversationsService } from '../conversations/conversations.service';
 import { TelegramUsersService } from './telegram-users.service';
 
 @Controller('telegram-users')
 export class TelegramUsersController {
-  constructor(private service: TelegramUsersService) {}
+  constructor(
+    private service: TelegramUsersService,
+    private conversations: ConversationsService,
+  ) {}
 
   @Get()
   @Roles(UserRole.ADMIN)
@@ -31,6 +35,13 @@ export class TelegramUsersController {
   @Roles(UserRole.ADMIN)
   findOneById(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.findOneById(id);
+  }
+
+  /** История переписки клиента с менеджерами (read-only для админки). */
+  @Get('by-id/:id/messages')
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  messages(@Param('id', ParseUUIDPipe) id: string) {
+    return this.conversations.listByClient(id);
   }
 
   @Post('register')

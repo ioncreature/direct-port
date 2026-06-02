@@ -34,6 +34,7 @@ import {
   type DocumentNotification,
   type ProblemRowSummary,
 } from './notification';
+import { ManagerNotifyService } from '../conversations/manager-notify.service';
 import { DEFAULT_VAT_RATE } from '../common/vat';
 import { buildResultRow } from './result-row.helper';
 
@@ -83,6 +84,7 @@ export class ManualCodeService {
     private configService: CalculationConfigService,
     private calculationLogs: CalculationLogsService,
     private regulatoryService: RegulatoryRequirementsService,
+    private managerNotify: ManagerNotifyService,
   ) {}
 
   async setRowCode(
@@ -557,6 +559,11 @@ export class ManualCodeService {
     status: DocumentNotification['status'],
     problemRows?: ProblemRowSummary[],
   ): Promise<void> {
+    // managed-документ: уведомляем менеджера, а не клиента.
+    if (doc.source === 'managed') {
+      await this.managerNotify.notifyDocumentEvent(doc);
+      return;
+    }
     const payload = buildDocumentNotificationPayload(doc, status, { problemRows });
     if (!payload) return;
     await this.notificationQueue

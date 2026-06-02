@@ -11,6 +11,7 @@ import { addStageUsage } from '../common/token-usage';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { PipelineAuditService } from '../pipeline-audit/pipeline-audit.service';
 import { buildDocumentNotificationPayload, type DocumentNotification } from './notification';
+import { ManagerNotifyService } from '../conversations/manager-notify.service';
 import { PhotoStorageService } from '../photo-storage/photo-storage.service';
 
 @Processor('document-parsing')
@@ -24,6 +25,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
     private aiParser: AiParserService,
     private audit: PipelineAuditService,
     private photoStorage: PhotoStorageService,
+    private managerNotify: ManagerNotifyService,
   ) {
     super();
   }
@@ -34,7 +36,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
 
     const doc = await this.repo
       .createQueryBuilder('doc')
-      .select(['doc.id', 'doc.status', 'doc.originalFileName', 'doc.fileBuffer', 'doc.language', 'doc.createdAt'])
+      .select(['doc.id', 'doc.status', 'doc.source', 'doc.originalFileName', 'doc.fileBuffer', 'doc.language', 'doc.createdAt'])
       .leftJoinAndSelect('doc.telegramUser', 'tu')
       .where('doc.id = :id', { id: documentId })
       .getOne();
@@ -161,6 +163,10 @@ export class DocumentsParsingProcessor extends WorkerHost {
         doc.status = DocumentStatus.REQUIRES_REVIEW;
         doc.rejectionReasons = rejectionReasons.length > 0 ? rejectionReasons : null;
         await this.repo.save(doc);
+        // managed: клиента не трогаем, но менеджеру нужно знать про необходимость ревью.
+        if (doc.source === 'managed') {
+          await this.managerNotify.notifyDocumentEvent(doc);
+        }
         this.logger.log(`Document ${documentId} parsed but needs review: ${rejectionReasons.join('; ')}`);
       }
     } catch (err) {
@@ -187,6 +193,11 @@ export class DocumentsParsingProcessor extends WorkerHost {
     rejectionReasonsLocalized?: string[];
     itemCount?: number;
   }): Promise<void> {
+    // managed-документ: уведомляем менеджера, а не клиента.
+    if (opts.doc.source === 'managed') {
+      await this.managerNotify.notifyDocumentEvent(opts.doc);
+      return;
+    }
     const payload = buildDocumentNotificationPayload(opts.doc, opts.status, {
       errorMessage: opts.errorMessage,
       errorCode: opts.errorCode,

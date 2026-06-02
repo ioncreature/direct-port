@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { ErrorCode } from '../common/error-codes';
 import { DocumentStatus } from '../database/entities/document.entity';
 import { DocumentsService } from './documents.service';
@@ -106,6 +106,12 @@ function createService(
     explain: jest.fn().mockResolvedValue({ byId: new Map() }),
   };
 
+  const managerNotify = {
+    notifyDocumentEvent: jest.fn().mockResolvedValue(undefined),
+    notifyNewDocument: jest.fn().mockResolvedValue(undefined),
+    notifyClientMessage: jest.fn().mockResolvedValue(undefined),
+  };
+
   const service = new DocumentsService(
     repo as never,
     tgUserRepo as never,
@@ -116,6 +122,7 @@ function createService(
     countriesService as never,
     audit as never,
     regulatoryInterpreter as never,
+    managerNotify as never,
   );
 
   return {
@@ -127,6 +134,7 @@ function createService(
     notificationsQueue,
     countriesService,
     audit,
+    managerNotify,
     queryBuilder,
   };
 }

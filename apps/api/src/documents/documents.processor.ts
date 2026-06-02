@@ -31,6 +31,7 @@ import {
   type DocumentNotification,
   type ProblemRowSummary,
 } from './notification';
+import { ManagerNotifyService } from '../conversations/manager-notify.service';
 
 export type { DocumentNotification };
 
@@ -49,6 +50,7 @@ export class DocumentsProcessor extends WorkerHost {
     private calculationLogs: CalculationLogsService,
     private audit: PipelineAuditService,
     private regulatoryService: RegulatoryRequirementsService,
+    private managerNotify: ManagerNotifyService,
   ) {
     super();
   }
@@ -635,6 +637,11 @@ export class DocumentsProcessor extends WorkerHost {
     rejectionReasonsLocalized?: string[];
     problemRows?: ProblemRowSummary[];
   }): Promise<void> {
+    // managed-документ: уведомляем менеджера, а не клиента.
+    if (opts.doc.source === 'managed') {
+      await this.managerNotify.notifyDocumentEvent(opts.doc);
+      return;
+    }
     const payload = buildDocumentNotificationPayload(opts.doc, opts.status, {
       errorMessage: opts.errorMessage,
       errorCode: opts.errorCode,

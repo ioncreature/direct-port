@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { ErrorCode } from '../common/error-codes';
 import { DocumentStatus } from '../database/entities/document.entity';
 import { ManualCodeService } from './manual-code.service';
@@ -155,6 +155,12 @@ function createService(opts: CreateOpts = {}) {
     buildReport: jest.fn().mockResolvedValue(null),
   };
 
+  const managerNotify = {
+    notifyDocumentEvent: jest.fn().mockResolvedValue(undefined),
+    notifyNewDocument: jest.fn().mockResolvedValue(undefined),
+    notifyClientMessage: jest.fn().mockResolvedValue(undefined),
+  };
+
   const service = new ManualCodeService(
     repo as never,
     notificationQueue as never,
@@ -166,6 +172,7 @@ function createService(opts: CreateOpts = {}) {
     configService as never,
     calculationLogs as never,
     regulatoryService as never,
+    managerNotify as never,
   );
 
   return {

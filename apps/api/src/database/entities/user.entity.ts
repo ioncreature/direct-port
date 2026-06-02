@@ -30,6 +30,11 @@ export class User {
   @Column({ type: 'boolean', name: 'is_active', default: true })
   isActive: boolean;
 
+  /** Telegram ID привязанного менеджерского аккаунта (для manager-bot). Уникален среди
+   *  заполненных (partial unique index). null — менеджер не привязал Telegram. */
+  @Column({ type: 'bigint', name: 'manager_telegram_id', nullable: true })
+  managerTelegramId: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
