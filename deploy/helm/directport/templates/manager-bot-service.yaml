@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "directport.fullname" . }}-manager-bot
+  labels:
+    {{- include "directport.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manager-bot
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.managerBot.port }}
+      targetPort: {{ .Values.managerBot.port }}
+      protocol: TCP
+  selector:
+    {{- include "directport.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: manager-bot

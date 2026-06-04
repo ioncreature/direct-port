@@ -24,8 +24,10 @@ jobs:
             dockerfile: apps/api/Dockerfile
           - name: admin-web
             dockerfile: apps/admin-web/Dockerfile
-          - name: tg-bot
-            dockerfile: apps/tg-bot/Dockerfile
+          - name: client-bot
+            dockerfile: apps/client-bot/Dockerfile
+          - name: manager-bot
+            dockerfile: apps/manager-bot/Dockerfile
           - name: landing
             dockerfile: apps/landing/Dockerfile
     steps:
@@ -104,6 +106,9 @@ jobs:
             tksGoodsApiKey: "${{ secrets.TKS_GOODS_API_KEY }}"
             anthropicApiKey: "${{ secrets.ANTHROPIC_API_KEY }}"
             telegramBotToken: "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+            clientBotTelegramToken: "${{ secrets.CLIENT_BOT_TELEGRAM_TOKEN }}"
+            managerBotTelegramToken: "${{ secrets.MANAGER_BOT_TELEGRAM_TOKEN }}"
+            managerBotUsername: "${{ secrets.MANAGER_BOT_USERNAME }}"
           EOF
 
           # Если переменная не задана в GitHub Environment variables — используем дефолт из values.yaml.
@@ -121,8 +126,10 @@ jobs:
             --set api.image.tag=${{ github.sha }} \
             --set adminWeb.image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-admin-web \
             --set adminWeb.image.tag=${{ github.sha }} \
-            --set tgBot.image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-tg-bot \
-            --set tgBot.image.tag=${{ github.sha }} \
+            --set clientBot.image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-client-bot \
+            --set clientBot.image.tag=${{ github.sha }} \
+            --set managerBot.image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-manager-bot \
+            --set managerBot.image.tag=${{ github.sha }} \
             --set landing.image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-landing \
             --set landing.image.tag=${{ github.sha }} \
             --set postgresql.auth.password="$DB_PASSWORD" \

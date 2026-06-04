@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "directport.fullname" . }}-manager-bot
+  labels:
+    {{- include "directport.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manager-bot
+spec:
+  replicas: {{ .Values.managerBot.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "directport.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: manager-bot
+  template:
+    metadata:
+      labels:
+        {{- include "directport.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: manager-bot
+    spec:
+      {{- $redisHost := ternary (printf "%s-redis-master" .Release.Name) .Values.redis.host .Values.redis.enabled }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: wait-for-redis
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z {{ $redisHost }} {{ .Values.redis.port }}; do echo waiting for redis; sleep 2; done"]
+      containers:
+        - name: manager-bot
+          image: "{{ .Values.managerBot.image.repository }}:{{ .Values.managerBot.image.tag }}"
+          imagePullPolicy: {{ .Values.managerBot.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.managerBot.port }}
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: {{ include "directport.fullname" . }}-secrets
+          env:
+            - name: BOT_PORT
+              value: {{ .Values.managerBot.port | quote }}
+            - name: API_BASE_URL
+              value: {{ include "directport.apiUrl" . | quote }}
+            - name: ADMIN_WEB_BASE_URL
+              value: {{ include "directport.adminWebUrl" . | quote }}
+            # Свой токен бота — перекрывает общий TELEGRAM_BOT_TOKEN из secretRef
+            - name: TELEGRAM_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "directport.fullname" . }}-secrets
+                  key: MANAGER_BOT_TELEGRAM_TOKEN
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.managerBot.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.managerBot.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.managerBot.resources | nindent 12 }}

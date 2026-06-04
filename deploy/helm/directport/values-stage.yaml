@@ -29,8 +29,20 @@ landing:
     pullPolicy: Always
 
 tgBot:
+  # DEPRECATED — отключаем выкатку self-service бота на stage.
+  replicaCount: 0
   image:
     repository: ghcr.io/your-org/directport-tg-bot
+    pullPolicy: Always
+
+clientBot:
+  image:
+    repository: ghcr.io/your-org/directport-client-bot
+    pullPolicy: Always
+
+managerBot:
+  image:
+    repository: ghcr.io/your-org/directport-manager-bot
     pullPolicy: Always
 
 ingress:

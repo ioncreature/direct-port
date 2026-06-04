@@ -29,6 +29,14 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 http://{{ include "directport.fullname" . }}-api:{{ .Values.api.port }}/api
 {{- end }}
 
+{{- define "directport.adminWebUrl" -}}
+{{- if .Values.managerBot.adminWebBaseUrl }}
+{{- .Values.managerBot.adminWebBaseUrl }}
+{{- else }}
+{{- printf "https://%s" .Values.ingress.hosts.admin.host }}
+{{- end }}
+{{- end }}
+
 {{- define "directport.databaseUrl" -}}
 {{- if .Values.secrets.databaseUrl }}
 {{- .Values.secrets.databaseUrl }}

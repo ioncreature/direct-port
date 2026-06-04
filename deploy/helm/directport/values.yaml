@@ -53,6 +53,8 @@ landing:
       cpu: 250m
       memory: 256Mi
 
+# tg-bot (self-service) — DEPRECATED, заменён на clientBot + managerBot.
+# Шаблоны сохранены; чтобы отключить выкатку, поставьте replicaCount: 0.
 tgBot:
   replicaCount: 1
   image:
@@ -60,6 +62,41 @@ tgBot:
     tag: latest
     pullPolicy: IfNotPresent
   port: 3002
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# Клиентский бот: приём файлов от клиентов + чат с менеджером.
+clientBot:
+  replicaCount: 1
+  image:
+    repository: directport/client-bot
+    tag: latest
+    pullPolicy: IfNotPresent
+  port: 3003
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# Менеджерский бот: уведомления, чат с клиентом, запуск расчёта.
+managerBot:
+  replicaCount: 1
+  image:
+    repository: directport/manager-bot
+    tag: latest
+    pullPolicy: IfNotPresent
+  port: 3004
+  # Публичный URL админки для deep-link кнопок «Открыть в админке».
+  # Если пусто — выводится из ingress.hosts.admin.host (https).
+  adminWebBaseUrl: ''
   resources:
     requests:
       cpu: 50m
@@ -127,7 +164,13 @@ secrets:
   tksTnvedApiKey: ''
   tksGoodsApiKey: ''
   anthropicApiKey: ''
+  # tg-bot (self-service, deprecated)
   telegramBotToken: ''
+  # Токены новых ботов (отдельные боты в @BotFather)
+  clientBotTelegramToken: ''
+  managerBotTelegramToken: ''
+  # Username менеджерского бота без @ (для deep-link привязки в админке, читает API)
+  managerBotUsername: ''
 
 migration:
   enabled: true
