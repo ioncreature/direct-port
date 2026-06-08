@@ -6,6 +6,8 @@ import Redis from 'ioredis';
 export interface ActiveDialog {
   clientId: string;
   clientName: string;
+  /** Менеджеру уже подтвердили доставку в этом диалоге — не повторять на каждый ответ. */
+  acked?: boolean;
 }
 
 const TTL = 3600; // 1 час
@@ -33,6 +35,18 @@ export class ActiveDialogService implements OnModuleDestroy {
 
   async clear(chatId: number): Promise<void> {
     await this.redis.del(this.key(chatId));
+  }
+
+  /**
+   * Помечает, что менеджеру уже подтвердили доставку в этом диалоге.
+   * Возвращает true только при первом вызове — чтобы не повторять
+   * «✅ Отправлено клиенту.» на каждый ответ (ср. markGreetedIfFirst в client-bot).
+   */
+  async markAckedIfFirst(chatId: number): Promise<boolean> {
+    const dialog = await this.get(chatId);
+    if (!dialog || dialog.acked) return false;
+    await this.set(chatId, { ...dialog, acked: true });
+    return true;
   }
 
   async onModuleDestroy() {

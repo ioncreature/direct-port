@@ -28,7 +28,10 @@ export class MessageHandler {
 
     try {
       await this.apiClient.sendMessage(from.id, dialog.clientId, text);
-      await ctx.reply('✅ Отправлено клиенту.');
+      // Подтверждаем доставку один раз на диалог — дальше менеджер и так видит, что отвечает клиенту.
+      if (await this.activeDialog.markAckedIfFirst(ctx.chat!.id)) {
+        await ctx.reply('✅ Отправлено клиенту.');
+      }
     } catch (err) {
       const code = (err as { response?: { data?: { code?: string } } })?.response?.data?.code;
       const msg =
