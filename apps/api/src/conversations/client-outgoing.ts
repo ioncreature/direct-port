@@ -11,4 +11,6 @@ export interface ClientOutgoingMessage {
   documentId?: string;
   /** Имя исходного файла — для осмысленного имени документа у клиента. */
   documentFileName?: string;
+  /** Ключ локали для системного уведомления — client-bot локализует его по language. */
+  i18nKey?: string;
 }

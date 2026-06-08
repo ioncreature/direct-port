@@ -138,6 +138,11 @@ export class ConversationsService {
         message: 'Client already claimed by another manager',
       });
     }
+    // Один раз сообщаем клиенту, что менеджер подключился (а не на каждое его сообщение).
+    await this.enqueueClientOutgoing(
+      { clientTelegramId: client.telegramId, language: client.language, i18nKey: 'manager-assigned' },
+      clientId,
+    );
     return { clientId, managerId: manager.id };
   }
 

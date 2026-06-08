@@ -10,6 +10,8 @@ import Redis from 'ioredis';
 export interface ConversationState {
   telegramUserId: string;
   language: string;
+  /** Клиент уже получил подтверждение первого контакта в этой сессии. */
+  greeted?: boolean;
 }
 
 const STATE_TTL = 24 * 3600; // 24 часа
@@ -38,6 +40,18 @@ export class ConversationStateService implements OnModuleDestroy {
 
   async clearState(chatId: number): Promise<void> {
     await this.redis.del(this.key(chatId));
+  }
+
+  /**
+   * Помечает, что клиента уже поприветствовали в этой сессии.
+   * Возвращает true только при первом вызове — чтобы не слать подтверждение
+   * на каждое сообщение, а лишь на первый контакт.
+   */
+  async markGreetedIfFirst(chatId: number): Promise<boolean> {
+    const state = await this.getState(chatId);
+    if (!state || state.greeted) return false;
+    await this.setState(chatId, { ...state, greeted: true });
+    return true;
   }
 
   async onModuleDestroy() {

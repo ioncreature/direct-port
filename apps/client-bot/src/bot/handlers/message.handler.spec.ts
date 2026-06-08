@@ -3,8 +3,9 @@ import { MessageHandler } from './message.handler';
 function createHandler() {
   const apiClient = { intakeMessage: jest.fn().mockResolvedValue(undefined) };
   const resolver = { resolveTelegramUserId: jest.fn().mockResolvedValue('cli-uuid') };
-  const handler = new MessageHandler(apiClient as never, resolver as never);
-  return { handler, apiClient, resolver };
+  const stateService = { markGreetedIfFirst: jest.fn().mockResolvedValue(true) };
+  const handler = new MessageHandler(apiClient as never, resolver as never, stateService as never);
+  return { handler, apiClient, resolver, stateService };
 }
 
 function ctxWith(message: Record<string, unknown>) {
@@ -25,7 +26,15 @@ describe('MessageHandler.handleText', () => {
     expect(apiClient.intakeMessage).toHaveBeenCalledWith(
       expect.objectContaining({ telegramUserId: 'cli-uuid', text: 'Привет', telegramMessageId: 5 }),
     );
-    expect(ctx.reply).toHaveBeenCalledWith('msg-received');
+    expect(ctx.reply).toHaveBeenCalledWith('greeting-ack');
+  });
+
+  it('подтверждает только первый контакт — повторное сообщение без ответа', async () => {
+    const { handler, stateService } = createHandler();
+    stateService.markGreetedIfFirst.mockResolvedValue(false);
+    const ctx = ctxWith({ text: 'ещё вопрос', message_id: 6 });
+    await handler.handleText(ctx as never);
+    expect(ctx.reply).not.toHaveBeenCalled();
   });
 
   it('игнорирует пустой текст', async () => {

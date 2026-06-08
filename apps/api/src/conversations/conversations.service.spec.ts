@@ -80,8 +80,8 @@ const UNASSIGNED_CLIENT = { id: 'cli-1', telegramId: '12345', language: 'ru', as
 
 describe('ConversationsService', () => {
   describe('claimByManagerTelegram', () => {
-    it('assigns an unclaimed client to the manager', async () => {
-      const { service, updateQb } = createService({
+    it('assigns an unclaimed client and notifies them the manager joined', async () => {
+      const { service, updateQb, clientOutQueue } = createService({
         manager: ACTIVE_MANAGER,
         client: UNASSIGNED_CLIENT,
         claimAffected: 1,
@@ -89,16 +89,21 @@ describe('ConversationsService', () => {
       const res = await service.claimByManagerTelegram('cli-1', '999');
       expect(res).toEqual({ clientId: 'cli-1', managerId: 'mgr-1' });
       expect(updateQb.execute).toHaveBeenCalled();
+      expect(clientOutQueue.add).toHaveBeenCalledWith(
+        'client-message',
+        expect.objectContaining({ clientTelegramId: '12345', i18nKey: 'manager-assigned' }),
+      );
     });
 
-    it('is idempotent when already assigned to the same manager', async () => {
-      const { service, updateQb } = createService({
+    it('is idempotent when already assigned to the same manager (no re-notify)', async () => {
+      const { service, updateQb, clientOutQueue } = createService({
         manager: ACTIVE_MANAGER,
         client: { ...UNASSIGNED_CLIENT, assignedManagerId: 'mgr-1' },
       });
       const res = await service.claimByManagerTelegram('cli-1', '999');
       expect(res).toEqual({ clientId: 'cli-1', managerId: 'mgr-1' });
       expect(updateQb.execute).not.toHaveBeenCalled();
+      expect(clientOutQueue.add).not.toHaveBeenCalled();
     });
 
     it('throws 409 when another manager already claimed (race)', async () => {

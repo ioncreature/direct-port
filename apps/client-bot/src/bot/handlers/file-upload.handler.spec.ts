@@ -6,8 +6,9 @@ function createHandler() {
     intakeMessage: jest.fn().mockResolvedValue(undefined),
   };
   const resolver = { resolveTelegramUserId: jest.fn().mockResolvedValue('cli-uuid') };
-  const handler = new FileUploadHandler(apiClient as never, resolver as never);
-  return { handler, apiClient, resolver };
+  const stateService = { markGreetedIfFirst: jest.fn().mockResolvedValue(true) };
+  const handler = new FileUploadHandler(apiClient as never, resolver as never, stateService as never);
+  return { handler, apiClient, resolver, stateService };
 }
 
 function ctxWith(document: Record<string, unknown>, caption?: string) {

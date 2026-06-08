@@ -3,6 +3,7 @@ import { ApiClientService } from '../../api-client/api-client.service';
 import { ClientResolverService } from '../client-resolver.service';
 import { formatUser } from '../format-user';
 import { type BotContext, tErrorCode } from '../i18n';
+import { ConversationStateService } from '../state/conversation-state.service';
 
 const MAX_FILE_SIZE = 40 * 1024 * 1024;
 
@@ -13,6 +14,7 @@ export class FileUploadHandler {
   constructor(
     private apiClient: ApiClientService,
     private resolver: ClientResolverService,
+    private stateService: ConversationStateService,
   ) {}
 
   async handle(ctx: BotContext) {
@@ -52,6 +54,8 @@ export class FileUploadHandler {
       this.logger.log(
         `Intake "${fileName}" (${buffer.length}B) from ${user}: documentId=${result.id}`,
       );
+      // file-accepted уже подтверждает приём — помечаем контакт, чтобы текст после файла не дублировал приветствие.
+      await this.stateService.markGreetedIfFirst(ctx.chat!.id);
       await ctx.reply(ctx.t('file-accepted', { fileName }));
     } catch (err) {
       this.logger.error(`Intake failed for "${fileName}" from ${user}: ${(err as Error).message}`);
@@ -70,7 +74,9 @@ export class FileUploadHandler {
         attachmentFileId: fileId,
         telegramMessageId: ctx.message?.message_id,
       });
-      await ctx.reply(ctx.t('msg-received'));
+      if (await this.stateService.markGreetedIfFirst(ctx.chat!.id)) {
+        await ctx.reply(ctx.t('greeting-ack'));
+      }
     } catch (err) {
       this.logger.error(`Failed to relay file attachment: ${(err as Error).message}`);
       await ctx.reply(ctx.t('upload-error'));

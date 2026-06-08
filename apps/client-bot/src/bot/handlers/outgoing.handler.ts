@@ -13,6 +13,7 @@ interface ClientOutgoingMessage {
   text?: string;
   documentId?: string;
   documentFileName?: string;
+  i18nKey?: string;
 }
 
 /** Доставляет клиенту ответы менеджера (очередь client-bot-outgoing): текст или готовый расчёт. */
@@ -32,7 +33,7 @@ export class OutgoingHandler extends WorkerHost {
   }
 
   async process(job: Job<ClientOutgoingMessage>): Promise<void> {
-    const { clientTelegramId, text, documentId, documentFileName, language } = job.data;
+    const { clientTelegramId, text, documentId, documentFileName, language, i18nKey } = job.data;
     if (!this.tgApi) {
       this.logger.warn('Bot token not configured, skipping outgoing message');
       return;
@@ -41,9 +42,11 @@ export class OutgoingHandler extends WorkerHost {
       await this.deliverDocument(this.tgApi, clientTelegramId, documentId, documentFileName, language);
       return;
     }
-    if (!text) return;
+    // Системные уведомления приходят ключом локали — переводим их на язык клиента здесь.
+    const body = i18nKey ? i18n.t(language ?? 'ru', i18nKey) : text;
+    if (!body) return;
     await this.tgApi
-      .sendMessage(clientTelegramId, text)
+      .sendMessage(clientTelegramId, body)
       .catch((err) =>
         this.logger.error(`Failed to deliver manager message to ${clientTelegramId}`, err),
       );
