@@ -47,6 +47,7 @@ describe('ManagerNotifyService.notifyDocumentEvent', () => {
         managerTelegramIds: ['999'],
         assigned: true,
         documentId: 'doc-1',
+        resultReady: true,
       }),
     );
   });
@@ -59,7 +60,11 @@ describe('ManagerNotifyService.notifyDocumentEvent', () => {
     expect(usersRepo.find).toHaveBeenCalled();
     expect(queue.add).toHaveBeenCalledWith(
       'manager-notify',
-      expect.objectContaining({ event: 'pipeline_failed', managerTelegramIds: ['111', '222'] }),
+      expect.objectContaining({
+        event: 'pipeline_failed',
+        managerTelegramIds: ['111', '222'],
+        resultReady: false,
+      }),
     );
   });
 

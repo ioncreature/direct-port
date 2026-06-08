@@ -1,10 +1,23 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { DocumentStatus } from '../database/entities/document.entity';
 import { ConversationsService } from './conversations.service';
 
 interface Opts {
   client?: { id: string; telegramId: string; language: string; assignedManagerId: string | null } | null;
   manager?: { id: string; isActive: boolean; managerTelegramId: string } | null;
   userById?: { id: string; managerTelegramId: string | null } | null;
+  document?: {
+    id: string;
+    status: DocumentStatus;
+    telegramUserId: string | null;
+    telegramUser?: {
+      id: string;
+      telegramId: string;
+      language: string;
+      assignedManagerId: string | null;
+    } | null;
+    originalFileName: string;
+  } | null;
   claimAffected?: number;
   tokenUserId?: string | null;
 }
@@ -45,7 +58,10 @@ function createService(opts: Opts = {}) {
     consumeToken: jest.fn().mockResolvedValue(opts.tokenUserId ?? null),
     createToken: jest.fn(),
   };
-  const documents = { startProcessing: jest.fn().mockResolvedValue({ id: 'doc-1' }) };
+  const documents = {
+    startProcessing: jest.fn().mockResolvedValue({ id: 'doc-1' }),
+    findOne: jest.fn().mockResolvedValue(opts.document ?? null),
+  };
 
   const service = new ConversationsService(
     messagesRepo as never,
@@ -143,6 +159,63 @@ describe('ConversationsService', () => {
         text: 'Здравствуйте',
         language: 'ru',
       });
+    });
+  });
+
+  describe('sendDocumentToClient', () => {
+    const PROCESSED_DOC = {
+      id: 'doc-1',
+      status: DocumentStatus.PROCESSED,
+      telegramUserId: 'cli-1',
+      telegramUser: UNASSIGNED_CLIENT,
+      originalFileName: 'goods.xlsx',
+    };
+
+    it('доставляет готовый расчёт клиенту: запись в БД + очередь с documentId', async () => {
+      const { service, messagesRepo, clientOutQueue } = createService({
+        manager: ACTIVE_MANAGER,
+        client: UNASSIGNED_CLIENT,
+        document: PROCESSED_DOC,
+      });
+      const res = await service.sendDocumentToClient('999', 'doc-1');
+      expect(res).toEqual({ ok: true });
+      expect(messagesRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          direction: 'manager_to_client',
+          managerId: 'mgr-1',
+          attachmentType: 'document',
+          documentId: 'doc-1',
+        }),
+      );
+      expect(clientOutQueue.add).toHaveBeenCalledWith('client-message', {
+        clientTelegramId: '12345',
+        language: 'ru',
+        documentId: 'doc-1',
+        documentFileName: 'goods.xlsx',
+      });
+    });
+
+    it('отклоняет документ не в статусе PROCESSED (download недоступен)', async () => {
+      const { service, clientOutQueue } = createService({
+        manager: ACTIVE_MANAGER,
+        client: UNASSIGNED_CLIENT,
+        document: { ...PROCESSED_DOC, status: DocumentStatus.PROCESSING },
+      });
+      await expect(service.sendDocumentToClient('999', 'doc-1')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(clientOutQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('требует привязанного менеджера', async () => {
+      const { service } = createService({
+        manager: null,
+        client: UNASSIGNED_CLIENT,
+        document: PROCESSED_DOC,
+      });
+      await expect(service.sendDocumentToClient('999', 'doc-1')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
     });
   });
 });

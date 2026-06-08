@@ -74,16 +74,27 @@ export class ApiClientService {
     fileName: string,
     telegramUserId: string,
     fileId?: string,
+    text?: string,
   ): Promise<{ id: string; status: string }> {
     const form = new FormData();
     form.append('file', file, { filename: fileName });
     form.append('telegramUserId', telegramUserId);
     if (fileId) form.append('fileId', fileId);
+    if (text) form.append('text', text);
     const { data } = await this.client.post('/intake/documents', form, {
       headers: form.getHeaders(),
       timeout: 15_000,
     });
     return data;
+  }
+
+  /** Скачать готовый Excel результата (download-internal) для доставки клиенту. */
+  async downloadDocument(documentId: string): Promise<Buffer> {
+    const { data } = await this.client.get(`/documents/${documentId}/download-internal`, {
+      responseType: 'arraybuffer',
+      timeout: 30_000,
+    });
+    return Buffer.from(data as ArrayBuffer);
   }
 
   /** Сообщение клиента менеджеру (текст и/или вложение). */

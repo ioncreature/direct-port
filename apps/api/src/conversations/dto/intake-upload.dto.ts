@@ -8,4 +8,9 @@ export class IntakeUploadDto {
   @IsOptional()
   @IsString()
   fileId?: string;
+
+  /** Подпись к файлу (caption) — сопроводительный текст клиента. */
+  @IsOptional()
+  @IsString()
+  text?: string;
 }

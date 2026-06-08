@@ -47,6 +47,7 @@ export class FileUploadHandler {
         fileName,
         telegramUserId,
         document.file_id,
+        ctx.message?.caption,
       );
       this.logger.log(
         `Intake "${fileName}" (${buffer.length}B) from ${user}: documentId=${result.id}`,

@@ -22,6 +22,17 @@ describe('buildNotificationText', () => {
     expect(t).toContain('goods.xlsx');
   });
 
+  it('new_document с подписью к файлу показывает текст', () => {
+    const t = buildNotificationText({
+      ...base,
+      event: 'new_document',
+      documentName: 'goods.xlsx',
+      text: 'срочно посчитайте',
+    });
+    expect(t).toContain('goods.xlsx');
+    expect(t).toContain('срочно посчитайте');
+  });
+
   it('client_message с текстом', () => {
     const t = buildNotificationText({ ...base, event: 'client_message', text: 'Привет' });
     expect(t).toContain('Привет');
@@ -96,7 +107,7 @@ describe('buildNotificationKeyboard', () => {
     expect(buttons.some((b) => b.url?.includes('/telegram-users/cli-1'))).toBe(true);
   });
 
-  it('pipeline_done: только ссылка в админку', () => {
+  it('pipeline_done без готового результата: только ссылка в админку', () => {
     const kb = buildNotificationKeyboard(
       { ...base, event: 'pipeline_done', documentId: 'doc-1' },
       ADMIN,
@@ -104,5 +115,15 @@ describe('buildNotificationKeyboard', () => {
     const buttons = flat(kb);
     expect(buttons).toHaveLength(1);
     expect(buttons[0].url).toContain('/documents/doc-1');
+  });
+
+  it('pipeline_done с resultReady: кнопка «Отправить клиенту» + ссылка', () => {
+    const kb = buildNotificationKeyboard(
+      { ...base, event: 'pipeline_done', documentId: 'doc-1', resultReady: true },
+      ADMIN,
+    );
+    const buttons = flat(kb);
+    expect(buttons.some((b) => b.callback_data === 'send:doc-1')).toBe(true);
+    expect(buttons.some((b) => b.url?.includes('/documents/doc-1'))).toBe(true);
   });
 });

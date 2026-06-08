@@ -16,6 +16,7 @@ file-too-large = The file is too large. Maximum size is 40 MB.
 unsupported-format = Only .xlsx and .csv files are supported.
 upload-error = Could not accept the file. Please try again a little later.
 msg-received = ✅ Your message was passed to a manager. They will reply here.
+result-ready = ✅ Your calculation is ready — see the attached file.
 language-prompt = Choose a language:
 language-set = ✅ Language switched to English.
 

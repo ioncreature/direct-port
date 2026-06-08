@@ -50,12 +50,13 @@ export class IntakeController {
     const client = await this.conversations.resolveClientOrThrow(dto.telegramUserId);
     await this.conversations.appendClientMessage({
       clientId: client.id,
+      text: dto.text ?? null,
       attachmentType: 'document',
       attachmentFileId: dto.fileId ?? null,
       documentId: doc.id,
     });
     doc.telegramUser = client;
-    await this.managerNotify.notifyNewDocument(doc);
+    await this.managerNotify.notifyNewDocument(doc, dto.text);
     return { id: doc.id, status: doc.status };
   }
 

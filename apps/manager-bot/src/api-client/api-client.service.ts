@@ -81,4 +81,10 @@ export class ApiClientService {
   async startDocument(documentId: string, managerTelegramId: number): Promise<void> {
     await this.client.post(`/manager/documents/${documentId}/start`, { managerTelegramId });
   }
+
+  async sendDocument(documentId: string, managerTelegramId: number): Promise<void> {
+    await this.client.post(`/manager/documents/${documentId}/send-to-client`, {
+      managerTelegramId,
+    });
+  }
 }

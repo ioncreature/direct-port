@@ -26,6 +26,7 @@ export interface ManagerNotification {
   statusLabel?: string;
   text?: string;
   attachmentType?: string;
+  resultReady?: boolean;
 }
 
 /** Текст уведомления менеджеру (HTML) по типу события. */
@@ -33,8 +34,10 @@ export function buildNotificationText(n: ManagerNotification): string {
   const client = `<b>${escapeHtml(n.clientName)}</b>`;
   const doc = escapeHtml(n.documentName ?? 'файл');
   switch (n.event) {
-    case 'new_document':
-      return `📄 Новый файл от ${client}\nФайл: ${doc}`;
+    case 'new_document': {
+      const caption = n.text ? `\n💬 ${escapeHtml(n.text)}` : '';
+      return `📄 Новый файл от ${client}\nФайл: ${doc}${caption}`;
+    }
     case 'client_message': {
       const body = n.text
         ? escapeHtml(n.text)
@@ -71,6 +74,9 @@ export function buildNotificationKeyboard(
     if (!n.assigned) kb.text('👤 Взять', `claim:${n.clientId}`).row();
     kb.url('↗️ В админке', `${adminBase}/telegram-users/${n.clientId}`);
   } else if (n.documentId) {
+    if (n.event === 'pipeline_done' && n.resultReady) {
+      kb.text('📤 Отправить клиенту', `send:${n.documentId}`).row();
+    }
     kb.url('↗️ Открыть в админке', `${adminBase}/documents/${n.documentId}`);
   }
   return kb;

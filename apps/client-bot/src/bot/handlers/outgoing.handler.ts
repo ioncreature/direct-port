@@ -2,38 +2,69 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
-import { Api } from 'grammy';
+import { Api, InputFile } from 'grammy';
+import { ApiClientService } from '../../api-client/api-client.service';
+import { i18n } from '../i18n';
 
 // Wire-format: совпадает с ClientOutgoingMessage в apps/api/src/conversations/client-outgoing.ts.
 interface ClientOutgoingMessage {
   clientTelegramId: string;
-  text: string;
   language?: string;
+  text?: string;
+  documentId?: string;
+  documentFileName?: string;
 }
 
-/** Доставляет ответы менеджера клиенту (очередь client-bot-outgoing). */
+/** Доставляет клиенту ответы менеджера (очередь client-bot-outgoing): текст или готовый расчёт. */
 @Injectable()
 @Processor('client-bot-outgoing')
 export class OutgoingHandler extends WorkerHost {
   private logger = new Logger(OutgoingHandler.name);
   private tgApi: Api | null;
 
-  constructor(config: ConfigService) {
+  constructor(
+    config: ConfigService,
+    private apiClient: ApiClientService,
+  ) {
     super();
     const token = config.get<string>('TELEGRAM_BOT_TOKEN');
     this.tgApi = token ? new Api(token) : null;
   }
 
   async process(job: Job<ClientOutgoingMessage>): Promise<void> {
-    const { clientTelegramId, text } = job.data;
+    const { clientTelegramId, text, documentId, documentFileName, language } = job.data;
     if (!this.tgApi) {
       this.logger.warn('Bot token not configured, skipping outgoing message');
       return;
     }
+    if (documentId) {
+      await this.deliverDocument(this.tgApi, clientTelegramId, documentId, documentFileName, language);
+      return;
+    }
+    if (!text) return;
     await this.tgApi
       .sendMessage(clientTelegramId, text)
       .catch((err) =>
         this.logger.error(`Failed to deliver manager message to ${clientTelegramId}`, err),
       );
+  }
+
+  /** Скачивает Excel результата из API и отправляет клиенту как документ с локализованной подписью. */
+  private async deliverDocument(
+    api: Api,
+    clientTelegramId: string,
+    documentId: string,
+    fileName: string | undefined,
+    language: string | undefined,
+  ): Promise<void> {
+    try {
+      const buffer = await this.apiClient.downloadDocument(documentId);
+      const caption = i18n.t(language ?? 'ru', 'result-ready');
+      await api.sendDocument(clientTelegramId, new InputFile(buffer, fileName ?? 'result.xlsx'), {
+        caption,
+      });
+    } catch (err) {
+      this.logger.error(`Failed to deliver result document to ${clientTelegramId}`, err);
+    }
   }
 }

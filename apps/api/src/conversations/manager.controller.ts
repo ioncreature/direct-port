@@ -42,4 +42,10 @@ export class ManagerController {
   start(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ManagerActionDto) {
     return this.conversations.startDocumentByManager(String(dto.managerTelegramId), id);
   }
+
+  @Post('documents/:id/send-to-client')
+  @Internal()
+  sendToClient(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ManagerActionDto) {
+    return this.conversations.sendDocumentToClient(String(dto.managerTelegramId), id);
+  }
 }

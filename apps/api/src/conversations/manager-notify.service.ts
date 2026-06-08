@@ -3,7 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
 import { IsNull, Not, Repository } from 'typeorm';
-import { Document } from '../database/entities/document.entity';
+import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { User } from '../database/entities/user.entity';
 import {
   formatClientName,
@@ -29,11 +29,12 @@ export class ManagerNotifyService {
   ) {}
 
   /** Клиент прислал новый файл — менеджер решит, когда запускать расчёт. */
-  async notifyNewDocument(doc: Document): Promise<void> {
+  async notifyNewDocument(doc: Document, text?: string): Promise<void> {
     if (!doc.telegramUser) return;
     await this.enqueue('new_document', doc.telegramUser, {
       documentId: doc.id,
       documentName: doc.originalFileName,
+      text,
     });
   }
 
@@ -59,6 +60,7 @@ export class ManagerNotifyService {
       documentId: doc.id,
       documentName: doc.originalFileName,
       statusLabel: doc.statusLabel,
+      resultReady: doc.status === DocumentStatus.PROCESSED,
     });
   }
 

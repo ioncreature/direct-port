@@ -21,6 +21,12 @@ describe('describeCallbackError', () => {
     ).toContain('уже запущен');
   });
 
+  it('расчёт не готов к отправке (DOWNLOAD_NOT_AVAILABLE)', () => {
+    expect(
+      describeCallbackError({ response: { data: { code: 'DOWNLOAD_NOT_AVAILABLE' } } }),
+    ).toContain('не готов');
+  });
+
   it('неизвестная ошибка → общий текст', () => {
     expect(describeCallbackError(new Error('boom'))).toBe('Не удалось выполнить действие');
   });

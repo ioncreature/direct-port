@@ -21,6 +21,9 @@ export function describeCallbackError(err: unknown): string {
   if (code === 'INVALID_STATUS_FOR_START') {
     return 'Документ уже запущен или не в статусе «Входящий»';
   }
+  if (code === 'DOWNLOAD_NOT_AVAILABLE') {
+    return 'Расчёт ещё не готов к отправке';
+  }
   return 'Не удалось выполнить действие';
 }
 
@@ -52,6 +55,9 @@ export class CallbackHandler {
       } else if (action === 'start') {
         await this.apiClient.startDocument(arg, from.id);
         await ctx.answerCallbackQuery({ text: '🚀 Расчёт запущен' });
+      } else if (action === 'send') {
+        await this.apiClient.sendDocument(arg, from.id);
+        await ctx.answerCallbackQuery({ text: '📤 Расчёт отправлен клиенту' });
       } else if (action === 'reply') {
         await this.activeDialog.set(ctx.chat!.id, { clientId: arg, clientName: '' });
         await ctx.answerCallbackQuery({ text: '✍️ Режим ответа включён' });

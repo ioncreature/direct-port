@@ -25,8 +25,10 @@ export interface ManagerNotification {
   documentId?: string;
   documentName?: string;
   statusLabel?: string; // человекочитаемый статус документа (для pipeline_*)
-  text?: string; // текст сообщения клиента (для client_message)
+  text?: string; // текст сообщения клиента (для client_message / подпись к new_document)
   attachmentType?: string; // 'document' | 'photo' | 'file' (для client_message)
+  /** Результат готов к отправке клиенту (PROCESSED — download доступен). Для pipeline_done. */
+  resultReady?: boolean;
 }
 
 /** Человекочитаемое имя клиента для шапки уведомления. */

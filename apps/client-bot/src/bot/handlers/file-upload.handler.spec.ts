@@ -10,11 +10,11 @@ function createHandler() {
   return { handler, apiClient, resolver };
 }
 
-function ctxWith(document: Record<string, unknown>) {
+function ctxWith(document: Record<string, unknown>, caption?: string) {
   return {
     chat: { id: 1 },
     from: { id: 2, language_code: 'ru' },
-    message: { document, message_id: 9 },
+    message: { document, message_id: 9, caption },
     reply: jest.fn().mockResolvedValue(undefined),
     getFile: jest.fn().mockResolvedValue({ file_path: 'path/file' }),
     api: { token: 'TKN' },
@@ -34,7 +34,7 @@ describe('FileUploadHandler.handle', () => {
     );
   });
 
-  it('.xlsx → скачивает и отправляет в intakeDocument', async () => {
+  it('.xlsx с подписью → скачивает и пробрасывает caption в intakeDocument', async () => {
     const { handler, apiClient } = createHandler();
     const realFetch = global.fetch;
     global.fetch = jest
@@ -42,13 +42,14 @@ describe('FileUploadHandler.handle', () => {
       .mockResolvedValue({ arrayBuffer: async () => new ArrayBuffer(8) }) as never;
     try {
       await handler.handle(
-        ctxWith({ file_name: 'goods.xlsx', file_id: 'fid', file_size: 100 }) as never,
+        ctxWith({ file_name: 'goods.xlsx', file_id: 'fid', file_size: 100 }, 'это мой заказ') as never,
       );
       expect(apiClient.intakeDocument).toHaveBeenCalledWith(
         expect.any(Buffer),
         'goods.xlsx',
         'cli-uuid',
         'fid',
+        'это мой заказ',
       );
     } finally {
       global.fetch = realFetch;

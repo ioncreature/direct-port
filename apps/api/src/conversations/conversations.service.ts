@@ -15,7 +15,7 @@ import {
   type ConversationAttachmentType,
   ConversationMessage,
 } from '../database/entities/conversation-message.entity';
-import { Document } from '../database/entities/document.entity';
+import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
 import { User } from '../database/entities/user.entity';
 import { DocumentsService } from '../documents/documents.service';
@@ -83,13 +83,17 @@ export class ConversationsService {
   async appendManagerMessage(input: {
     clientId: string;
     managerId: string;
-    text: string;
+    text?: string | null;
+    attachmentType?: ConversationAttachmentType | null;
+    documentId?: string | null;
   }): Promise<ConversationMessage> {
     const msg = this.messagesRepo.create({
       clientId: input.clientId,
       direction: 'manager_to_client',
       managerId: input.managerId,
-      text: input.text,
+      text: input.text ?? null,
+      attachmentType: input.attachmentType ?? null,
+      documentId: input.documentId ?? null,
     });
     return this.messagesRepo.save(msg);
   }
@@ -146,14 +150,63 @@ export class ConversationsService {
     const manager = await this.resolveManagerOrThrow(managerTelegramId);
     const client = await this.resolveClientOrThrow(clientId);
     await this.appendManagerMessage({ clientId, managerId: manager.id, text });
-    const payload: ClientOutgoingMessage = {
-      clientTelegramId: client.telegramId,
-      text,
-      language: client.language,
-    };
+    await this.enqueueClientOutgoing(
+      { clientTelegramId: client.telegramId, text, language: client.language },
+      clientId,
+    );
+    return { ok: true };
+  }
+
+  /** Кладёт исходящее сообщение клиенту в очередь client-bot-outgoing (доставляет client-bot). */
+  private async enqueueClientOutgoing(
+    payload: ClientOutgoingMessage,
+    clientId: string,
+  ): Promise<void> {
     await this.clientOutQueue
       .add('client-message', payload)
       .catch((err) => this.logger.warn(`Failed to enqueue client message for ${clientId}`, err));
+  }
+
+  /**
+   * Отправка готового расчёта (Excel) клиенту по кнопке менеджера.
+   * Сам файл не возим через очередь — client-bot скачает его по documentId
+   * (download-internal). Доступно только для PROCESSED — иначе download недоступен.
+   */
+  async sendDocumentToClient(
+    managerTelegramId: string,
+    documentId: string,
+  ): Promise<{ ok: true }> {
+    const manager = await this.resolveManagerOrThrow(managerTelegramId);
+    const doc = await this.documents.findOne(documentId);
+    if (doc.status !== DocumentStatus.PROCESSED) {
+      throw new BadRequestException({
+        code: ErrorCode.DOWNLOAD_NOT_AVAILABLE,
+        message: 'Result file is available only for processed documents',
+      });
+    }
+    // telegramUser уже загружен relation'ом в findOne — второй запрос не нужен.
+    const client = doc.telegramUser;
+    if (!client) {
+      throw new BadRequestException({
+        code: ErrorCode.UNKNOWN_ROW,
+        message: 'Document has no client to deliver to',
+      });
+    }
+    await this.appendManagerMessage({
+      clientId: client.id,
+      managerId: manager.id,
+      attachmentType: 'document',
+      documentId: doc.id,
+    });
+    await this.enqueueClientOutgoing(
+      {
+        clientTelegramId: client.telegramId,
+        language: client.language,
+        documentId: doc.id,
+        documentFileName: doc.originalFileName,
+      },
+      client.id,
+    );
     return { ok: true };
   }
 
