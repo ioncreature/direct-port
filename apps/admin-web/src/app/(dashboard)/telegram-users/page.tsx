@@ -1,5 +1,6 @@
 'use client';
 
+import { BotLinksSection } from '@/components/bot-links-section';
 import { Pager } from '@/components/pager';
 import { SortableTh } from '@/components/sortable-th';
 import { useTelegramUsers } from '@/hooks/use-telegram-users';
@@ -94,6 +95,8 @@ export default function TelegramUsersPage() {
           <Pager page={page} total={total} limit={limit} onPageChange={setPage} />
         </>
       )}
+
+      <BotLinksSection style={{ marginTop: 32 }} />
     </div>
   );
 }
