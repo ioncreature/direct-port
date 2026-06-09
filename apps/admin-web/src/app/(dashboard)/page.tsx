@@ -1,5 +1,6 @@
 'use client';
 
+import { type BotLink, useBotLinks } from '@/hooks/use-bot-links';
 import { useDocuments } from '@/hooks/use-documents';
 import { useTelegramUsers } from '@/hooks/use-telegram-users';
 import { useUsers } from '@/hooks/use-users';
@@ -14,6 +15,7 @@ export default function DashboardPage() {
   const { total: usersTotal, loading: usersLoading } = useUsers();
   const { documents, total: docsTotal, loading: docsLoading } = useDocuments();
   const { total: tgTotal, loading: tgLoading } = useTelegramUsers();
+  const { links: botLinks, loading: botLinksLoading } = useBotLinks();
   const [aiCost, setAiCost] = useState<number | null>(null);
   const [statusCounts, setStatusCounts] = useState<Partial<Record<DocumentStatus, number>>>({});
 
@@ -111,6 +113,14 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      <div style={{ marginTop: 32 }}>
+        <h3 style={{ marginBottom: 12 }}>Telegram-боты</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          <BotLinkCard label="Клиентский бот" link={botLinks?.client ?? null} loading={botLinksLoading} />
+          <BotLinkCard label="Менеджерский бот" link={botLinks?.manager ?? null} loading={botLinksLoading} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -141,4 +151,39 @@ function StatCard({
     );
   }
   return content;
+}
+
+function BotLinkCard({
+  label,
+  link,
+  loading,
+}: {
+  label: string;
+  link: BotLink | null;
+  loading: boolean;
+}) {
+  return (
+    <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 20 }}>
+      <div style={{ fontSize: 14, color: '#666', marginBottom: 8 }}>{label}</div>
+      {loading ? (
+        <div style={{ color: '#888' }}>...</div>
+      ) : link ? (
+        <>
+          <a
+            href={link.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ fontSize: 20, fontWeight: 700, color: '#2563eb', textDecoration: 'none' }}
+          >
+            @{link.username}
+          </a>
+          <div style={{ fontSize: 13, color: '#888', marginTop: 6, wordBreak: 'break-all' }}>
+            {link.url}
+          </div>
+        </>
+      ) : (
+        <div style={{ color: '#888', fontSize: 14 }}>бот ещё не запускался</div>
+      )}
+    </div>
+  );
 }

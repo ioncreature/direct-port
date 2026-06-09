@@ -87,4 +87,9 @@ export class ApiClientService {
       managerTelegramId,
     });
   }
+
+  /** Публикация username бота для отображения ссылки в админке (при старте). */
+  async publishBotIdentity(username: string): Promise<void> {
+    await this.client.post('/bot-links/identity', { kind: 'manager', username });
+  }
 }

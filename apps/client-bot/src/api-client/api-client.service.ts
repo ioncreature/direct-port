@@ -107,4 +107,9 @@ export class ApiClientService {
   }): Promise<void> {
     await this.client.post('/intake/messages', payload);
   }
+
+  /** Публикация username бота для отображения ссылки в админке (при старте). */
+  async publishBotIdentity(username: string): Promise<void> {
+    await this.client.post('/bot-links/identity', { kind: 'client', username });
+  }
 }

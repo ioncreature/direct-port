@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Bot, type NextFunction } from 'grammy';
+import { ApiClientService } from '../api-client/api-client.service';
 import { formatUser } from './format-user';
 import { FileUploadHandler } from './handlers/file-upload.handler';
 import { HelpHandler } from './handlers/help.handler';
@@ -23,6 +24,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     private fileUploadHandler: FileUploadHandler,
     private messageHandler: MessageHandler,
     private stateService: ConversationStateService,
+    private apiClient: ApiClientService,
   ) {
     const token = this.config.get<string>('TELEGRAM_BOT_TOKEN');
     if (!token) {
@@ -81,8 +83,22 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       );
     });
 
+    void this.publishIdentity();
+
     this.bot.start();
     this.logger.log('Client bot started');
+  }
+
+  /** Резолвит username через getMe и публикует ссылку в API (для админки). */
+  private async publishIdentity(): Promise<void> {
+    try {
+      const me = await this.bot.api.getMe();
+      if (!me.username) return;
+      await this.apiClient.publishBotIdentity(me.username);
+      this.logger.log(`Bot identity published: @${me.username}`);
+    } catch (err) {
+      this.logger.warn(`Failed to publish bot identity: ${(err as Error).message}`);
+    }
   }
 
   private async logUpdate(ctx: BotContext, next: NextFunction): Promise<void> {

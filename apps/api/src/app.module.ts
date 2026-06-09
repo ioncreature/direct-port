@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { AiConfigModule } from './ai-config/ai-config.module';
+import { BotLinksModule } from './bot-links/bot-links.module';
 import { CalculationConfigModule } from './calculation-config/calculation-config.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { CountriesModule } from './countries/countries.module';
@@ -50,6 +51,7 @@ import { UsersModule } from './users/users.module';
     CalculationConfigModule,
     AiConfigModule,
     CountriesModule,
+    BotLinksModule,
   ],
   controllers: [AppController],
   providers: [
