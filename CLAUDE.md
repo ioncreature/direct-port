@@ -7,6 +7,7 @@
 - Монорепозиторий: pnpm 10+ workspaces
 - Backend: NestJS + TypeORM (apps/api, порт 3001)
 - Админка: Next.js (apps/admin-web, порт 3000)
+- Лендинг: Next.js (apps/landing, порт 3003) — публичный маркетинговый сайт directport.ru, CTA ведут в client-bot (managed-флоу)
 - Клиентский бот: NestJS + grammY (apps/client-bot, порт 3003) — приём файлов от клиентов + чат с менеджером
 - Менеджерский бот: NestJS + grammY (apps/manager-bot, порт 3004) — уведомления, запуск пайплайна, ответы клиентам
 - Telegram-бот self-service: apps/tg-bot, порт 3002 — DEPRECATED, заменён на client-bot + manager-bot (код сохранён, выведен из автозапуска)
@@ -76,6 +77,14 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 - Shared: InfoCard, table-styles, format (fmt), хуки с серверной пагинацией
 - API-клиент с автообновлением токенов
 - Отдельной страницы «Логи расчётов» нет — история доступна на странице деталей документа (вкладка/секция «История расчётов»)
+
+### apps/landing — Публичный лендинг (Next.js)
+
+- Маркетинговый сайт directport.ru (App Router, без бэкенда и БД). Деплоится отдельным подом: Dockerfile + Helm `landing-deployment`/`landing-service`; в локальном dev — в PM2 (`ecosystem.config.js`)
+- Одна страница `src/app/page.tsx`: Hero → блок боли → «Как работает» (managed-флоу: пишете боту → менеджер → 10 мин → Excel) → цена ($1/позиция) → «Почему расчёту можно доверять» → «Что внутри расчёта» → справочник ТН ВЭД → CTA. Тексты бренда и SEO вынесены в `src/app/_brand.ts`, стили — единый `globals.css` (CSS-переменные, без UI-библиотек; зависимости только next/react)
+- Позиционирование: расчёт пошлин на весь контейнер за 10 минут (до ~500 позиций), ЦА — логистические компании. Все CTA ведут в Telegram-бот (managed-флоу); self-service-загрузки файла на сайте нет
+- ENV: `NEXT_PUBLIC_TELEGRAM_BOT_URL` (ссылка на бота, дефолт `https://t.me/direct_port_bot`), `NEXT_PUBLIC_SITE_URL` (для metadataBase/OpenGraph). Контактный email захардкожен в `page.tsx`
+- ⚠️ Порт 3003 совпадает с `client-bot` (`BOT_PORT=3003`): в k8s изолировано по подам, но локально через `pnpm dev` оба одновременно не поднимутся (EADDRINUSE)
 
 ### apps/tg-bot — Telegram-бот (DEPRECATED)
 
