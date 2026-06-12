@@ -128,9 +128,116 @@ describe('CurrencyService', () => {
       expect(rate).toBe(92.5);
     });
 
+    it('использует stale кэш при сетевой ошибке/таймауте (fetch бросает)', async () => {
+      mockFetchSuccess();
+      await service.getRate('USD');
+
+      jest.advanceTimersByTime(3_600_001);
+      jest.restoreAllMocks();
+      jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('connect ETIMEDOUT'));
+
+      const rate = await service.getRate('USD');
+      expect(rate).toBe(92.5);
+    });
+
+    it('использует stale кэш при повреждённом JSON', async () => {
+      mockFetchSuccess();
+      await service.getRate('USD');
+
+      jest.advanceTimersByTime(3_600_001);
+      jest.restoreAllMocks();
+      jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        json: async () => {
+          throw new Error('unexpected token');
+        },
+      } as unknown as Response);
+
+      const rate = await service.getRate('USD');
+      expect(rate).toBe(92.5);
+    });
+
+    it('пустой Valute не затирает валидный кэш — отдаём stale', async () => {
+      mockFetchSuccess();
+      await service.getRate('USD');
+
+      jest.advanceTimersByTime(3_600_001);
+      jest.restoreAllMocks();
+      jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        json: async () => ({ Date: '2025-04-11', Valute: {} }),
+      } as unknown as Response);
+
+      const rate = await service.getRate('USD');
+      expect(rate).toBe(92.5);
+    });
+
     it('выбрасывает ошибку если нет кэша и API недоступен', async () => {
       mockFetchFailure(500);
       await expect(service.getRate('USD')).rejects.toThrow('Не удалось получить курсы валют');
+    });
+
+    it('выбрасывает ошибку если нет кэша и fetch бросает', async () => {
+      jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('ECONNREFUSED'));
+      await expect(service.getRate('USD')).rejects.toThrow('Не удалось получить курсы валют');
+    });
+  });
+
+  describe('Валидация курсов', () => {
+    it('нулевые и отрицательные значения не попадают в кэш', async () => {
+      jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          Date: '2025-04-10',
+          Valute: {
+            USD: { CharCode: 'USD', Nominal: 1, Value: 0 },
+            EUR: { CharCode: 'EUR', Nominal: 0, Value: 100 },
+            CNY: { CharCode: 'CNY', Nominal: 1, Value: 12.7 },
+          },
+        }),
+      } as unknown as Response);
+
+      await expect(service.getRate('USD')).rejects.toThrow('Курс валюты USD не найден');
+      await expect(service.getRate('EUR')).rejects.toThrow('Курс валюты EUR не найден');
+      expect(await service.getRate('CNY')).toBe(12.7);
+    });
+  });
+
+  describe('buildCurrencyToDocRates()', () => {
+    it('строит кросс-курсы валют ставок к валюте документа (USD-документ)', async () => {
+      mockFetchSuccess();
+      const rates = await service.buildCurrencyToDocRates('USD', ['EUR', 'CNY']);
+      expect(rates.USD).toBe(1);
+      expect(rates.EUR).toBeCloseTo(100.2 / 92.5, 4); // EUR-ставка в долларах документа
+      expect(rates.CNY).toBeCloseTo(12.7 / 92.5, 4);
+    });
+
+    it('для RUB-документа курс валюты ставки = рублёвый курс ЦБ', async () => {
+      mockFetchSuccess();
+      const rates = await service.buildCurrencyToDocRates('RUB', ['USD', 'EUR']);
+      expect(rates.RUB).toBe(1);
+      expect(rates.USD).toBe(92.5);
+      expect(rates.EUR).toBe(100.2);
+    });
+
+    it('валюта документа всегда присутствует с курсом 1', async () => {
+      mockFetchSuccess();
+      const rates = await service.buildCurrencyToDocRates('EUR', ['EUR']);
+      expect(rates.EUR).toBe(1);
+    });
+
+    it('курс валюты документа недоступен → единичная карта (ставки станут estimated)', async () => {
+      mockFetchSuccess();
+      const rates = await service.buildCurrencyToDocRates('XYZ', ['USD']);
+      expect(rates).toEqual({ XYZ: 1 });
+    });
+
+    it('валюта ставки без курса в ЦБ исключается, остальные остаются', async () => {
+      mockFetchSuccess();
+      const rates = await service.buildCurrencyToDocRates('USD', ['EUR', 'XYZ']);
+      expect(rates.USD).toBe(1);
+      expect(rates.EUR).toBeCloseTo(100.2 / 92.5, 4);
+      expect(rates.XYZ).toBeUndefined();
     });
   });
 });

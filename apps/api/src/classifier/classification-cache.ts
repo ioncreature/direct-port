@@ -34,6 +34,14 @@ export class TtlMap<V> {
       for (const [k, e] of this.data) {
         if (e.expiresAt <= now) this.data.delete(k);
       }
+      // Все живые, а лимит превышен — сносим старейшие записи (Map хранит порядок
+      // вставки), иначе карта растёт без ограничения до конца TTL.
+      if (this.data.size > this.maxSize) {
+        for (const k of this.data.keys()) {
+          if (this.data.size <= this.maxSize) break;
+          this.data.delete(k);
+        }
+      }
     }
   }
 

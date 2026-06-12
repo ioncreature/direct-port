@@ -10,7 +10,7 @@ import { AiConfigService } from '../ai-config/ai-config.service';
 import { extractToolInputArrayField } from '../common/claude';
 import { callClaudeTool } from '../common/claude-tool-call';
 import { DEFAULT_CONFIDENCE_THRESHOLD } from '../common/confidence';
-import { errMsg } from '../common/errors';
+import { errMsg, TksUnavailableError } from '../common/errors';
 import { localizedLanguageName } from '../common/i18n';
 import type { ProductNote } from '../common/product-notes';
 import {
@@ -437,7 +437,9 @@ export class ClassifierService {
     let tokenUsage = queryTokenUsage;
 
     // Phase 1: TKS search — top-N candidates using declaration-style queries
-    const uniqueCandidates = await this.searchAll(searchQueries);
+    const search = await this.searchAll(searchQueries);
+    const uniqueCandidates = search.candidates;
+    const uniqueSearchFailed = search.searchFailed;
 
     // Phase 2: Claude classify+verify with result caching
     const uniqueSelections: (ClaudeSelection | null)[] = new Array(uniqueProducts.length).fill(
@@ -445,11 +447,12 @@ export class ClassifierService {
     );
 
     const classifierModel = await this.aiConfig.getClassifierModel();
+    const cacheKeyFor = (p: ProductRow) =>
+      this.buildProductKey(p, classifierModel, language, confidenceThreshold);
     const uncached: { idx: number; product: ProductRow; candidates: TksCandidate[] }[] = [];
     const now = Date.now();
     for (let i = 0; i < uniqueProducts.length; i++) {
-      const cacheKey = this.buildProductKey(uniqueProducts[i], classifierModel);
-      const cached = this.classificationCache.get(cacheKey, now);
+      const cached = this.classificationCache.get(cacheKeyFor(uniqueProducts[i]), now);
       if (cached) {
         uniqueSelections[i] = cached;
       } else {
@@ -478,8 +481,7 @@ export class ClassifierService {
         const sel = result.selections[i];
         uniqueSelections[uncached[i].idx] = sel;
         if (sel) {
-          const cacheKey = this.buildProductKey(uncached[i].product, classifierModel);
-          this.classificationCache.set(cacheKey, sel, now);
+          this.classificationCache.set(cacheKeyFor(uncached[i].product), sel, now);
         }
       }
     } else if (!this.anthropic) {
@@ -488,6 +490,9 @@ export class ClassifierService {
 
     // Map back to original products
     const candidatesByProduct = products.map((_, i) => uniqueCandidates[originalToUnique[i]]);
+    const searchFailedByProduct = products.map(
+      (_, i) => uniqueSearchFailed[originalToUnique[i]] ?? false,
+    );
     const selections = products.map((_, i) => uniqueSelections[originalToUnique[i]]);
     const queriesByProduct = products.map((_, i) => searchQueries[originalToUnique[i]] ?? []);
 
@@ -499,7 +504,9 @@ export class ClassifierService {
     const codesToLoad = new Set<string>();
     for (let i = 0; i < products.length; i++) {
       const sel = selections[i];
-      const code = sel?.tnVedCode || candidatesByProduct[i]?.[0]?.code;
+      // `??`, не `||`: согласовано с chosenCode в assembleResults — пустой tnVedCode от
+      // Claude даёт unmatched, ставки top-кандидата TKS в этом случае не нужны.
+      const code = sel?.tnVedCode ?? candidatesByProduct[i]?.[0]?.code;
       if (code && !tnvedByCode.has(code)) codesToLoad.add(code);
       // Альтернативы Claude — подгружаем их ставки сразу, чтобы оператор в админке
       // увидел dutyRate/vatRate/exciseRate каждого варианта без отдельного запроса.
@@ -558,8 +565,7 @@ export class ClassifierService {
           const newSel = retrySels.get(item.uniqueIdx);
           if (!newSel) continue;
           uniqueSelections[item.uniqueIdx] = newSel;
-          const cacheKey = this.buildProductKey(item.product, classifierModel);
-          this.classificationCache.set(cacheKey, newSel, now);
+          this.classificationCache.set(cacheKeyFor(item.product), newSel, now);
           if (newSel.tnVedCode && !tnvedByCode.has(newSel.tnVedCode)) {
             newCodesToLoad.add(newSel.tnVedCode);
           }
@@ -592,7 +598,22 @@ export class ClassifierService {
       tnvedByCode,
       language,
       confidenceThreshold,
+      searchFailedByProduct,
     );
+
+    // Полный отказ TKS: ни одна строка не сматчена И были сбои поиска — это outage
+    // справочника, а не качество данных. Бросаем, чтобы документ ушёл в FAILED
+    // с кодом TKS_UNAVAILABLE (восстановим через reprocess), а не в REJECTED
+    // с причинами «уточните описание» по каждой строке. Частичный сбой (часть строк
+    // сматчена из кэша) продолжает обработку — сбойные строки получают ноту ниже.
+    const failedSearches = uniqueSearchFailed.filter(Boolean).length;
+    if (assembled.length > 0 && failedSearches > 0 && assembled.every((p) => !p.matched)) {
+      throw new TksUnavailableError(
+        `Справочник ТН ВЭД (TKS) недоступен: поиск не выполнен для ${failedSearches} из ` +
+          `${uniqueProducts.length} позиций, ни один код не подобран. ` +
+          `Запустите повторную обработку, когда справочник восстановится.`,
+      );
+    }
 
     // Phase 4.5: фото фактчекит код для строк с низкой текстовой уверенностью.
     const { tokenUsage: visionUsage } = await this.visionRetry.run(
@@ -620,13 +641,23 @@ export class ClassifierService {
     };
   }
 
-  private buildProductKey(p: ProductRow, model?: string): string {
+  /**
+   * Ключ дедупликации (без model) и кэша результатов (с model). В кэш-вариант входят
+   * также language и confidenceThreshold: от языка зависит comment_localized, от порога —
+   * наполнение alternatives/missingDataCategories (порог передаётся в промпт).
+   */
+  private buildProductKey(
+    p: ProductRow,
+    model?: string,
+    language?: string,
+    confidenceThreshold?: number,
+  ): string {
     const parts = [
       p.description.trim().toLowerCase(),
       p.rawContext?.trim().toLowerCase() ?? '',
       p.hsCode ?? '',
     ];
-    if (model) parts.push(model);
+    if (model) parts.push(model, language ?? 'ru', String(confidenceThreshold ?? ''));
     return parts.join('\x1F');
   }
 
@@ -778,25 +809,39 @@ export class ClassifierService {
 
   // --- Phase 1: TKS Search (multiple queries per product) ---
 
-  private async searchAll(queryGroups: string[][]): Promise<TksCandidate[][]> {
-    const results: TksCandidate[][] = new Array(queryGroups.length);
+  private async searchAll(
+    queryGroups: string[][],
+  ): Promise<{ candidates: TksCandidate[][]; searchFailed: boolean[] }> {
+    const candidates: TksCandidate[][] = new Array(queryGroups.length);
+    const searchFailed: boolean[] = new Array(queryGroups.length).fill(false);
 
     for (let i = 0; i < queryGroups.length; i += SEARCH_CONCURRENCY) {
       const batch = queryGroups.slice(i, i + SEARCH_CONCURRENCY);
       const batchResults = await Promise.all(batch.map((queries) => this.searchMulti(queries)));
       for (let j = 0; j < batchResults.length; j++) {
-        results[i + j] = batchResults[j];
+        candidates[i + j] = batchResults[j].candidates;
+        searchFailed[i + j] = batchResults[j].allFailed;
       }
     }
 
-    return results;
+    return { candidates, searchFailed };
   }
 
-  private async searchMulti(queries: string[]): Promise<TksCandidate[]> {
+  /**
+   * `allFailed` — ни один поисковый запрос строки не дошёл до TKS (после stale-кэша).
+   * Отличает «справочник недоступен» от «кандидатов по описанию нет»: первое — сбой
+   * сервиса (документ нельзя REJECTED'ить с формулировкой про качество данных),
+   * второе — честный unmatched.
+   */
+  private async searchMulti(
+    queries: string[],
+  ): Promise<{ candidates: TksCandidate[]; allFailed: boolean }> {
+    let failures = 0;
     const allResults = await Promise.all(
       queries.map((query) =>
         this.tksApi.searchGoodsGrouped(query).catch((err) => {
           this.logger.warn(`TKS search failed for "${query}": ${errMsg(err)}`);
+          failures++;
           return { data: [] as GoodsItem[], hm: 0 };
         }),
       ),
@@ -814,9 +859,10 @@ export class ClassifierService {
       }
     }
 
-    return [...byCode.values()]
+    const candidates = [...byCode.values()]
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, MAX_CANDIDATES);
+    return { candidates, allFailed: queries.length > 0 && failures === queries.length };
   }
 
   // --- Phase 2: Claude Classify+Verify ---
@@ -985,7 +1031,10 @@ export class ClassifierService {
         systemPrompt: SYSTEM_PROMPT,
         userMessage: userPrompt,
         tool: CLASSIFY_TOOL,
-        maxTokens: 4096,
+        // Батч из CLAUDE_BATCH_SIZE=20 товаров с comment + alternatives(reasoning) +
+        // missingDataCategories, для не-ru ещё и *_localized, не помещался в 4096 —
+        // stop_reason=max_tokens обрезал tool input и ронял ВЕСЬ батч в TKS-fallback.
+        maxTokens: 16384,
         useCache,
       },
       {

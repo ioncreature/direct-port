@@ -210,6 +210,24 @@ export class DocumentsService {
     );
     const doc = await this.findOne(id);
 
+    // Пересчёт — операция над завершённым расчётом. REJECTED сюда сознательно не входит:
+    // иначе отклонённый документ «воскресал» бы в PROCESSED одним запросом, минуя ревью.
+    // FAILED разрешён для восстановления после упавшего recalculate (например, не было
+    // курса валют) — resultData у такого документа сохранён.
+    const recalculableStatuses: DocumentStatus[] = [
+      DocumentStatus.PROCESSED,
+      DocumentStatus.PROCESSED_WITH_ERRORS,
+      DocumentStatus.CODE_REVIEW_REQUIRED,
+      DocumentStatus.FAILED,
+    ];
+    if (!recalculableStatuses.includes(doc.status)) {
+      throw new BadRequestException({
+        code: ErrorCode.INVALID_STATUS_FOR_REPROCESS,
+        message:
+          'Only processed, processed_with_errors, code_review_required or failed documents can be recalculated',
+      });
+    }
+
     if (!doc.resultData || doc.resultData.length === 0) {
       throw new BadRequestException({
         code: ErrorCode.INVALID_STATUS_FOR_REPROCESS,

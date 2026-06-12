@@ -50,6 +50,18 @@ export function assembleResults(
 
     const rates = tnved.TNVED ?? {};
     const notes: ProductNote[] = [...(product.notes ?? [])];
+    if (!tnved.TNVED) {
+      // Запись справочника без блока ставок: ниже подставятся пошлина 0% и дефолтный
+      // НДС — без заметки это выглядело бы как «беспошлинный» код.
+      notes.push({
+        stage: 'classify',
+        severity: 'warning',
+        field: 'duty',
+        message:
+          `Справочник TKS не вернул блок ставок для кода ${tnved.CODE} — применены ` +
+          `пошлина 0% и НДС ${DEFAULT_VAT_RATE}%. Проверьте ставки вручную.`,
+      });
+    }
 
     const confidence = sel?.confidence ?? bestTks?.confidence ?? 0;
     const verified = sel != null;

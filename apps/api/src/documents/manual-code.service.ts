@@ -12,13 +12,15 @@ import {
   type ClassifiedProduct,
   type ProductRow,
 } from '../classifier/classifier.service';
+import { rowNeedsCodeReview } from '../common/confidence';
 import { ErrorCode } from '../common/error-codes';
 import { errMsg } from '../common/errors';
 import { computeWeightDenominator, resolveFreightTotalInDocCurrency } from '../common/freight';
 import { KNOWN_CURRENCIES, normalizeImpediUnit } from '../common/normalize-impedi';
-import type { ProductNote } from '../common/product-notes';
+import { isIncompleteCalculationStatus, type ProductNote } from '../common/product-notes';
 import {
   type RejectionReasonData,
+  buildLowConfidenceReasonData,
   formatRejectionReason,
   localizeRejectionReasonsForUser,
 } from '../common/rejection-reasons';
@@ -518,33 +520,12 @@ export class ManualCodeService {
     let hasRowErrors = false;
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      const matched = Boolean(row.matched);
-      const confidence = Number(row.matchConfidence) || 0;
-      const calcStatus = String(row.calculationStatus ?? '');
-      if (calcStatus === 'error') hasRowErrors = true;
-      if (!matched || confidence < threshold) {
+      if (isIncompleteCalculationStatus(row.calculationStatus)) hasRowErrors = true;
+      if (rowNeedsCodeReview(row, threshold)) {
         const description = String(row.description ?? '');
         const rawOriginal = String(parsedRows[i]?.descriptionOriginal ?? '').trim();
         const descriptionOriginal = rawOriginal && rawOriginal !== description ? rawOriginal : undefined;
-        if (!matched) {
-          data.push({
-            type: 'low_confidence_no_match',
-            row: i + 1,
-            description,
-            descriptionOriginal,
-            threshold,
-          });
-        } else {
-          data.push({
-            type: 'low_confidence_with_code',
-            row: i + 1,
-            description,
-            descriptionOriginal,
-            code: String(row.tnVedCode ?? ''),
-            confidence,
-            threshold,
-          });
-        }
+        data.push(buildLowConfidenceReasonData(i + 1, row, threshold, descriptionOriginal));
       }
     }
     return {

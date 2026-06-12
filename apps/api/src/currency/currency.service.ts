@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { errMsg } from '../common/errors';
 
 interface CbrRate {
   CharCode: string;
@@ -90,24 +91,43 @@ export class CurrencyService {
       return this.cache.rates;
     }
 
+    // Stale-fallback должен покрывать ЛЮБОЙ сбой источника: сетевые ошибки и таймауты
+    // fetch бросают исключение до проверки response.ok, повреждённый JSON — на парсинге.
+    // Курсы ЦБ меняются раз в день, так что протухший на часы кэш лучше, чем уронить
+    // документ после уже оплаченных AI-этапов.
+    try {
+      return await this.fetchRates();
+    } catch (err) {
+      if (this.cache) {
+        this.logger.warn(
+          `CBR fetch failed (${errMsg(err)}), using stale cache from ${this.cache.date}`,
+        );
+        return this.cache.rates;
+      }
+      throw new Error(`Не удалось получить курсы валют ЦБ РФ: ${errMsg(err)}`);
+    }
+  }
+
+  private async fetchRates(): Promise<Map<string, number>> {
     const response = await fetch('https://www.cbr-xml-daily.ru/daily_json.js', {
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) {
-      if (this.cache) {
-        this.logger.warn(
-          `CBR API returned ${response.status}, using stale cache from ${this.cache.date}`,
-        );
-        return this.cache.rates;
-      }
-      throw new Error(`Не удалось получить курсы валют ЦБ РФ: ${response.status}`);
+      throw new Error(`HTTP ${response.status}`);
     }
 
     const data = (await response.json()) as CbrResponse;
     const rates = new Map<string, number>();
 
-    for (const info of Object.values(data.Valute)) {
-      rates.set(info.CharCode, info.Value / info.Nominal);
+    for (const info of Object.values(data.Valute ?? {})) {
+      // Источник — неофициальное зеркало ЦБ: нулевой/отрицательный курс из битого
+      // ответа дал бы нулевые пошлины по всему документу.
+      const rate = info.Value / info.Nominal;
+      if (Number.isFinite(rate) && rate > 0) rates.set(info.CharCode, rate);
+    }
+    if (rates.size === 0) {
+      // Пустой ответ не должен затирать валидный кэш — кидаем до записи в this.cache.
+      throw new Error('пустой или повреждённый ответ (нет валидных курсов)');
     }
 
     this.cache = { rates, date: data.Date, fetchedAt: Date.now() };

@@ -1077,6 +1077,105 @@ describe('CalculatorService', () => {
     });
   });
 
+  describe('Unverified-строки (AI-классификация не отработала)', () => {
+    it('review при verified=false даже с высоким matchConfidence (частотность TKS ≠ качество матча)', () => {
+      const result = service.calculate(
+        [makeProduct({ verified: false, matched: true, matchConfidence: 0.95 })],
+        ZERO_COMMISSION,
+      );
+      expect(result.items[0].verificationStatus).toBe('review');
+    });
+  });
+
+  describe('Дедуп идентичных duty-charges от AI', () => {
+    const dutyCharge = (rate: number): DutyChargeRule => ({
+      type: 'import_duty',
+      label: 'Ввозная пошлина',
+      method: { kind: 'ad_valorem', rate },
+      base: 'customs_value',
+    });
+
+    it('два полностью одинаковых import_duty считаются один раз (не двойная пошлина)', () => {
+      const result = service.calculate(
+        [
+          makeProduct({
+            dutyInterpretation: {
+              tnvedCode: '8516101000',
+              charges: [dutyCharge(10), dutyCharge(10)],
+              requiredDimensions: [],
+              reasoning: '',
+            } as DutyInterpretation,
+          }),
+        ],
+        ZERO_COMMISSION,
+      );
+      // 1000 × 10% = 100, а не 200
+      expect(result.items[0].dutyAmount).toBe(100);
+    });
+
+    it('разные duty-charges (разные ставки) НЕ дедупятся — легитимные множественные пошлины', () => {
+      const result = service.calculate(
+        [
+          makeProduct({
+            dutyInterpretation: {
+              tnvedCode: '8516101000',
+              charges: [dutyCharge(10), dutyCharge(5)],
+              requiredDimensions: [],
+              reasoning: '',
+            } as DutyInterpretation,
+          }),
+        ],
+        ZERO_COMMISSION,
+      );
+      expect(result.items[0].dutyAmount).toBe(150);
+    });
+  });
+
+  describe('Неизвестная единица IMPEDI в fallback-пути', () => {
+    it('нераспознанная единица → пошлина не считается как адвалорная, blocker-note', () => {
+      // Раньше «5 EUR/неизвестная-единица» трактовалось как 5% — тихое искажение пошлины.
+      const result = service.calculate(
+        [makeProduct({ dutyRate: 5, dutyRateUnit: '883' })],
+        ZERO_COMMISSION,
+      );
+      const item = result.items[0];
+      expect(item.dutyAmount).toBe(0);
+      expect(item.calculationStatus).toBe('needs_info');
+      expect(
+        item.notes.some((n) => n.severity === 'blocker' && n.message.includes('не распознана')),
+      ).toBe(true);
+    });
+
+    it('IMP с неизвестной единицей не мешает IMP2-составляющей посчитаться', () => {
+      const result = service.calculate(
+        [
+          makeProduct({
+            dutyRate: 5,
+            dutyRateUnit: '883',
+            dutyMin: 2,
+            dutyMinUnit: 'EUR/кг',
+          }),
+        ],
+        ZERO_COMMISSION,
+        { eurToDoc: 90 },
+      );
+      // IMP2: 2 EUR/кг × 90 × (2 кг × 10 шт) = 3600
+      expect(result.items[0].dutyAmount).toBe(3600);
+    });
+  });
+
+  describe('Freight: невалидные строки', () => {
+    it('строка с Infinity-весом не получает долю фрахта', () => {
+      const broken = makeProduct({ weight: Infinity });
+      const ok = makeProduct();
+      const result = service.calculate([broken, ok], ZERO_COMMISSION, {
+        freight: { totalInDocCurrency: 100, weightDenominator: 20 },
+      });
+      expect(result.items[0].freightShare).toBe(0);
+      expect(result.items[1].freightShare).toBe(100);
+    });
+  });
+
   describe('CalculationStatus', () => {
     it('exact без заметок', () => {
       const result = service.calculate([makeProduct()], ZERO_COMMISSION);

@@ -231,6 +231,37 @@ describe('DocumentsService', () => {
       });
     });
 
+    it('rejects REJECTED document — recalculate must not resurrect it to PROCESSED', async () => {
+      const { service, processingQueue } = createService({
+        doc: makeDoc({ status: DocumentStatus.REJECTED, resultData: [{}] }),
+      });
+      await expect(service.recalculate('doc-1', {})).rejects.toMatchObject({
+        response: { code: ErrorCode.INVALID_STATUS_FOR_REPROCESS },
+      });
+      expect(processingQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('rejects PENDING/PROCESSING documents (race with an active pipeline run)', async () => {
+      for (const status of [DocumentStatus.PENDING, DocumentStatus.PROCESSING]) {
+        const { service } = createService({
+          doc: makeDoc({ status, resultData: [{}] }),
+        });
+        await expect(service.recalculate('doc-1', {})).rejects.toMatchObject({
+          response: { code: ErrorCode.INVALID_STATUS_FOR_REPROCESS },
+        });
+      }
+    });
+
+    it('allows recalculate for FAILED document with resultData (recovery path)', async () => {
+      const { service, processingQueue } = createService({
+        doc: makeDoc({ status: DocumentStatus.FAILED, resultData: [{}] }),
+      });
+      await service.recalculate('doc-1', {});
+      expect(processingQueue.add).toHaveBeenCalledWith('recalculate-document', {
+        documentId: 'doc-1',
+      });
+    });
+
     it('rejects unknown country code with 400 UNKNOWN_COUNTRY', async () => {
       const { service } = createService({
         doc: makeDoc({ status: DocumentStatus.PROCESSED, resultData: [{}] }),

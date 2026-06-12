@@ -60,5 +60,10 @@ export function resolveFreightTotalInDocCurrency(
 export function computeWeightDenominator(
   rows: ReadonlyArray<{ weight?: number | null; quantity?: number | null }>,
 ): number {
-  return rows.reduce((s, r) => s + (Number(r.weight) || 0) * (Number(r.quantity) || 0), 0);
+  return rows.reduce((s, r) => {
+    const net = (Number(r.weight) || 0) * (Number(r.quantity) || 0);
+    // Строки с нечисловым/бесконечным весом не получают долю фрахта в Calculator —
+    // не включаем их и в знаменатель, иначе часть фрахта «испарится» из распределения.
+    return Number.isFinite(net) && net > 0 ? s + net : s;
+  }, 0);
 }

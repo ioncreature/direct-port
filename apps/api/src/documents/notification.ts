@@ -1,3 +1,4 @@
+import { rowNeedsCodeReview } from '../common/confidence';
 import { buildOutputFileName, getDocumentClientName } from '../common/output-filename';
 import { Document } from '../database/entities/document.entity';
 
@@ -94,9 +95,8 @@ export function extractProblemRows(
   const result: ProblemRowSummary[] = [];
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
-    const matched = Boolean(row.matched);
     const confidence = Number(row.matchConfidence) || 0;
-    if (matched && confidence >= threshold) continue;
+    if (!rowNeedsCodeReview(row, threshold)) continue;
 
     const candidates = Array.isArray(row.candidateCodes)
       ? (row.candidateCodes as Array<Record<string, unknown>>).slice(0, 3).map((c) => ({

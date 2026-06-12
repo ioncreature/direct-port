@@ -296,7 +296,9 @@ export class CalculatorService {
     }
     return products.map((p) => {
       const net = (p.weight || 0) * (p.quantity || 0);
-      if (net <= 0) return 0;
+      // isFinite: Infinity в весе/количестве дало бы Infinity-долю, а NaN — NaN
+      // во всех суммах строки; такие строки фрахт не получают.
+      if (!Number.isFinite(net) || net <= 0) return 0;
       return (totalInDocCurrency * net) / weightDenominator;
     });
   }
@@ -403,8 +405,8 @@ export class CalculatorService {
     // схлопываем в один, иначе НДС умножается на их число.
     const usingFallback = !p.dutyInterpretation?.charges?.length;
     const sourceCharges = usingFallback
-      ? this.buildChargesFromRates(p)
-      : p.dutyInterpretation!.charges;
+      ? this.buildChargesFromRates(p, notes)
+      : this.dedupeCharges(p.dutyInterpretation!.charges);
     const { charges: rawCharges, droppedVatCharges } = this.collapseVatCharges(
       sourceCharges,
       p.vatRate,
@@ -488,8 +490,11 @@ export class CalculatorService {
       totalPrice + roundedFreight + dutyAmount + vatAmount + exciseAmount + logisticsCommission,
     );
 
+    // verified=false означает, что AI-классификация не отработала и код взят по
+    // частотности TKS-поиска — такой результат не может считаться 'exact', какой бы
+    // высокой ни была поисковая «уверенность» (это доля кода в выдаче, не качество матча).
     const verificationStatus: 'exact' | 'review' =
-      p.matched && p.matchConfidence >= confidenceThreshold ? 'exact' : 'review';
+      p.matched && p.verified && p.matchConfidence >= confidenceThreshold ? 'exact' : 'review';
 
     const calculationStatus = resolveCalculationStatus(notes);
     const dutyRateDisplay = formatDutyRate(charges);
@@ -514,6 +519,22 @@ export class CalculatorService {
   }
 
   /**
+   * Точные дубликаты charges от AI (одинаковые type+method+base+appliesWhen) — галлюцинация:
+   * одна и та же пошлина применилась бы дважды и удвоила dutyAmount. Легитимные множественные
+   * duty-charges (IMP3, временная+базовая, антидемпинг по разным странам) различаются
+   * method/type/appliesWhen и дедупом не затрагиваются.
+   */
+  private dedupeCharges(charges: DutyChargeRule[]): DutyChargeRule[] {
+    const seen = new Set<string>();
+    return charges.filter((c) => {
+      const key = JSON.stringify([c.type, c.method, c.base, c.appliesWhen ?? null]);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  /**
    * Детерминистический fallback: строит набор правил из базовых полей TKS,
    * когда AI-интерпретация недоступна. Работает для простых ставок (чисто адвалорных,
    * чисто специфических и комбинированных с явным IMPSIGN). Результат ВСЕГДА проходит
@@ -522,13 +543,27 @@ export class CalculatorService {
    * IMPEDI определяет тип IMP:
    * - null/"%" → IMP это адвалорная ставка в %
    * - "EUR/X" (кг, пар, м² и т.п.) → IMP это специфическая ставка EUR за единицу
+   * - нераспознанный код единицы → пошлина из IMP не строится, blocker-note
+   *   (иначе специфическая ставка «5 EUR/ед» посчиталась бы как 5%)
    */
-  private buildChargesFromRates(p: ClassifiedProduct): DutyChargeRule[] {
+  private buildChargesFromRates(p: ClassifiedProduct, notes: ProductNote[]): DutyChargeRule[] {
     const charges: DutyChargeRule[] = [];
 
     const impIsSpecific = isSpecificDutyUnit(p.dutyRateUnit);
     const impIsFlatCurrency = isFlatCurrencyUnit(p.dutyRateUnit);
-    const hasAdValorem = !impIsSpecific && !impIsFlatCurrency && p.dutyRate > 0;
+    const impIsAdValorem = !p.dutyRateUnit || p.dutyRateUnit === '%';
+    const impIsUnknown = !impIsAdValorem && !impIsSpecific && !impIsFlatCurrency;
+    if (impIsUnknown && p.dutyRate > 0) {
+      notes.push({
+        stage: 'calculate',
+        severity: 'blocker',
+        field: 'import_duty',
+        message:
+          `Единица ставки пошлины «${p.dutyRateUnit}» не распознана — ` +
+          `ввозная пошлина ${p.dutyRate} не рассчитана. Проверьте код в справочнике ТН ВЭД.`,
+      });
+    }
+    const hasAdValorem = impIsAdValorem && p.dutyRate > 0;
     const hasImpSpecific = impIsSpecific && p.dutyRate > 0;
     const hasImpFlat = impIsFlatCurrency && p.dutyRate > 0;
     const hasImp2Spec = p.dutyMin != null && p.dutyMin > 0 && !!p.dutyMinUnit;

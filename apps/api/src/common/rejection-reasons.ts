@@ -31,7 +31,65 @@ export type RejectionReasonData =
       code: string;
       confidence: number;
       threshold: number;
+    }
+  | {
+      /** Код взят из TKS-поиска без AI-проверки (Claude недоступен или батч упал). */
+      type: 'unverified_code';
+      row: number;
+      description: string;
+      descriptionOriginal?: string;
+      code: string;
     };
+
+/**
+ * Единый builder причины «строка требует ревью кода» из строки resultData /
+ * CalculatedProduct. Ветвление (no_match → unverified → low_confidence) должно
+ * совпадать с критерием rowNeedsCodeReview (common/confidence.ts) — обе функции
+ * читают одни и те же поля; используется processor'ом и manual-code.
+ */
+export function buildLowConfidenceReasonData(
+  rowNumber: number,
+  row: {
+    description?: unknown;
+    tnVedCode?: unknown;
+    matchConfidence?: unknown;
+    matched?: unknown;
+    verified?: unknown;
+  },
+  threshold: number,
+  descriptionOriginal?: string,
+): RejectionReasonData {
+  const description = String(row.description ?? '');
+  if (!row.matched) {
+    return {
+      type: 'low_confidence_no_match',
+      row: rowNumber,
+      description,
+      descriptionOriginal,
+      threshold,
+    };
+  }
+  // Код есть и уверенность может быть высокой, но AI-проверка не отработала —
+  // это отдельная причина: «не уверены» здесь было бы неправдой про число.
+  if (!(row.verified ?? true)) {
+    return {
+      type: 'unverified_code',
+      row: rowNumber,
+      description,
+      descriptionOriginal,
+      code: String(row.tnVedCode ?? ''),
+    };
+  }
+  return {
+    type: 'low_confidence_with_code',
+    row: rowNumber,
+    description,
+    descriptionOriginal,
+    code: String(row.tnVedCode ?? ''),
+    confidence: Number(row.matchConfidence) || 0,
+    threshold,
+  };
+}
 
 type Lang = 'ru' | 'en' | 'zh';
 type Templates = Record<Lang, string>;
@@ -166,6 +224,23 @@ function buildTemplates(data: RejectionReasonData): Templates {
         zh:
           `第 ${data.row} 行「${zh}」— 系统对编码 ${code} 不太确定。\n` +
           '   通常是因为描述过于笼统。请补充细节（材质、成分、用途、目标用户），或在独立列中手动填写 HS 编码。',
+      };
+    }
+    case 'unverified_code': {
+      const code = data.code || '—';
+      const ru = pickDescription(data, 'ru');
+      const en = pickDescription(data, 'en');
+      const zh = pickDescription(data, 'zh');
+      return {
+        ru:
+          `Строка ${data.row} «${ru}» — код ${code} подобран по справочнику без AI-проверки.\n` +
+          '   Автоматическая верификация кода не отработала. Проверьте код вручную или запустите повторную обработку документа.',
+        en:
+          `Row ${data.row} "${en}" — code ${code} was picked from the reference without AI verification.\n` +
+          '   Automatic code verification did not run. Check the code manually or reprocess the document.',
+        zh:
+          `第 ${data.row} 行「${zh}」— 编码 ${code} 仅按目录匹配，未经过 AI 校验。\n` +
+          '   自动校验未执行。请手动核对编码，或重新处理该文件。',
       };
     }
   }

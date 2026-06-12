@@ -134,4 +134,16 @@ describe('computeWeightDenominator', () => {
   it('empty list → 0', () => {
     expect(computeWeightDenominator([])).toBe(0);
   });
+
+  it('строки с Infinity/NaN-весом исключаются из знаменателя', () => {
+    // Такие строки не получают долю фрахта в Calculator — если бы их вес сидел
+    // в знаменателе, часть фрахта «испарилась» бы из распределения.
+    expect(
+      computeWeightDenominator([
+        { weight: Infinity, quantity: 1 },
+        { weight: NaN as unknown as number, quantity: 2 },
+        { weight: 2, quantity: 10 },
+      ]),
+    ).toBe(20);
+  });
 });

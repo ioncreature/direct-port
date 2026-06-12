@@ -101,6 +101,34 @@ function makeSummary(items: CalculatedProduct[]): CalculationSummary {
   };
 }
 
+/** Строка resultData в формате buildResultRow — для recalculate-тестов. */
+function resultRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    description: 'A',
+    quantity: 10,
+    price: 100,
+    weight: 2,
+    tnVedCode: '0201100001',
+    tnVedDescription: 'd',
+    dutyRate: 15,
+    vatRate: 20,
+    exciseRate: 0,
+    matched: true,
+    verified: true,
+    matchConfidence: 0.9,
+    notes: [],
+    dutyInterpretation: null,
+    totalPrice: 1000,
+    dutyAmount: 150,
+    vatAmount: 230,
+    exciseAmount: 0,
+    logisticsCommission: 50,
+    totalCost: 1430,
+    calculationStatus: 'exact',
+    ...overrides,
+  };
+}
+
 interface Opts {
   doc?: Document;
   classifyResult?: {
@@ -343,6 +371,30 @@ describe('DocumentsProcessor.process', () => {
   });
 
   describe('low confidence', () => {
+    it('unverified строка (Claude не отработал) с высоким TKS-confidence → CODE_REVIEW_REQUIRED', async () => {
+      // calcProbability TKS-поиска легко даёт ≥0.8 — это частотность кода в выдаче,
+      // а не качество матча. Без verified-критерия такая строка уходила в PROCESSED.
+      const item = makeCalculated({ verified: false, matchConfidence: 0.95, matched: true });
+      const { processor, doc } = createProcessor({
+        summary: makeSummary([item]),
+        config: { lowConfidenceAction: 'review' },
+      });
+
+      await processor.process(fakeJob('doc-1'));
+
+      expect(doc.status).toBe(DocumentStatus.CODE_REVIEW_REQUIRED);
+      expect(doc.rejectionReasons?.[0]).toContain('без AI-проверки');
+    });
+
+    it('строка с calculationStatus=needs_info → PROCESSED_WITH_ERRORS, не «чистый» PROCESSED', async () => {
+      const item = makeCalculated({ calculationStatus: 'needs_info' });
+      const { processor, doc } = createProcessor({ summary: makeSummary([item]) });
+
+      await processor.process(fakeJob('doc-1'));
+
+      expect(doc.status).toBe(DocumentStatus.PROCESSED_WITH_ERRORS);
+    });
+
     it('lowConfidenceAction=review → CODE_REVIEW_REQUIRED + rejectionReasons', async () => {
       const doc = makeDoc({ telegramUser: { telegramId: '123' } as any });
       const summary = makeSummary([
@@ -405,6 +457,25 @@ describe('DocumentsProcessor.process', () => {
 
       expect(doc.status).toBe(DocumentStatus.CODE_REVIEW_REQUIRED);
       expect(doc.rejectionReasons!.length).toBe(1);
+    });
+  });
+
+  describe('игнорируемый фрахт', () => {
+    it('freightCost задан, но курса нет → warning-note про фрахт в каждой строке', async () => {
+      // buildCurrencyToDocRates в моке возвращает {} — курса USD→USD нет вообще,
+      // resolveFreightTotalInDocCurrency даст null, фрахт выпадает из расчёта.
+      const doc = makeDoc({ freightCost: 500, freightCurrency: 'USD' } as Partial<Document>);
+      const { processor, calculator } = createProcessor({ doc });
+
+      await processor.process(fakeJob('doc-1'));
+
+      const [products, , options] = calculator.calculate.mock.calls[0];
+      expect(options.freight).toBeUndefined();
+      const freightNotes = (products[0].notes as ProductNote[]).filter(
+        (n) => n.field === 'freight' && n.severity === 'warning',
+      );
+      expect(freightNotes).toHaveLength(1);
+      expect(freightNotes[0].message).toContain('не включён в расчёт');
     });
   });
 
@@ -823,6 +894,76 @@ describe('DocumentsProcessor.recalculate (job.name="recalculate-document")', () 
     expect(classifier.classify).not.toHaveBeenCalled();
     expect(dutyInterpreter.interpret).not.toHaveBeenCalled();
     expect(calculator.calculate).toHaveBeenCalledTimes(1);
+    expect(doc.status).toBe(DocumentStatus.PROCESSED);
+  });
+
+  it('низкоуверенная строка → CODE_REVIEW_REQUIRED, а не PROCESSED (обход ревью закрыт)', async () => {
+    // Документ ушёл в CODE_REVIEW_REQUIRED, оператор жмёт «Пересчитать» с другой страной —
+    // коды всё ещё низкоуверенные, документ обязан остаться на ревью.
+    // Реальный flow: service.recalculate ставит PENDING перед постановкой job.
+    const doc = makeDoc({
+      status: DocumentStatus.PENDING,
+      rejectionReasons: ['старая причина'],
+      resultData: [resultRow({ matchConfidence: 0.4 })],
+      telegramUser: { telegramId: '123', language: 'ru' } as never,
+    });
+    const lowConfItem = makeCalculated({ matchConfidence: 0.4 });
+    const { processor, notificationQueue } = createProcessor({
+      doc,
+      summary: makeSummary([lowConfItem]),
+    });
+
+    await processor.process(fakeJob('doc-1', 'recalculate-document'));
+
+    expect(doc.status).toBe(DocumentStatus.CODE_REVIEW_REQUIRED);
+    expect(doc.rejectionReasons?.length).toBeGreaterThan(0);
+    expect(doc.rejectionReasons?.[0]).not.toBe('старая причина');
+    expect(notificationQueue.add).toHaveBeenCalledWith(
+      'document-ready',
+      expect.objectContaining({ status: 'code_review_required' }),
+    );
+  });
+
+  it('lowConfidenceAction=reject → REJECTED при пересчёте', async () => {
+    const doc = makeDoc({
+      status: DocumentStatus.PENDING,
+      resultData: [resultRow({ matchConfidence: 0.4 })],
+    });
+    const { processor } = createProcessor({
+      doc,
+      summary: makeSummary([makeCalculated({ matchConfidence: 0.4 })]),
+      config: { lowConfidenceAction: 'reject' },
+    });
+
+    await processor.process(fakeJob('doc-1', 'recalculate-document'));
+
+    expect(doc.status).toBe(DocumentStatus.REJECTED);
+  });
+
+  it('чистый пересчёт сбрасывает устаревшие rejectionReasons', async () => {
+    const doc = makeDoc({
+      status: DocumentStatus.PENDING,
+      rejectionReasons: ['строка 1 — низкая уверенность'],
+      resultData: [resultRow()],
+    });
+    const { processor } = createProcessor({ doc });
+
+    await processor.process(fakeJob('doc-1', 'recalculate-document'));
+
+    expect(doc.status).toBe(DocumentStatus.PROCESSED);
+    expect(doc.rejectionReasons).toBeNull();
+  });
+
+  it('legacy resultData без поля verified не уводится в ревью (verified ?? true)', async () => {
+    const row = resultRow();
+    delete (row as Record<string, unknown>).verified;
+    const doc = makeDoc({ status: DocumentStatus.PENDING, resultData: [row] });
+    const { processor, calculator } = createProcessor({ doc });
+
+    await processor.process(fakeJob('doc-1', 'recalculate-document'));
+
+    const [products] = calculator.calculate.mock.calls[0];
+    expect(products[0].verified).toBe(true);
     expect(doc.status).toBe(DocumentStatus.PROCESSED);
   });
 

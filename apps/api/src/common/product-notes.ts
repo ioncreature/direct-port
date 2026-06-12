@@ -31,6 +31,33 @@ export interface ProductNote {
  */
 export type CalculationStatus = 'exact' | 'partial' | 'needs_info' | 'error';
 
+/**
+ * Заметка о том, что заданный у документа фрахт НЕ вошёл в расчёт (нет курса валюты
+ * фрахта к валюте документа). Без неё занижение таможенной стоимости видно только
+ * в логах — ни оператор, ни клиент не узнают, что налоги посчитаны без доставки.
+ */
+export function freightIgnoredWarningNote(cost: number, currency: string): ProductNote {
+  return {
+    stage: 'calculate',
+    severity: 'warning',
+    field: 'freight',
+    message:
+      `Фрахт ${cost} ${currency} не включён в расчёт: курс валюты фрахта к валюте ` +
+      `документа недоступен. Таможенная стоимость, пошлина и НДС могут быть занижены — ` +
+      `выполните «Пересчитать» позже.`,
+  };
+}
+
+/**
+ * Строка с таким calculationStatus посчитана не полностью (нет кода — error,
+ * не хватило данных для точной пошлины — needs_info). Документ с такими строками
+ * должен получать PROCESSED_WITH_ERRORS, а не «чистый» PROCESSED: итоговая сумма
+ * в Excel занижена относительно реальной декларации.
+ */
+export function isIncompleteCalculationStatus(status: unknown): boolean {
+  return status === 'error' || status === 'needs_info';
+}
+
 export function defaultCountryWarningNote(): ProductNote {
   return {
     stage: 'calculate',

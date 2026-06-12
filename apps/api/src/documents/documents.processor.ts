@@ -7,12 +7,19 @@ import { CalculationConfigService } from '../calculation-config/calculation-conf
 import { CalculationLogsService } from '../calculation-logs/calculation-logs.service';
 import { CalculatorService, type CalculatedProduct, type CalculatorInput } from '../calculator/calculator.service';
 import { ClassifierService, type ProductRow } from '../classifier/classifier.service';
+import { rowNeedsCodeReview } from '../common/confidence';
 import { ErrorCode } from '../common/error-codes';
 import { classifyPipelineError, errMsg } from '../common/errors';
 import { computeWeightDenominator, resolveFreightTotalInDocCurrency } from '../common/freight';
-import { defaultCountryWarningNote, type ProductNote } from '../common/product-notes';
+import {
+  defaultCountryWarningNote,
+  freightIgnoredWarningNote,
+  isIncompleteCalculationStatus,
+  type ProductNote,
+} from '../common/product-notes';
 import {
   type RejectionReasonData,
+  buildLowConfidenceReasonData,
   formatRejectionReason,
   localizeRejectionReasonsForUser,
 } from '../common/rejection-reasons';
@@ -72,6 +79,18 @@ export class DocumentsProcessor extends WorkerHost {
       return;
     }
 
+    // Guard от повторной доставки job (stalled-повтор после крэша/деплоя, двойной
+    // клик reprocess): воркер не идемпотентен (CalculationLog, уведомление, Excel
+    // клиенту), поэтому повтор для уже завершённого документа выходим молча.
+    // Прерванный посреди прогона документ (PROCESSING) подбирает watchdog → FAILED →
+    // оператор перезапускает reprocess'ом.
+    if (doc.status !== DocumentStatus.PENDING) {
+      this.logger.warn(
+        `Document ${documentId} is "${doc.status}", not "pending" — skipping duplicate processing job`,
+      );
+      return;
+    }
+
     doc.status = DocumentStatus.PROCESSING;
     await this.repo.save(doc);
 
@@ -79,16 +98,34 @@ export class DocumentsProcessor extends WorkerHost {
     let currentStageRunId: string | null = null;
 
     try {
-      const rows: ProductRow[] = (doc.parsedData ?? []).map((row) => ({
-        description: String(row.description ?? ''),
-        quantity: Number(row.quantity) || 1,
-        price: Number(row.price) || 0,
-        weight: Number(row.weight) || 0,
-        dimensions: this.extractDimensions(row),
-        notes: [],
-        ...(typeof row.hsCode === 'string' && row.hsCode ? { hsCode: row.hsCode } : {}),
-        ...(typeof row.rawContext === 'string' && row.rawContext ? { rawContext: row.rawContext } : {}),
-      }));
+      const rows: ProductRow[] = (doc.parsedData ?? []).map((row) => {
+        const notes: ProductNote[] = [];
+        // Нечисловой мусор в parsedData (после ручной правки оператором) раньше молча
+        // превращался в 0/1 — строка уходила в PROCESSED с нулевой пошлиной без следа.
+        const num = (field: 'quantity' | 'price' | 'weight', fallback: number): number => {
+          const raw = row[field];
+          const n = Number(raw);
+          if (raw != null && raw !== '' && Number.isNaN(n)) {
+            notes.push({
+              stage: 'parse',
+              severity: 'warning',
+              field,
+              message: `Значение «${String(raw)}» в поле ${field} не распознано как число — использовано ${fallback}.`,
+            });
+          }
+          return n || fallback;
+        };
+        return {
+          description: String(row.description ?? ''),
+          quantity: num('quantity', 1),
+          price: num('price', 0),
+          weight: num('weight', 0),
+          dimensions: this.extractDimensions(row),
+          notes,
+          ...(typeof row.hsCode === 'string' && row.hsCode ? { hsCode: row.hsCode } : {}),
+          ...(typeof row.rawContext === 'string' && row.rawContext ? { rawContext: row.rawContext } : {}),
+        };
+      });
 
       this.logger.log(`Document ${documentId}: ${rows.length} rows, currency=${doc.currency || 'USD'}`);
 
@@ -206,10 +243,23 @@ export class DocumentsProcessor extends WorkerHost {
 
       await this.attachRegulatoryReports(summary.items);
 
+      // Курс ЦБ на финальной конвертации: к этому моменту classify+interpret уже
+      // оплачены (минуты вызовов Claude), поэтому недоступный курс НЕ роняет прогон
+      // в общий catch. Сохраняем resultData без RUB-полей и ставим FAILED с понятной
+      // ошибкой — recalculate (разрешён для FAILED с сохранённым resultData)
+      // доконвертирует позже без повторных вызовов Claude.
       const needsConversion = currency !== 'RUB';
       let exchangeRate = 1;
+      let rateError: unknown = null;
       if (needsConversion) {
-        exchangeRate = await this.currencyService.getRate(currency);
+        try {
+          exchangeRate = await this.currencyService.getRate(currency);
+        } catch (err) {
+          rateError = err;
+          this.logger.error(
+            `Document ${documentId}: CBR rate for ${currency} unavailable (${errMsg(err)}), saving result without RUB conversion`,
+          );
+        }
       }
       const toRub = (v: number) => this.currencyService.toRubSync(v, exchangeRate);
 
@@ -225,9 +275,10 @@ export class DocumentsProcessor extends WorkerHost {
       }
       doc.exchangeRates = ratesMap;
 
-      const conversion = needsConversion ? { exchangeRate, toRub } : null;
+      const converted = needsConversion && !rateError;
+      const conversion = converted ? { exchangeRate, toRub } : null;
       doc.resultData = summary.items.map((item, i) => {
-        item.notes.push(this.buildBreakdownNote(item, currency, needsConversion ? exchangeRate : null));
+        item.notes.push(this.buildBreakdownNote(item, currency, converted ? exchangeRate : null));
         return buildResultRow({
           item,
           // Сохраняем, чтобы recalculate мог пересчитать с другой страной без Claude.
@@ -237,24 +288,8 @@ export class DocumentsProcessor extends WorkerHost {
           conversion,
         });
       });
-      let hasRowErrors = false;
-      const lowConfidenceReasonsData: RejectionReasonData[] = [];
-      for (let i = 0; i < summary.items.length; i++) {
-        const item = summary.items[i];
-        if (item.calculationStatus === 'error') hasRowErrors = true;
-        if (!item.matched || item.matchConfidence < confidenceThreshold) {
-          const original = (doc.parsedData?.[i] as { descriptionOriginal?: string } | undefined)
-            ?.descriptionOriginal;
-          lowConfidenceReasonsData.push(
-            this.buildLowConfidenceReason(i, item, confidenceThreshold, original),
-          );
-        }
-      }
-      const lowConfidenceReasons = lowConfidenceReasonsData.map((d) => formatRejectionReason(d, 'ru'));
-      const lowConfidenceReasonsLocalized = localizeRejectionReasonsForUser(
-        lowConfidenceReasonsData,
-        doc.language ?? doc.telegramUser?.language,
-      );
+      const issues = this.collectRowIssues(doc, summary.items, confidenceThreshold);
+      const { hasRowErrors, reasons: lowConfidenceReasons } = issues;
 
       void this.audit.completeStageRun(currentStageRunId, {
         output: {
@@ -265,45 +300,29 @@ export class DocumentsProcessor extends WorkerHost {
           totalLogistics: summary.totalLogistics,
           items: summary.items,
           exchangeRates: doc.exchangeRates,
-          exchangeRate: needsConversion ? exchangeRate : null,
+          exchangeRate: converted ? exchangeRate : null,
           hasRowErrors,
           lowConfidenceReasons,
         },
-        partial: summary.usedFallback,
+        partial: summary.usedFallback || Boolean(rateError),
       });
       currentStageRunId = null;
 
-      if (lowConfidenceReasons.length > 0) {
-        doc.rejectionReasons = lowConfidenceReasons;
-        if (lowConfidenceAction === 'reject') {
-          doc.status = DocumentStatus.REJECTED;
-          await this.repo.save(doc);
-          await this.notify({
-            doc,
-            status: 'rejected',
-            rejectionReasons: lowConfidenceReasons,
-            rejectionReasonsLocalized: lowConfidenceReasonsLocalized,
-          });
-        } else {
-          doc.status = DocumentStatus.CODE_REVIEW_REQUIRED;
-          await this.repo.save(doc);
-          const problemRows = extractProblemRows(
-            (doc.resultData ?? []) as Record<string, unknown>[],
-            confidenceThreshold,
-          );
-          await this.notify({ doc, status: 'code_review_required', problemRows });
-        }
-      } else {
-        doc.status = hasRowErrors
-          ? DocumentStatus.PROCESSED_WITH_ERRORS
-          : DocumentStatus.PROCESSED;
+      if (rateError) {
+        doc.status = DocumentStatus.FAILED;
+        doc.errorMessage =
+          'Курсы валют ЦБ РФ недоступны — суммы в RUB не рассчитаны. ' +
+          'Выполните «Пересчитать», когда курсы снова появятся.';
         await this.repo.save(doc);
-        await this.notify({
-          doc,
-          status: hasRowErrors ? 'processed_with_errors' : 'processed',
-          sendResultFile,
-        });
+        await this.notify({ doc, status: 'failed', errorCode: ErrorCode.PROCESSING_FAILED });
+        return;
       }
+
+      await this.applyFinalStatusAndNotify(doc, issues, {
+        lowConfidenceAction,
+        sendResultFile,
+        confidenceThreshold,
+      });
 
       this.calculationLogs
         .create({
@@ -368,6 +387,16 @@ export class DocumentsProcessor extends WorkerHost {
       return;
     }
 
+    // Guard от повторной доставки job — симметрично process(): service ставит PENDING
+    // перед постановкой recalculate-job, повтор для уже завершённого документа
+    // (включая stalled-повтор после save финального статуса) выходит молча.
+    if (doc.status !== DocumentStatus.PENDING) {
+      this.logger.warn(
+        `Document ${documentId} is "${doc.status}", not "pending" — skipping duplicate recalculate job`,
+      );
+      return;
+    }
+
     doc.status = DocumentStatus.PROCESSING;
     await this.repo.save(doc);
 
@@ -386,7 +415,14 @@ export class DocumentsProcessor extends WorkerHost {
         this.configService.get(),
         this.currencyService.buildCurrencyToDocRates(currency, KNOWN_CURRENCIES),
       ]);
-      const { pricePercent, weightRate, fixedFee, sendResultFile, confidenceThreshold } = config;
+      const {
+        pricePercent,
+        weightRate,
+        fixedFee,
+        sendResultFile,
+        confidenceThreshold,
+        lowConfidenceAction,
+      } = config;
       const commission = { pricePercent, weightRate, fixedFee };
 
       // Сохраняем classify/interpret notes — они стабильны при смене страны; calculate
@@ -413,7 +449,9 @@ export class DocumentsProcessor extends WorkerHost {
           exciseRate: Number(row.exciseRate) || 0,
           matchConfidence: Number(row.matchConfidence) || 0,
           matched: Boolean(row.matched ?? true),
-          verified: Boolean(row.verified ?? false),
+          // legacy resultData без поля verified считаем проверенным (см. rowNeedsCodeReview):
+          // такие документы уже прошли первичный pipeline и ревью.
+          verified: Boolean(row.verified ?? true),
           suggestedCode: (row.suggestedCode as string | null) ?? null,
           verificationComment: String(row.verificationComment ?? ''),
           notes,
@@ -464,7 +502,11 @@ export class DocumentsProcessor extends WorkerHost {
         return { ...base, ...buildRubFields(item, { exchangeRate, toRub }) };
       });
 
-      const hasRowErrors = summary.items.some((i) => i.calculationStatus === 'error');
+      // Пересчёт обязан проходить ту же проверку уверенности кодов, что и полный
+      // pipeline: иначе документ из CODE_REVIEW_REQUIRED одним «Пересчитать»
+      // молча становился PROCESSED с теми же низкоуверенными кодами.
+      const issues = this.collectRowIssues(doc, summary.items, confidenceThreshold);
+      const { hasRowErrors } = issues;
 
       void this.audit.completeStageRun(stageRunId, {
         output: {
@@ -476,16 +518,15 @@ export class DocumentsProcessor extends WorkerHost {
           items: summary.items,
           exchangeRate: needsConversion ? exchangeRate : null,
           hasRowErrors,
+          lowConfidenceReasons: issues.reasons,
         },
         partial: summary.usedFallback,
       });
 
-      doc.status = hasRowErrors ? DocumentStatus.PROCESSED_WITH_ERRORS : DocumentStatus.PROCESSED;
-      await this.repo.save(doc);
-      await this.notify({
-        doc,
-        status: hasRowErrors ? 'processed_with_errors' : 'processed',
+      await this.applyFinalStatusAndNotify(doc, issues, {
+        lowConfidenceAction,
         sendResultFile,
+        confidenceThreshold,
       });
 
       this.calculationLogs
@@ -553,11 +594,13 @@ export class DocumentsProcessor extends WorkerHost {
    * Готовит {totalInDocCurrency, weightDenominator} для Calculator из Document.freightCost
    * и текущего набора строк. Возвращает undefined, если у документа фрахта нет или
    * нет курса валюты фрахта к валюте документа — calculator подставит 0 на все позиции.
+   * Заданный, но выпавший из расчёта фрахт (нет курса) — занижение таможенной стоимости:
+   * помечаем warning-note на каждой строке, а не только в логах.
    * Внутренние warning'и (нулевой знаменатель и т. п.) логирует сам Calculator.
    */
   private buildFreightOption(
     doc: Document,
-    products: ReadonlyArray<{ weight: number; quantity: number }>,
+    products: ReadonlyArray<{ weight: number; quantity: number; notes: ProductNote[] }>,
     currencyToDoc: Record<string, number>,
   ): { totalInDocCurrency: number; weightDenominator: number } | undefined {
     const total = resolveFreightTotalInDocCurrency(doc, currencyToDoc);
@@ -566,6 +609,9 @@ export class DocumentsProcessor extends WorkerHost {
         this.logger.warn(
           `Document ${doc.id}: freight ${doc.freightCost} ${doc.freightCurrency} ignored — no rate to document currency ${doc.currency ?? '?'}`,
         );
+        for (const p of products) {
+          p.notes.push(freightIgnoredWarningNote(doc.freightCost, doc.freightCurrency));
+        }
       }
       return undefined;
     }
@@ -637,45 +683,126 @@ export class DocumentsProcessor extends WorkerHost {
     rejectionReasonsLocalized?: string[];
     problemRows?: ProblemRowSummary[];
   }): Promise<void> {
-    // managed-документ: уведомляем менеджера, а не клиента.
-    if (opts.doc.source === 'managed') {
-      await this.managerNotify.notifyDocumentEvent(opts.doc);
-      return;
-    }
-    const payload = buildDocumentNotificationPayload(opts.doc, opts.status, {
-      errorMessage: opts.errorMessage,
-      errorCode: opts.errorCode,
-      rejectionReasons: opts.rejectionReasons,
-      rejectionReasonsLocalized: opts.rejectionReasonsLocalized,
-      sendResultFile: opts.sendResultFile,
-      problemRows: opts.problemRows,
-    });
-    if (!payload) return;
+    // Уведомление — best-effort: его сбой (DB-запрос резолва менеджеров, Redis)
+    // не должен долетать до catch воркера и флипать полностью обработанный
+    // документ из PROCESSED в FAILED.
+    try {
+      // managed-документ: уведомляем менеджера, а не клиента.
+      if (opts.doc.source === 'managed') {
+        await this.managerNotify.notifyDocumentEvent(opts.doc);
+        return;
+      }
+      const payload = buildDocumentNotificationPayload(opts.doc, opts.status, {
+        errorMessage: opts.errorMessage,
+        errorCode: opts.errorCode,
+        rejectionReasons: opts.rejectionReasons,
+        rejectionReasonsLocalized: opts.rejectionReasonsLocalized,
+        sendResultFile: opts.sendResultFile,
+        problemRows: opts.problemRows,
+      });
+      if (!payload) return;
 
-    await this.notificationQueue.add('document-ready', payload).catch((err) => {
+      await this.notificationQueue.add('document-ready', payload);
+    } catch (err) {
       this.logger.warn(`Failed to send notification for ${opts.doc.id}`, err);
-    });
+    }
   }
 
-  private buildLowConfidenceReason(
-    idx: number,
-    item: { description: string; tnVedCode?: string; matchConfidence: number; matched: boolean },
-    threshold: number,
-    descriptionOriginal?: string,
-  ): RejectionReasonData {
-    const row = idx + 1;
-    const description = item.description || '';
-    if (!item.matched) {
-      return { type: 'low_confidence_no_match', row, description, descriptionOriginal, threshold };
+  /**
+   * Сбор проблем по строкам рассчитанного документа: неполные расчёты (error/needs_info)
+   * и строки, требующие ревью кода (unmatched / unverified / низкая уверенность).
+   * Единая точка для полного pipeline и recalculate — критерии не должны расходиться.
+   */
+  private collectRowIssues(
+    doc: Document,
+    items: ReadonlyArray<{
+      description: string;
+      tnVedCode?: string;
+      matchConfidence: number;
+      matched: boolean;
+      verified: boolean;
+      calculationStatus: string;
+    }>,
+    confidenceThreshold: number,
+  ): {
+    hasRowErrors: boolean;
+    reasonsData: RejectionReasonData[];
+    reasons: string[];
+    reasonsLocalized: string[] | undefined;
+  } {
+    let hasRowErrors = false;
+    const reasonsData: RejectionReasonData[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (isIncompleteCalculationStatus(item.calculationStatus)) hasRowErrors = true;
+      if (rowNeedsCodeReview(item, confidenceThreshold)) {
+        const original = (doc.parsedData?.[i] as { descriptionOriginal?: string } | undefined)
+          ?.descriptionOriginal;
+        reasonsData.push(buildLowConfidenceReasonData(i + 1, item, confidenceThreshold, original));
+      }
     }
     return {
-      type: 'low_confidence_with_code',
-      row,
-      description,
-      descriptionOriginal,
-      code: item.tnVedCode || '',
-      confidence: item.matchConfidence,
-      threshold,
+      hasRowErrors,
+      reasonsData,
+      reasons: reasonsData.map((d) => formatRejectionReason(d, 'ru')),
+      reasonsLocalized: localizeRejectionReasonsForUser(
+        reasonsData,
+        doc.language ?? doc.telegramUser?.language,
+      ),
     };
+  }
+
+  /**
+   * Финальный статус документа + уведомление. Общая ветка для process() и recalculate():
+   * есть строки на ревью → CODE_REVIEW_REQUIRED (или REJECTED при lowConfidenceAction='reject'),
+   * иначе PROCESSED / PROCESSED_WITH_ERRORS. Сбрасывает rejectionReasons, когда причин
+   * больше нет (раньше устаревшие причины оставались висеть в БД).
+   */
+  private async applyFinalStatusAndNotify(
+    doc: Document,
+    issues: {
+      hasRowErrors: boolean;
+      reasons: string[];
+      reasonsLocalized: string[] | undefined;
+    },
+    opts: {
+      lowConfidenceAction: string;
+      sendResultFile: boolean;
+      confidenceThreshold: number;
+    },
+  ): Promise<void> {
+    if (issues.reasons.length > 0) {
+      doc.rejectionReasons = issues.reasons;
+      if (opts.lowConfidenceAction === 'reject') {
+        doc.status = DocumentStatus.REJECTED;
+        await this.repo.save(doc);
+        await this.notify({
+          doc,
+          status: 'rejected',
+          rejectionReasons: issues.reasons,
+          rejectionReasonsLocalized: issues.reasonsLocalized,
+        });
+      } else {
+        doc.status = DocumentStatus.CODE_REVIEW_REQUIRED;
+        await this.repo.save(doc);
+        const problemRows = extractProblemRows(
+          (doc.resultData ?? []) as Record<string, unknown>[],
+          opts.confidenceThreshold,
+        );
+        await this.notify({ doc, status: 'code_review_required', problemRows });
+      }
+      return;
+    }
+
+    doc.rejectionReasons = null;
+    doc.status = issues.hasRowErrors
+      ? DocumentStatus.PROCESSED_WITH_ERRORS
+      : DocumentStatus.PROCESSED;
+    await this.repo.save(doc);
+    await this.notify({
+      doc,
+      status: issues.hasRowErrors ? 'processed_with_errors' : 'processed',
+      sendResultFile: opts.sendResultFile,
+    });
   }
 }
