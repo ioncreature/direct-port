@@ -53,6 +53,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
     this.bot.on('callback_query:data', (ctx) => this.callbackHandler.handle(ctx));
     this.bot.on('message:text', (ctx) => this.messageHandler.handle(ctx));
+    // Всё, что не текст (фото, файлы, стикеры): в режиме ответа предупреждаем, что
+    // вложения клиенту не доставляются, — иначе менеджер уверен, что скриншот ушёл.
+    this.bot.on('message', (ctx) => this.messageHandler.handleNonText(ctx));
 
     this.bot.catch((err) => {
       const ctx = err.ctx;

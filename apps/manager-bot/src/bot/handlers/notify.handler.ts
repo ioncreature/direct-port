@@ -1,9 +1,10 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Job } from 'bullmq';
+import { Job, UnrecoverableError } from 'bullmq';
 import { Api, InlineKeyboard } from 'grammy';
 import { escapeHtml } from '../format';
+import { isPermanentDeliveryError } from '../telegram-errors';
 
 // Wire-format: совпадает с ManagerNotification в apps/api/src/conversations/manager-notification.ts.
 export type ManagerEventType =
@@ -100,21 +101,36 @@ export class NotifyHandler extends WorkerHost {
   async process(job: Job<ManagerNotification>): Promise<void> {
     const n = job.data;
     if (!this.tgApi) {
-      this.logger.warn('Bot token not configured, skipping manager notification');
-      return;
+      // failed-job виден в Redis — лучше, чем «успешно» проглоченное событие клиента.
+      throw new UnrecoverableError('Bot token not configured, cannot deliver manager notification');
     }
     const text = buildNotificationText(n);
     const keyboard = buildNotificationKeyboard(n, this.adminBase);
     const api = this.tgApi;
-    // Broadcast параллельно: каждый sendMessage независим, .catch локализует сбой.
-    await Promise.all(
+    // Broadcast параллельно: каждый sendMessage независим, сбой одного адресата
+    // не мешает остальным.
+    const results = await Promise.allSettled(
       n.managerTelegramIds.map((managerTelegramId) =>
-        api
-          .sendMessage(managerTelegramId, text, { reply_markup: keyboard, parse_mode: 'HTML' })
-          .catch((err) =>
-            this.logger.error(`Failed to notify manager ${managerTelegramId}`, err),
-          ),
+        api.sendMessage(managerTelegramId, text, { reply_markup: keyboard, parse_mode: 'HTML' }),
       ),
     );
+
+    const failures = results.flatMap((r, i) =>
+      r.status === 'rejected' ? [{ reason: r.reason, managerTelegramId: n.managerTelegramIds[i] }] : [],
+    );
+    for (const { reason, managerTelegramId } of failures) {
+      this.logger.error(`Failed to notify manager ${managerTelegramId}`, reason);
+    }
+
+    // Частичный успех — job завершаем: ретрай продублировал бы уведомление тем,
+    // кто его уже получил. Но если НЕ доставлено никому и среди ошибок есть
+    // временные (429/5xx/сеть) — бросаем, чтобы BullMQ ретраил: дублей не будет,
+    // а молча потерянное событие для единственного назначенного менеджера —
+    // это потерянный клиентский запрос.
+    const delivered = results.length - failures.length;
+    const transient = failures.find(({ reason }) => !isPermanentDeliveryError(reason));
+    if (delivered === 0 && transient) {
+      throw transient.reason;
+    }
   }
 }

@@ -19,6 +19,10 @@ async function bootstrap() {
   }
 
   const app = await NestFactory.create(AppModule, { logger });
+  // Без shutdown-хуков SIGTERM (каждый rollout) убивает процесс мгновенно: BullMQ-воркеры
+  // parsing/processing не дожидаются активного job (обработка идёт минутами), и тот
+  // зависает до stalled-таймаута. С хуками @nestjs/bullmq делает graceful worker.close().
+  app.enableShutdownHooks();
 
   app.setGlobalPrefix('api');
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));

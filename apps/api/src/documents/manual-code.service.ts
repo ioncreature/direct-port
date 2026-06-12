@@ -56,6 +56,23 @@ function mergeUserNoteIntoContext(rawContext: string | undefined, userNote: stri
   return base ? `${base}; ${noteFragment}` : noteFragment;
 }
 
+/** Статусы, из которых оператор может начать правку строки (setRowCode/clarifyRow). */
+const ROW_EDIT_ENTRY_STATUSES: DocumentStatus[] = [
+  DocumentStatus.CODE_REVIEW_REQUIRED,
+  DocumentStatus.PROCESSED_WITH_ERRORS,
+];
+
+/**
+ * Внутри транзакции merge дополнительно допустим PROCESSED: конкурентная правка
+ * последней проблемной строки могла довести документ до него — следующая правка
+ * всё ещё валидна. Остальные статусы (reprocess увёл в PENDING и т.п.) отвергаются:
+ * их resultData вот-вот будет перезаписан.
+ */
+const ROW_EDIT_TXN_STATUSES: DocumentStatus[] = [
+  ...ROW_EDIT_ENTRY_STATUSES,
+  DocumentStatus.PROCESSED,
+];
+
 /**
  * Ручная установка кода ТН ВЭД оператором для конкретной строки документа.
  *
@@ -105,10 +122,7 @@ export class ManualCodeService {
       });
     }
 
-    if (
-      doc.status !== DocumentStatus.CODE_REVIEW_REQUIRED &&
-      doc.status !== DocumentStatus.PROCESSED_WITH_ERRORS
-    ) {
+    if (!ROW_EDIT_ENTRY_STATUSES.includes(doc.status)) {
       throw new BadRequestException({
         code: ErrorCode.INVALID_STATUS_FOR_SET_CODE,
         message:
@@ -177,27 +191,15 @@ export class ManualCodeService {
       conversion: needsConversion ? { exchangeRate, toRub } : null,
     });
 
-    const updatedRows = rows.map((r, i) => (i === rowIndex ? newRow : r));
-    doc.resultData = updatedRows;
-
-    const { rejectionReasons, hasRowErrors } = this.recomputeReasons(
-      updatedRows,
-      config.confidenceThreshold,
-      doc.language ?? doc.telegramUser?.language,
-      (doc.parsedData ?? []) as Record<string, unknown>[],
-    );
-
-    if (rejectionReasons.length > 0) {
-      doc.rejectionReasons = rejectionReasons;
-      doc.status = DocumentStatus.CODE_REVIEW_REQUIRED;
-    } else {
-      doc.rejectionReasons = null;
-      doc.status = hasRowErrors
-        ? DocumentStatus.PROCESSED_WITH_ERRORS
-        : DocumentStatus.PROCESSED;
-    }
-
-    const saved = await this.repo.save(doc);
+    const { saved, updatedRows } = await this.applyRowUpdate({
+      documentId,
+      rowIndex,
+      newRow,
+      confidenceThreshold: config.confidenceThreshold,
+      language,
+      telegramUser: doc.telegramUser,
+      addTokenUsage: [{ stage: 'interpreter', usage: interpretResult.tokenUsage }],
+    });
 
     if (saved.status === DocumentStatus.PROCESSED) {
       await this.enqueueNotification(saved, 'processed');
@@ -259,10 +261,7 @@ export class ManualCodeService {
       });
     }
 
-    if (
-      doc.status !== DocumentStatus.CODE_REVIEW_REQUIRED &&
-      doc.status !== DocumentStatus.PROCESSED_WITH_ERRORS
-    ) {
+    if (!ROW_EDIT_ENTRY_STATUSES.includes(doc.status)) {
       throw new BadRequestException({
         code: ErrorCode.INVALID_STATUS_FOR_CLARIFY,
         message:
@@ -288,10 +287,9 @@ export class ManualCodeService {
       this.currencyService.buildCurrencyToDocRates(currency, KNOWN_CURRENCIES),
     ]);
 
-    // Уточнение хранится в parsedData, чтобы reprocess подхватил его и админка видела источник правки.
+    // Уточнение хранится в parsedData (применяется в applyRowUpdate), чтобы reprocess
+    // подхватил его и админка видела источник правки.
     const updatedParsedRow = { ...parsedRow, userClarification: trimmedNote };
-    const updatedParsedRows = parsedRows.map((r, i) => (i === rowIndex ? updatedParsedRow : r));
-    doc.parsedData = updatedParsedRows;
 
     const productRow: ProductRow = {
       description: String(parsedRow.description ?? oldRow.description ?? ''),
@@ -314,7 +312,6 @@ export class ManualCodeService {
       config.confidenceThreshold,
       null,
     );
-    doc.tokenUsage = addStageUsage(doc.tokenUsage ?? {}, 'classifier', classifyResult.tokenUsage);
     const classified = classifyResult.products[0];
 
     const commission = {
@@ -338,7 +335,6 @@ export class ManualCodeService {
         : Promise.resolve(null),
       needsConversion ? this.currencyService.getRate(currency) : Promise.resolve(1),
     ]);
-    doc.tokenUsage = addStageUsage(doc.tokenUsage, 'interpreter', interpretResult.tokenUsage);
     const interpreted = interpretResult.products[0];
 
     const freight = this.buildFreightOption(doc, rows, currencyToDoc);
@@ -363,27 +359,19 @@ export class ManualCodeService {
       conversion: needsConversion ? { exchangeRate, toRub } : null,
     });
 
-    const updatedRows = rows.map((r, i) => (i === rowIndex ? newRow : r));
-    doc.resultData = updatedRows;
-
-    const { rejectionReasons, hasRowErrors } = this.recomputeReasons(
-      updatedRows,
-      config.confidenceThreshold,
+    const { saved, updatedRows } = await this.applyRowUpdate({
+      documentId,
+      rowIndex,
+      newRow,
+      confidenceThreshold: config.confidenceThreshold,
       language,
-      updatedParsedRows,
-    );
-
-    if (rejectionReasons.length > 0) {
-      doc.rejectionReasons = rejectionReasons;
-      doc.status = DocumentStatus.CODE_REVIEW_REQUIRED;
-    } else {
-      doc.rejectionReasons = null;
-      doc.status = hasRowErrors
-        ? DocumentStatus.PROCESSED_WITH_ERRORS
-        : DocumentStatus.PROCESSED;
-    }
-
-    const saved = await this.repo.save(doc);
+      telegramUser: doc.telegramUser,
+      updatedParsedRow,
+      addTokenUsage: [
+        { stage: 'classifier', usage: classifyResult.tokenUsage },
+        { stage: 'interpreter', usage: interpretResult.tokenUsage },
+      ],
+    });
 
     if (saved.status === DocumentStatus.PROCESSED) {
       await this.enqueueNotification(saved, 'processed');
@@ -415,6 +403,95 @@ export class ManualCodeService {
       `Document ${saved.id} row ${rowIndex} clarified (note=${trimmedNote.length}ch, code=${classified.tnVedCode}, confidence=${classified.matchConfidence.toFixed(2)}, status=${saved.status})`,
     );
     return saved;
+  }
+
+  /**
+   * Короткая транзакция «перечитать под локом → заменить одну строку → пересчитать
+   * статус → сохранить». Между findOne в начале setRowCode/clarifyRow и записью
+   * проходят секунды (TKS, interpret, calculate, Claude) — за это время параллельная
+   * правка ДРУГОЙ строки (итеративные карточки в боте, два оператора) затиралась бы
+   * последним save целого массива resultData. Слияние по свежим строкам это исключает.
+   */
+  private async applyRowUpdate(opts: {
+    documentId: string;
+    rowIndex: number;
+    newRow: Record<string, unknown>;
+    confidenceThreshold: number;
+    language: string | null | undefined;
+    telegramUser: Document['telegramUser'];
+    updatedParsedRow?: Record<string, unknown>;
+    addTokenUsage?: Array<{ stage: string; usage: Parameters<typeof addStageUsage>[2] }>;
+  }): Promise<{ saved: Document; updatedRows: Record<string, unknown>[] }> {
+    const result = await this.repo.manager.transaction(async (em) => {
+      const repo = em.getRepository(Document);
+      // pessimistic_write несовместим с relations (outer join) — telegramUser
+      // берём из исходной загрузки вызывающего метода.
+      const fresh = await repo.findOne({
+        where: { id: opts.documentId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!fresh) {
+        throw new NotFoundException({
+          code: ErrorCode.DOCUMENT_NOT_FOUND,
+          message: 'Document not found',
+        });
+      }
+      if (!ROW_EDIT_TXN_STATUSES.includes(fresh.status)) {
+        throw new BadRequestException({
+          code: ErrorCode.INVALID_STATUS_FOR_SET_CODE,
+          message: 'Document status changed concurrently — refresh and try again',
+        });
+      }
+      const rows = (fresh.resultData ?? []) as Record<string, unknown>[];
+      if (opts.rowIndex < 0 || opts.rowIndex >= rows.length) {
+        throw new BadRequestException({
+          code: ErrorCode.UNKNOWN_ROW,
+          message: `Row index ${opts.rowIndex} out of range (rows: ${rows.length})`,
+        });
+      }
+
+      const updatedRows = rows.map((r, i) => (i === opts.rowIndex ? opts.newRow : r));
+      fresh.resultData = updatedRows;
+      if (opts.updatedParsedRow) {
+        const parsed = (fresh.parsedData ?? []) as Record<string, unknown>[];
+        fresh.parsedData = parsed.map((r, i) =>
+          i === opts.rowIndex ? opts.updatedParsedRow! : r,
+        );
+      }
+      for (const { stage, usage } of opts.addTokenUsage ?? []) {
+        fresh.tokenUsage = addStageUsage(fresh.tokenUsage ?? {}, stage, usage);
+      }
+
+      const { rejectionReasons, hasRowErrors } = this.recomputeReasons(
+        updatedRows,
+        opts.confidenceThreshold,
+        opts.language ?? undefined,
+        (fresh.parsedData ?? []) as Record<string, unknown>[],
+      );
+      if (rejectionReasons.length > 0) {
+        fresh.rejectionReasons = rejectionReasons;
+        fresh.status = DocumentStatus.CODE_REVIEW_REQUIRED;
+      } else {
+        fresh.rejectionReasons = null;
+        fresh.status = hasRowErrors
+          ? DocumentStatus.PROCESSED_WITH_ERRORS
+          : DocumentStatus.PROCESSED;
+      }
+      // Точечный update вместо save: save перечитывает всю строку (включая большие
+      // JSONB) ради diff'а — лишний round-trip под удерживаемым row-локом.
+      await repo.update(opts.documentId, {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM QueryDeepPartialEntity rejects Record[] for jsonb column
+        resultData: fresh.resultData as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- то же для parsedData
+        parsedData: fresh.parsedData as any,
+        tokenUsage: fresh.tokenUsage,
+        rejectionReasons: fresh.rejectionReasons,
+        status: fresh.status,
+      });
+      return { saved: fresh, updatedRows };
+    });
+    result.saved.telegramUser = opts.telegramUser;
+    return result;
   }
 
   /**

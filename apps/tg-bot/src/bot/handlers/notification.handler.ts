@@ -52,6 +52,9 @@ interface DocumentNotification {
   sendResultFile?: boolean;
 }
 
+/** Уведомления старше суток не доставляем — они давно неактуальны для пользователя. */
+const MAX_NOTIFICATION_AGE_MS = 24 * 3600_000;
+
 @Injectable()
 @Processor('document-notifications')
 export class NotificationHandler extends WorkerHost {
@@ -86,6 +89,17 @@ export class NotificationHandler extends WorkerHost {
       sendResultFile,
     } = job.data;
     this.logger.log(`Notification for document ${documentId}: ${status}`);
+
+    // tg-bot выведен из автозапуска (deprecated): пока консьюмера нет, jobs копятся
+    // в waiting. При временном включении бота без этого порога весь накопленный
+    // backlog устаревших «готово»/«ошибка» разом улетел бы пользователям.
+    const age = Date.now() - job.timestamp;
+    if (age > MAX_NOTIFICATION_AGE_MS) {
+      this.logger.warn(
+        `Skipping stale notification for document ${documentId} (${Math.round(age / 3600_000)}h old)`,
+      );
+      return;
+    }
 
     if (!this.tgApi) {
       this.logger.warn('Bot token not configured, skipping notification');

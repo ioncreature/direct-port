@@ -6,6 +6,7 @@ function createHandler(dialog: Dialog, ackedFirst = true) {
   const apiClient = { sendMessage: jest.fn().mockResolvedValue(undefined) };
   const activeDialog = {
     get: jest.fn().mockResolvedValue(dialog),
+    set: jest.fn().mockResolvedValue(undefined),
     markAckedIfFirst: jest.fn().mockResolvedValue(ackedFirst),
   };
   const handler = new MessageHandler(apiClient as never, activeDialog as never);
@@ -34,14 +35,35 @@ describe('MessageHandler (manager-bot)', () => {
     expect(ctx.reply).toHaveBeenCalledWith('✅ Отправлено клиенту.');
   });
 
-  it('повторный ответ тому же клиенту: доставляет, но не подтверждает снова', async () => {
-    const { handler, apiClient } = createHandler(
+  it('повторный ответ тому же клиенту: доставляет, не подтверждает, продлевает TTL диалога', async () => {
+    const { handler, apiClient, activeDialog } = createHandler(
       { clientId: 'cli-1', clientName: 'X', acked: true },
       false,
     );
     const ctx = ctxWith('ещё сообщение');
     await handler.handle(ctx as never);
     expect(apiClient.sendMessage).toHaveBeenCalled();
+    expect(ctx.reply).not.toHaveBeenCalled();
+    expect(activeDialog.set).toHaveBeenCalledWith(10, {
+      clientId: 'cli-1',
+      clientName: 'X',
+      acked: true,
+    });
+  });
+
+  it('не-текст в режиме ответа: предупреждает, что вложения не доставляются', async () => {
+    const { handler } = createHandler({ clientId: 'cli-1', clientName: 'X' });
+    const ctx = { chat: { id: 10 }, reply: jest.fn().mockResolvedValue(undefined) };
+    await handler.handleNonText(ctx as never);
+    expect(ctx.reply).toHaveBeenCalledWith(
+      'Клиенту можно отправить только текст — вложения в этом режиме не поддерживаются.',
+    );
+  });
+
+  it('не-текст без активного диалога: молчит', async () => {
+    const { handler } = createHandler(null);
+    const ctx = { chat: { id: 10 }, reply: jest.fn().mockResolvedValue(undefined) };
+    await handler.handleNonText(ctx as never);
     expect(ctx.reply).not.toHaveBeenCalled();
   });
 

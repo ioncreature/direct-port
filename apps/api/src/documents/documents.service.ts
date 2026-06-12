@@ -30,6 +30,19 @@ import { RejectDocumentDto } from './dto/reject-document.dto';
 import { ReviewDocumentDto } from './dto/review-document.dto';
 import { buildDocumentNotificationPayload, type DocumentNotification } from './notification';
 import { ManagerNotifyService } from '../conversations/manager-notify.service';
+import { PhotoStorageService } from '../photo-storage/photo-storage.service';
+
+/**
+ * Ретраи парсинга на уровне BullMQ: транзиентный сбой Anthropic (529/таймаут) не должен
+ * с первой же попытки ронять документ в FAILED. Воркер ставит FAILED только на последней
+ * попытке и сохраняет fileBuffer, guard статуса гасит повтор после успеха
+ * (см. DocumentsParsingProcessor). У processing-job ретраев нет осознанно: его воркер
+ * не идемпотентен (CalculationLog, уведомления) — см. комментарий в app.module.ts.
+ */
+const PARSE_JOB_OPTS = {
+  attempts: 3,
+  backoff: { type: 'exponential', delay: 30_000 },
+} as const;
 
 @Injectable()
 export class DocumentsService {
@@ -46,6 +59,7 @@ export class DocumentsService {
     private audit: PipelineAuditService,
     private regulatoryInterpreter: RegulatoryInterpreterService,
     private managerNotify: ManagerNotifyService,
+    private photoStorage: PhotoStorageService,
   ) {}
 
   /**
@@ -137,7 +151,7 @@ export class DocumentsService {
       `Document created: id=${saved.id}, file="${fileName}", size=${buffer.length} bytes, source=${documentSource}, autoStart=${autoStart}`,
     );
     if (autoStart) {
-      await this.parsingQueue.add('parse-document', { documentId: saved.id });
+      await this.parsingQueue.add('parse-document', { documentId: saved.id }, PARSE_JOB_OPTS);
     }
     const { fileBuffer: _, ...result } = saved;
     return result as Document;
@@ -149,17 +163,24 @@ export class DocumentsService {
    */
   async startProcessing(id: string): Promise<Document> {
     this.logger.log(`Starting processing for intake document ${id}`);
-    const doc = await this.findOne(id);
-    if (doc.status !== DocumentStatus.INTAKE) {
+    const doc = await this.findOne(id); // 404, если документа нет
+    // Атомарный переход INTAKE → PARSING: кнопка «🚀 Запустить» разослана broadcast'ом
+    // всем менеджерам, и два одновременных клика проходили read-then-write проверку
+    // оба — в очередь падало два parse-job'а (двойной расход Claude, интерлив записей).
+    // UPDATE WHERE покрывает и неверный статус, и проигрыш конкурентной гонки.
+    const res = await this.repo.update(
+      { id, status: DocumentStatus.INTAKE },
+      { status: DocumentStatus.PARSING },
+    );
+    if (!res.affected) {
       throw new BadRequestException({
         code: ErrorCode.INVALID_STATUS_FOR_START,
         message: 'Only intake documents can be started',
       });
     }
+    await this.parsingQueue.add('parse-document', { documentId: id }, PARSE_JOB_OPTS);
     doc.status = DocumentStatus.PARSING;
-    const saved = await this.repo.save(doc);
-    await this.parsingQueue.add('parse-document', { documentId: saved.id });
-    return saved;
+    return doc;
   }
 
   async findAll(query: FindDocumentsQueryDto): Promise<PaginatedResponse<Document>> {
@@ -261,11 +282,30 @@ export class DocumentsService {
       doc.freightCurrency = freight.freightCurrency;
     }
 
+    // Атомарный переход из исходного статуса — симметрично reprocess: двойной клик
+    // «Пересчитать» ставил два job'а (второй прогон поверх результатов первого).
+    const res = await this.repo.update(
+      { id, status: doc.status },
+      {
+        status: DocumentStatus.PENDING,
+        errorMessage: null,
+        countryOfOrigin: doc.countryOfOrigin,
+        countryOriginSource: doc.countryOriginSource,
+        countryDetectionReason: doc.countryDetectionReason,
+        freightCost: doc.freightCost,
+        freightCurrency: doc.freightCurrency,
+      },
+    );
+    if (!res.affected) {
+      throw new BadRequestException({
+        code: ErrorCode.INVALID_STATUS_FOR_REPROCESS,
+        message: 'Document status changed concurrently — refresh and try again',
+      });
+    }
+    await this.processingQueue.add('recalculate-document', { documentId: id });
     doc.status = DocumentStatus.PENDING;
     doc.errorMessage = null;
-    const saved = await this.repo.save(doc);
-    await this.processingQueue.add('recalculate-document', { documentId: saved.id });
-    return saved;
+    return doc;
   }
 
   /** Тонкая обёртка вокруг чистого helper'а из common/freight: переводит
@@ -301,28 +341,49 @@ export class DocumentsService {
       });
     }
 
-    doc.errorMessage = null;
-    doc.resultData = null;
-
-    if (!doc.parsedData || doc.parsedData.length === 0) {
+    // Куда перезапускать: есть parsedData → processing; нет, но есть исходный файл →
+    // парсинг; нет ни того ни другого — нечего переобрабатывать. Раньше последний
+    // случай проваливался в processing с пустым parsedData, и документ выходил
+    // «PROCESSED» с нулём строк — ошибка маскировалась под успех.
+    const needsParsing = !doc.parsedData || doc.parsedData.length === 0;
+    if (needsParsing) {
       const { hasBuffer } = await this.repo
         .createQueryBuilder('doc')
         .select('doc.file_buffer IS NOT NULL', 'hasBuffer')
         .where('doc.id = :id', { id })
         .getRawOne();
-
-      if (hasBuffer) {
-        doc.status = DocumentStatus.PARSING;
-        await this.repo.save(doc);
-        await this.parsingQueue.add('parse-document', { documentId: id });
-        return doc;
+      if (!hasBuffer) {
+        throw new BadRequestException({
+          code: ErrorCode.INVALID_STATUS_FOR_REPROCESS,
+          message: 'Document has neither parsed data nor the original file — nothing to reprocess',
+        });
       }
     }
 
-    doc.status = DocumentStatus.PENDING;
-    const saved = await this.repo.save(doc);
-    await this.processingQueue.add('process-document', { documentId: saved.id });
-    return saved;
+    // Атомарный переход из исходного статуса: двойной клик «Переобработать» проходил
+    // read-then-write проверку дважды и ставил два job'а (двойной CalculationLog,
+    // двойное уведомление, при двух репликах — интерлив параллельных прогонов).
+    const targetStatus = needsParsing ? DocumentStatus.PARSING : DocumentStatus.PENDING;
+    const res = await this.repo.update(
+      { id, status: doc.status },
+      { status: targetStatus, errorMessage: null, resultData: null },
+    );
+    if (!res.affected) {
+      throw new BadRequestException({
+        code: ErrorCode.INVALID_STATUS_FOR_REPROCESS,
+        message: 'Document status changed concurrently — refresh and try again',
+      });
+    }
+
+    if (needsParsing) {
+      await this.parsingQueue.add('parse-document', { documentId: id }, PARSE_JOB_OPTS);
+    } else {
+      await this.processingQueue.add('process-document', { documentId: id });
+    }
+    doc.status = targetStatus;
+    doc.errorMessage = null;
+    doc.resultData = null;
+    return doc;
   }
 
   async updateParsedData(
@@ -336,6 +397,13 @@ export class DocumentsService {
         code: ErrorCode.INVALID_STATUS_FOR_REVIEW,
         message: 'Only requires_review documents can be edited',
       });
+    }
+
+    // Фото привязаны к индексам строк parsedData: если ревью изменило число строк
+    // (удаление/добавление), индексы съехали и vision-retry подтверждал бы код по
+    // чужой фотографии. Правки значений без изменения числа строк фото не трогают.
+    if (dto.parsedData.length !== (doc.parsedData?.length ?? 0)) {
+      await this.photoStorage.deleteForDocument(id);
     }
 
     doc.parsedData = dto.parsedData as unknown as Record<string, unknown>[];
@@ -645,29 +713,48 @@ export class DocumentsService {
     return doc;
   }
 
-  /** Aggregate per-model tokens from two-level JSONB: { stage: { model: { in, out } } } */
+  /** Aggregate per-model tokens from two sources: documents.token_usage (two-level
+   *  JSONB { stage: { model: {...} } }) и ai_usage_log (translate/regulatory вне
+   *  пайплайна). Объединяем UNION'ом — без log-источника сводные карточки /ai-costs
+   *  недосчитывают расход вне документов (тот же UNION уже в getTokenStatsByDay). */
   private tokensByModel(since?: Date, model?: string) {
-    let query = `
-      SELECT model_family(model.key) AS "model",
-        COALESCE(SUM((model.value->>'inputTokens')::int), 0) AS "inputTokens",
-        COALESCE(SUM((model.value->>'outputTokens')::int), 0) AS "outputTokens",
-        COALESCE(SUM((model.value->>'cacheCreationTokens')::int), 0) AS "cacheCreationTokens",
-        COALESCE(SUM((model.value->>'cacheReadTokens')::int), 0) AS "cacheReadTokens"
-      FROM documents doc,
-        jsonb_each(doc.token_usage) stage,
-        jsonb_each(stage.value) model`;
     const params: unknown[] = [];
-    const conditions: string[] = [];
+    let sinceRef = '';
     if (since) {
       params.push(since);
-      conditions.push(`doc.created_at >= $${params.length}`);
+      sinceRef = `$${params.length}`;
     }
+    const docWhere = sinceRef ? ` WHERE doc.created_at >= ${sinceRef}` : '';
+    const logWhere = sinceRef ? ` WHERE log.created_at >= ${sinceRef}` : '';
+    let modelWhere = '';
     if (model) {
       params.push(model);
-      conditions.push(`model_family(model.key) = $${params.length}`);
+      modelWhere = ` WHERE model_family(t.m) = $${params.length}`;
     }
-    if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
-    query += ' GROUP BY model_family(model.key)';
+    const query = `
+      SELECT model_family(t.m) AS "model",
+        COALESCE(SUM(t."inputTokens"), 0) AS "inputTokens",
+        COALESCE(SUM(t."outputTokens"), 0) AS "outputTokens",
+        COALESCE(SUM(t."cacheCreationTokens"), 0) AS "cacheCreationTokens",
+        COALESCE(SUM(t."cacheReadTokens"), 0) AS "cacheReadTokens"
+      FROM (
+        SELECT model.key AS m,
+          (model.value->>'inputTokens')::int AS "inputTokens",
+          (model.value->>'outputTokens')::int AS "outputTokens",
+          (model.value->>'cacheCreationTokens')::int AS "cacheCreationTokens",
+          (model.value->>'cacheReadTokens')::int AS "cacheReadTokens"
+        FROM documents doc,
+          jsonb_each(doc.token_usage) stage,
+          jsonb_each(stage.value) model${docWhere}
+        UNION ALL
+        SELECT log.model AS m,
+          log.input_tokens AS "inputTokens",
+          log.output_tokens AS "outputTokens",
+          log.cache_creation_tokens AS "cacheCreationTokens",
+          log.cache_read_tokens AS "cacheReadTokens"
+        FROM ai_usage_log log${logWhere}
+      ) t${modelWhere}
+      GROUP BY model_family(t.m)`;
     return this.repo.manager.query(query, params);
   }
 

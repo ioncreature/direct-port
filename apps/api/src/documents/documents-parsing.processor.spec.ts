@@ -64,6 +64,7 @@ function createProcessor(opts: Opts = {}) {
   const repo = {
     createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
     save: jest.fn().mockImplementation((d: Document) => Promise.resolve(d)),
+    update: jest.fn().mockResolvedValue({ affected: 1 }),
   };
 
   const processingQueue = { add: jest.fn().mockResolvedValue(undefined) };
@@ -118,8 +119,17 @@ function createProcessor(opts: Opts = {}) {
   };
 }
 
-function fakeJob(documentId: string): Job<{ documentId: string }> {
-  return { name: 'parse-document', data: { documentId }, attemptsMade: 0, id: 'job-1' } as any;
+function fakeJob(
+  documentId: string,
+  jobOpts: { attempts?: number; attemptsMade?: number } = {},
+): Job<{ documentId: string }> {
+  return {
+    name: 'parse-document',
+    data: { documentId },
+    attemptsMade: jobOpts.attemptsMade ?? 0,
+    opts: jobOpts.attempts ? { attempts: jobOpts.attempts } : {},
+    id: 'job-1',
+  } as any;
 }
 
 describe('DocumentsParsingProcessor.process', () => {
@@ -239,18 +249,68 @@ describe('DocumentsParsingProcessor.process', () => {
       expect(doc.fileBuffer).toBeNull();
     });
 
-    it('fileBuffer очищается даже при ошибке парсинга', async () => {
+    it('fileBuffer СОХРАНЯЕТСЯ при ошибке парсинга — иначе reprocess не сможет перепарсить', async () => {
       const doc = makeDoc({ telegramUser: { telegramId: '123' } as any });
-      const { processor } = createProcessor({
+      const { processor, repo } = createProcessor({
         doc,
         parseError: new Error('AI timeout'),
       });
 
       await processor.process(fakeJob('doc-1'));
 
-      expect(doc.fileBuffer).toBeNull();
+      expect(doc.fileBuffer).not.toBeNull();
       expect(doc.status).toBe(DocumentStatus.FAILED);
       expect(doc.errorMessage).toBe('AI timeout');
+      // FAILED пишется точечным update (не save), чтобы не гонять буфер и не затирать его.
+      expect(repo.update).toHaveBeenCalledWith('doc-1', {
+        status: DocumentStatus.FAILED,
+        errorMessage: 'AI timeout',
+      });
+      expect(repo.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('ретраи и guard статуса', () => {
+    it('не последняя попытка: бросает для BullMQ-ретрая, статус НЕ трогает', async () => {
+      const doc = makeDoc();
+      const { processor, repo } = createProcessor({
+        doc,
+        parseError: new Error('529 overloaded'),
+      });
+
+      await expect(
+        processor.process(fakeJob('doc-1', { attempts: 3, attemptsMade: 0 })),
+      ).rejects.toThrow('529 overloaded');
+
+      expect(doc.status).toBe(DocumentStatus.PARSING);
+      expect(repo.update).not.toHaveBeenCalled();
+      expect(repo.save).not.toHaveBeenCalled();
+    });
+
+    it('последняя попытка: FAILED + notify', async () => {
+      const doc = makeDoc({ telegramUser: { telegramId: '123' } as any });
+      const { processor, notificationQueue } = createProcessor({
+        doc,
+        parseError: new Error('529 overloaded'),
+      });
+
+      await processor.process(fakeJob('doc-1', { attempts: 3, attemptsMade: 2 }));
+
+      expect(doc.status).toBe(DocumentStatus.FAILED);
+      expect(notificationQueue.add).toHaveBeenCalled();
+    });
+
+    it('документ уже не в PARSING (stalled-повтор после успеха): выходит, не трогая ничего', async () => {
+      const doc = makeDoc({ status: DocumentStatus.PENDING, fileBuffer: null });
+      const { processor, repo, aiParser, notificationQueue } = createProcessor({ doc });
+
+      await processor.process(fakeJob('doc-1'));
+
+      expect(aiParser.parse).not.toHaveBeenCalled();
+      expect(repo.save).not.toHaveBeenCalled();
+      expect(repo.update).not.toHaveBeenCalled();
+      expect(notificationQueue.add).not.toHaveBeenCalled();
+      expect(doc.status).toBe(DocumentStatus.PENDING);
     });
   });
 

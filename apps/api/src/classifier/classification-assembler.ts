@@ -34,6 +34,7 @@ export function assembleResults(
   tnvedByCode: Map<string, TnvedCode>,
   language: string | undefined,
   confidenceThreshold: number,
+  searchFailedByProduct?: boolean[],
 ): ClassifiedProduct[] {
   return products.map((product, i) => {
     const sel = selections[i];
@@ -45,7 +46,7 @@ export function assembleResults(
     const tnved = chosenCode ? tnvedByCode.get(chosenCode) : undefined;
 
     if (!chosenCode || !tnved) {
-      return unmatched(product, sel, candidates);
+      return unmatched(product, sel, candidates, searchFailedByProduct?.[i] ?? false);
     }
 
     const rates = tnved.TNVED ?? {};
@@ -165,13 +166,18 @@ function unmatched(
   product: ProductRow,
   sel: ClaudeSelection | null,
   candidates: TksCandidate[],
+  searchFailed: boolean,
 ): ClassifiedProduct {
+  // «Справочник недоступен» — сбой сервиса, не качество данных: формулировка не должна
+  // просить клиента «уточнить описание», когда дело в outage TKS.
   const reason =
-    candidates.length === 0
-      ? 'TKS не вернул кандидатов, AI не смог предложить код'
-      : sel
-        ? `AI предложил код ${sel.tnVedCode}, но он не найден в справочнике`
-        : 'Не удалось определить код ТН ВЭД';
+    searchFailed && candidates.length === 0
+      ? 'Справочник ТН ВЭД (TKS) был недоступен — поиск кода не выполнен. Запустите повторную обработку'
+      : candidates.length === 0
+        ? 'TKS не вернул кандидатов, AI не смог предложить код'
+        : sel
+          ? `AI предложил код ${sel.tnVedCode}, но он не найден в справочнике`
+          : 'Не удалось определить код ТН ВЭД';
 
   return {
     ...product,

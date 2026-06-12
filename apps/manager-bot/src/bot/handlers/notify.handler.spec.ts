@@ -1,4 +1,6 @@
+import { GrammyError } from 'grammy';
 import {
+  NotifyHandler,
   buildNotificationKeyboard,
   buildNotificationText,
   type ManagerNotification,
@@ -125,5 +127,46 @@ describe('buildNotificationKeyboard', () => {
     const buttons = flat(kb);
     expect(buttons.some((b) => b.callback_data === 'send:doc-1')).toBe(true);
     expect(buttons.some((b) => b.url?.includes('/documents/doc-1'))).toBe(true);
+  });
+});
+
+describe('NotifyHandler.process — ретраи доставки', () => {
+  function createHandler(sendMessage: jest.Mock) {
+    const config = { get: jest.fn().mockReturnValue('test-token') };
+    const handler = new NotifyHandler(config as never);
+    (handler as unknown as { tgApi: { sendMessage: jest.Mock } }).tgApi = { sendMessage };
+    return handler;
+  }
+
+  const jobWith = (managerTelegramIds: string[]) =>
+    ({ data: { ...base, managerTelegramIds } }) as never;
+
+  const transientError = () => new Error('network down');
+  const permanentError = () =>
+    new GrammyError(
+      'blocked',
+      { ok: false, error_code: 403, description: 'Forbidden: bot was blocked' },
+      'sendMessage',
+      {},
+    );
+
+  it('частичный успех: job завершается, ретрая нет (иначе дубли получившим)', async () => {
+    const sendMessage = jest
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(transientError());
+    await expect(createHandler(sendMessage).process(jobWith(['1', '2']))).resolves.toBeUndefined();
+  });
+
+  it('ноль доставок + временная ошибка: бросает, чтобы BullMQ ретраил', async () => {
+    const sendMessage = jest.fn().mockRejectedValue(transientError());
+    await expect(createHandler(sendMessage).process(jobWith(['1', '2']))).rejects.toThrow(
+      'network down',
+    );
+  });
+
+  it('ноль доставок, но все ошибки неисправимые (бот заблокирован): не ретраит', async () => {
+    const sendMessage = jest.fn().mockRejectedValue(permanentError());
+    await expect(createHandler(sendMessage).process(jobWith(['1']))).resolves.toBeUndefined();
   });
 });

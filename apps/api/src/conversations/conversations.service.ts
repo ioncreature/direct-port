@@ -21,6 +21,7 @@ import { User } from '../database/entities/user.entity';
 import { DocumentsService } from '../documents/documents.service';
 import type { ClientOutgoingMessage } from './client-outgoing';
 import { ManagerLinkService } from './manager-link.service';
+import { DELIVERY_JOB_OPTS } from './queue-opts';
 
 @Injectable()
 export class ConversationsService {
@@ -107,6 +108,21 @@ export class ConversationsService {
     });
   }
 
+  /**
+   * Горизонтальная изоляция managed-флоу: менеджер может писать/слать расчёт и
+   * запускать пайплайн только по своим закреплённым клиентам. Без этой проверки
+   * любой привязанный менеджер (или бот с internal-ключом) мог бы вклиниться в
+   * чужой диалог по известному из broadcast clientId.
+   */
+  private assertClientAssignedTo(client: TelegramUser, manager: User): void {
+    if (client.assignedManagerId !== manager.id) {
+      throw new ForbiddenException({
+        code: ErrorCode.CLIENT_NOT_ASSIGNED,
+        message: 'Client is assigned to another manager',
+      });
+    }
+  }
+
   /** Клиенты, закреплённые за менеджером (для /clients в боте). */
   async listManagerClients(managerTelegramId: string): Promise<TelegramUser[]> {
     const manager = await this.resolveManagerOrThrow(managerTelegramId);
@@ -139,9 +155,14 @@ export class ConversationsService {
       });
     }
     // Один раз сообщаем клиенту, что менеджер подключился (а не на каждое его сообщение).
-    await this.enqueueClientOutgoing(
-      { clientTelegramId: client.telegramId, language: client.language, i18nKey: 'manager-assigned' },
-      clientId,
+    // Best-effort: claim уже состоялся, ронять его из-за недоступной очереди нельзя —
+    // клиент лишь не увидит «менеджер на связи».
+    await this.enqueueClientOutgoing({
+      clientTelegramId: client.telegramId,
+      language: client.language,
+      i18nKey: 'manager-assigned',
+    }).catch((err) =>
+      this.logger.warn(`Failed to enqueue manager-assigned notice for ${clientId}`, err),
     );
     return { clientId, managerId: manager.id };
   }
@@ -154,22 +175,24 @@ export class ConversationsService {
   ): Promise<{ ok: true }> {
     const manager = await this.resolveManagerOrThrow(managerTelegramId);
     const client = await this.resolveClientOrThrow(clientId);
+    this.assertClientAssignedTo(client, manager);
     await this.appendManagerMessage({ clientId, managerId: manager.id, text });
-    await this.enqueueClientOutgoing(
-      { clientTelegramId: client.telegramId, text, language: client.language },
-      clientId,
-    );
+    await this.enqueueClientOutgoing({
+      clientTelegramId: client.telegramId,
+      text,
+      language: client.language,
+    });
     return { ok: true };
   }
 
-  /** Кладёт исходящее сообщение клиенту в очередь client-bot-outgoing (доставляет client-bot). */
-  private async enqueueClientOutgoing(
-    payload: ClientOutgoingMessage,
-    clientId: string,
-  ): Promise<void> {
-    await this.clientOutQueue
-      .add('client-message', payload)
-      .catch((err) => this.logger.warn(`Failed to enqueue client message for ${clientId}`, err));
+  /**
+   * Кладёт исходящее сообщение клиенту в очередь client-bot-outgoing (доставляет client-bot).
+   * Сбой постановки НЕ глотается: раньше при недоступном Redis метод возвращал успех,
+   * менеджер видел «✅ Отправлено клиенту», а сообщение не уходило никогда. Теперь
+   * вызвавший экшен отвечает 500 — менеджер видит ошибку и повторяет.
+   */
+  private async enqueueClientOutgoing(payload: ClientOutgoingMessage): Promise<void> {
+    await this.clientOutQueue.add('client-message', payload, DELIVERY_JOB_OPTS);
   }
 
   /**
@@ -197,21 +220,19 @@ export class ConversationsService {
         message: 'Document has no client to deliver to',
       });
     }
+    this.assertClientAssignedTo(client, manager);
     await this.appendManagerMessage({
       clientId: client.id,
       managerId: manager.id,
       attachmentType: 'document',
       documentId: doc.id,
     });
-    await this.enqueueClientOutgoing(
-      {
-        clientTelegramId: client.telegramId,
-        language: client.language,
-        documentId: doc.id,
-        documentFileName: doc.originalFileName,
-      },
-      client.id,
-    );
+    await this.enqueueClientOutgoing({
+      clientTelegramId: client.telegramId,
+      language: client.language,
+      documentId: doc.id,
+      documentFileName: doc.originalFileName,
+    });
     return { ok: true };
   }
 
@@ -220,7 +241,11 @@ export class ConversationsService {
     managerTelegramId: string,
     documentId: string,
   ): Promise<Document> {
-    await this.resolveManagerOrThrow(managerTelegramId);
+    const manager = await this.resolveManagerOrThrow(managerTelegramId);
+    const doc = await this.documents.findOne(documentId);
+    if (doc.telegramUser) {
+      this.assertClientAssignedTo(doc.telegramUser, manager);
+    }
     return this.documents.startProcessing(documentId);
   }
 
@@ -237,8 +262,17 @@ export class ConversationsService {
     if (!user) {
       throw new NotFoundException({ code: ErrorCode.UNKNOWN_ROW, message: 'User not found' });
     }
-    // На случай перепривязки этого telegramId к другому аккаунту — снять старую привязку.
+    // На случай перепривязки этого telegramId к другому аккаунту — снять старую привязку
+    // и освободить клиентов прежнего владельца (он остаётся без Telegram и не получил бы
+    // их уведомлений).
+    const previousOwners = await this.usersRepo.find({
+      where: { managerTelegramId: telegramId },
+      select: ['id'],
+    });
     await this.usersRepo.update({ managerTelegramId: telegramId }, { managerTelegramId: null });
+    for (const prev of previousOwners) {
+      if (prev.id !== user.id) await this.releaseManagerClients(prev.id);
+    }
     user.managerTelegramId = telegramId;
     await this.usersRepo.save(user);
     this.logger.log(`Manager linked: user=${user.id} telegram=${telegramId}`);
@@ -252,5 +286,24 @@ export class ConversationsService {
     }
     user.managerTelegramId = null;
     await this.usersRepo.save(user);
+    await this.releaseManagerClients(userId);
+  }
+
+  /**
+   * Возвращает клиентов отвязанного менеджера в общий пул (broadcast). Без этого они
+   * попадали в «чёрную дыру»: уведомления адресуются назначенному менеджеру, которого
+   * больше нет в Telegram, fallback не срабатывал, а claim другим менеджером отбивался
+   * 409 — сообщения таких клиентов копились в БД незамеченными.
+   */
+  private async releaseManagerClients(managerId: string): Promise<void> {
+    const res = await this.clientsRepo.update(
+      { assignedManagerId: managerId },
+      { assignedManagerId: null },
+    );
+    if (res.affected) {
+      this.logger.log(
+        `Released ${res.affected} client(s) of unlinked manager ${managerId} back to broadcast pool`,
+      );
+    }
   }
 }

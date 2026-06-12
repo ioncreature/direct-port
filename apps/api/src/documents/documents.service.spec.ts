@@ -77,6 +77,7 @@ function createService(
     findOne: jest.fn().mockResolvedValue(doc),
     findAndCount: jest.fn().mockResolvedValue([[], 0]),
     save: jest.fn().mockImplementation(async (d) => d),
+    update: jest.fn().mockResolvedValue({ affected: 1 }),
     create: jest.fn().mockImplementation((d) => ({ ...d, id: 'new-doc' })),
     createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
     manager: { query: jest.fn().mockResolvedValue([]) },
@@ -112,6 +113,10 @@ function createService(
     notifyClientMessage: jest.fn().mockResolvedValue(undefined),
   };
 
+  const photoStorage = {
+    deleteForDocument: jest.fn().mockResolvedValue(undefined),
+  };
+
   const service = new DocumentsService(
     repo as never,
     tgUserRepo as never,
@@ -123,6 +128,7 @@ function createService(
     audit as never,
     regulatoryInterpreter as never,
     managerNotify as never,
+    photoStorage as never,
   );
 
   return {
@@ -135,6 +141,7 @@ function createService(
     countriesService,
     audit,
     managerNotify,
+    photoStorage,
     queryBuilder,
   };
 }
@@ -155,9 +162,11 @@ describe('DocumentsService', () => {
           status: DocumentStatus.PARSING,
         }),
       );
-      expect(parsingQueue.add).toHaveBeenCalledWith('parse-document', {
-        documentId: 'new-doc',
-      });
+      expect(parsingQueue.add).toHaveBeenCalledWith(
+        'parse-document',
+        { documentId: 'new-doc' },
+        expect.objectContaining({ attempts: 3 }),
+      );
       // fileBuffer is stripped from the returned payload (otherwise Express
       // would ship it back in the JSON response).
       expect((result as { fileBuffer?: Buffer }).fileBuffer).toBeUndefined();
@@ -274,13 +283,14 @@ describe('DocumentsService', () => {
       });
     });
 
-    it('applies country, resets status to PENDING, queues recalculate-document', async () => {
+    it('applies country, resets status to PENDING (атомарно), queues recalculate-document', async () => {
       const { service, repo, processingQueue } = createService({
         doc: makeDoc({ status: DocumentStatus.PROCESSED, resultData: [{}] }),
         country: { code: '156', nameRu: 'Китай' },
       });
       const result = await service.recalculate('doc-1', { countryOfOrigin: '156' });
-      expect(repo.save).toHaveBeenCalledWith(
+      expect(repo.update).toHaveBeenCalledWith(
+        { id: 'doc-1', status: DocumentStatus.PROCESSED },
         expect.objectContaining({
           status: DocumentStatus.PENDING,
           countryOfOrigin: '156',
@@ -298,9 +308,21 @@ describe('DocumentsService', () => {
         doc: makeDoc({ status: DocumentStatus.PROCESSED, resultData: [{}] }),
       });
       await service.recalculate('doc-1', { freightCost: 100, freightCurrency: 'USD' });
-      expect(repo.save).toHaveBeenCalledWith(
+      expect(repo.update).toHaveBeenCalledWith(
+        expect.anything(),
         expect.objectContaining({ freightCost: 100, freightCurrency: 'USD' }),
       );
+    });
+
+    it('двойной клик «Пересчитать» (конкурентная смена статуса): 400, job не ставится', async () => {
+      const { service, repo, processingQueue } = createService({
+        doc: makeDoc({ status: DocumentStatus.PROCESSED, resultData: [{}] }),
+      });
+      repo.update.mockResolvedValue({ affected: 0 });
+      await expect(service.recalculate('doc-1', {})).rejects.toMatchObject({
+        response: { code: ErrorCode.INVALID_STATUS_FOR_REPROCESS },
+      });
+      expect(processingQueue.add).not.toHaveBeenCalled();
     });
   });
 
@@ -320,9 +342,11 @@ describe('DocumentsService', () => {
         hasBuffer: true,
       });
       await service.reprocess('doc-1');
-      expect(parsingQueue.add).toHaveBeenCalledWith('parse-document', {
-        documentId: 'doc-1',
-      });
+      expect(parsingQueue.add).toHaveBeenCalledWith(
+        'parse-document',
+        { documentId: 'doc-1' },
+        expect.objectContaining({ attempts: 3 }),
+      );
       expect(processingQueue.add).not.toHaveBeenCalled();
     });
 
@@ -337,7 +361,7 @@ describe('DocumentsService', () => {
       expect(parsingQueue.add).not.toHaveBeenCalled();
     });
 
-    it('clears errorMessage and resultData before queueing', async () => {
+    it('переход статуса атомарный (UPDATE WHERE прежний статус) + чистит ошибку и resultData', async () => {
       const { service, repo } = createService({
         doc: makeDoc({
           status: DocumentStatus.FAILED,
@@ -346,9 +370,34 @@ describe('DocumentsService', () => {
         }),
       });
       await service.reprocess('doc-1');
-      expect(repo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ errorMessage: null, resultData: null }),
+      expect(repo.update).toHaveBeenCalledWith(
+        { id: 'doc-1', status: DocumentStatus.FAILED },
+        { status: DocumentStatus.PENDING, errorMessage: null, resultData: null },
       );
+    });
+
+    it('двойной клик (конкурентная смена статуса): второй запрос получает 400, job не ставится', async () => {
+      const { service, repo, parsingQueue, processingQueue } = createService({
+        doc: makeDoc({ status: DocumentStatus.FAILED }),
+      });
+      repo.update.mockResolvedValue({ affected: 0 });
+      await expect(service.reprocess('doc-1')).rejects.toMatchObject({
+        response: { code: ErrorCode.INVALID_STATUS_FOR_REPROCESS },
+      });
+      expect(parsingQueue.add).not.toHaveBeenCalled();
+      expect(processingQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('нет ни parsedData, ни буфера → 400 «нечего переобрабатывать» (раньше выходил PROCESSED с 0 строк)', async () => {
+      const { service, parsingQueue, processingQueue } = createService({
+        doc: makeDoc({ status: DocumentStatus.FAILED, parsedData: null }),
+        hasBuffer: false,
+      });
+      await expect(service.reprocess('doc-1')).rejects.toMatchObject({
+        response: { code: ErrorCode.INVALID_STATUS_FOR_REPROCESS },
+      });
+      expect(parsingQueue.add).not.toHaveBeenCalled();
+      expect(processingQueue.add).not.toHaveBeenCalled();
     });
   });
 

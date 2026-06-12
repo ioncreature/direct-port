@@ -6,10 +6,24 @@ export function errMsg(err: unknown): string {
   return String(err);
 }
 
+/**
+ * Полный отказ справочника ТН ВЭД (TKS) во время классификации: ни одна строка
+ * не получила кода ИЗ-ЗА недоступности сервиса, а не из-за качества данных.
+ * Отличает «справочник лежит» от «кандидатов нет»: без этого документ уходил в
+ * REJECTED/CODE_REVIEW с формулировками «уточните данные», обвиняющими файл клиента.
+ */
+export class TksUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TksUnavailableError';
+  }
+}
+
 // AiParserService catches Anthropic.* errors and re-throws as BadRequestException
 // with the SDK message embedded — instanceof checks lose the type, so we fall
 // back to substring matching on the rethrown text.
 export function classifyPipelineError(err: unknown, defaultCode: ErrorCode): ErrorCode {
+  if (err instanceof TksUnavailableError) return ErrorCode.TKS_UNAVAILABLE;
   if (err instanceof Anthropic.APIConnectionTimeoutError) return ErrorCode.AI_TIMEOUT;
   if (
     err instanceof Anthropic.RateLimitError ||

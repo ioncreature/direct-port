@@ -11,19 +11,27 @@ export class TelegramUsersService {
   constructor(@InjectRepository(TelegramUser) private repo: Repository<TelegramUser>) {}
 
   async register(dto: RegisterTelegramUserDto): Promise<TelegramUser> {
-    const upsertData: Omit<Partial<TelegramUser>, 'documents'> = {
-      telegramId: String(dto.telegramId),
-      username: dto.username ?? null,
-      firstName: dto.firstName ?? null,
-      lastName: dto.lastName ?? null,
-    };
-    if (dto.language) upsertData.language = dto.language;
+    const telegramId = String(dto.telegramId);
+    // Язык из регистрации — это автодетект Telegram-локали, и он применяется только
+    // при первом знакомстве (INSERT): повторная регистрация (повторный /start,
+    // протухшее Redis-состояние client-bot) откатывала ручной выбор /language →
+    // следующий документ уходил в pipeline с чужим языком. Поэтому language есть
+    // в VALUES, но исключён из DO UPDATE SET. Ручная смена — updateLanguage (PATCH).
+    await this.repo
+      .createQueryBuilder()
+      .insert()
+      .into(TelegramUser)
+      .values({
+        telegramId,
+        username: dto.username ?? null,
+        firstName: dto.firstName ?? null,
+        lastName: dto.lastName ?? null,
+        ...(dto.language ? { language: dto.language } : {}),
+      })
+      .orUpdate(['username', 'first_name', 'last_name'], ['telegram_id'])
+      .execute();
 
-    const result = await this.repo.upsert(upsertData, {
-      conflictPaths: ['telegramId'],
-    });
-
-    return this.repo.findOneByOrFail({ id: result.identifiers[0].id });
+    return this.repo.findOneByOrFail({ telegramId });
   }
 
   async updateLanguage(telegramId: string, language: string): Promise<void> {

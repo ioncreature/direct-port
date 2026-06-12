@@ -53,9 +53,17 @@ interface CreateOpts {
 function createService(opts: CreateOpts = {}) {
   const doc = opts.doc === undefined ? makeDoc() : opts.doc;
 
-  const repo = {
+  // applyRowUpdate перечитывает документ под локом в транзакции — мок возвращает
+  // тот же repo, чтобы ассерты на findOne/update видели и транзакционные вызовы.
+  const repo: Record<string, unknown> = {
     findOne: jest.fn().mockResolvedValue(doc),
     save: jest.fn().mockImplementation(async (d) => d),
+    update: jest.fn().mockResolvedValue({ affected: 1 }),
+  };
+  repo.manager = {
+    transaction: jest.fn().mockImplementation(async (cb: (em: unknown) => unknown) =>
+      cb({ getRepository: () => repo }),
+    ),
   };
 
   const notificationQueue = { add: jest.fn().mockResolvedValue(undefined) };
@@ -230,7 +238,8 @@ describe('ManualCodeService', () => {
         createService();
       const result = await service.setRowCode('doc-1', 0, '6109100010');
 
-      expect(repo.save).toHaveBeenCalledWith(
+      expect(repo.update).toHaveBeenCalledWith(
+        'doc-1',
         expect.objectContaining({
           status: DocumentStatus.PROCESSED,
           rejectionReasons: null,
@@ -262,7 +271,7 @@ describe('ManualCodeService', () => {
       regulatoryService.buildReport.mockRejectedValueOnce(new Error('TKS down'));
       const result = await service.setRowCode('doc-1', 0, '6109100010');
       expect(result.status).toBe(DocumentStatus.PROCESSED);
-      expect(repo.save).toHaveBeenCalled();
+      expect(repo.update).toHaveBeenCalled();
     });
   });
 
@@ -304,7 +313,8 @@ describe('ManualCodeService', () => {
         0.7,
         null,
       );
-      expect(repo.save).toHaveBeenCalledWith(
+      expect(repo.update).toHaveBeenCalledWith(
+        'doc-1',
         expect.objectContaining({
           parsedData: expect.arrayContaining([
             expect.objectContaining({ userClarification: 'хлопок 100%' }),

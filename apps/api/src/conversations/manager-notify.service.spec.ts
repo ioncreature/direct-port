@@ -33,6 +33,9 @@ function makeDoc(status: DocumentStatus, assignedManagerId: string | null) {
   } as never;
 }
 
+// Доставка ретраится: молча потерянное уведомление — потерянный клиентский запрос.
+const RETRY_OPTS = expect.objectContaining({ attempts: 5 });
+
 describe('ManagerNotifyService.notifyDocumentEvent', () => {
   it('routes a finished pipeline to the assigned manager', async () => {
     const { service, queue, usersRepo } = createService({
@@ -49,6 +52,7 @@ describe('ManagerNotifyService.notifyDocumentEvent', () => {
         documentId: 'doc-1',
         resultReady: true,
       }),
+      RETRY_OPTS,
     );
   });
 
@@ -65,6 +69,21 @@ describe('ManagerNotifyService.notifyDocumentEvent', () => {
         managerTelegramIds: ['111', '222'],
         resultReady: false,
       }),
+      RETRY_OPTS,
+    );
+  });
+
+  it('падает обратно на broadcast, когда назначенный менеджер отвязан/неактивен', async () => {
+    const { service, queue } = createService({
+      // findOne (assigned, с isActive в where) ничего не вернул — менеджер отвязан.
+      assignedManager: null,
+      allManagers: [{ managerTelegramId: '111' }],
+    });
+    await service.notifyDocumentEvent(makeDoc(DocumentStatus.PROCESSED, 'mgr-gone'));
+    expect(queue.add).toHaveBeenCalledWith(
+      'manager-notify',
+      expect.objectContaining({ managerTelegramIds: ['111'] }),
+      RETRY_OPTS,
     );
   });
 

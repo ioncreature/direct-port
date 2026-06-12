@@ -57,7 +57,7 @@ describe('Documents (e2e)', () => {
       expect(res.body.rowCount).toBe(2);
     });
 
-    it('should reject without auth', async () => {
+    it('should reject without internal key', async () => {
       await request(app.getHttpServer())
         .post('/api/documents')
         .send({
@@ -66,7 +66,7 @@ describe('Documents (e2e)', () => {
           columnMapping: {},
           parsedData: [],
         })
-        .expect(401);
+        .expect(403);
     });
 
     it('should validate required fields', async () => {

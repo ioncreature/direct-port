@@ -15,6 +15,7 @@ file-accepted = ✅ 已收到文件“{ $fileName }”。经理将准备计算�
 file-too-large = 文件太大。最大为 40 MB。
 unsupported-format = 仅支持 .xlsx 和 .csv 文件。
 upload-error = 无法接收文件。请稍后再试。
+relay-error = 无法将您的消息转交给经理。请稍后再试。
 greeting-ack = ✅ 已收到！经理会尽快在此回复您。
 manager-assigned = ✅ 经理已接入，将在此回复您。
 result-ready = ✅ 您的计算已完成——请查看附件。

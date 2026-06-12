@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
+import { errMsg } from '../common/errors';
 import { REDIS_CLIENT } from '../redis/redis.module';
 import { BOT_KINDS, type BotKind } from './dto/publish-bot-identity.dto';
 
@@ -38,7 +39,14 @@ export class BotLinksService {
   }
 
   async getLinks(): Promise<Record<BotKind, BotLink | null>> {
-    const raw = await this.redis.mget(...BOT_KINDS.map((kind) => `${KEY_PREFIX}${kind}`));
+    // Блок «Telegram-боты» — украшение дашборда: при недоступном Redis отдаём
+    // пустые ссылки, а не роняем/вешаем весь дашборд.
+    const raw = await this.redis
+      .mget(...BOT_KINDS.map((kind) => `${KEY_PREFIX}${kind}`))
+      .catch((err) => {
+        this.logger.warn(`Failed to read bot links from Redis: ${errMsg(err)}`);
+        return BOT_KINDS.map(() => null);
+      });
     const result = {} as Record<BotKind, BotLink | null>;
     BOT_KINDS.forEach((kind, i) => {
       result[kind] = this.parse(raw[i]);

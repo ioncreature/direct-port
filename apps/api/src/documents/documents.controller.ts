@@ -49,11 +49,13 @@ export class DocumentsController {
   ) {}
 
   @Post()
+  @Internal()
   create(@Body() dto: CreateDocumentDto) {
     return this.service.create(dto);
   }
 
   @Post('upload')
+  @Internal()
   @UseInterceptors(FileInterceptor('file', SPREADSHEET_UPLOAD))
   async upload(@UploadedFile() file: Express.Multer.File, @Body() dto: UploadDocumentDto) {
     if (!file)

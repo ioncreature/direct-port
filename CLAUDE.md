@@ -106,7 +106,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 
 - grammY + @grammyjs/i18n (ru/zh/en), команды /start, /help, /language. Порт 3003
 - Приём файла: .xlsx/.csv → `POST /intake/documents` (X-Internal-Key) → Document(source=managed, status=INTAKE) **без автозапуска пайплайна**
-- Любой текст/фото/не-таблица → `POST /intake/messages` (релей менеджеру). Первый xlsx/csv становится Document, остальное — вложения переписки
+- Любой текст/фото/не-таблица → `POST /intake/messages` (релей менеджеру). Каждый xlsx/csv становится отдельным Document, остальное — вложения переписки
 - Воркер `client-bot-outgoing` (BullMQ) → доставка ответов менеджера клиенту
 - Без выбора колонок/уточнения кодов (это берёт на себя AI-парсер + менеджер). Состояние в Redis `client-conv:<chatId>` {telegramUserId, language}, TTL 24ч
 
@@ -148,7 +148,16 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 
 BullMQ очереди: `document-parsing` → `document-processing` → `document-notifications`
 
-Переобработка: `POST /documents/:id/reprocess` — если есть parsedData → document-processing, если нет (но есть fileBuffer) → document-parsing.
+**Надёжность pipeline:**
+- parse-job ставится с `attempts: 3` (exponential backoff 30s) — транзиентные сбои Anthropic ретраятся, FAILED только на последней попытке; `fileBuffer` при FAILED сохраняется (для reprocess). processing-job — `attempts: 1` осознанно (воркер не идемпотентен: CalculationLog, уведомления)
+- Оба воркера на входе проверяют статус документа (parse: PARSING, processing/recalculate: PENDING) — stalled-повторы и двойные клики не задваивают прогон
+- Переходы статусов в `startProcessing`/`reprocess` атомарные (`UPDATE ... WHERE status = :expected`) — конкурентный запуск получает 400
+- `StuckDocumentsWatchdog` (каждые 10 мин): документы в PARSING/PENDING/PROCESSING без записи > 60 мин → FAILED «обработка прервана» → оператор перезапускает reprocess'ом
+- Недоступный курс ЦБ на финальной конвертации НЕ роняет AI-работу: resultData сохраняется без RUB-полей, статус FAILED с понятной ошибкой → дешёвый `recalculate` доконвертирует
+- Полный отказ TKS (0 matched + сбои поиска) → FAILED с `TKS_UNAVAILABLE`, а не REJECTED с обвинением данных клиента
+- Очереди `client-bot-outgoing`/`manager-notifications` — `attempts: 5`; боты пробрасывают временные ошибки Telegram (429/5xx/сеть) для ретрая, неисправимые (бот заблокирован) уходят в failed без повторов
+
+Переобработка: `POST /documents/:id/reprocess` — если есть parsedData → document-processing, если нет (но есть fileBuffer) → document-parsing, если нет ни того ни другого → 400.
 
 Пересчёт: `POST /documents/:id/recalculate` — повторно прогнать классификатор/калькулятор с новыми параметрами (страна происхождения, стоимость фрахта), не парся файл заново. Body: `countryOfOrigin?`, `freightCost?`, `freightCurrency?` (USD/CNY/RUB/EUR). Если поле не передано — берётся сохранённое значение из документа.
 

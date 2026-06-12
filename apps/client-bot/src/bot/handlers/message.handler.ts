@@ -28,6 +28,7 @@ export class MessageHandler {
       await this.ackFirstContact(ctx);
     } catch (err) {
       this.logger.error(`Failed to relay text message: ${(err as Error).message}`);
+      await this.replyRelayError(ctx);
     }
   }
 
@@ -47,7 +48,20 @@ export class MessageHandler {
       await this.ackFirstContact(ctx);
     } catch (err) {
       this.logger.error(`Failed to relay photo message: ${(err as Error).message}`);
+      await this.replyRelayError(ctx);
     }
+  }
+
+  /**
+   * Сообщение менеджеру не ушло (API недоступен) — клиент должен узнать об этом
+   * сразу, иначе он уверен, что вопрос доставлен, а менеджер его никогда не увидит.
+   * Файлы-вложения так уже делают (file-upload.handler) — текст и фото не должны
+   * теряться тише.
+   */
+  private async replyRelayError(ctx: BotContext) {
+    await ctx
+      .reply(ctx.t('relay-error'))
+      .catch((err) => this.logger.error(`Failed to notify client about relay error`, err));
   }
 
   /** Подтверждаем только первый контакт в сессии — дальше менеджер отвечает сам. */

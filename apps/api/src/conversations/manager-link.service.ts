@@ -28,11 +28,12 @@ export class ManagerLinkService {
     return { token, deepLink };
   }
 
-  /** Резолвит токен в userId одноразово (удаляет ключ). null — истёк/неверен. */
+  /**
+   * Резолвит токен в userId одноразово. null — истёк/неверен. GETDEL атомарен:
+   * раздельные GET+DEL позволяли двум конкурентным /start с одним токеном (ссылку
+   * переслали) обоим получить «✅ Привязано», хотя привязывался только последний.
+   */
   async consumeToken(token: string): Promise<string | null> {
-    const key = `${KEY_PREFIX}${token}`;
-    const userId = await this.redis.get(key);
-    if (userId) await this.redis.del(key);
-    return userId;
+    return this.redis.getdel(`${KEY_PREFIX}${token}`);
   }
 }

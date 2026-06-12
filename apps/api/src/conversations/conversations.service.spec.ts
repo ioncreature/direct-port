@@ -39,6 +39,7 @@ function createService(opts: Opts = {}) {
   const clientsRepo = {
     findOne: jest.fn().mockResolvedValue(opts.client ?? null),
     find: jest.fn().mockResolvedValue([]),
+    update: jest.fn().mockResolvedValue({ affected: 0 }),
     createQueryBuilder: jest.fn().mockReturnValue(updateQb),
   };
 
@@ -75,8 +76,12 @@ function createService(opts: Opts = {}) {
   return { service, messagesRepo, clientsRepo, usersRepo, clientOutQueue, linkService, documents, updateQb };
 }
 
+// Доставочные очереди ставятся с ретраями (см. DELIVERY_JOB_OPTS).
+const RETRY_OPTS = expect.objectContaining({ attempts: 5 });
+
 const ACTIVE_MANAGER = { id: 'mgr-1', isActive: true, managerTelegramId: '999' };
 const UNASSIGNED_CLIENT = { id: 'cli-1', telegramId: '12345', language: 'ru', assignedManagerId: null };
+const ASSIGNED_CLIENT = { ...UNASSIGNED_CLIENT, assignedManagerId: 'mgr-1' };
 
 describe('ConversationsService', () => {
   describe('claimByManagerTelegram', () => {
@@ -92,6 +97,7 @@ describe('ConversationsService', () => {
       expect(clientOutQueue.add).toHaveBeenCalledWith(
         'client-message',
         expect.objectContaining({ clientTelegramId: '12345', i18nKey: 'manager-assigned' }),
+        RETRY_OPTS,
       );
     });
 
@@ -147,23 +153,57 @@ describe('ConversationsService', () => {
         expect.objectContaining({ id: 'user-1', managerTelegramId: '999' }),
       );
     });
+
+    it('перепривязка к другому User освобождает клиентов прежнего владельца', async () => {
+      const { service, usersRepo, clientsRepo } = createService({
+        tokenUserId: 'user-2',
+        userById: { id: 'user-2', managerTelegramId: null },
+      });
+      usersRepo.find.mockResolvedValue([{ id: 'user-1' }]);
+      await service.linkManager('tok', '999');
+      // клиенты user-1 возвращаются в broadcast-пул, а не висят на менеджере без Telegram
+      expect(clientsRepo.update).toHaveBeenCalledWith(
+        { assignedManagerId: 'user-1' },
+        { assignedManagerId: null },
+      );
+    });
+  });
+
+  describe('unlinkManager', () => {
+    it('снимает привязку и освобождает клиентов менеджера (нет «чёрной дыры»)', async () => {
+      const { service, usersRepo, clientsRepo } = createService({
+        userById: { id: 'user-1', managerTelegramId: '999' },
+      });
+      await service.unlinkManager('user-1');
+      expect(usersRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'user-1', managerTelegramId: null }),
+      );
+      expect(clientsRepo.update).toHaveBeenCalledWith(
+        { assignedManagerId: 'user-1' },
+        { assignedManagerId: null },
+      );
+    });
   });
 
   describe('managerReply', () => {
     it('stores the message and enqueues delivery to the client', async () => {
       const { service, messagesRepo, clientOutQueue } = createService({
         manager: ACTIVE_MANAGER,
-        client: UNASSIGNED_CLIENT,
+        client: ASSIGNED_CLIENT,
       });
       await service.managerReply('999', 'cli-1', 'Здравствуйте');
       expect(messagesRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({ direction: 'manager_to_client', managerId: 'mgr-1', text: 'Здравствуйте' }),
       );
-      expect(clientOutQueue.add).toHaveBeenCalledWith('client-message', {
-        clientTelegramId: '12345',
-        text: 'Здравствуйте',
-        language: 'ru',
-      });
+      expect(clientOutQueue.add).toHaveBeenCalledWith(
+        'client-message',
+        {
+          clientTelegramId: '12345',
+          text: 'Здравствуйте',
+          language: 'ru',
+        },
+        RETRY_OPTS,
+      );
     });
   });
 
@@ -172,7 +212,7 @@ describe('ConversationsService', () => {
       id: 'doc-1',
       status: DocumentStatus.PROCESSED,
       telegramUserId: 'cli-1',
-      telegramUser: UNASSIGNED_CLIENT,
+      telegramUser: ASSIGNED_CLIENT,
       originalFileName: 'goods.xlsx',
     };
 
@@ -192,12 +232,16 @@ describe('ConversationsService', () => {
           documentId: 'doc-1',
         }),
       );
-      expect(clientOutQueue.add).toHaveBeenCalledWith('client-message', {
-        clientTelegramId: '12345',
-        language: 'ru',
-        documentId: 'doc-1',
-        documentFileName: 'goods.xlsx',
-      });
+      expect(clientOutQueue.add).toHaveBeenCalledWith(
+        'client-message',
+        {
+          clientTelegramId: '12345',
+          language: 'ru',
+          documentId: 'doc-1',
+          documentFileName: 'goods.xlsx',
+        },
+        RETRY_OPTS,
+      );
     });
 
     it('отклоняет документ не в статусе PROCESSED (download недоступен)', async () => {

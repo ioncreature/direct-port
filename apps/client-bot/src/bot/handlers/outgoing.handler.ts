@@ -1,10 +1,11 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Job } from 'bullmq';
+import { Job, UnrecoverableError } from 'bullmq';
 import { Api, InputFile } from 'grammy';
 import { ApiClientService } from '../../api-client/api-client.service';
 import { i18n } from '../i18n';
+import { isPermanentDeliveryError } from '../telegram-errors';
 
 // Wire-format: совпадает с ClientOutgoingMessage в apps/api/src/conversations/client-outgoing.ts.
 interface ClientOutgoingMessage {
@@ -35,8 +36,8 @@ export class OutgoingHandler extends WorkerHost {
   async process(job: Job<ClientOutgoingMessage>): Promise<void> {
     const { clientTelegramId, text, documentId, documentFileName, language, i18nKey } = job.data;
     if (!this.tgApi) {
-      this.logger.warn('Bot token not configured, skipping outgoing message');
-      return;
+      // failed-job виден в Redis — лучше, чем «успешно» проглоченный ответ менеджера.
+      throw new UnrecoverableError('Bot token not configured, cannot deliver outgoing message');
     }
     if (documentId) {
       await this.deliverDocument(this.tgApi, clientTelegramId, documentId, documentFileName, language);
@@ -45,11 +46,11 @@ export class OutgoingHandler extends WorkerHost {
     // Системные уведомления приходят ключом локали — переводим их на язык клиента здесь.
     const body = i18nKey ? i18n.t(language ?? 'ru', i18nKey) : text;
     if (!body) return;
-    await this.tgApi
-      .sendMessage(clientTelegramId, body)
-      .catch((err) =>
-        this.logger.error(`Failed to deliver manager message to ${clientTelegramId}`, err),
-      );
+    try {
+      await this.tgApi.sendMessage(clientTelegramId, body);
+    } catch (err) {
+      this.rethrowDeliveryError(err, `manager message to ${clientTelegramId}`);
+    }
   }
 
   /** Скачивает Excel результата из API и отправляет клиенту как документ с локализованной подписью. */
@@ -67,7 +68,24 @@ export class OutgoingHandler extends WorkerHost {
         caption,
       });
     } catch (err) {
-      this.logger.error(`Failed to deliver result document to ${clientTelegramId}`, err);
+      this.rethrowDeliveryError(err, `result document to ${clientTelegramId}`);
     }
+  }
+
+  /**
+   * Потерянный ответ менеджера хуже повторной попытки: раньше любая ошибка Telegram
+   * глоталась с логом, job завершался «успешно», и клиент молча не получал сообщение,
+   * хотя менеджер видел «✅ Отправлено». Временные сбои (429/5xx/сеть) пробрасываем —
+   * BullMQ ретраит по attempts продюсера; неисправимые (бот заблокирован клиентом,
+   * документ удалён) переводим в UnrecoverableError — job уходит в failed без ретраев
+   * и остаётся виден в Redis.
+   */
+  private rethrowDeliveryError(err: unknown, what: string): never {
+    if (isPermanentDeliveryError(err)) {
+      this.logger.error(`Permanently failed to deliver ${what}: ${(err as Error).message}`);
+      throw new UnrecoverableError(`Delivery permanently failed (${what}): ${(err as Error).message}`);
+    }
+    this.logger.warn(`Transient failure delivering ${what}, will retry: ${(err as Error).message}`);
+    throw err;
   }
 }

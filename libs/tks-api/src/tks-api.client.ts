@@ -13,6 +13,8 @@ import type {
 const DEFAULT_TIMEOUT = 15_000;
 const DEFAULT_CACHE_TTL = 60 * 60 * 1000;
 const DEFAULT_CACHE_MAX_SIZE = 1000;
+/** Пауза перед единственным повтором временно сбойного запроса. */
+const RETRY_DELAY_MS = 1_000;
 /** Префикс ключей кэша. Увеличить при несовместимых изменениях формата ответа. */
 const CACHE_KEY_PREFIX = 'v1:';
 
@@ -122,7 +124,7 @@ export class TksApiClient {
 
   private async fetchCached<T>(path: string): Promise<T> {
     if (!this.cacheEnabled) {
-      return this.fetch<T>(path);
+      return this.fetchWithRetry<T>(path);
     }
 
     const key = this.cacheKey(path);
@@ -142,7 +144,7 @@ export class TksApiClient {
 
     const promise = (async () => {
       try {
-        const data = await this.fetch<T>(path);
+        const data = await this.fetchWithRetry<T>(path);
         void this.cacheStore.set(key, data, this.cacheTtl).catch((err) => {
           this.logger?.error(
             `TKS API cache set failed for ${path}: ${err instanceof Error ? err.message : String(err)}`,
@@ -168,6 +170,25 @@ export class TksApiClient {
       return await promise;
     } finally {
       this.inFlight.delete(key);
+    }
+  }
+
+  /**
+   * Один повтор временно сбойного запроса (сеть/таймаут, 429, 5xx, HTML вместо JSON
+   * от WAF) перед уходом в stale-кэш: единичный таймаут или проскочившая страница
+   * Cloudflare не повод отдавать протухшие данные. Клиентские 4xx (кроме 429)
+   * не повторяем — повтор даст тот же ответ.
+   */
+  private async fetchWithRetry<T>(path: string): Promise<T> {
+    try {
+      return await this.fetch<T>(path);
+    } catch (err) {
+      const permanent =
+        err instanceof TksApiError && err.status >= 400 && err.status < 500 && err.status !== 429;
+      if (permanent) throw err;
+      this.logger?.log(`TKS API retrying ${path} after transient failure`);
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+      return this.fetch<T>(path);
     }
   }
 

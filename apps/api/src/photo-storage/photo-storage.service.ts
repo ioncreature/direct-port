@@ -15,6 +15,13 @@ const JPEG_QUALITY = 85;
 const RESIZE_CONCURRENCY = 4;
 /** Защита от OOM на патологических xlsx с тысячами embedded-картинок. */
 const MAX_IMAGES_PER_DOC = 200;
+/**
+ * Потолок пикселей на входное изображение для sharp/libvips. Фото товаров из xlsx —
+ * единицы мегапикселей; 50 МП щедро для легитимных, но отсекает декомпрессионные
+ * бомбы (картинка с гигантским заявленным разрешением, разворачивающаяся при
+ * декодировании в гигабайты raw-bitmap). Дефолт libvips — 268 МП, под бомбу велик.
+ */
+const MAX_INPUT_PIXELS = 50_000_000;
 
 export interface ProductPhotoInput {
   rowIndex: number;
@@ -44,7 +51,12 @@ export class PhotoStorageService {
     images: ProductPhotoInput[],
     dataRowIndices: number[],
   ): Promise<SavedPhotoRef[]> {
-    if (images.length === 0) return [];
+    if (images.length === 0) {
+      // Повторный парс без фото обязан стереть записи прошлого запуска: их rowIndex
+      // привязан к старому parsedData и после reparse указывает на другие строки.
+      await this.deleteForDocument(documentId);
+      return [];
+    }
 
     const rowToProduct = new Map<number, number>();
     for (let i = 0; i < dataRowIndices.length; i++) {
@@ -96,9 +108,12 @@ export class PhotoStorageService {
     }
 
     // Идемпотентность для reparse: иначе при POST /:id/reprocess с парсингом
-    // накопятся дубликаты от каждого запуска.
+    // накопятся дубликаты от каждого запуска. Удаляем старые и при нуле новых —
+    // иначе после повторного парса без валидных фото остаются записи прошлого
+    // запуска, чьи rowIndex могут указывать на другие строки нового parsedData
+    // (vision-retry подтверждал бы код по чужой фотографии).
+    await this.deleteForDocument(documentId);
     if (rows.length > 0) {
-      await this.repo.delete({ documentId });
       await this.repo.save(rows);
     }
 
@@ -116,7 +131,13 @@ export class PhotoStorageService {
     bytes: Buffer,
   ): Promise<{ data: Buffer; width: number | null; height: number | null } | null> {
     try {
-      const { data, info } = await sharp(bytes)
+      const { data, info } = await sharp(bytes, {
+        // Произвольные изображения из xlsx клиента: ограничиваем размер декодируемого
+        // bitmap (libvips — известный источник OOM на больших/вредоносных картинках)
+        // и падаем на повреждённых, а не глотаем частично декодированное.
+        limitInputPixels: MAX_INPUT_PIXELS,
+        failOn: 'error',
+      })
         .resize({
           width: MAX_DIMENSION_PX,
           height: MAX_DIMENSION_PX,

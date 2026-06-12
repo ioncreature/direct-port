@@ -79,6 +79,20 @@ function toNumber(value: unknown): number | null {
   return null;
 }
 
+/**
+ * Защита от формула-инъекции (CSV injection): значения из ввода клиента
+ * (наименования, коды ТН ВЭД, замечания) попадают в ячейки as-is. Если значение
+ * начинается с =, +, -, @, таба или CR, Excel/LibreOffice при открытии могут
+ * интерпретировать его как формулу (вплоть до DDE). Префиксуем апострофом — он
+ * не отображается, но заставляет приложение трактовать ячейку как текст.
+ */
+function csvSafe(value: unknown): unknown {
+  if (typeof value === 'string' && /^[=+\-@\t\r]/.test(value)) {
+    return `'${value}`;
+  }
+  return value;
+}
+
 const LOCALIZED_NOTES_HEADERS: Record<string, string> = {
   zh: '备注（翻译）',
   en: 'Notes (translated)',
@@ -302,6 +316,9 @@ export class ExcelExportService {
         rowData.exchangeRate = toNumber(row.exchangeRate);
       }
 
+      for (const key of Object.keys(rowData)) {
+        rowData[key] = csvSafe(rowData[key]);
+      }
       const excelRow = sheet.addRow(rowData);
 
       for (const col of numFmtColumns) {
@@ -362,9 +379,9 @@ export class ExcelExportService {
             const v = row[h];
             if (NUMERIC_KEYS.has(h)) {
               const n = toNumber(v);
-              return n != null ? n : v;
+              return n != null ? n : csvSafe(v);
             }
-            return v;
+            return csvSafe(v);
           }),
         );
       }

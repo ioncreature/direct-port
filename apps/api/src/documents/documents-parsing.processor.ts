@@ -46,6 +46,18 @@ export class DocumentsParsingProcessor extends WorkerHost {
       return;
     }
 
+    // Guard от повторной доставки job (stalled-повтор после крэша/деплоя, двойная
+    // постановка при гонке кликов): документ уже ушёл дальше по пайплайну или обработан
+    // вручную — выходим, не трогая статус. Без guard'а повтор видел бы fileBuffer=null
+    // и флипал уже распарсенный документ в FAILED с ложным уведомлением, пока
+    // processing-воркер параллельно доводит его до PROCESSED.
+    if (doc.status !== DocumentStatus.PARSING) {
+      this.logger.warn(
+        `Document ${documentId} is "${doc.status}", not "parsing" — skipping duplicate parse job`,
+      );
+      return;
+    }
+
     if (!doc.fileBuffer) {
       this.logger.warn(`Document ${documentId} has no file buffer`);
       doc.status = DocumentStatus.FAILED;
@@ -99,17 +111,17 @@ export class DocumentsParsingProcessor extends WorkerHost {
       doc.tokenUsage = addStageUsage(doc.tokenUsage ?? {}, 'parser', tokenUsage);
       doc.fileBuffer = null;
 
-      // Best-effort: фото — опциональный вход для vision-retry, ошибки не должны валить парсинг.
-      if (photoBundle) {
-        try {
-          await this.photoStorage.savePhotos(
-            documentId,
-            photoBundle.photos,
-            photoBundle.dataRowIndices,
-          );
-        } catch (err) {
-          this.logger.warn(`Photo save failed for ${documentId}: ${errMsg(err)}`);
-        }
+      // Best-effort: фото — опциональный вход для vision-retry, ошибки не должны валить
+      // парсинг. Вызываем и без фото: savePhotos чистит записи прошлого запуска, чьи
+      // rowIndex после reparse указывали бы на другие строки.
+      try {
+        await this.photoStorage.savePhotos(
+          documentId,
+          photoBundle?.photos ?? [],
+          photoBundle?.dataRowIndices ?? [],
+        );
+      } catch (err) {
+        this.logger.warn(`Photo save failed for ${documentId}: ${errMsg(err)}`);
       }
 
       // Manual-значение не затираем при reparse.
@@ -164,17 +176,38 @@ export class DocumentsParsingProcessor extends WorkerHost {
         doc.rejectionReasons = rejectionReasons.length > 0 ? rejectionReasons : null;
         await this.repo.save(doc);
         // managed: клиента не трогаем, но менеджеру нужно знать про необходимость ревью.
+        // best-effort: сбой уведомления не должен ронять уже сохранённый REQUIRES_REVIEW.
         if (doc.source === 'managed') {
-          await this.managerNotify.notifyDocumentEvent(doc);
+          await this.managerNotify
+            .notifyDocumentEvent(doc)
+            .catch((err) => this.logger.warn(`Failed to notify manager for ${documentId}`, err));
         }
         this.logger.log(`Document ${documentId} parsed but needs review: ${rejectionReasons.join('; ')}`);
       }
     } catch (err) {
       void this.audit.failStageRun(stageRunId, err);
+      // Не последняя попытка — оставляем статус PARSING и пробрасываем ошибку:
+      // BullMQ ретраит по attempts/backoff из opts job'а (529/таймаут Anthropic —
+      // транзиентные, FAILED на первой же попытке заставлял оператора жать
+      // reprocess руками). Если ошибка прилетела после перехода в PENDING
+      // (например, на постановке processing-job), guard статуса выше погасит повтор.
+      const attemptsTotal = job.opts?.attempts ?? 1;
+      if (attempt < attemptsTotal) {
+        this.logger.warn(
+          `Document ${documentId} parsing attempt ${attempt}/${attemptsTotal} failed, will retry: ${errMsg(err)}`,
+        );
+        throw err;
+      }
       doc.status = DocumentStatus.FAILED;
       doc.errorMessage = errMsg(err) || 'Parsing failed';
-      doc.fileBuffer = null;
-      await this.repo.save(doc);
+      // Точечный update вместо save: fileBuffer сохраняем — это единственный источник
+      // для повторного парсинга через POST /:id/reprocess (раньше транзиентная ошибка
+      // Claude навсегда уничтожала исходный файл клиента), и не гоняем мегабайты
+      // буфера в UPDATE.
+      await this.repo.update(documentId, {
+        status: doc.status,
+        errorMessage: doc.errorMessage,
+      });
       const errorCode = classifyPipelineError(err, ErrorCode.PARSING_FAILED);
       await this.notify({ doc, status: 'failed', errorCode });
       this.logger.error(
@@ -193,22 +226,27 @@ export class DocumentsParsingProcessor extends WorkerHost {
     rejectionReasonsLocalized?: string[];
     itemCount?: number;
   }): Promise<void> {
-    // managed-документ: уведомляем менеджера, а не клиента.
-    if (opts.doc.source === 'managed') {
-      await this.managerNotify.notifyDocumentEvent(opts.doc);
-      return;
-    }
-    const payload = buildDocumentNotificationPayload(opts.doc, opts.status, {
-      errorMessage: opts.errorMessage,
-      errorCode: opts.errorCode,
-      rejectionReasons: opts.rejectionReasons,
-      rejectionReasonsLocalized: opts.rejectionReasonsLocalized,
-      itemCount: opts.itemCount,
-    });
-    if (!payload) return;
+    // Уведомление — best-effort: его сбой (DB-запрос резолва менеджеров, Redis)
+    // не должен долетать до catch воркера и флипать уже сохранённый статус
+    // документа в FAILED.
+    try {
+      // managed-документ: уведомляем менеджера, а не клиента.
+      if (opts.doc.source === 'managed') {
+        await this.managerNotify.notifyDocumentEvent(opts.doc);
+        return;
+      }
+      const payload = buildDocumentNotificationPayload(opts.doc, opts.status, {
+        errorMessage: opts.errorMessage,
+        errorCode: opts.errorCode,
+        rejectionReasons: opts.rejectionReasons,
+        rejectionReasonsLocalized: opts.rejectionReasonsLocalized,
+        itemCount: opts.itemCount,
+      });
+      if (!payload) return;
 
-    await this.notificationQueue.add('document-ready', payload).catch((err) => {
+      await this.notificationQueue.add('document-ready', payload);
+    } catch (err) {
       this.logger.warn(`Failed to send notification for ${opts.doc.id}`, err);
-    });
+    }
   }
 }

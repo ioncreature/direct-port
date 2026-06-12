@@ -52,7 +52,7 @@ describe('TelegramUsers (e2e)', () => {
       await request(app.getHttpServer())
         .post('/api/telegram-users/register')
         .send({ telegramId: 123 })
-        .expect(401);
+        .expect(403);
     });
   });
 

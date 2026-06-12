@@ -10,6 +10,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { Internal } from '../auth/decorators/internal.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../database/entities/user.entity';
 import { FindTelegramUsersQueryDto } from './dto/find-telegram-users-query.dto';
@@ -45,11 +46,13 @@ export class TelegramUsersController {
   }
 
   @Post('register')
+  @Internal()
   register(@Body() dto: RegisterTelegramUserDto) {
     return this.service.register(dto);
   }
 
   @Patch(':telegramId/language')
+  @Internal()
   updateLanguage(
     @Param('telegramId') telegramId: string,
     @Body() dto: UpdateLanguageDto,
@@ -58,6 +61,7 @@ export class TelegramUsersController {
   }
 
   @Get(':telegramId')
+  @Internal()
   async findByTelegramId(@Param('telegramId', ParseIntPipe) telegramId: number) {
     const user = await this.service.findByTelegramId(telegramId);
     if (!user) throw new NotFoundException('Telegram user not found');

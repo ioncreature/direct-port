@@ -17,8 +17,9 @@ export type ConversationAttachmentType = 'document' | 'photo' | 'file';
 /**
  * Одно сообщение переписки между клиентом (client-bot) и менеджером (manager-bot).
  * Хранится в БД для read-only истории в админке. Вложения (фото/доки) не хранятся
- * байтами — только Telegram file_id; первый xlsx становится отдельным Document
- * (см. document_id + attachment_type='document').
+ * байтами — только Telegram file_id; каждый присланный xlsx/csv становится отдельным
+ * Document (см. document_id + attachment_type='document'), остальные файлы — просто
+ * вложения переписки.
  */
 @Entity('conversation_messages')
 @Index(['clientId', 'createdAt'])
@@ -54,7 +55,7 @@ export class ConversationMessage {
   @Column({ type: 'varchar', length: 255, name: 'attachment_file_id', nullable: true })
   attachmentFileId: string | null;
 
-  /** Ссылка на Document, если сообщение принесло файл для расчёта (первый xlsx/csv). */
+  /** Ссылка на Document, если сообщение принесло файл для расчёта (xlsx/csv). */
   @Column({ type: 'uuid', name: 'document_id', nullable: true })
   documentId: string | null;
 

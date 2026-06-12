@@ -15,6 +15,7 @@ file-accepted = ✅ File "{ $fileName }" received. A manager will prepare the ca
 file-too-large = The file is too large. Maximum size is 40 MB.
 unsupported-format = Only .xlsx and .csv files are supported.
 upload-error = Could not accept the file. Please try again a little later.
+relay-error = Could not pass your message to the manager. Please try again a little later.
 greeting-ack = ✅ Got it! A manager will reply here shortly.
 manager-assigned = ✅ A manager has joined and will reply here.
 result-ready = ✅ Your calculation is ready — see the attached file.

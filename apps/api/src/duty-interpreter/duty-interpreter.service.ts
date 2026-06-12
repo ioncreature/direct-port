@@ -15,7 +15,7 @@ import type { ProductNote } from '../common/product-notes';
 import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage, modelFamily } from '../common/token-usage';
 import type { VerifiedProduct } from '../classifier/classifier.service';
 import { PipelineAuditService, type AuditContext } from '../pipeline-audit/pipeline-audit.service';
-import { DutyInterpretation, InterpretedProduct } from './interfaces';
+import { ChargeMethod, DutyInterpretation, InterpretedProduct } from './interfaces';
 
 const BATCH_SIZE = 5;
 const CONCURRENCY = 2;
@@ -224,6 +224,58 @@ const INTERPRET_TOOL: Anthropic.Messages.Tool = {
   },
 };
 
+/** Адвалорная ставка выше этого (%) — явная галлюцинация/инъекция, не реальная ставка. */
+const MAX_RATE_PERCENT = 1000;
+/** Специфическая сумма за единицу (в валюте ставки) выше этого — заведомо битое число. */
+const MAX_SPECIFIC_AMOUNT = 1e9;
+
+/**
+ * Зануляет нефинитные/отрицательные и клампит абсурдно большие числа. LLM-интерпретатор
+ * может вернуть битое число (галлюцинация или инъекция через NOTE/conditions TKS), а
+ * Calculator умножает его в денежную сумму без собственной проверки: отрицательная ставка
+ * занизит пошлину и НДС, Infinity протечёт в итог. Это граница доверия к выходу модели.
+ */
+function clampToRange(value: unknown, max: number): number {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return n > max ? max : n;
+}
+
+function sanitizeChargeMethod(method: ChargeMethod): ChargeMethod {
+  switch (method.kind) {
+    case 'ad_valorem':
+    case 'fixed_rate':
+      return { ...method, rate: clampToRange(method.rate, MAX_RATE_PERCENT) };
+    case 'specific':
+      return { ...method, amount: clampToRange(method.amount, MAX_SPECIFIC_AMOUNT) };
+    case 'combined_min':
+    case 'combined_max':
+      return {
+        ...method,
+        rate: clampToRange(method.rate, MAX_RATE_PERCENT),
+        specificAmount: clampToRange(method.specificAmount, MAX_SPECIFIC_AMOUNT),
+      };
+    case 'combined_specific_min':
+    case 'combined_specific_max':
+      return {
+        ...method,
+        primary: { ...method.primary, amount: clampToRange(method.primary.amount, MAX_SPECIFIC_AMOUNT) },
+        fallback: { ...method.fallback, amount: clampToRange(method.fallback.amount, MAX_SPECIFIC_AMOUNT) },
+      };
+    default:
+      return method;
+  }
+}
+
+/** Прогоняет числовые поля всех charges интерпретации через clampToRange. */
+function sanitizeInterpretation(interp: DutyInterpretation): DutyInterpretation {
+  if (!Array.isArray(interp.charges)) return interp;
+  return {
+    ...interp,
+    charges: interp.charges.map((c) => ({ ...c, method: sanitizeChargeMethod(c.method) })),
+  };
+}
+
 @Injectable()
 export class DutyInterpreterService {
   private logger = new Logger(DutyInterpreterService.name);
@@ -285,13 +337,26 @@ export class DutyInterpreterService {
     }
     const skippedSimpleCodes = codeToIndices.size - codesNeedingInterpretation.size;
 
+    // L1/L2 кэш ключуются по (code, language, model): reasoningLocalized зависит от
+    // языка, а смена interpreter-модели меняет интерпретацию. L1 раньше ключевался
+    // голым code и в пределах TTL мог отдать интерпретацию на чужом языке / от старой
+    // модели — поэтому langKey и cacheModelKey считаем ДО L1-чтения.
+    const langKey = language ?? 'ru';
+    const interpreterModel = await this.aiConfig.getInterpreterModel();
+    // model в кэше хранится как семейство (sonnet/opus/haiku) — см. миграцию
+    // NormalizeModelFamilies. Конкретный version ID (например `claude-opus-4-8`) не
+    // должен инвалидировать кэш при минорных апдейтах: интерпретация ставок ТН ВЭД
+    // от точечной версии семейства практически не зависит.
+    const cacheModelKey = modelFamily(interpreterModel);
+    const l1Key = (code: string) => `${code}|${langKey}|${cacheModelKey}`;
+
     // Check L1 in-memory cache, collect codes that need further lookup
     const interpretations = new Map<string, DutyInterpretation>();
     let codesToInterpret: string[] = [];
 
     for (const code of codeToIndices.keys()) {
       if (!codesNeedingInterpretation.has(code)) continue;
-      const cached = this.cache.get(code);
+      const cached = this.cache.get(l1Key(code));
       if (cached && cached.expiresAt > Date.now()) {
         interpretations.set(code, cached.data);
       } else {
@@ -299,28 +364,21 @@ export class DutyInterpreterService {
       }
     }
 
-    // L2 persistent (DB) cache — правила пошлин ТН ВЭД меняются редко,
-    // ответ Claude хранится 180 дней (см. PERSISTENT_CACHE_TTL_MS). Ключ
-    // включает language и model, потому что reasoningLocalized зависит от
-    // языка, а смена interpreter-модели может изменить интерпретацию.
-    const langKey = language ?? 'ru';
-    const interpreterModel = await this.aiConfig.getInterpreterModel();
+    // L2 persistent (DB) cache — правила пошлин ТН ВЭД меняются редко, ответ Claude
+    // хранится 180 дней (см. PERSISTENT_CACHE_TTL_MS).
     let dbHits = 0;
-    // model в DB-кэше хранится как семейство (sonnet/opus/haiku) — см. миграцию
-    // NormalizeModelFamilies. Конкретный version ID интерпретатора (например
-    // `claude-opus-4-8`) не должен инвалидировать persistent cache при минорных
-    // апдейтах: интерпретация ставок ТН ВЭД от точечной версии семейства
-    // практически не зависит.
-    const cacheModelKey = modelFamily(interpreterModel);
     if (codesToInterpret.length > 0 && this.persistentCache) {
       const fromDb = await this.loadFromPersistentCache(
         codesToInterpret,
         langKey,
         cacheModelKey,
       );
-      for (const [code, data] of fromDb) {
+      for (const [code, rawData] of fromDb) {
+        // Кламп — граница доверия перед Calculator: L2 хранит записи до 180 дней,
+        // включая записанные до появления sanitize; для валидных данных это no-op.
+        const data = sanitizeInterpretation(rawData);
         interpretations.set(code, data);
-        this.cache.set(code, { data, expiresAt: Date.now() + CACHE_TTL });
+        this.cache.set(l1Key(code), { data, expiresAt: Date.now() + CACHE_TTL });
       }
       dbHits = fromDb.size;
       codesToInterpret = codesToInterpret.filter((c) => !fromDb.has(c));
@@ -397,7 +455,7 @@ export class DutyInterpreterService {
         totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
         for (const result of results) {
           interpretations.set(result.tnvedCode, result);
-          this.cache.set(result.tnvedCode, { data: result, expiresAt: Date.now() + CACHE_TTL });
+          this.cache.set(l1Key(result.tnvedCode), { data: result, expiresAt: Date.now() + CACHE_TTL });
           freshFromClaude.push(result);
         }
       } catch (err) {
@@ -421,7 +479,7 @@ export class DutyInterpreterService {
         totalUsage = mergeTokenUsage(totalUsage, tokenUsage);
         for (const result of batchResults) {
           interpretations.set(result.tnvedCode, result);
-          this.cache.set(result.tnvedCode, { data: result, expiresAt: Date.now() + CACHE_TTL });
+          this.cache.set(l1Key(result.tnvedCode), { data: result, expiresAt: Date.now() + CACHE_TTL });
           freshFromClaude.push(result);
         }
       }
@@ -621,6 +679,6 @@ ${JSON.stringify(codesData, null, 2)}
       );
       return { results: [], tokenUsage };
     }
-    return { results, tokenUsage };
+    return { results: results.map(sanitizeInterpretation), tokenUsage };
   }
 }

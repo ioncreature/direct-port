@@ -15,6 +15,9 @@ export function describeCallbackError(err: unknown): string {
   if (code === 'CLIENT_ALREADY_CLAIMED' || status === 409) {
     return 'Клиента уже взял другой менеджер';
   }
+  if (code === 'CLIENT_NOT_ASSIGNED') {
+    return 'Клиент закреплён за другим менеджером (или ещё не взят — нажмите «👤 Взять»)';
+  }
   if (code === 'MANAGER_NOT_LINKED' || status === 403) {
     return 'Ваш аккаунт не привязан. Отправьте /start с ссылкой из админки';
   }
@@ -52,12 +55,15 @@ export class CallbackHandler {
       if (action === 'claim') {
         await this.apiClient.claimClient(arg, from.id);
         await ctx.answerCallbackQuery({ text: '✅ Клиент закреплён за вами' });
+        await this.removePressedButton(ctx, data);
       } else if (action === 'start') {
         await this.apiClient.startDocument(arg, from.id);
         await ctx.answerCallbackQuery({ text: '🚀 Расчёт запущен' });
+        await this.removePressedButton(ctx, data);
       } else if (action === 'send') {
         await this.apiClient.sendDocument(arg, from.id);
         await ctx.answerCallbackQuery({ text: '📤 Расчёт отправлен клиенту' });
+        await this.removePressedButton(ctx, data);
       } else if (action === 'reply') {
         await this.activeDialog.set(ctx.chat!.id, { clientId: arg, clientName: '' });
         await ctx.answerCallbackQuery({ text: '✍️ Режим ответа включён' });
@@ -71,5 +77,26 @@ export class CallbackHandler {
         .catch(() => undefined);
       this.logger.warn(`Callback "${data}" failed: ${(err as Error).message}`);
     }
+  }
+
+  /**
+   * Убирает нажатую кнопку из уведомления после успешного действия: «Взять» уже
+   * взятого и «Запустить» уже запущенного — источник двойных кликов и гонок
+   * (повторное действие сервер отбивает, но мёртвая кнопка путает). Остальные
+   * кнопки сообщения (например, «🚀 Запустить» после «Взять») остаются. У других
+   * менеджеров копии уведомления не редактируются — их message_id здесь неизвестны,
+   * повтор у них упирается в 409/400 с внятным toast.
+   */
+  private async removePressedButton(ctx: Context, pressedData: string): Promise<void> {
+    const markup = ctx.callbackQuery?.message?.reply_markup;
+    if (!markup) return;
+    const rows = markup.inline_keyboard
+      .map((row) =>
+        row.filter((btn) => !('callback_data' in btn) || btn.callback_data !== pressedData),
+      )
+      .filter((row) => row.length > 0);
+    await ctx
+      .editMessageReplyMarkup(rows.length > 0 ? { reply_markup: { inline_keyboard: rows } } : undefined)
+      .catch(() => undefined);
   }
 }

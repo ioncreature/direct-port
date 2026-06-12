@@ -167,9 +167,17 @@ export class RegulatoryInterpreterService {
       for (const id of ids) result.byId.set(id, data);
     };
 
+    // L1/L2 кэш ключуются по (noteHash, language, model): summary зависит от языка,
+    // а смена regulatory-модели меняет выжимку. L1 раньше ключевался голым hash и в
+    // пределах TTL мог отдать выжимку на чужом языке / от старой модели — поэтому
+    // model резолвим и формируем l1Key ДО L1-чтения.
+    const model = await this.aiConfig.getRegulatoryInterpreterModel();
+    const cacheModelKey = modelFamily(model);
+    const l1Key = (hash: string) => `${hash}|${language}|${cacheModelKey}`;
+
     const need: BatchInput[] = [];
     for (const input of byHash.values()) {
-      const cached = this.cache.get(input.hash);
+      const cached = this.cache.get(l1Key(input.hash));
       if (cached && cached.expiresAt > Date.now()) {
         apply(input.hash, cached.data);
       } else {
@@ -183,9 +191,6 @@ export class RegulatoryInterpreterService {
       return result;
     }
 
-    const model = await this.aiConfig.getRegulatoryInterpreterModel();
-    const cacheModelKey = modelFamily(model);
-
     if (this.persistentCache) {
       const fromDb = await this.loadFromPersistent(
         need.map((n) => n.hash),
@@ -194,7 +199,7 @@ export class RegulatoryInterpreterService {
       );
       for (const [hash, data] of fromDb) {
         apply(hash, data);
-        this.rememberInL1(hash, data);
+        this.rememberInL1(l1Key(hash), data);
       }
       result.fromDbCache = fromDb.size;
     }
@@ -235,7 +240,7 @@ export class RegulatoryInterpreterService {
       for (const item of items) {
         fresh.push(item);
         apply(item.hash, item.data);
-        this.rememberInL1(item.hash, item.data);
+        this.rememberInL1(l1Key(item.hash), item.data);
       }
     };
 
@@ -283,13 +288,13 @@ export class RegulatoryInterpreterService {
    * Для горячего хита это не идеальная LRU, но цель здесь — защита от неограниченного
    * роста; точная LRU не нужна (L2 закрывает 180-дневное хранение).
    */
-  private rememberInL1(hash: string, data: RegulatoryExplanation): void {
-    if (this.cache.has(hash)) this.cache.delete(hash);
+  private rememberInL1(key: string, data: RegulatoryExplanation): void {
+    if (this.cache.has(key)) this.cache.delete(key);
     else if (this.cache.size >= L1_CACHE_MAX_ENTRIES) {
       const oldest = this.cache.keys().next().value;
       if (oldest !== undefined) this.cache.delete(oldest);
     }
-    this.cache.set(hash, { data, expiresAt: Date.now() + CACHE_TTL_MS });
+    this.cache.set(key, { data, expiresAt: Date.now() + CACHE_TTL_MS });
   }
 
   private async loadFromPersistent(

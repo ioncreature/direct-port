@@ -12,6 +12,7 @@ import {
   type ManagerEventType,
   type ManagerNotification,
 } from './manager-notification';
+import { DELIVERY_JOB_OPTS } from './queue-opts';
 
 /**
  * Ставит события в очередь manager-notifications (потребляет manager-bot).
@@ -85,19 +86,25 @@ export class ManagerNotifyService {
       assigned: Boolean(client.assignedManagerId),
       ...extra,
     };
-    await this.queue
-      .add('manager-notify', payload)
-      .catch((err) => this.logger.warn(`Failed to enqueue manager notification`, err));
+    // Сбой постановки НЕ глотается: intake ответит 500, и client-bot честно скажет
+    // клиенту об ошибке (вместо «принято» при потерянном уведомлении). Вызовы из
+    // pipeline-воркеров изолированы на их стороне (notify — best-effort).
+    await this.queue.add('manager-notify', payload, DELIVERY_JOB_OPTS);
   }
 
   /** Назначенный менеджер, иначе все активные привязанные (broadcast). */
   private async resolveManagers(assignedManagerId: string | null): Promise<string[]> {
     if (assignedManagerId) {
       const manager = await this.usersRepo.findOne({
-        where: { id: assignedManagerId },
+        where: { id: assignedManagerId, isActive: true },
         select: ['managerTelegramId'],
       });
-      return manager?.managerTelegramId ? [manager.managerTelegramId] : [];
+      if (manager?.managerTelegramId) return [manager.managerTelegramId];
+      // Назначенный менеджер отвязан или деактивирован: не теряем событие, а отдаём
+      // его в broadcast остальным (раньше тут возвращался [] и уведомление дропалось).
+      this.logger.warn(
+        `Assigned manager ${assignedManagerId} is unlinked or inactive — falling back to broadcast`,
+      );
     }
     const managers = await this.usersRepo.find({
       where: { managerTelegramId: Not(IsNull()), isActive: true },

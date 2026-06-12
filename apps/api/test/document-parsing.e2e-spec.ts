@@ -196,7 +196,7 @@ describe('Document parsing (e2e)', () => {
       expect(updated!.fileBuffer).toBeNull();
     });
 
-    it('should clear fileBuffer after failed parsing', async () => {
+    it('should KEEP fileBuffer after failed parsing so reprocess can re-parse', async () => {
       (aiParser.parse as jest.Mock).mockRejectedValueOnce(new Error('fail'));
 
       const doc = await createDocumentWithBuffer();
@@ -209,7 +209,10 @@ describe('Document parsing (e2e)', () => {
         .where('doc.id = :id', { id: doc.id })
         .getOne();
 
-      expect(updated!.fileBuffer).toBeNull();
+      // Раньше буфер затирался — транзиентная ошибка Claude навсегда уничтожала
+      // исходный файл, и reprocess было нечем перезапустить.
+      expect(updated!.status).toBe(DocumentStatus.FAILED);
+      expect(updated!.fileBuffer).not.toBeNull();
     });
 
     it('should handle missing document gracefully', async () => {

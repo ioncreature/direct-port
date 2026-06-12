@@ -18,7 +18,12 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
       inject: [ConfigService],
       useFactory: (config: ConfigService) =>
         new Redis(config.get('REDIS_URL', 'redis://localhost:6380'), {
-          maxRetriesPerRequest: null,
+          // Fail-fast вместо вечного зависания: с offline queue команды при недоступном
+          // Redis копились бы в памяти, и HTTP-запросы (bot-links на дашборде, генерация
+          // токена привязки) висели до таймаута прокси. Ошибка сразу → внятный 500.
+          // BullMQ-соединения это не касается — у них свой конфиг в BullModule.
+          enableOfflineQueue: false,
+          maxRetriesPerRequest: 2,
         }),
     },
   ],
