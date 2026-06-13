@@ -163,10 +163,6 @@ function createProcessor(opts: Opts = {}) {
     save: jest.fn().mockImplementation((d: Document) => Promise.resolve(d)),
   };
 
-  const notificationQueue = {
-    add: jest.fn().mockResolvedValue(undefined),
-  };
-
   const classified = opts.classifyResult?.products ?? [makeClassified()];
   const makeDefaultAudit = (products: ClassifiedProduct[]) => ({
     searchQueries: products.map(() => [] as string[]),
@@ -269,17 +265,11 @@ function createProcessor(opts: Opts = {}) {
 
   const managerNotify = {
     notifyDocumentEvent: jest.fn().mockResolvedValue(undefined),
-    notifyNewDocument: jest.fn().mockResolvedValue(undefined),
-    notifyClientMessage: jest.fn().mockResolvedValue(undefined),
   };
 
-  // Реальный нотификатор поверх мок-очереди и мок-менеджера: ассерты на
-  // notificationQueue.add/managerNotify.notifyDocumentEvent остаются проверкой
-  // фактического payload, как до выноса notify() из процессора.
-  const pipelineNotifier = new PipelineNotifierService(
-    notificationQueue as any,
-    managerNotify as any,
-  );
+  // Реальный нотификатор поверх мок-менеджера: managed-документ → notifyDocumentEvent,
+  // self_service → no-op (после удаления tg-bot self_service-уведомлений нет).
+  const pipelineNotifier = new PipelineNotifierService(managerNotify as any);
 
   const processor = new DocumentsProcessor(
     repo as any,
@@ -298,7 +288,7 @@ function createProcessor(opts: Opts = {}) {
     processor,
     doc,
     repo,
-    notificationQueue,
+    managerNotify,
     classifier,
     dutyInterpreter,
     calculator,
@@ -306,7 +296,6 @@ function createProcessor(opts: Opts = {}) {
     currencyService,
     calculationLogs,
     audit,
-    managerNotify,
   };
 }
 
@@ -328,7 +317,7 @@ describe('DocumentsProcessor.process', () => {
     it('happy path: classify → interpret → calculate → PROCESSED + notify', async () => {
       const tgUser = { telegramId: '123', username: 'u', language: null };
       const doc = makeDoc({ telegramUser: tgUser as any });
-      const { processor, repo, classifier, dutyInterpreter, calculator, notificationQueue } =
+      const { processor, repo, classifier, dutyInterpreter, calculator } =
         createProcessor({ doc });
 
       await processor.process(fakeJob('doc-1'));
@@ -339,11 +328,6 @@ describe('DocumentsProcessor.process', () => {
       expect(doc.status).toBe(DocumentStatus.PROCESSED);
       // save: PROCESSING → PROCESSED
       expect(repo.save).toHaveBeenCalled();
-      // notification
-      expect(notificationQueue.add).toHaveBeenCalledWith(
-        'document-ready',
-        expect.objectContaining({ documentId: 'doc-1', status: 'processed', sendResultFile: true }),
-      );
     });
 
     it('устанавливает status=PROCESSING до обработки, потом PROCESSED', async () => {
@@ -366,15 +350,11 @@ describe('DocumentsProcessor.process', () => {
       const summary = makeSummary([
         makeCalculated({ calculationStatus: 'error' }),
       ]);
-      const { processor, notificationQueue } = createProcessor({ doc, summary });
+      const { processor } = createProcessor({ doc, summary });
 
       await processor.process(fakeJob('doc-1'));
 
       expect(doc.status).toBe(DocumentStatus.PROCESSED_WITH_ERRORS);
-      expect(notificationQueue.add).toHaveBeenCalledWith(
-        'document-ready',
-        expect.objectContaining({ status: 'processed_with_errors' }),
-      );
     });
   });
 
@@ -408,7 +388,7 @@ describe('DocumentsProcessor.process', () => {
       const summary = makeSummary([
         makeCalculated({ matchConfidence: 0.5, tnVedCode: '0201100001' }),
       ]);
-      const { processor, notificationQueue } = createProcessor({
+      const { processor } = createProcessor({
         doc,
         summary,
         config: { lowConfidenceAction: 'review', confidenceThreshold: 0.8 },
@@ -420,10 +400,6 @@ describe('DocumentsProcessor.process', () => {
       expect(doc.rejectionReasons).toBeDefined();
       expect(doc.rejectionReasons!.length).toBe(1);
       expect(doc.rejectionReasons![0]).toContain('не уверена в коде');
-      expect(notificationQueue.add).toHaveBeenCalledWith(
-        'document-ready',
-        expect.objectContaining({ status: 'code_review_required' }),
-      );
     });
 
     it('lowConfidenceAction=reject → REJECTED + rejectionReasons', async () => {
@@ -431,7 +407,7 @@ describe('DocumentsProcessor.process', () => {
       const summary = makeSummary([
         makeCalculated({ matched: false, tnVedCode: '', matchConfidence: 0 }),
       ]);
-      const { processor, notificationQueue } = createProcessor({
+      const { processor } = createProcessor({
         doc,
         summary,
         config: { lowConfidenceAction: 'reject', confidenceThreshold: 0.8 },
@@ -442,15 +418,6 @@ describe('DocumentsProcessor.process', () => {
       expect(doc.status).toBe(DocumentStatus.REJECTED);
       expect(doc.rejectionReasons).toBeDefined();
       expect(doc.rejectionReasons![0]).toContain('не удалось подобрать код');
-      expect(notificationQueue.add).toHaveBeenCalledWith(
-        'document-ready',
-        expect.objectContaining({
-          status: 'rejected',
-          rejectionReasons: expect.arrayContaining([
-            expect.stringContaining('не удалось подобрать код'),
-          ]),
-        }),
-      );
     });
 
     it('смешанный результат (1 low-conf + 1 ok) → блок на обеих (есть хотя бы одна low-conf)', async () => {
@@ -488,9 +455,9 @@ describe('DocumentsProcessor.process', () => {
   });
 
   describe('обработка ошибок', () => {
-    it('classify бросает → FAILED + errorMessage + notify failed', async () => {
+    it('classify бросает → FAILED + errorMessage', async () => {
       const doc = makeDoc({ telegramUser: { telegramId: '123' } as any });
-      const { processor, notificationQueue } = createProcessor({
+      const { processor } = createProcessor({
         doc,
         classifyError: new Error('Classify failed'),
       });
@@ -499,10 +466,6 @@ describe('DocumentsProcessor.process', () => {
 
       expect(doc.status).toBe(DocumentStatus.FAILED);
       expect(doc.errorMessage).toBe('Classify failed');
-      expect(notificationQueue.add).toHaveBeenCalledWith(
-        'document-ready',
-        expect.objectContaining({ status: 'failed', errorCode: 'PROCESSING_FAILED' }),
-      );
     });
 
     it('interpret бросает → FAILED', async () => {
@@ -701,42 +664,24 @@ describe('DocumentsProcessor.process', () => {
   });
 
   describe('notifications', () => {
-    it('без telegramUser → notify пропускается (payload=null)', async () => {
-      const doc = makeDoc({ telegramUser: null });
-      const { processor, notificationQueue } = createProcessor({ doc });
+    it('self_service-документ → менеджеру не уведомляем (после удаления tg-bot)', async () => {
+      const doc = makeDoc({ source: 'self_service', telegramUser: { telegramId: '123' } as any });
+      const { processor, managerNotify } = createProcessor({ doc });
 
       await processor.process(fakeJob('doc-1'));
 
-      expect(notificationQueue.add).not.toHaveBeenCalled();
+      expect(doc.status).toBe(DocumentStatus.PROCESSED);
+      expect(managerNotify.notifyDocumentEvent).not.toHaveBeenCalled();
     });
 
-    it('payload содержит outputFileName с датой', async () => {
-      const doc = makeDoc({
-        telegramUser: { telegramId: '123' } as any,
-        createdAt: new Date('2026-04-20T10:00:00Z'),
-      });
-      const { processor, notificationQueue } = createProcessor({ doc });
+    it('managed-документ → уведомляем менеджера на терминальном статусе', async () => {
+      const doc = makeDoc({ source: 'managed', telegramUser: { telegramId: '123' } as any });
+      const { processor, managerNotify } = createProcessor({ doc });
 
       await processor.process(fakeJob('doc-1'));
 
-      const call = notificationQueue.add.mock.calls[0];
-      expect(call[1].outputFileName).toMatch(/DP_/);
-      expect(call[1].outputFileName).toMatch(/\.xlsx$/);
-    });
-
-    it('sendResultFile=false → передаётся в payload', async () => {
-      const doc = makeDoc({ telegramUser: { telegramId: '123' } as any });
-      const { processor, notificationQueue } = createProcessor({
-        doc,
-        config: { sendResultFile: false },
-      });
-
-      await processor.process(fakeJob('doc-1'));
-
-      expect(notificationQueue.add).toHaveBeenCalledWith(
-        'document-ready',
-        expect.objectContaining({ sendResultFile: false }),
-      );
+      expect(doc.status).toBe(DocumentStatus.PROCESSED);
+      expect(managerNotify.notifyDocumentEvent).toHaveBeenCalledWith(doc);
     });
   });
 
@@ -916,7 +861,7 @@ describe('DocumentsProcessor.recalculate (job.name="recalculate-document")', () 
       telegramUser: { telegramId: '123', language: 'ru' } as never,
     });
     const lowConfItem = makeCalculated({ matchConfidence: 0.4 });
-    const { processor, notificationQueue } = createProcessor({
+    const { processor } = createProcessor({
       doc,
       summary: makeSummary([lowConfItem]),
     });
@@ -926,10 +871,6 @@ describe('DocumentsProcessor.recalculate (job.name="recalculate-document")', () 
     expect(doc.status).toBe(DocumentStatus.CODE_REVIEW_REQUIRED);
     expect(doc.rejectionReasons?.length).toBeGreaterThan(0);
     expect(doc.rejectionReasons?.[0]).not.toBe('старая причина');
-    expect(notificationQueue.add).toHaveBeenCalledWith(
-      'document-ready',
-      expect.objectContaining({ status: 'code_review_required' }),
-    );
   });
 
   it('lowConfidenceAction=reject → REJECTED при пересчёте', async () => {
@@ -1002,7 +943,7 @@ describe('DocumentsProcessor.recalculate (job.name="recalculate-document")', () 
         },
       ],
     });
-    const { processor, notificationQueue } = createProcessor({
+    const { processor, managerNotify } = createProcessor({
       doc,
       calculateError: new Error('recalc fail'),
     });
@@ -1012,7 +953,7 @@ describe('DocumentsProcessor.recalculate (job.name="recalculate-document")', () 
     expect(doc.status).toBe(DocumentStatus.FAILED);
     expect(doc.errorMessage).toBe('recalc fail');
     // recalculate не отправляет failed-notification
-    expect(notificationQueue.add).not.toHaveBeenCalled();
+    expect(managerNotify.notifyDocumentEvent).not.toHaveBeenCalled();
   });
 
   it('пишет calculation log с trigger=recalculate', async () => {

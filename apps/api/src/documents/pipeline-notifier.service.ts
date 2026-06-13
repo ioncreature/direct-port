@@ -1,83 +1,33 @@
-import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
-import { Queue } from 'bullmq';
 import { ManagerNotifyService } from '../conversations/manager-notify.service';
 import { Document } from '../database/entities/document.entity';
-import {
-  buildDocumentNotificationPayload,
-  type DocumentNotification,
-  type ProblemRowSummary,
-} from './notification';
 
 /**
- * Единая точка отправки уведомлений о состоянии документа из воркеров pipeline
- * (parsing/processing). Раньше метод `notify` был скопирован в обоих процессорах.
+ * Единая точка уведомлений о состоянии документа из pipeline-воркеров и админских
+ * операций (approve/reject/reprocess/ручная правка кода).
+ *
+ * После удаления tg-bot (self_service-бот) уведомляются ТОЛЬКО managed-документы —
+ * менеджеру в manager-bot; конкретное событие выводится из `doc.status` внутри
+ * ManagerNotifyService. У self_service-документов (legacy + админская загрузка)
+ * бота-получателя нет — для них это no-op.
  *
  * Best-effort по построению: сбой уведомления (резолв менеджеров в БД, недоступный
  * Redis) НЕ пробрасывается — иначе он долетел бы до catch воркера и флипнул уже
- * сохранённый статус документа (например, PROCESSED → FAILED).
- *
- * Маршрутизация по источнику: managed → менеджеру (manager-bot), self_service →
- * клиенту в Telegram-бот.
+ * сохранённый статус документа (например, PROCESSED → FAILED) или до HTTP-ответа
+ * админской операции, хотя сам документ уже сохранён.
  */
 @Injectable()
 export class PipelineNotifierService {
   private logger = new Logger(PipelineNotifierService.name);
 
-  constructor(
-    @InjectQueue('document-notifications') private notificationQueue: Queue,
-    private managerNotify: ManagerNotifyService,
-  ) {}
+  constructor(private managerNotify: ManagerNotifyService) {}
 
-  /**
-   * Уведомление с понятным `DocumentNotification['status']`. Для managed-документа
-   * событие выводится из `doc.status` внутри ManagerNotifyService (переданный status
-   * игнорируется); для self_service без telegramId payload пуст — тихо пропускаем.
-   */
-  async notify(opts: {
-    doc: Document;
-    status: DocumentNotification['status'];
-    errorMessage?: string;
-    errorCode?: string;
-    sendResultFile?: boolean;
-    rejectionReasons?: string[];
-    rejectionReasonsLocalized?: string[];
-    itemCount?: number;
-    problemRows?: ProblemRowSummary[];
-  }): Promise<void> {
-    try {
-      if (opts.doc.source === 'managed') {
-        await this.managerNotify.notifyDocumentEvent(opts.doc);
-        return;
-      }
-      const payload = buildDocumentNotificationPayload(opts.doc, opts.status, {
-        errorMessage: opts.errorMessage,
-        errorCode: opts.errorCode,
-        rejectionReasons: opts.rejectionReasons,
-        rejectionReasonsLocalized: opts.rejectionReasonsLocalized,
-        sendResultFile: opts.sendResultFile,
-        itemCount: opts.itemCount,
-        problemRows: opts.problemRows,
-      });
-      if (!payload) return;
-
-      await this.notificationQueue.add('document-ready', payload);
-    } catch (err) {
-      this.logger.warn(`Failed to send notification for ${opts.doc.id}`, err);
-    }
-  }
-
-  /**
-   * Уведомление ТОЛЬКО менеджеру (managed-флоу) для статусов без аналога в
-   * `DocumentNotification['status']` — например REQUIRES_REVIEW: self_service-клиента
-   * в этом статусе не уведомляем. Для self_service-документа — no-op. Best-effort.
-   */
-  async notifyManagerOnly(doc: Document): Promise<void> {
+  async notify(doc: Document): Promise<void> {
     if (doc.source !== 'managed') return;
     try {
       await this.managerNotify.notifyDocumentEvent(doc);
     } catch (err) {
-      this.logger.warn(`Failed to notify manager for ${doc.id}`, err);
+      this.logger.warn(`Failed to notify manager for document ${doc.id}`, err);
     }
   }
 }

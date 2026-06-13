@@ -93,7 +93,6 @@ function createService(
 
   const parsingQueue = { add: jest.fn().mockResolvedValue(undefined) };
   const processingQueue = { add: jest.fn().mockResolvedValue(undefined) };
-  const notificationsQueue = { add: jest.fn().mockResolvedValue(undefined) };
 
   const countriesService = {
     findByCode: jest.fn().mockResolvedValue(opts.country ?? null),
@@ -107,10 +106,8 @@ function createService(
     explain: jest.fn().mockResolvedValue({ byId: new Map() }),
   };
 
-  const managerNotify = {
-    notifyDocumentEvent: jest.fn().mockResolvedValue(undefined),
-    notifyNewDocument: jest.fn().mockResolvedValue(undefined),
-    notifyClientMessage: jest.fn().mockResolvedValue(undefined),
+  const pipelineNotifier = {
+    notify: jest.fn().mockResolvedValue(undefined),
   };
 
   const photoStorage = {
@@ -123,11 +120,10 @@ function createService(
     aiUsageLogRepo as never,
     parsingQueue as never,
     processingQueue as never,
-    notificationsQueue as never,
     countriesService as never,
     audit as never,
     regulatoryInterpreter as never,
-    managerNotify as never,
+    pipelineNotifier as never,
     photoStorage as never,
   );
 
@@ -137,10 +133,9 @@ function createService(
     tgUserRepo,
     parsingQueue,
     processingQueue,
-    notificationsQueue,
     countriesService,
     audit,
-    managerNotify,
+    pipelineNotifier,
     photoStorage,
     queryBuilder,
   };
@@ -451,7 +446,7 @@ describe('DocumentsService', () => {
     });
 
     it('REQUIRES_REVIEW → FAILED with operator comment as errorMessage', async () => {
-      const { service, repo, notificationsQueue } = createService({
+      const { service, repo, pipelineNotifier } = createService({
         doc: makeDoc({ status: DocumentStatus.REQUIRES_REVIEW }),
       });
       await service.reject('doc-1', { reason: 'data is garbage' });
@@ -461,14 +456,11 @@ describe('DocumentsService', () => {
           errorMessage: 'data is garbage',
         }),
       );
-      expect(notificationsQueue.add).toHaveBeenCalledWith(
-        'document-ready',
-        expect.objectContaining({ status: 'failed', errorMessage: 'data is garbage' }),
-      );
+      expect(pipelineNotifier.notify).toHaveBeenCalled();
     });
 
     it('CODE_REVIEW_REQUIRED → REJECTED and merges operator comment into rejectionReasons', async () => {
-      const { service, repo, notificationsQueue } = createService({
+      const { service, repo, pipelineNotifier } = createService({
         doc: makeDoc({
           status: DocumentStatus.CODE_REVIEW_REQUIRED,
           rejectionReasons: ['Auto: too many low-confidence codes'],
@@ -484,10 +476,7 @@ describe('DocumentsService', () => {
           ],
         }),
       );
-      expect(notificationsQueue.add).toHaveBeenCalledWith(
-        'document-ready',
-        expect.objectContaining({ status: 'rejected' }),
-      );
+      expect(pipelineNotifier.notify).toHaveBeenCalled();
     });
   });
 
@@ -502,7 +491,7 @@ describe('DocumentsService', () => {
     });
 
     it('CODE_REVIEW_REQUIRED → PROCESSED, clears rejectionReasons, notifies', async () => {
-      const { service, repo, notificationsQueue } = createService({
+      const { service, repo, pipelineNotifier } = createService({
         doc: makeDoc({
           status: DocumentStatus.CODE_REVIEW_REQUIRED,
           rejectionReasons: ['Stale auto reason'],
@@ -515,10 +504,7 @@ describe('DocumentsService', () => {
           rejectionReasons: null,
         }),
       );
-      expect(notificationsQueue.add).toHaveBeenCalledWith(
-        'document-ready',
-        expect.objectContaining({ status: 'processed' }),
-      );
+      expect(pipelineNotifier.notify).toHaveBeenCalled();
     });
   });
 
@@ -547,16 +533,4 @@ describe('DocumentsService', () => {
     });
   });
 
-  describe('notification suppression for admin uploads', () => {
-    it('does not enqueue notification when document has no telegramUser (admin upload)', async () => {
-      const { service, notificationsQueue } = createService({
-        doc: makeDoc({
-          status: DocumentStatus.CODE_REVIEW_REQUIRED,
-          telegramUser: null,
-        }),
-      });
-      await service.approve('doc-1');
-      expect(notificationsQueue.add).not.toHaveBeenCalled();
-    });
-  });
 });

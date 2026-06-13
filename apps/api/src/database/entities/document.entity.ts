@@ -52,7 +52,8 @@ export type CountryOriginSource =
   | 'default';
 
 /** Источник документа:
- *  - self_service — клиент через self-service бота (tg-bot), пайплайн стартует автоматически
+ *  - self_service — legacy (бывший tg-bot, удалён) + загрузки из админки (upload-admin),
+ *                   пайплайн стартует автоматически; уведомлений клиенту нет
  *  - managed       — клиент через client-bot, пайплайн запускает менеджер вручную (статус INTAKE) */
 export type DocumentSource = 'self_service' | 'managed';
 

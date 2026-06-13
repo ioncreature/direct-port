@@ -253,22 +253,3 @@ export function formatRejectionReason(
   return buildTemplates(data)[normalizeLang(language)];
 }
 
-export function formatRejectionReasons(
-  data: RejectionReasonData[],
-  language: string | undefined,
-): string[] {
-  return data.map((d) => formatRejectionReason(d, language));
-}
-
-/**
- * Возвращает локализованный массив для бота. Для русскоязычного пользователя
- * (или если данных нет) возвращает undefined — handler возьмёт fallback из
- * `rejectionReasons` (русские строки из БД).
- */
-export function localizeRejectionReasonsForUser(
-  data: RejectionReasonData[],
-  language: string | undefined,
-): string[] | undefined {
-  if (!language || language === 'ru' || data.length === 0) return undefined;
-  return formatRejectionReasons(data, language);
-}

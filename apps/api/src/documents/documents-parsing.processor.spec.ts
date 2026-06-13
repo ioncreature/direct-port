@@ -69,7 +69,6 @@ function createProcessor(opts: Opts = {}) {
   };
 
   const processingQueue = { add: jest.fn().mockResolvedValue(undefined) };
-  const notificationQueue = { add: jest.fn().mockResolvedValue(undefined) };
 
   const aiParser = {
     parse: jest.fn().mockImplementation(() => {
@@ -94,17 +93,11 @@ function createProcessor(opts: Opts = {}) {
 
   const managerNotify = {
     notifyDocumentEvent: jest.fn().mockResolvedValue(undefined),
-    notifyNewDocument: jest.fn().mockResolvedValue(undefined),
-    notifyClientMessage: jest.fn().mockResolvedValue(undefined),
   };
 
-  // Реальный нотификатор поверх мок-очереди и мок-менеджера: ассерты на
-  // notificationQueue.add остаются проверкой фактического payload, как до выноса
-  // notify() из процессора.
-  const pipelineNotifier = new PipelineNotifierService(
-    notificationQueue as any,
-    managerNotify as any,
-  );
+  // Реальный нотификатор поверх мок-менеджера: managed → notifyDocumentEvent,
+  // self_service → no-op (после удаления tg-bot self_service-уведомлений нет).
+  const pipelineNotifier = new PipelineNotifierService(managerNotify as any);
 
   const processor = new DocumentsParsingProcessor(
     repo as any,
@@ -120,7 +113,6 @@ function createProcessor(opts: Opts = {}) {
     doc,
     repo,
     processingQueue,
-    notificationQueue,
     aiParser,
     audit,
     managerNotify,
@@ -165,18 +157,6 @@ describe('DocumentsParsingProcessor.process', () => {
       });
     });
 
-    it('feasibility=ok → отправляет промежуточный stage_classifying', async () => {
-      const doc = makeDoc({ telegramUser: { telegramId: '123' } as any });
-      const { processor, notificationQueue } = createProcessor({ doc });
-
-      await processor.process(fakeJob('doc-1'));
-
-      expect(notificationQueue.add).toHaveBeenCalledWith(
-        'document-ready',
-        expect.objectContaining({ status: 'stage_classifying', itemCount: 1 }),
-      );
-    });
-
     it('feasibility=review → status=REQUIRES_REVIEW, rejectionReasons, processing НЕ вызывается', async () => {
       const doc = makeDoc();
       const { processor, processingQueue } = createProcessor({
@@ -206,10 +186,10 @@ describe('DocumentsParsingProcessor.process', () => {
       expect(doc.rejectionReasons).toBeNull();
     });
 
-    it('feasibility=rejected → status=REJECTED + notify с rejectionReasons', async () => {
+    it('feasibility=rejected → status=REJECTED, processing НЕ вызывается', async () => {
       const doc = makeDoc({ telegramUser: { telegramId: '123' } as any });
       const reasons = ['Файл не содержит таблицу товаров'];
-      const { processor, notificationQueue, processingQueue } = createProcessor({
+      const { processor, processingQueue } = createProcessor({
         doc,
         parseResult: makeParseResult({
           feasibility: 'rejected',
@@ -222,30 +202,35 @@ describe('DocumentsParsingProcessor.process', () => {
       expect(doc.status).toBe(DocumentStatus.REJECTED);
       expect(doc.rejectionReasons).toEqual(reasons);
       expect(processingQueue.add).not.toHaveBeenCalled();
-      expect(notificationQueue.add).toHaveBeenCalledWith(
-        'document-ready',
-        expect.objectContaining({ status: 'rejected', rejectionReasons: reasons }),
-      );
+    });
+
+    it('managed-документ rejected → уведомляем менеджера', async () => {
+      const doc = makeDoc({ source: 'managed', telegramUser: { telegramId: '123' } as any });
+      const { processor, managerNotify } = createProcessor({
+        doc,
+        parseResult: makeParseResult({ feasibility: 'rejected', rejectionReasons: ['x'] }),
+      });
+
+      await processor.process(fakeJob('doc-1'));
+
+      expect(doc.status).toBe(DocumentStatus.REJECTED);
+      expect(managerNotify.notifyDocumentEvent).toHaveBeenCalledWith(doc);
     });
   });
 
   describe('fileBuffer handling', () => {
-    it('без fileBuffer → FAILED + notify (если есть telegramUser)', async () => {
+    it('без fileBuffer → FAILED, парсер не вызывается', async () => {
       const doc = makeDoc({
         fileBuffer: null,
         telegramUser: { telegramId: '123' } as any,
       });
-      const { processor, notificationQueue, aiParser } = createProcessor({ doc });
+      const { processor, aiParser } = createProcessor({ doc });
 
       await processor.process(fakeJob('doc-1'));
 
       expect(doc.status).toBe(DocumentStatus.FAILED);
       expect(doc.errorMessage).toBe('File buffer is missing');
       expect(aiParser.parse).not.toHaveBeenCalled();
-      expect(notificationQueue.add).toHaveBeenCalledWith(
-        'document-ready',
-        expect.objectContaining({ status: 'failed' }),
-      );
     });
 
     it('fileBuffer очищается после успешного парсинга', async () => {
@@ -295,9 +280,9 @@ describe('DocumentsParsingProcessor.process', () => {
       expect(repo.save).not.toHaveBeenCalled();
     });
 
-    it('последняя попытка: FAILED + notify', async () => {
+    it('последняя попытка: FAILED', async () => {
       const doc = makeDoc({ telegramUser: { telegramId: '123' } as any });
-      const { processor, notificationQueue } = createProcessor({
+      const { processor } = createProcessor({
         doc,
         parseError: new Error('529 overloaded'),
       });
@@ -305,19 +290,18 @@ describe('DocumentsParsingProcessor.process', () => {
       await processor.process(fakeJob('doc-1', { attempts: 3, attemptsMade: 2 }));
 
       expect(doc.status).toBe(DocumentStatus.FAILED);
-      expect(notificationQueue.add).toHaveBeenCalled();
     });
 
     it('документ уже не в PARSING (stalled-повтор после успеха): выходит, не трогая ничего', async () => {
       const doc = makeDoc({ status: DocumentStatus.PENDING, fileBuffer: null });
-      const { processor, repo, aiParser, notificationQueue } = createProcessor({ doc });
+      const { processor, repo, aiParser, managerNotify } = createProcessor({ doc });
 
       await processor.process(fakeJob('doc-1'));
 
       expect(aiParser.parse).not.toHaveBeenCalled();
       expect(repo.save).not.toHaveBeenCalled();
       expect(repo.update).not.toHaveBeenCalled();
-      expect(notificationQueue.add).not.toHaveBeenCalled();
+      expect(managerNotify.notifyDocumentEvent).not.toHaveBeenCalled();
       expect(doc.status).toBe(DocumentStatus.PENDING);
     });
   });
@@ -408,9 +392,9 @@ describe('DocumentsParsingProcessor.process', () => {
   });
 
   describe('обработка ошибок', () => {
-    it('aiParser бросает rate-limit → FAILED + errorCode=AI_UNAVAILABLE', async () => {
+    it('aiParser бросает rate-limit → FAILED + errorMessage', async () => {
       const doc = makeDoc({ telegramUser: { telegramId: '123' } as any });
-      const { processor, notificationQueue } = createProcessor({
+      const { processor } = createProcessor({
         doc,
         parseError: new Error('Claude rate limit'),
       });
@@ -419,18 +403,11 @@ describe('DocumentsParsingProcessor.process', () => {
 
       expect(doc.status).toBe(DocumentStatus.FAILED);
       expect(doc.errorMessage).toBe('Claude rate limit');
-      expect(notificationQueue.add).toHaveBeenCalledWith(
-        'document-ready',
-        expect.objectContaining({
-          status: 'failed',
-          errorCode: 'AI_UNAVAILABLE',
-        }),
-      );
     });
 
-    it('aiParser бросает generic ошибку → FAILED + errorCode=PARSING_FAILED', async () => {
+    it('aiParser бросает generic ошибку → FAILED', async () => {
       const doc = makeDoc({ telegramUser: { telegramId: '123' } as any });
-      const { processor, notificationQueue } = createProcessor({
+      const { processor } = createProcessor({
         doc,
         parseError: new Error('something unexpected went wrong'),
       });
@@ -438,18 +415,11 @@ describe('DocumentsParsingProcessor.process', () => {
       await processor.process(fakeJob('doc-1'));
 
       expect(doc.status).toBe(DocumentStatus.FAILED);
-      expect(notificationQueue.add).toHaveBeenCalledWith(
-        'document-ready',
-        expect.objectContaining({
-          status: 'failed',
-          errorCode: 'PARSING_FAILED',
-        }),
-      );
     });
 
-    it('без telegramUser — notify пропускается при ошибке парсинга', async () => {
-      const doc = makeDoc({ telegramUser: null });
-      const { processor, notificationQueue } = createProcessor({
+    it('self_service ошибка парсинга → менеджеру не уведомляем', async () => {
+      const doc = makeDoc({ source: 'self_service', telegramUser: null });
+      const { processor, managerNotify } = createProcessor({
         doc,
         parseError: new Error('fail'),
       });
@@ -457,7 +427,7 @@ describe('DocumentsParsingProcessor.process', () => {
       await processor.process(fakeJob('doc-1'));
 
       expect(doc.status).toBe(DocumentStatus.FAILED);
-      expect(notificationQueue.add).not.toHaveBeenCalled();
+      expect(managerNotify.notifyDocumentEvent).not.toHaveBeenCalled();
     });
 
     it('Error с пустым message → errorMessage="Parsing failed"', async () => {

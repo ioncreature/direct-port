@@ -8,7 +8,9 @@ Stage-развёртывание строится вокруг Kubernetes-кла
 
 - `api` — backend (NestJS)
 - `admin-web` — админка (Next.js)
-- `tg-bot` — Telegram-бот
+- `client-bot` — клиентский бот managed-флоу (grammY)
+- `manager-bot` — менеджерский бот managed-флоу (grammY)
+- `landing` — публичный лендинг (Next.js)
 - `migration` — Job для запуска TypeORM-миграций после релиза
 - `postgresql` — in-cluster PostgreSQL (Bitnami chart)
 - `redis` — in-cluster Redis (Bitnami chart)
@@ -25,7 +27,7 @@ Stage-развёртывание строится вокруг Kubernetes-кла
 
 Job `build-and-push`:
 
-- собирает 3 образа: `api`, `admin-web`, `tg-bot`
+- собирает образы: `api`, `admin-web`, `client-bot`, `manager-bot`, `landing`
 - публикует их в `ghcr.io/${{ github.repository }}-*`
 - использует теги:
   - `sha` (long SHA коммита)
@@ -263,7 +265,9 @@ Host stage-k8s
 
 - `directport-stage-api-*` — backend
 - `directport-stage-admin-web-*` — админка
-- `directport-stage-tg-bot-*` — Telegram-бот
+- `directport-stage-client-bot-*` — клиентский бот
+- `directport-stage-manager-bot-*` — менеджерский бот
+- `directport-stage-landing-*` — лендинг
 - `directport-stage-postgresql-0` — БД
 - `directport-stage-redis-master-0` — Redis
 

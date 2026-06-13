@@ -45,7 +45,7 @@ spec:
               value: {{ include "directport.apiUrl" . | quote }}
             - name: ADMIN_WEB_BASE_URL
               value: {{ include "directport.adminWebUrl" . | quote }}
-            # Свой токен бота — перекрывает общий TELEGRAM_BOT_TOKEN из secretRef
+            # Токен бота из его собственного секрет-ключа (grammY читает TELEGRAM_BOT_TOKEN)
             - name: TELEGRAM_BOT_TOKEN
               valueFrom:
                 secretKeyRef:

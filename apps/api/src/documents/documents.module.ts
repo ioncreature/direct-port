@@ -31,7 +31,6 @@ import { ManagerNotifyModule } from '../conversations/manager-notify.module';
     TypeOrmModule.forFeature([Document, TelegramUser, AiUsageLog]),
     BullModule.registerQueue({ name: 'document-parsing' }),
     BullModule.registerQueue({ name: 'document-processing' }),
-    BullModule.registerQueue({ name: 'document-notifications' }),
     ClassifierModule,
     CalculatorModule,
     CalculationConfigModule,

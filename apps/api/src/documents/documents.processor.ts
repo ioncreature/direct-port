@@ -21,7 +21,6 @@ import {
   type RejectionReasonData,
   buildLowConfidenceReasonData,
   formatRejectionReason,
-  localizeRejectionReasonsForUser,
 } from '../common/rejection-reasons';
 import { addStageUsage } from '../common/token-usage';
 import { CurrencyService } from '../currency/currency.service';
@@ -32,10 +31,7 @@ import { DutyInterpreterService } from '../duty-interpreter/duty-interpreter.ser
 import type { Dimension } from '../duty-interpreter/interfaces';
 import { PipelineAuditService } from '../pipeline-audit/pipeline-audit.service';
 import { RegulatoryRequirementsService } from '../regulatory/regulatory-requirements.service';
-import { extractProblemRows, type DocumentNotification } from './notification';
 import { PipelineNotifierService } from './pipeline-notifier.service';
-
-export type { DocumentNotification };
 
 @Processor('document-processing')
 export class DocumentsProcessor extends WorkerHost {
@@ -132,7 +128,6 @@ export class DocumentsProcessor extends WorkerHost {
         pricePercent,
         weightRate,
         fixedFee,
-        sendResultFile,
         confidenceThreshold,
         lowConfidenceAction,
       } = config;
@@ -308,15 +303,11 @@ export class DocumentsProcessor extends WorkerHost {
           'Курсы валют ЦБ РФ недоступны — суммы в RUB не рассчитаны. ' +
           'Выполните «Пересчитать», когда курсы снова появятся.';
         await this.repo.save(doc);
-        await this.pipelineNotifier.notify({ doc, status: 'failed', errorCode: ErrorCode.PROCESSING_FAILED });
+        await this.pipelineNotifier.notify(doc);
         return;
       }
 
-      await this.applyFinalStatusAndNotify(doc, issues, {
-        lowConfidenceAction,
-        sendResultFile,
-        confidenceThreshold,
-      });
+      await this.applyFinalStatusAndNotify(doc, issues, { lowConfidenceAction });
 
       this.calculationLogs
         .create({
@@ -352,7 +343,7 @@ export class DocumentsProcessor extends WorkerHost {
       doc.errorMessage = errMsg(err) || 'Unknown error';
       await this.repo.save(doc);
       const errorCode = classifyPipelineError(err, ErrorCode.PROCESSING_FAILED);
-      await this.pipelineNotifier.notify({ doc, status: 'failed', errorCode });
+      await this.pipelineNotifier.notify(doc);
       this.logger.error(
         `Document ${documentId} processing failed [${errorCode}]: ${doc.errorMessage}`,
         err instanceof Error ? err.stack : err,
@@ -413,7 +404,6 @@ export class DocumentsProcessor extends WorkerHost {
         pricePercent,
         weightRate,
         fixedFee,
-        sendResultFile,
         confidenceThreshold,
         lowConfidenceAction,
       } = config;
@@ -517,11 +507,7 @@ export class DocumentsProcessor extends WorkerHost {
         partial: summary.usedFallback,
       });
 
-      await this.applyFinalStatusAndNotify(doc, issues, {
-        lowConfidenceAction,
-        sendResultFile,
-        confidenceThreshold,
-      });
+      await this.applyFinalStatusAndNotify(doc, issues, { lowConfidenceAction });
 
       this.calculationLogs
         .create({
@@ -686,9 +672,7 @@ export class DocumentsProcessor extends WorkerHost {
     confidenceThreshold: number,
   ): {
     hasRowErrors: boolean;
-    reasonsData: RejectionReasonData[];
     reasons: string[];
-    reasonsLocalized: string[] | undefined;
   } {
     let hasRowErrors = false;
     const reasonsData: RejectionReasonData[] = [];
@@ -703,12 +687,7 @@ export class DocumentsProcessor extends WorkerHost {
     }
     return {
       hasRowErrors,
-      reasonsData,
       reasons: reasonsData.map((d) => formatRejectionReason(d, 'ru')),
-      reasonsLocalized: localizeRejectionReasonsForUser(
-        reasonsData,
-        doc.language ?? doc.telegramUser?.language,
-      ),
     };
   }
 
@@ -723,34 +702,19 @@ export class DocumentsProcessor extends WorkerHost {
     issues: {
       hasRowErrors: boolean;
       reasons: string[];
-      reasonsLocalized: string[] | undefined;
     },
     opts: {
       lowConfidenceAction: string;
-      sendResultFile: boolean;
-      confidenceThreshold: number;
     },
   ): Promise<void> {
     if (issues.reasons.length > 0) {
       doc.rejectionReasons = issues.reasons;
-      if (opts.lowConfidenceAction === 'reject') {
-        doc.status = DocumentStatus.REJECTED;
-        await this.repo.save(doc);
-        await this.pipelineNotifier.notify({
-          doc,
-          status: 'rejected',
-          rejectionReasons: issues.reasons,
-          rejectionReasonsLocalized: issues.reasonsLocalized,
-        });
-      } else {
-        doc.status = DocumentStatus.CODE_REVIEW_REQUIRED;
-        await this.repo.save(doc);
-        const problemRows = extractProblemRows(
-          (doc.resultData ?? []) as Record<string, unknown>[],
-          opts.confidenceThreshold,
-        );
-        await this.pipelineNotifier.notify({ doc, status: 'code_review_required', problemRows });
-      }
+      doc.status =
+        opts.lowConfidenceAction === 'reject'
+          ? DocumentStatus.REJECTED
+          : DocumentStatus.CODE_REVIEW_REQUIRED;
+      await this.repo.save(doc);
+      await this.pipelineNotifier.notify(doc);
       return;
     }
 
@@ -759,10 +723,6 @@ export class DocumentsProcessor extends WorkerHost {
       ? DocumentStatus.PROCESSED_WITH_ERRORS
       : DocumentStatus.PROCESSED;
     await this.repo.save(doc);
-    await this.pipelineNotifier.notify({
-      doc,
-      status: issues.hasRowErrors ? 'processed_with_errors' : 'processed',
-      sendResultFile: opts.sendResultFile,
-    });
+    await this.pipelineNotifier.notify(doc);
   }
 }

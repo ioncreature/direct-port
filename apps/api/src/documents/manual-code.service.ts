@@ -1,7 +1,5 @@
-import { InjectQueue } from '@nestjs/bullmq';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 import { TksApiClient, type TnvedCode } from '@direct-port/tks-api';
 import { CalculationConfigService } from '../calculation-config/calculation-config.service';
@@ -22,7 +20,6 @@ import {
   type RejectionReasonData,
   buildLowConfidenceReasonData,
   formatRejectionReason,
-  localizeRejectionReasonsForUser,
 } from '../common/rejection-reasons';
 import { addStageUsage } from '../common/token-usage';
 import { CurrencyService } from '../currency/currency.service';
@@ -30,13 +27,7 @@ import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { DutyInterpreterService } from '../duty-interpreter/duty-interpreter.service';
 import type { Dimension } from '../duty-interpreter/interfaces';
 import { RegulatoryRequirementsService } from '../regulatory/regulatory-requirements.service';
-import {
-  buildDocumentNotificationPayload,
-  extractProblemRows,
-  type DocumentNotification,
-  type ProblemRowSummary,
-} from './notification';
-import { ManagerNotifyService } from '../conversations/manager-notify.service';
+import { PipelineNotifierService } from './pipeline-notifier.service';
 import { DEFAULT_VAT_RATE } from '../common/vat';
 import { buildResultRow } from './result-row.helper';
 
@@ -94,7 +85,6 @@ export class ManualCodeService {
 
   constructor(
     @InjectRepository(Document) private repo: Repository<Document>,
-    @InjectQueue('document-notifications') private notificationQueue: Queue,
     private tksApi: TksApiClient,
     private classifier: ClassifierService,
     private dutyInterpreter: DutyInterpreterService,
@@ -103,7 +93,7 @@ export class ManualCodeService {
     private configService: CalculationConfigService,
     private calculationLogs: CalculationLogsService,
     private regulatoryService: RegulatoryRequirementsService,
-    private managerNotify: ManagerNotifyService,
+    private pipelineNotifier: PipelineNotifierService,
   ) {}
 
   async setRowCode(
@@ -196,20 +186,11 @@ export class ManualCodeService {
       rowIndex,
       newRow,
       confidenceThreshold: config.confidenceThreshold,
-      language,
       telegramUser: doc.telegramUser,
       addTokenUsage: [{ stage: 'interpreter', usage: interpretResult.tokenUsage }],
     });
 
-    if (saved.status === DocumentStatus.PROCESSED) {
-      await this.enqueueNotification(saved, 'processed');
-    } else if (saved.status === DocumentStatus.PROCESSED_WITH_ERRORS) {
-      await this.enqueueNotification(saved, 'processed_with_errors');
-    } else if (saved.status === DocumentStatus.CODE_REVIEW_REQUIRED) {
-      // После итеративной правки клиент должен снова увидеть карточки оставшихся проблемных строк.
-      const problemRows = extractProblemRows(updatedRows, config.confidenceThreshold);
-      await this.enqueueNotification(saved, 'code_review_required', problemRows);
-    }
+    await this.pipelineNotifier.notify(saved);
 
     this.calculationLogs
       .create({
@@ -364,7 +345,6 @@ export class ManualCodeService {
       rowIndex,
       newRow,
       confidenceThreshold: config.confidenceThreshold,
-      language,
       telegramUser: doc.telegramUser,
       updatedParsedRow,
       addTokenUsage: [
@@ -373,14 +353,7 @@ export class ManualCodeService {
       ],
     });
 
-    if (saved.status === DocumentStatus.PROCESSED) {
-      await this.enqueueNotification(saved, 'processed');
-    } else if (saved.status === DocumentStatus.PROCESSED_WITH_ERRORS) {
-      await this.enqueueNotification(saved, 'processed_with_errors');
-    } else if (saved.status === DocumentStatus.CODE_REVIEW_REQUIRED) {
-      const problemRows = extractProblemRows(updatedRows, config.confidenceThreshold);
-      await this.enqueueNotification(saved, 'code_review_required', problemRows);
-    }
+    await this.pipelineNotifier.notify(saved);
 
     this.calculationLogs
       .create({
@@ -417,7 +390,6 @@ export class ManualCodeService {
     rowIndex: number;
     newRow: Record<string, unknown>;
     confidenceThreshold: number;
-    language: string | null | undefined;
     telegramUser: Document['telegramUser'];
     updatedParsedRow?: Record<string, unknown>;
     addTokenUsage?: Array<{ stage: string; usage: Parameters<typeof addStageUsage>[2] }>;
@@ -465,7 +437,6 @@ export class ManualCodeService {
       const { rejectionReasons, hasRowErrors } = this.recomputeReasons(
         updatedRows,
         opts.confidenceThreshold,
-        opts.language ?? undefined,
         (fresh.parsedData ?? []) as Record<string, unknown>[],
       );
       if (rejectionReasons.length > 0) {
@@ -586,11 +557,9 @@ export class ManualCodeService {
   private recomputeReasons(
     rows: Record<string, unknown>[],
     threshold: number,
-    language: string | null | undefined,
     parsedRows: Record<string, unknown>[] = [],
   ): {
     rejectionReasons: string[];
-    rejectionReasonsLocalized: string[] | undefined;
     hasRowErrors: boolean;
   } {
     const data: RejectionReasonData[] = [];
@@ -607,27 +576,7 @@ export class ManualCodeService {
     }
     return {
       rejectionReasons: data.map((d) => formatRejectionReason(d, 'ru')),
-      rejectionReasonsLocalized: localizeRejectionReasonsForUser(data, language ?? undefined),
       hasRowErrors,
     };
-  }
-
-  private async enqueueNotification(
-    doc: Document,
-    status: DocumentNotification['status'],
-    problemRows?: ProblemRowSummary[],
-  ): Promise<void> {
-    // managed-документ: уведомляем менеджера, а не клиента.
-    if (doc.source === 'managed') {
-      await this.managerNotify.notifyDocumentEvent(doc);
-      return;
-    }
-    const payload = buildDocumentNotificationPayload(doc, status, { problemRows });
-    if (!payload) return;
-    await this.notificationQueue
-      .add('document-ready', payload)
-      .catch((err) =>
-        this.logger.warn(`Failed to enqueue notification for ${doc.id}`, err),
-      );
   }
 }

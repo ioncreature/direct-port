@@ -66,8 +66,6 @@ function createService(opts: CreateOpts = {}) {
     ),
   };
 
-  const notificationQueue = { add: jest.fn().mockResolvedValue(undefined) };
-
   const tksApi = {
     getTnvedCode: jest.fn().mockImplementation(async (code: string) => {
       if (opts.tnvedError) throw opts.tnvedError;
@@ -163,15 +161,12 @@ function createService(opts: CreateOpts = {}) {
     buildReport: jest.fn().mockResolvedValue(null),
   };
 
-  const managerNotify = {
-    notifyDocumentEvent: jest.fn().mockResolvedValue(undefined),
-    notifyNewDocument: jest.fn().mockResolvedValue(undefined),
-    notifyClientMessage: jest.fn().mockResolvedValue(undefined),
+  const pipelineNotifier = {
+    notify: jest.fn().mockResolvedValue(undefined),
   };
 
   const service = new ManualCodeService(
     repo as never,
-    notificationQueue as never,
     tksApi as never,
     classifier as never,
     dutyInterpreter as never,
@@ -180,13 +175,13 @@ function createService(opts: CreateOpts = {}) {
     configService as never,
     calculationLogs as never,
     regulatoryService as never,
-    managerNotify as never,
+    pipelineNotifier as never,
   );
 
   return {
     service,
     repo,
-    notificationQueue,
+    pipelineNotifier,
     tksApi,
     classifier,
     dutyInterpreter,
@@ -233,8 +228,8 @@ describe('ManualCodeService', () => {
       });
     });
 
-    it('updates the row, flips status to PROCESSED, clears rejectionReasons, queues notification', async () => {
-      const { service, repo, notificationQueue, regulatoryService, calculationLogs } =
+    it('updates the row, flips status to PROCESSED, clears rejectionReasons, notifies', async () => {
+      const { service, repo, pipelineNotifier, regulatoryService, calculationLogs } =
         createService();
       const result = await service.setRowCode('doc-1', 0, '6109100010');
 
@@ -246,10 +241,7 @@ describe('ManualCodeService', () => {
         }),
       );
       expect(regulatoryService.buildReport).toHaveBeenCalled();
-      expect(notificationQueue.add).toHaveBeenCalledWith(
-        'document-ready',
-        expect.objectContaining({ status: 'processed', documentId: 'doc-1' }),
-      );
+      expect(pipelineNotifier.notify).toHaveBeenCalled();
       expect(calculationLogs.create).toHaveBeenCalledWith(
         expect.objectContaining({ documentId: 'doc-1', trigger: 'recalculate' }),
       );

@@ -28,8 +28,7 @@ import { CreateDocumentDto } from './dto/create-document.dto';
 import { FindDocumentsQueryDto } from './dto/find-documents-query.dto';
 import { RejectDocumentDto } from './dto/reject-document.dto';
 import { ReviewDocumentDto } from './dto/review-document.dto';
-import { buildDocumentNotificationPayload, type DocumentNotification } from './notification';
-import { ManagerNotifyService } from '../conversations/manager-notify.service';
+import { PipelineNotifierService } from './pipeline-notifier.service';
 import { PhotoStorageService } from '../photo-storage/photo-storage.service';
 
 /**
@@ -54,11 +53,10 @@ export class DocumentsService {
     @InjectRepository(AiUsageLog) private aiUsageLogRepo: Repository<AiUsageLog>,
     @InjectQueue('document-parsing') private parsingQueue: Queue,
     @InjectQueue('document-processing') private processingQueue: Queue,
-    @InjectQueue('document-notifications') private notificationsQueue: Queue,
     private countriesService: CountriesService,
     private audit: PipelineAuditService,
     private regulatoryInterpreter: RegulatoryInterpreterService,
-    private managerNotify: ManagerNotifyService,
+    private pipelineNotifier: PipelineNotifierService,
     private photoStorage: PhotoStorageService,
   ) {}
 
@@ -448,16 +446,14 @@ export class DocumentsService {
       doc.errorMessage = operatorComment ?? null;
       if (reasons.length > 0) doc.rejectionReasons = reasons;
       const saved = await this.repo.save(doc);
-      await this.enqueueNotification(saved, 'failed', {
-        errorMessage: operatorComment,
-      });
+      await this.pipelineNotifier.notify(saved);
       return saved;
     }
 
     doc.status = DocumentStatus.REJECTED;
     doc.rejectionReasons = reasons;
     const saved = await this.repo.save(doc);
-    await this.enqueueNotification(saved, 'rejected', { rejectionReasons: reasons });
+    await this.pipelineNotifier.notify(saved);
     return saved;
   }
 
@@ -475,26 +471,8 @@ export class DocumentsService {
     doc.status = DocumentStatus.PROCESSED;
     doc.rejectionReasons = null;
     const saved = await this.repo.save(doc);
-    await this.enqueueNotification(saved, 'processed');
+    await this.pipelineNotifier.notify(saved);
     return saved;
-  }
-
-  private async enqueueNotification(
-    doc: Document,
-    status: DocumentNotification['status'],
-    extra: { errorMessage?: string; rejectionReasons?: string[] } = {},
-  ): Promise<void> {
-    // managed-документ: уведомляем менеджера, а не клиента.
-    if (doc.source === 'managed') {
-      await this.managerNotify.notifyDocumentEvent(doc);
-      return;
-    }
-    const payload = buildDocumentNotificationPayload(doc, status, extra);
-    if (!payload) return;
-
-    await this.notificationsQueue
-      .add('document-ready', payload)
-      .catch((err) => this.logger.warn(`Failed to enqueue notification for ${doc.id}`, err));
   }
 
   async getTokenStats(model?: string) {

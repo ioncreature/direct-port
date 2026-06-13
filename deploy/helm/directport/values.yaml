@@ -53,23 +53,6 @@ landing:
       cpu: 250m
       memory: 256Mi
 
-# tg-bot (self-service) — DEPRECATED, заменён на clientBot + managerBot.
-# Шаблоны сохранены; чтобы отключить выкатку, поставьте replicaCount: 0.
-tgBot:
-  replicaCount: 1
-  image:
-    repository: directport/tg-bot
-    tag: latest
-    pullPolicy: IfNotPresent
-  port: 3002
-  resources:
-    requests:
-      cpu: 50m
-      memory: 128Mi
-    limits:
-      cpu: 250m
-      memory: 256Mi
-
 # Клиентский бот: приём файлов от клиентов + чат с менеджером.
 clientBot:
   replicaCount: 1
@@ -164,9 +147,7 @@ secrets:
   tksTnvedApiKey: ''
   tksGoodsApiKey: ''
   anthropicApiKey: ''
-  # tg-bot (self-service, deprecated)
-  telegramBotToken: ''
-  # Токены новых ботов (отдельные боты в @BotFather)
+  # Токены ботов (отдельные боты в @BotFather)
   clientBotTelegramToken: ''
   managerBotTelegramToken: ''
   # Username менеджерского бота без @ (для deep-link привязки в админке, читает API)

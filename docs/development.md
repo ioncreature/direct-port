@@ -20,7 +20,8 @@ pnpm infra
 
 # Скопировать переменные окружения
 cp apps/api/.env.example apps/api/.env
-cp apps/tg-bot/.env.example apps/tg-bot/.env
+cp apps/client-bot/.env.example apps/client-bot/.env
+cp apps/manager-bot/.env.example apps/manager-bot/.env
 cp apps/admin-web/.env.example apps/admin-web/.env
 
 # Запустить приложения (миграции + seed автоматически)
@@ -46,11 +47,13 @@ pnpm infra:logs     # логи
 
 PM2 управляет dev-процессами (ecosystem.config.js):
 
-| Приложение | Порт | Путь           | Стек             |
-| ---------- | ---- | -------------- | ---------------- |
-| API        | 3001 | apps/api       | NestJS + TypeORM |
-| Admin Web  | 3000 | apps/admin-web | Next.js          |
-| TG Bot     | 3002 | apps/tg-bot    | NestJS + grammY  |
+| Приложение  | Порт | Путь             | Стек             |
+| ----------- | ---- | ---------------- | ---------------- |
+| API         | 3001 | apps/api         | NestJS + TypeORM |
+| Admin Web   | 3000 | apps/admin-web   | Next.js          |
+| Client Bot  | 3003 | apps/client-bot  | NestJS + grammY  |
+| Manager Bot | 3004 | apps/manager-bot | NestJS + grammY  |
+| Landing     | 3003 | apps/landing     | Next.js          |
 
 ```bash
 pnpm dev            # запуск через PM2
@@ -171,9 +174,13 @@ direct-port/
 │   │       ├── components/ # shared UI (InfoCard)
 │   │       ├── hooks/      # useAuth, useUsers, useDocuments, ...
 │   │       └── lib/        # api client, types, format, table-styles
-│   └── tg-bot/           # Telegram бот (порт 3002)
+│   ├── client-bot/       # Клиентский бот managed-флоу (порт 3003)
+│   │   └── src/
+│   │       ├── bot/        # grammY, handlers (start, file-upload, outgoing)
+│   │       └── api-client/ # HTTP-клиент к API
+│   └── manager-bot/      # Менеджерский бот managed-флоу (порт 3004)
 │       └── src/
-│           ├── bot/        # grammY, handlers (start, help, file-upload)
+│           ├── bot/        # grammY, handlers (callback, notify, message)
 │           └── api-client/ # HTTP-клиент к API
 ├── libs/
 │   └── tks-api/          # клиент API таможенного справочника

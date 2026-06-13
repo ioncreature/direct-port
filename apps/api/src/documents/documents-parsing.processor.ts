@@ -6,7 +6,6 @@ import { Repository } from 'typeorm';
 import { AiParserService } from '../ai-parser/ai-parser.service';
 import { ErrorCode } from '../common/error-codes';
 import { classifyPipelineError, errMsg } from '../common/errors';
-import { localizeRejectionReasonsForUser } from '../common/rejection-reasons';
 import { addStageUsage } from '../common/token-usage';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { PipelineAuditService } from '../pipeline-audit/pipeline-audit.service';
@@ -61,7 +60,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
       doc.status = DocumentStatus.FAILED;
       doc.errorMessage = 'File buffer is missing';
       await this.repo.save(doc);
-      await this.pipelineNotifier.notify({ doc, status: 'failed', errorCode: ErrorCode.MISSING_FILE_BUFFER });
+      await this.pipelineNotifier.notify(doc);
       return;
     }
 
@@ -92,15 +91,10 @@ export class DocumentsParsingProcessor extends WorkerHost {
         columnMapping,
         feasibility,
         rejectionReasons,
-        rejectionReasonsData,
         tokenUsage,
         countrySuggestion,
         photoBundle,
       } = parseResult;
-      const rejectionReasonsLocalized = localizeRejectionReasonsForUser(
-        rejectionReasonsData,
-        doc.language ?? doc.telegramUser?.language,
-      );
 
       doc.parsedData = products;
       doc.currency = currency;
@@ -154,17 +148,14 @@ export class DocumentsParsingProcessor extends WorkerHost {
         doc.status = DocumentStatus.REJECTED;
         doc.rejectionReasons = rejectionReasons.length > 0 ? rejectionReasons : null;
         await this.repo.save(doc);
-        await this.pipelineNotifier.notify({ doc, status: 'rejected', rejectionReasons, rejectionReasonsLocalized });
+        await this.pipelineNotifier.notify(doc);
         this.logger.log(`Document ${documentId} rejected: ${rejectionReasons.join('; ')}`);
       } else if (feasibility === 'ok') {
         doc.status = DocumentStatus.PENDING;
         await this.repo.save(doc);
         await this.processingQueue.add('process-document', { documentId });
-        await this.pipelineNotifier.notify({
-          doc,
-          status: 'stage_classifying',
-          itemCount: products.length,
-        });
+        // Промежуточный «классифицируем…» был self_service-пингом в tg-bot; менеджер
+        // получает уведомление только на терминальных статусах — здесь не уведомляем.
         this.logger.log(
           `Document ${documentId} parsed: ${products.length} rows, sending to processing`,
         );
@@ -174,9 +165,8 @@ export class DocumentsParsingProcessor extends WorkerHost {
         doc.rejectionReasons = rejectionReasons.length > 0 ? rejectionReasons : null;
         await this.repo.save(doc);
         // managed: клиента не трогаем, но менеджеру нужно знать про необходимость ревью.
-        // REQUIRES_REVIEW нет в DocumentNotification['status'] (self_service-клиента в нём
-        // не уведомляют), поэтому это manager-only путь. Best-effort внутри сервиса.
-        await this.pipelineNotifier.notifyManagerOnly(doc);
+        // Для self_service — no-op внутри notify.
+        await this.pipelineNotifier.notify(doc);
         this.logger.log(`Document ${documentId} parsed but needs review: ${rejectionReasons.join('; ')}`);
       }
     } catch (err) {
@@ -204,7 +194,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
         errorMessage: doc.errorMessage,
       });
       const errorCode = classifyPipelineError(err, ErrorCode.PARSING_FAILED);
-      await this.pipelineNotifier.notify({ doc, status: 'failed', errorCode });
+      await this.pipelineNotifier.notify(doc);
       this.logger.error(
         `Document ${documentId} parsing failed [${errorCode}]: ${doc.errorMessage}`,
         err instanceof Error ? err.stack : err,

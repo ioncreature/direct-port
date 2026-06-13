@@ -105,7 +105,6 @@ jobs:
             tksTnvedApiKey: "${{ secrets.TKS_TNVED_API_KEY }}"
             tksGoodsApiKey: "${{ secrets.TKS_GOODS_API_KEY }}"
             anthropicApiKey: "${{ secrets.ANTHROPIC_API_KEY }}"
-            telegramBotToken: "${{ secrets.TELEGRAM_BOT_TOKEN }}"
             clientBotTelegramToken: "${{ secrets.CLIENT_BOT_TELEGRAM_TOKEN }}"
             managerBotTelegramToken: "${{ secrets.MANAGER_BOT_TELEGRAM_TOKEN }}"
             managerBotUsername: "${{ secrets.MANAGER_BOT_USERNAME }}"

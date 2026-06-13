@@ -10,7 +10,6 @@
 - Лендинг: Next.js (apps/landing, порт 3003) — публичный маркетинговый сайт directport.ru, CTA ведут в client-bot (managed-флоу)
 - Клиентский бот: NestJS + grammY (apps/client-bot, порт 3003) — приём файлов от клиентов + чат с менеджером
 - Менеджерский бот: NestJS + grammY (apps/manager-bot, порт 3004) — уведомления, запуск пайплайна, ответы клиентам
-- Telegram-бот self-service: apps/tg-bot, порт 3002 — DEPRECATED, заменён на client-bot + manager-bot (код сохранён, выведен из автозапуска)
 - Библиотеки: libs/tks-api (клиент API таможенного справочника)
 - БД: PostgreSQL 17
 - Очереди: BullMQ + Redis 7
@@ -47,7 +46,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
   - AiConfig — CRUD для выбора моделей Claude (opus/sonnet/haiku) для 4 сценариев AI. См. `docs/AI_CONFIG.md`
   - Countries — справочник стран (OKSMT), используется для страны происхождения товара
   - Regulatory — формирует RegulatoryReport (сертификация, лицензии, маркировка, утильсбор, страновые запреты) из блоков `TnvedCode.TNVEDALL` по PRIZNAK 6/7/11–15/21/27–29/33–35. Парсер NOTE извлекает ТР ТС/ЕАЭС, форму оценки, регулятора. Отдельных запросов к TKS не делает — использует уже загруженный TnvedCode. В pipeline вызывается из `DocumentsProcessor` после Calculator (см. `attachRegulatoryReports`) и сохраняется в `resultData[i].regulatoryReport`. Lazy AI-обогащение через `RegulatoryInterpreterService` (Claude haiku по умолчанию, persistent-кэш `regulatory_interpretation_cache` 180д, ключ — sha256(NOTE)+language+model). Endpoints: `GET /tn-ved/:code/regulatory-explanations?lang=ru` (для справочника) и `GET /documents/:id/regulatory-explanations?lang=ru` (для всех позиций документа одним запросом)
-  - Conversations — API-мост managed-флоу (client-bot ↔ manager-bot). От client-bot (X-Internal-Key): `POST /intake/documents` (managed-документ без автозапуска), `POST /intake/messages`. Для manager-bot (X-Internal-Key): `POST /manager/link`, `GET /manager/clients`, `POST /manager/clients/:id/claim`, `POST /manager/messages`, `POST /manager/documents/:id/start`. Привязка из админки (ADMIN): `POST /managers/:userId/telegram-link-token`, `DELETE /managers/:userId/telegram-link`. История переписки: `GET /telegram-users/by-id/:id/messages`. Очереди `manager-notifications` (→ manager-bot) и `client-bot-outgoing` (→ client-bot). `ManagerNotifyService` резолвит адресата (назначенный менеджер или broadcast по всем привязанным) и ветвит уведомления по `Document.source` ('managed' → менеджеру, 'self_service' → клиенту). Entity `ConversationMessage`; токены привязки в Redis (`RedisModule`)
+  - Conversations — API-мост managed-флоу (client-bot ↔ manager-bot). От client-bot (X-Internal-Key): `POST /intake/documents` (managed-документ без автозапуска), `POST /intake/messages`. Для manager-bot (X-Internal-Key): `POST /manager/link`, `GET /manager/clients`, `POST /manager/clients/:id/claim`, `POST /manager/messages`, `POST /manager/documents/:id/start`. Привязка из админки (ADMIN): `POST /managers/:userId/telegram-link-token`, `DELETE /managers/:userId/telegram-link`. История переписки: `GET /telegram-users/by-id/:id/messages`. Очереди `manager-notifications` (→ manager-bot) и `client-bot-outgoing` (→ client-bot). `ManagerNotifyService` резолвит адресата (назначенный менеджер или broadcast по всем привязанным). Уведомления о состоянии документа идут только по managed-флоу: `PipelineNotifierService.notify(doc)` (в `DocumentsModule`) для `Document.source='managed'` зовёт `ManagerNotifyService.notifyDocumentEvent`, для self_service — no-op (после удаления tg-bot self_service-уведомлений нет). Entity `ConversationMessage`; токены привязки в Redis (`RedisModule`)
   - BotLinks — ссылки на Telegram-ботов для админки. client-bot и manager-bot при старте резолвят свой username через `getMe` и публикуют его: `POST /bot-links/identity` (X-Internal-Key, body `{kind: 'client'|'manager', username}`). Админка читает `GET /bot-links` (ADMIN/CUSTOMS) → `{client, manager}` с полем `url` (`https://t.me/<username>`). Хранилище — Redis без TTL (`bot-link:<kind>`, `BotLinksService`); при сбросе Redis ссылки восстанавливаются после ближайшего рестарта ботов. Отображается блоком «Telegram-боты» на дашборде
 - Вложенные модули (внутри DocumentsModule):
   - AiParser — AI-парсинг таблиц (Claude): определение валюты, перевод, извлечение данных, автодетект страны происхождения. Retry + валидация
@@ -58,7 +57,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
   - Currency — курсы валют ЦБ РФ, конвертация в RUB
   - Tks — shared-инфраструктура: TksApiClient + PgTksCacheStore (PostgreSQL-кэш TKS API)
 - Common: PaginationQueryDto, PaginatedResponse, ErrorCode (коды ошибок для i18n), ProductNote (messageLocalized), note-translations, token-usage (утилиты для TokenUsageByStage) — shared инфраструктура
-- Очереди BullMQ: document-parsing (AI-парсинг), document-processing (классификация/расчёт), document-notifications (уведомления в Telegram)
+- Очереди BullMQ: document-parsing (AI-парсинг), document-processing (классификация/расчёт). Уведомления менеджеру по managed-флоу идут через очередь `manager-notifications` (Conversations), не через отдельную document-notifications
 - Entities: User, RefreshToken, TnVedCode, TelegramUser (+ language), Document (+ language, countryOfOrigin, tokenUsage, freightCost+freightCurrency), CalculationConfig, CalculationLog, TksCache, AiConfig, AiUsageLog
 - Миграции и seed через TypeORM CLI (tsx)
 - AI-учёт токенов: `Document.tokenUsage` (JSONB per-stage per-model) + таблица `ai_usage_log` (для translate вне pipeline). Агрегируется через endpoints `/documents/token-stats*`. См. `docs/AI_USAGE_TRACKING.md`
@@ -85,22 +84,6 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 - Позиционирование: расчёт пошлин на весь контейнер за 10 минут (до ~500 позиций), ЦА — логистические компании. Все CTA ведут в Telegram-бот (managed-флоу); self-service-загрузки файла на сайте нет
 - ENV: `NEXT_PUBLIC_TELEGRAM_BOT_URL` (ссылка на бота, дефолт `https://t.me/direct_port_bot`), `NEXT_PUBLIC_SITE_URL` (для metadataBase/OpenGraph). Контактный email захардкожен в `page.tsx`
 - ⚠️ Порт 3003 совпадает с `client-bot` (`BOT_PORT=3003`): в k8s изолировано по подам, но локально через `pnpm dev` оба одновременно не поднимутся (EADDRINUSE)
-
-### apps/tg-bot — Telegram-бот (DEPRECATED)
-
-> Заменён на apps/client-bot + apps/manager-bot (managed-флоу). Код сохранён, но выведен из автозапуска PM2. Описание ниже отражает прежний self-service поток.
-
-- grammY, команды /start, /help, /language
-- Локализация: @grammyjs/i18n + Fluent (.ftl), 3 языка: ru, zh, en
-  - Locale файлы: `src/bot/locales/{ru,en,zh}.ftl` (37 ключей в каждом)
-  - BotContext = Context & I18nFlavor (типизированный контекст с ctx.t())
-  - Автодетект языка из Telegram `language_code`, ручной выбор через /language
-  - Язык сохраняется в TelegramUser.language (API) + ConversationState.language (Redis)
-  - NotificationHandler (BullMQ worker) использует `i18n.t(locale, key)` вне middleware
-- Загрузка .xlsx/.csv → отправка файла в API (POST /documents/upload), мгновенный ответ (парсинг асинхронный через BullMQ)
-- Состояние диалога в Redis (ConversationStateService, TTL 1 час)
-- Получение уведомлений через BullMQ (document-notifications) → отправка Excel в Telegram
-- API-клиент для связи с backend (X-Internal-Key)
 
 ### apps/client-bot — Клиентский бот (managed-флоу)
 
@@ -129,7 +112,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 ## Pipeline обработки документа
 
 ```
-Загрузка файла (Telegram-бот: POST /documents/upload, Админка: POST /documents/upload-admin)
+Загрузка файла (client-bot managed-интейк: POST /intake/documents → запуск менеджером; Админка: POST /documents/upload-admin)
 → Сохранение fileBuffer в БД, status=PARSING → BullMQ: document-parsing (ответ за 1-2с)
 → [Воркер] AiParser (Claude): определение структуры, валюты, перевод, извлечение данных, автодетект страны происхождения (countryOfOrigin + countryOriginSource: ai_explicit | ai_language | ai_currency | manual | default; дефолт — Китай 156)
 → Валидация (детерминистическая + AI), retry до 2 попыток
@@ -141,12 +124,12 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 → DutyInterpreter (Claude: интерпретация правил расчёта пошлин; пропускается для чисто адвалорных ставок без условий по стране/акциза/спецчасти)
 → При language≠ru: Claude возвращает comment_localized / reasoning_localized для двуязычных замечаний
 → Calculator (пошлина + НДС + акциз + комиссия, конвертация валют → RUB)
-→ resultData + CalculationLog (аудит) + tokenUsage → BullMQ: document-notifications
+→ resultData + CalculationLog (аудит) + tokenUsage
 → status=PROCESSED (или PROCESSED_WITH_ERRORS, если есть проблемные строки)
-→ Excel-экспорт → отправка пользователю Telegram (если CalculationConfig.sendResultFile=true)
+→ Уведомление: PipelineNotifierService.notify(doc) — для managed-документа событие менеджеру в manager-bot (очередь manager-notifications), для self_service — no-op
 ```
 
-BullMQ очереди: `document-parsing` → `document-processing` → `document-notifications`
+BullMQ очереди: `document-parsing` → `document-processing`. Уведомление менеджеру по managed-флоу — через `manager-notifications` (Conversations).
 
 **Надёжность pipeline:**
 - parse-job ставится с `attempts: 3` (exponential backoff 30s) — транзиентные сбои Anthropic ретраятся, FAILED только на последней попытке; `fileBuffer` при FAILED сохраняется (для reprocess). processing-job — `attempts: 1` осознанно (воркер не идемпотентен: CalculationLog, уведомления)
@@ -263,7 +246,7 @@ totalCost      = totalPrice + freightShare + dutyAmount + vatAmount + exciseAmou
 
 verificationStatus = matched AND matchConfidence >= 0.7 ? 'exact' : 'review'
 
-**Где задаётся фрахт:** форма загрузки в админке `/documents/upload` (поля «Стоимость фрахта» + валюта USD/CNY/RUB/EUR, по умолчанию USD) и модалка `Пересчитать` на странице деталей документа. Telegram-бот фрахт не запрашивает — для документов из бота `freightShare = 0` и формула эквивалентна legacy. Чтобы сбросить ранее заданный фрахт через recalculate, передайте `freightCost = 0`.
+**Где задаётся фрахт:** форма загрузки в админке `/documents/upload` (поля «Стоимость фрахта» + валюта USD/CNY/RUB/EUR, по умолчанию USD) и модалка `Пересчитать` на странице деталей документа. client-bot фрахт не запрашивает — для managed-документов из бота `freightShare = 0` и формула эквивалентна legacy. Чтобы сбросить ранее заданный фрахт через recalculate, передайте `freightCost = 0`.
 
 **Распределение в processor.ts:** общий объём `freightInDocCurrency = freightCost × курсCБ(freightCurrency → documentCurrency)`. Если курс недоступен или общий вес нетто = 0 — фрахт игнорируется с warning-логом, расчёт идёт без него (документ не падает).
 
@@ -316,13 +299,6 @@ CI/CD migration job тоже использует data-source.ts с glob `src/da
 - `TKS_TNVED_API_KEY` — ключ для TNVED API на api1.tks.ru (справочник ТН ВЭД)
 - `TKS_GOODS_API_KEY` — ключ для GOODS API на api1.tks.ru (поиск товаров)
 - `ANTHROPIC_API_KEY` — ключ Anthropic для верификации Claude (опционально)
-
-**apps/tg-bot/.env:**
-
-- `TELEGRAM_BOT_TOKEN` — токен Telegram-бота
-- `API_BASE_URL` — URL API (по умолчанию http://localhost:3001/api)
-- `API_INTERNAL_KEY` — ключ для доступа к API
-- `REDIS_URL` — Redis (по умолчанию redis://localhost:6380)
 
 **apps/admin-web/.env:**
 
@@ -385,16 +361,15 @@ Docker compose (порты выбраны чтобы не конфликтова
 
 ## Локализация бота (i18n)
 
-Локализован только Telegram-бот. Админка и REST API остаются на русском. Изменения в API — исключительно инфраструктурные (хранение языка, коды ошибок, локализованные поля в notes) и не меняют поведение для админки.
+Локализован client-bot (приём файлов + чат с клиентом). Админка и REST API остаются на русском. Изменения в API — исключительно инфраструктурные (хранение языка, коды ошибок, локализованные поля в notes) и не меняют поведение для админки. Уведомления менеджеру (manager-bot) — ru-only.
 
 - Поддерживаемые языки: ru, zh, en
-- Бот: @grammyjs/i18n + Fluent (.ftl), locale файлы в `apps/tg-bot/src/bot/locales/`
-- API: ErrorCode enum → бот маппит на локализованные строки (error-CODE ключи в .ftl)
+- Бот: @grammyjs/i18n + Fluent (.ftl), locale файлы в `apps/client-bot/src/bot/locales/`
 - AI-комментарии: Claude возвращает двуязычные comment/reasoning при language≠ru
-- ProductNote: `message` (всегда русский, для админки и логов) + `messageLocalized` (язык пользователя бота)
+- ProductNote: `message` (всегда русский, для админки и логов) + `messageLocalized` (язык клиента)
 - Статичные замечания: `common/note-translations.ts` (5 hardcoded ключей × en/zh): `verification-disabled`, `verification-error`, `verification-no-result`, `interpreter-disabled`, `interpreter-failed`
-- Excel: заголовки всегда на русском, доп. колонка с переведёнными замечаниями только для не-ru пользователей бота
-- Язык пользователя: TelegramUser.language (DB) → Document.language (при загрузке) → pipeline → notification
+- Excel: заголовки всегда на русском, доп. колонка с переведёнными замечаниями только для не-ru клиентов (Excel доставляется клиенту через client-bot)
+- Язык клиента: TelegramUser.language (DB) → Document.language (при интейке) → pipeline → локализованный Excel
 
 ## Дополнительная документация
 
@@ -410,7 +385,7 @@ Docker compose (порты выбраны чтобы не конфликтова
 - Strict TypeScript во всех проектах
 - ORM: TypeORM, миграции через CLI (tsx)
 - Бот обращается к API через HTTP (X-Internal-Key), не напрямую к БД
-- Очереди: BullMQ через Redis, обе стороны (api producer, tg-bot consumer) подключены к одному Redis
+- Очереди: BullMQ через Redis, продюсер (api) и консьюмеры (client-bot, manager-bot) подключены к одному Redis
 - После любых изменений в коде API запускай `pnpm test` из корня репозитория и убедись, что все тесты проходят. Если изменения затрагивают поведение сервисов или формат ответов — обнови соответствующие тесты и моки
 - Если видишь более простой подход — скажи и пушбэкай, не реализуй молча
 - Неотносящийся dead code упоминай, но не удаляй — это отдельная задача

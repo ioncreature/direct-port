@@ -257,7 +257,6 @@ export async function closeTestApp(app: INestApplication): Promise<void> {
   const queueNames = [
     'document-parsing',
     'document-processing',
-    'document-notifications',
     'manager-notifications',
     'client-bot-outgoing',
   ];
