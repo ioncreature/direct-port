@@ -8,6 +8,7 @@ import {
   DocumentStatus,
 } from '../database/entities/document.entity';
 import { DocumentsProcessor } from './documents.processor';
+import { PipelineNotifierService } from './pipeline-notifier.service';
 
 function makeDoc(overrides: Partial<Document> = {}): Document {
   const doc = new Document();
@@ -272,9 +273,16 @@ function createProcessor(opts: Opts = {}) {
     notifyClientMessage: jest.fn().mockResolvedValue(undefined),
   };
 
+  // Реальный нотификатор поверх мок-очереди и мок-менеджера: ассерты на
+  // notificationQueue.add/managerNotify.notifyDocumentEvent остаются проверкой
+  // фактического payload, как до выноса notify() из процессора.
+  const pipelineNotifier = new PipelineNotifierService(
+    notificationQueue as any,
+    managerNotify as any,
+  );
+
   const processor = new DocumentsProcessor(
     repo as any,
-    notificationQueue as any,
     classifier as any,
     calculator as any,
     configService as any,
@@ -283,7 +291,7 @@ function createProcessor(opts: Opts = {}) {
     calculationLogs as any,
     audit as any,
     regulatoryService as any,
-    managerNotify as any,
+    pipelineNotifier as any,
   );
 
   return {

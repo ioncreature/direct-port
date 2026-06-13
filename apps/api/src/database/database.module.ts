@@ -55,6 +55,7 @@ import { AddDocumentFreightCheck1778600000000 } from './migrations/1778600000000
 import { AddManagedIntake1778700000000 } from './migrations/1778700000000-AddManagedIntake';
 import { AddManagerLinkAndAssignment1778800000000 } from './migrations/1778800000000-AddManagerLinkAndAssignment';
 import { AddConversationMessages1778900000000 } from './migrations/1778900000000-AddConversationMessages';
+import { AddDocumentsActiveStatusIndex1779000000000 } from './migrations/1779000000000-AddDocumentsActiveStatusIndex';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -122,6 +123,7 @@ import { SeedService } from './seeds/seed.service';
           AddManagedIntake1778700000000,
           AddManagerLinkAndAssignment1778800000000,
           AddConversationMessages1778900000000,
+          AddDocumentsActiveStatusIndex1779000000000,
         ],
         migrationsRun: true,
       }),

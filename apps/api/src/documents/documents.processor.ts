@@ -1,7 +1,7 @@
-import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Job, Queue } from 'bullmq';
+import { Job } from 'bullmq';
 import { Repository } from 'typeorm';
 import { CalculationConfigService } from '../calculation-config/calculation-config.service';
 import { CalculationLogsService } from '../calculation-logs/calculation-logs.service';
@@ -32,13 +32,8 @@ import { DutyInterpreterService } from '../duty-interpreter/duty-interpreter.ser
 import type { Dimension } from '../duty-interpreter/interfaces';
 import { PipelineAuditService } from '../pipeline-audit/pipeline-audit.service';
 import { RegulatoryRequirementsService } from '../regulatory/regulatory-requirements.service';
-import {
-  buildDocumentNotificationPayload,
-  extractProblemRows,
-  type DocumentNotification,
-  type ProblemRowSummary,
-} from './notification';
-import { ManagerNotifyService } from '../conversations/manager-notify.service';
+import { extractProblemRows, type DocumentNotification } from './notification';
+import { PipelineNotifierService } from './pipeline-notifier.service';
 
 export type { DocumentNotification };
 
@@ -48,7 +43,6 @@ export class DocumentsProcessor extends WorkerHost {
 
   constructor(
     @InjectRepository(Document) private repo: Repository<Document>,
-    @InjectQueue('document-notifications') private notificationQueue: Queue,
     private classifier: ClassifierService,
     private calculator: CalculatorService,
     private configService: CalculationConfigService,
@@ -57,7 +51,7 @@ export class DocumentsProcessor extends WorkerHost {
     private calculationLogs: CalculationLogsService,
     private audit: PipelineAuditService,
     private regulatoryService: RegulatoryRequirementsService,
-    private managerNotify: ManagerNotifyService,
+    private pipelineNotifier: PipelineNotifierService,
   ) {
     super();
   }
@@ -314,7 +308,7 @@ export class DocumentsProcessor extends WorkerHost {
           'Курсы валют ЦБ РФ недоступны — суммы в RUB не рассчитаны. ' +
           'Выполните «Пересчитать», когда курсы снова появятся.';
         await this.repo.save(doc);
-        await this.notify({ doc, status: 'failed', errorCode: ErrorCode.PROCESSING_FAILED });
+        await this.pipelineNotifier.notify({ doc, status: 'failed', errorCode: ErrorCode.PROCESSING_FAILED });
         return;
       }
 
@@ -358,7 +352,7 @@ export class DocumentsProcessor extends WorkerHost {
       doc.errorMessage = errMsg(err) || 'Unknown error';
       await this.repo.save(doc);
       const errorCode = classifyPipelineError(err, ErrorCode.PROCESSING_FAILED);
-      await this.notify({ doc, status: 'failed', errorCode });
+      await this.pipelineNotifier.notify({ doc, status: 'failed', errorCode });
       this.logger.error(
         `Document ${documentId} processing failed [${errorCode}]: ${doc.errorMessage}`,
         err instanceof Error ? err.stack : err,
@@ -673,40 +667,6 @@ export class DocumentsProcessor extends WorkerHost {
     return result.length > 0 ? result : undefined;
   }
 
-  private async notify(opts: {
-    doc: Document;
-    status: DocumentNotification['status'];
-    errorMessage?: string;
-    errorCode?: string;
-    sendResultFile?: boolean;
-    rejectionReasons?: string[];
-    rejectionReasonsLocalized?: string[];
-    problemRows?: ProblemRowSummary[];
-  }): Promise<void> {
-    // Уведомление — best-effort: его сбой (DB-запрос резолва менеджеров, Redis)
-    // не должен долетать до catch воркера и флипать полностью обработанный
-    // документ из PROCESSED в FAILED.
-    try {
-      // managed-документ: уведомляем менеджера, а не клиента.
-      if (opts.doc.source === 'managed') {
-        await this.managerNotify.notifyDocumentEvent(opts.doc);
-        return;
-      }
-      const payload = buildDocumentNotificationPayload(opts.doc, opts.status, {
-        errorMessage: opts.errorMessage,
-        errorCode: opts.errorCode,
-        rejectionReasons: opts.rejectionReasons,
-        rejectionReasonsLocalized: opts.rejectionReasonsLocalized,
-        sendResultFile: opts.sendResultFile,
-        problemRows: opts.problemRows,
-      });
-      if (!payload) return;
-
-      await this.notificationQueue.add('document-ready', payload);
-    } catch (err) {
-      this.logger.warn(`Failed to send notification for ${opts.doc.id}`, err);
-    }
-  }
 
   /**
    * Сбор проблем по строкам рассчитанного документа: неполные расчёты (error/needs_info)
@@ -776,7 +736,7 @@ export class DocumentsProcessor extends WorkerHost {
       if (opts.lowConfidenceAction === 'reject') {
         doc.status = DocumentStatus.REJECTED;
         await this.repo.save(doc);
-        await this.notify({
+        await this.pipelineNotifier.notify({
           doc,
           status: 'rejected',
           rejectionReasons: issues.reasons,
@@ -789,7 +749,7 @@ export class DocumentsProcessor extends WorkerHost {
           (doc.resultData ?? []) as Record<string, unknown>[],
           opts.confidenceThreshold,
         );
-        await this.notify({ doc, status: 'code_review_required', problemRows });
+        await this.pipelineNotifier.notify({ doc, status: 'code_review_required', problemRows });
       }
       return;
     }
@@ -799,7 +759,7 @@ export class DocumentsProcessor extends WorkerHost {
       ? DocumentStatus.PROCESSED_WITH_ERRORS
       : DocumentStatus.PROCESSED;
     await this.repo.save(doc);
-    await this.notify({
+    await this.pipelineNotifier.notify({
       doc,
       status: issues.hasRowErrors ? 'processed_with_errors' : 'processed',
       sendResultFile: opts.sendResultFile,

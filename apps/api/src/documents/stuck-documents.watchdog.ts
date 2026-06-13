@@ -3,7 +3,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, LessThan, Repository } from 'typeorm';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 
-/** Статусы, в которых документ живёт, только пока его двигает активный job. */
+/**
+ * Статусы, в которых документ живёт, только пока его двигает активный job.
+ * ВНИМАНИЕ: это множество продублировано в партиал-предикате индекса
+ * `IDX_documents_active_status_updated_at` (миграция 1779000000000). При добавлении
+ * сюда нового статуса нужна новая миграция, расширяющая предикат, — иначе sweep по
+ * новому статусу уйдёт в seq scan по всей таблице documents (индекс его не покроет).
+ */
 const ACTIVE_STATUSES = [
   DocumentStatus.PARSING,
   DocumentStatus.PENDING,

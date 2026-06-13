@@ -19,6 +19,7 @@ import { DocumentsProcessor } from './documents.processor';
 import { DocumentsService } from './documents.service';
 import { ExcelExportService } from './excel-export.service';
 import { ManualCodeService } from './manual-code.service';
+import { PipelineNotifierService } from './pipeline-notifier.service';
 import { StuckDocumentsWatchdog } from './stuck-documents.watchdog';
 import { PhotoStorageModule } from '../photo-storage/photo-storage.module';
 import { RegulatoryModule } from '../regulatory/regulatory.module';
@@ -52,6 +53,7 @@ import { ManagerNotifyModule } from '../conversations/manager-notify.module';
     DocumentsParsingProcessor,
     ExcelExportService,
     ManualCodeService,
+    PipelineNotifierService,
     StuckDocumentsWatchdog,
   ],
   exports: [DocumentsService],

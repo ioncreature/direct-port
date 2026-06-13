@@ -10,8 +10,7 @@ import { localizeRejectionReasonsForUser } from '../common/rejection-reasons';
 import { addStageUsage } from '../common/token-usage';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { PipelineAuditService } from '../pipeline-audit/pipeline-audit.service';
-import { buildDocumentNotificationPayload, type DocumentNotification } from './notification';
-import { ManagerNotifyService } from '../conversations/manager-notify.service';
+import { PipelineNotifierService } from './pipeline-notifier.service';
 import { PhotoStorageService } from '../photo-storage/photo-storage.service';
 
 @Processor('document-parsing')
@@ -21,11 +20,10 @@ export class DocumentsParsingProcessor extends WorkerHost {
   constructor(
     @InjectRepository(Document) private repo: Repository<Document>,
     @InjectQueue('document-processing') private processingQueue: Queue,
-    @InjectQueue('document-notifications') private notificationQueue: Queue,
     private aiParser: AiParserService,
     private audit: PipelineAuditService,
     private photoStorage: PhotoStorageService,
-    private managerNotify: ManagerNotifyService,
+    private pipelineNotifier: PipelineNotifierService,
   ) {
     super();
   }
@@ -63,7 +61,7 @@ export class DocumentsParsingProcessor extends WorkerHost {
       doc.status = DocumentStatus.FAILED;
       doc.errorMessage = 'File buffer is missing';
       await this.repo.save(doc);
-      await this.notify({ doc, status: 'failed', errorCode: ErrorCode.MISSING_FILE_BUFFER });
+      await this.pipelineNotifier.notify({ doc, status: 'failed', errorCode: ErrorCode.MISSING_FILE_BUFFER });
       return;
     }
 
@@ -156,13 +154,13 @@ export class DocumentsParsingProcessor extends WorkerHost {
         doc.status = DocumentStatus.REJECTED;
         doc.rejectionReasons = rejectionReasons.length > 0 ? rejectionReasons : null;
         await this.repo.save(doc);
-        await this.notify({ doc, status: 'rejected', rejectionReasons, rejectionReasonsLocalized });
+        await this.pipelineNotifier.notify({ doc, status: 'rejected', rejectionReasons, rejectionReasonsLocalized });
         this.logger.log(`Document ${documentId} rejected: ${rejectionReasons.join('; ')}`);
       } else if (feasibility === 'ok') {
         doc.status = DocumentStatus.PENDING;
         await this.repo.save(doc);
         await this.processingQueue.add('process-document', { documentId });
-        await this.notify({
+        await this.pipelineNotifier.notify({
           doc,
           status: 'stage_classifying',
           itemCount: products.length,
@@ -176,12 +174,9 @@ export class DocumentsParsingProcessor extends WorkerHost {
         doc.rejectionReasons = rejectionReasons.length > 0 ? rejectionReasons : null;
         await this.repo.save(doc);
         // managed: клиента не трогаем, но менеджеру нужно знать про необходимость ревью.
-        // best-effort: сбой уведомления не должен ронять уже сохранённый REQUIRES_REVIEW.
-        if (doc.source === 'managed') {
-          await this.managerNotify
-            .notifyDocumentEvent(doc)
-            .catch((err) => this.logger.warn(`Failed to notify manager for ${documentId}`, err));
-        }
+        // REQUIRES_REVIEW нет в DocumentNotification['status'] (self_service-клиента в нём
+        // не уведомляют), поэтому это manager-only путь. Best-effort внутри сервиса.
+        await this.pipelineNotifier.notifyManagerOnly(doc);
         this.logger.log(`Document ${documentId} parsed but needs review: ${rejectionReasons.join('; ')}`);
       }
     } catch (err) {
@@ -209,44 +204,11 @@ export class DocumentsParsingProcessor extends WorkerHost {
         errorMessage: doc.errorMessage,
       });
       const errorCode = classifyPipelineError(err, ErrorCode.PARSING_FAILED);
-      await this.notify({ doc, status: 'failed', errorCode });
+      await this.pipelineNotifier.notify({ doc, status: 'failed', errorCode });
       this.logger.error(
         `Document ${documentId} parsing failed [${errorCode}]: ${doc.errorMessage}`,
         err instanceof Error ? err.stack : err,
       );
-    }
-  }
-
-  private async notify(opts: {
-    doc: Document;
-    status: DocumentNotification['status'];
-    errorMessage?: string;
-    errorCode?: string;
-    rejectionReasons?: string[];
-    rejectionReasonsLocalized?: string[];
-    itemCount?: number;
-  }): Promise<void> {
-    // Уведомление — best-effort: его сбой (DB-запрос резолва менеджеров, Redis)
-    // не должен долетать до catch воркера и флипать уже сохранённый статус
-    // документа в FAILED.
-    try {
-      // managed-документ: уведомляем менеджера, а не клиента.
-      if (opts.doc.source === 'managed') {
-        await this.managerNotify.notifyDocumentEvent(opts.doc);
-        return;
-      }
-      const payload = buildDocumentNotificationPayload(opts.doc, opts.status, {
-        errorMessage: opts.errorMessage,
-        errorCode: opts.errorCode,
-        rejectionReasons: opts.rejectionReasons,
-        rejectionReasonsLocalized: opts.rejectionReasonsLocalized,
-        itemCount: opts.itemCount,
-      });
-      if (!payload) return;
-
-      await this.notificationQueue.add('document-ready', payload);
-    } catch (err) {
-      this.logger.warn(`Failed to send notification for ${opts.doc.id}`, err);
     }
   }
 }

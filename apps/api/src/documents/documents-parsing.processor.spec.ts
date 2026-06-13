@@ -2,6 +2,7 @@ import type { Job } from 'bullmq';
 import type { AiParseResult } from '../ai-parser/ai-parser.service';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { DocumentsParsingProcessor } from './documents-parsing.processor';
+import { PipelineNotifierService } from './pipeline-notifier.service';
 
 function makeDoc(overrides: Partial<Document> = {}): Document {
   const doc = new Document();
@@ -97,14 +98,21 @@ function createProcessor(opts: Opts = {}) {
     notifyClientMessage: jest.fn().mockResolvedValue(undefined),
   };
 
+  // Реальный нотификатор поверх мок-очереди и мок-менеджера: ассерты на
+  // notificationQueue.add остаются проверкой фактического payload, как до выноса
+  // notify() из процессора.
+  const pipelineNotifier = new PipelineNotifierService(
+    notificationQueue as any,
+    managerNotify as any,
+  );
+
   const processor = new DocumentsParsingProcessor(
     repo as any,
     processingQueue as any,
-    notificationQueue as any,
     aiParser as any,
     audit as any,
     photoStorage as any,
-    managerNotify as any,
+    pipelineNotifier as any,
   );
 
   return {
