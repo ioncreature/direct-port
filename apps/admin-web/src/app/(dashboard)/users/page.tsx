@@ -4,7 +4,7 @@ import { Pager } from '@/components/pager';
 import { SortableTh } from '@/components/sortable-th';
 import { useUsers } from '@/hooks/use-users';
 import { fmtDate } from '@/lib/format';
-import { tdEmpty, td, th } from '@/lib/table-styles';
+import { btnLink, filterChip, primaryLink, tdEmpty, td, th } from '@/lib/table-styles';
 import type { User } from '@/lib/types';
 import Link from 'next/link';
 
@@ -47,35 +47,14 @@ export default function UsersPage() {
         }}
       >
         <h1>Пользователи</h1>
-        <Link
-          href="/users/new"
-          style={{
-            padding: '8px 16px',
-            backgroundColor: '#000',
-            color: '#fff',
-            textDecoration: 'none',
-            borderRadius: 4,
-          }}
-        >
+        <Link href="/users/new" style={primaryLink}>
           Создать
         </Link>
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
         {roles.map((r) => (
-          <button
-            key={r.value}
-            onClick={() => filterByRole(r.value)}
-            style={{
-              padding: '4px 12px',
-              borderRadius: 16,
-              cursor: 'pointer',
-              fontSize: 13,
-              border: '1px solid #ddd',
-              background: role === r.value ? '#2563eb' : '#fff',
-              color: role === r.value ? '#fff' : '#333',
-            }}
-          >
+          <button key={r.value} onClick={() => filterByRole(r.value)} style={filterChip(role === r.value)}>
             {r.label}
           </button>
         ))}
@@ -112,7 +91,7 @@ export default function UsersPage() {
                   <td style={td}>
                     <Link
                       href={`/users/${user.id}/edit`}
-                      style={{ color: '#2563eb', marginRight: 12, textDecoration: 'none' }}
+                      style={{ color: 'var(--accent)', marginRight: 12, textDecoration: 'none' }}
                     >
                       Изменить
                     </Link>
@@ -120,12 +99,7 @@ export default function UsersPage() {
                       onClick={() => {
                         if (confirm('Удалить пользователя?')) deleteUser(user.id);
                       }}
-                      style={{
-                        color: 'red',
-                        cursor: 'pointer',
-                        border: 'none',
-                        background: 'none',
-                      }}
+                      style={{ ...btnLink, color: 'var(--danger)' }}
                     >
                       Удалить
                     </button>

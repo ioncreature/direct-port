@@ -1,3 +1,5 @@
+import { cardSurface } from '@/lib/table-styles';
+
 export function InfoCard({
   label,
   value,
@@ -8,9 +10,20 @@ export function InfoCard({
   color?: string;
 }) {
   return (
-    <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 14 }}>
-      <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 15, fontWeight: 500, color: color || '#000' }}>{value}</div>
+    <div style={{ ...cardSurface, padding: 16 }}>
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          textTransform: 'uppercase',
+          letterSpacing: '0.04em',
+          color: 'var(--text-muted)',
+          marginBottom: 6,
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ fontSize: 16, fontWeight: 600, color: color || 'var(--text)' }}>{value}</div>
     </div>
   );
 }

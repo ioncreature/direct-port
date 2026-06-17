@@ -1,70 +1,113 @@
 export const th: React.CSSProperties = {
   textAlign: 'left',
-  padding: '8px 12px',
-  borderBottom: '2px solid #ddd',
+  padding: '10px 12px',
+  fontSize: 12,
+  fontWeight: 600,
+  color: 'var(--text-muted)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+  borderBottom: '1px solid var(--border-strong)',
+  whiteSpace: 'nowrap',
 };
 export const thR: React.CSSProperties = { ...th, textAlign: 'right' };
 export const thC: React.CSSProperties = { ...th, textAlign: 'center' };
 export const thSortable: React.CSSProperties = { ...th, cursor: 'pointer', userSelect: 'none' };
 
-export const td: React.CSSProperties = { padding: '8px 12px', borderBottom: '1px solid #eee' };
+export const td: React.CSSProperties = {
+  padding: '11px 12px',
+  borderBottom: '1px solid var(--border-subtle)',
+  color: 'var(--text)',
+};
 export const tdR: React.CSSProperties = { ...td, textAlign: 'right' };
 export const tdC: React.CSSProperties = { ...td, textAlign: 'center' };
-export const tdEmpty: React.CSSProperties = { ...td, textAlign: 'center', color: '#888' };
+export const tdEmpty: React.CSSProperties = {
+  ...td,
+  textAlign: 'center',
+  color: 'var(--text-subtle)',
+  padding: '32px 12px',
+};
 
 export const btnOutline: React.CSSProperties = {
-  padding: '6px 14px',
+  padding: '7px 14px',
   cursor: 'pointer',
-  borderRadius: 4,
-  border: '1px solid #ddd',
-  background: '#fff',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--border)',
+  background: 'var(--surface)',
+  color: 'var(--text)',
   fontSize: 13,
+  fontWeight: 500,
+  boxShadow: 'var(--shadow-xs)',
 };
 export const btnLink: React.CSSProperties = {
   border: 'none',
   background: 'none',
   padding: 0,
   font: 'inherit',
-  textDecoration: 'underline',
+  fontWeight: 500,
+  color: 'var(--accent)',
   cursor: 'pointer',
 };
 export const btnPrimary: React.CSSProperties = {
   padding: '8px 16px',
-  background: '#2563eb',
+  background: 'var(--accent)',
   color: '#fff',
   border: 'none',
-  borderRadius: 4,
+  borderRadius: 'var(--radius-sm)',
+  fontSize: 14,
+  fontWeight: 600,
   cursor: 'pointer',
+  boxShadow: 'var(--shadow-sm)',
 };
 export const btnSuccess: React.CSSProperties = {
-  padding: '8px 16px',
-  background: '#16a34a',
-  color: '#fff',
-  border: 'none',
-  borderRadius: 4,
-  cursor: 'pointer',
+  ...btnPrimary,
+  background: 'var(--success)',
 };
 export const btnWarning: React.CSSProperties = {
-  padding: '8px 16px',
-  background: '#ca8a04',
-  color: '#fff',
-  border: 'none',
-  borderRadius: 4,
-  cursor: 'pointer',
+  ...btnPrimary,
+  background: 'var(--warning)',
 };
 export const btnDanger: React.CSSProperties = {
-  padding: '8px 16px',
-  background: '#dc2626',
-  color: '#fff',
-  border: 'none',
-  borderRadius: 4,
-  cursor: 'pointer',
+  ...btnPrimary,
+  background: 'var(--danger)',
 };
 export const btnDangerOutline: React.CSSProperties = {
   padding: '8px 16px',
-  background: '#fff',
-  color: '#dc2626',
-  border: '1px solid #dc2626',
-  borderRadius: 4,
+  background: 'var(--surface)',
+  color: 'var(--danger)',
+  border: '1px solid var(--danger)',
+  borderRadius: 'var(--radius-sm)',
+  fontSize: 14,
+  fontWeight: 600,
   cursor: 'pointer',
 };
+
+/** Базовая «поверхность-карточка»: фон, граница, радиус, мягкая тень.
+ *  Спред + переопределение padding/height по месту. */
+export const cardSurface: React.CSSProperties = {
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius)',
+  boxShadow: 'var(--shadow-sm)',
+};
+
+/** Primary-кнопка в виде ссылки (Link «Загрузить» / «Создать»). */
+export const primaryLink: React.CSSProperties = {
+  ...btnPrimary,
+  display: 'inline-block',
+  textDecoration: 'none',
+};
+
+/** Pill-чип фильтра (списки документов/пользователей). */
+export function filterChip(active: boolean): React.CSSProperties {
+  return {
+    padding: '5px 13px',
+    borderRadius: 'var(--radius-pill)',
+    cursor: 'pointer',
+    fontSize: 13,
+    fontWeight: 500,
+    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+    background: active ? 'var(--accent)' : 'var(--surface)',
+    color: active ? '#fff' : 'var(--text-muted)',
+    boxShadow: active ? 'var(--shadow-xs)' : 'none',
+  };
+}

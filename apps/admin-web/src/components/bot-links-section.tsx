@@ -27,26 +27,26 @@ function BotLinkCard({
   loading: boolean;
 }) {
   return (
-    <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 20 }}>
-      <div style={{ fontSize: 14, color: '#666', marginBottom: 8 }}>{label}</div>
+    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 20 }}>
+      <div style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 8 }}>{label}</div>
       {loading ? (
-        <div style={{ color: '#888' }}>...</div>
+        <div style={{ color: 'var(--text-subtle)' }}>...</div>
       ) : link ? (
         <>
           <a
             href={link.url}
             target="_blank"
             rel="noopener noreferrer"
-            style={{ fontSize: 20, fontWeight: 700, color: '#2563eb', textDecoration: 'none' }}
+            style={{ fontSize: 20, fontWeight: 700, color: 'var(--accent)', textDecoration: 'none' }}
           >
             @{link.username}
           </a>
-          <div style={{ fontSize: 13, color: '#888', marginTop: 6, wordBreak: 'break-all' }}>
+          <div style={{ fontSize: 13, color: 'var(--text-subtle)', marginTop: 6, wordBreak: 'break-all' }}>
             {link.url}
           </div>
         </>
       ) : (
-        <div style={{ color: '#888', fontSize: 14 }}>бот ещё не запускался</div>
+        <div style={{ color: 'var(--text-subtle)', fontSize: 14 }}>бот ещё не запускался</div>
       )}
     </div>
   );

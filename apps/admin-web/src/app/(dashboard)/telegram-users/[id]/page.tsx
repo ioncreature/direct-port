@@ -48,7 +48,7 @@ export default function TelegramUserDetailPage() {
       <div style={{ marginBottom: 24 }}>
         <Link
           href="/telegram-users"
-          style={{ color: '#2563eb', textDecoration: 'none', fontSize: 14 }}
+          style={{ color: 'var(--accent)', textDecoration: 'none', fontSize: 14 }}
         >
           &larr; Назад к Telegram-пользователям
         </Link>
@@ -109,7 +109,7 @@ export default function TelegramUserDetailPage() {
                   <td style={td}>
                     <Link
                       href={`/documents/${doc.id}`}
-                      style={{ color: '#2563eb', textDecoration: 'none' }}
+                      style={{ color: 'var(--accent)', textDecoration: 'none' }}
                     >
                       {doc.originalFileName}
                     </Link>
@@ -130,7 +130,7 @@ export default function TelegramUserDetailPage() {
                         opacity: doc.status === 'processed' ? 1 : 0.4,
                         border: 'none',
                         background: 'none',
-                        color: '#2563eb',
+                        color: 'var(--accent)',
                         textDecoration: 'underline',
                       }}
                     >

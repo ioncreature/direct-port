@@ -107,7 +107,7 @@ export function RegulatoryRequirementsSection({
     return (
       <div style={{ marginTop: 24 }}>
         <h3 style={{ margin: '0 0 12px' }}>Разрешительные документы и ограничения</h3>
-        <p style={{ color: '#666', fontSize: 14 }}>
+        <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>
           По справочнику TKS для этого кода нет разрешительных мер. Это не гарантирует отсутствие
           требований — окончательно подтверждайте у органа по сертификации или таможенного брокера.
         </p>
@@ -119,16 +119,16 @@ export function RegulatoryRequirementsSection({
     <div style={{ marginTop: 24 }}>
       <h3 style={{ margin: '0 0 6px' }}>
         Разрешительные документы и ограничения{' '}
-        <span style={{ fontSize: 13, color: '#666', fontWeight: 'normal' }}>
+        <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 'normal' }}>
           ({report.totalCount} записей)
         </span>
       </h3>
-      <p style={{ color: '#666', fontSize: 13, margin: '0 0 14px' }}>
+      <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '0 0 14px' }}>
         Информация носит справочный характер на основе ТН ВЭД-справочника TKS. Окончательный
         список документов подтверждается в органе по сертификации / у таможенного брокера.
       </p>
       {explanations.status === 'loading' && (
-        <p style={{ color: '#2563eb', fontSize: 12, margin: '0 0 14px' }}>
+        <p style={{ color: 'var(--accent)', fontSize: 12, margin: '0 0 14px' }}>
           AI-выжимки загружаются…
         </p>
       )}
@@ -170,10 +170,10 @@ function RegulatorySubSection({
     <div style={{ marginTop: 18 }}>
       <h4 style={{ margin: '0 0 4px', fontSize: 15 }}>
         {title}{' '}
-        <span style={{ fontSize: 13, color: '#666', fontWeight: 'normal' }}>({items.length})</span>
+        <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 'normal' }}>({items.length})</span>
       </h4>
       {description && (
-        <p style={{ margin: '0 0 8px', color: '#888', fontSize: 12 }}>{description}</p>
+        <p style={{ margin: '0 0 8px', color: 'var(--text-subtle)', fontSize: 12 }}>{description}</p>
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {items.map((item) => (
@@ -210,7 +210,7 @@ function RegulatoryCard({
   return (
     <div
       style={{
-        border: '1px solid #e5e7eb',
+        border: '1px solid var(--border)',
         borderRadius: 6,
         padding: '10px 14px',
         backgroundColor: '#ffffff',
@@ -220,7 +220,7 @@ function RegulatoryCard({
         <div style={{ flex: '1 1 320px', minWidth: 0 }}>
           <div style={{ fontWeight: 500, fontSize: 14 }}>{item.title}</div>
           {display.regulation && display.form !== 'unknown' && (
-            <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
               Форма: {formLabel}
             </div>
           )}
@@ -237,7 +237,7 @@ function RegulatoryCard({
         style={{
           marginTop: 8,
           fontSize: 13,
-          color: '#374151',
+          color: 'var(--text)',
           lineHeight: 1.5,
           whiteSpace: 'pre-wrap',
         }}
@@ -269,34 +269,34 @@ function RegulatoryCard({
           flexWrap: 'wrap',
           gap: '4px 18px',
           fontSize: 12,
-          color: '#6b7280',
+          color: 'var(--text-muted)',
         }}
       >
         {display.authority && (
           <span>
-            <span style={{ color: '#9ca3af' }}>Регулятор:</span> {display.authority}
+            <span style={{ color: 'var(--text-subtle)' }}>Регулятор:</span> {display.authority}
           </span>
         )}
         {item.documentRef && (
           <span>
-            <span style={{ color: '#9ca3af' }}>Документ:</span> N {item.documentRef.number}
+            <span style={{ color: 'var(--text-subtle)' }}>Документ:</span> N {item.documentRef.number}
             {item.documentRef.date && ` от ${fmtIsoDate(item.documentRef.date)}`}
           </span>
         )}
         {(item.validFrom || item.validTo) && (
           <span>
-            <span style={{ color: '#9ca3af' }}>Период:</span>{' '}
+            <span style={{ color: 'var(--text-subtle)' }}>Период:</span>{' '}
             {fmtPeriod(item.validFrom, item.validTo)}
           </span>
         )}
         <span>
-          <span style={{ color: '#9ca3af' }}>Код в TKS:</span> {item.codeRange.min}
+          <span style={{ color: 'var(--text-subtle)' }}>Код в TKS:</span> {item.codeRange.min}
           {item.codeRange.max ? ` … ${item.codeRange.max}` : ''}
         </span>
         {item.countryName && (
           <span>
-            <span style={{ color: '#9ca3af' }}>Страна:</span> {item.countryName}{' '}
-            <code style={{ color: '#9ca3af' }}>{item.countryCode}</code>
+            <span style={{ color: 'var(--text-subtle)' }}>Страна:</span> {item.countryName}{' '}
+            <code style={{ color: 'var(--text-subtle)' }}>{item.countryCode}</code>
           </span>
         )}
       </div>
@@ -307,7 +307,7 @@ function RegulatoryCard({
           marginTop: 8,
           background: 'none',
           border: 'none',
-          color: '#2563eb',
+          color: 'var(--accent)',
           padding: 0,
           cursor: 'pointer',
           fontSize: 12,
@@ -322,10 +322,10 @@ function RegulatoryCard({
             marginTop: 8,
             padding: 12,
             backgroundColor: '#f9fafb',
-            border: '1px solid #e5e7eb',
+            border: '1px solid var(--border)',
             borderRadius: 4,
             fontSize: 12,
-            color: '#374151',
+            color: 'var(--text)',
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
             maxHeight: 320,

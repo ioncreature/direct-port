@@ -20,7 +20,7 @@ export function Pager({ page, total, limit, onPageChange }: PagerProps) {
         fontSize: 14,
       }}
     >
-      <span style={{ color: '#666' }}>Всего: {total}</span>
+      <span style={{ color: 'var(--text-muted)' }}>Всего: {total}</span>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <button onClick={() => onPageChange(page - 1)} disabled={page <= 1} style={btnOutline}>
           ← Пред

@@ -27,7 +27,7 @@ const calcStatusConfig: Record<CalculationStatus, { label: string; color: string
 const noteSeverityConfig: Record<ProductNoteSeverity, { icon: string; color: string }> = {
   blocker: { icon: '!!', color: '#dc2626' },
   warning: { icon: '!', color: '#ca8a04' },
-  info: { icon: 'i', color: '#6b7280' },
+  info: { icon: 'i', color: 'var(--text-muted)' },
 };
 
 const severityOrder: ProductNoteSeverity[] = ['blocker', 'warning', 'info'];
@@ -42,9 +42,9 @@ type StepperStageState = 'done' | 'active' | 'pending' | 'warning' | 'error' | '
 type StepperStage = { key: string; label: string; state: StepperStageState };
 
 const STAGE_COLORS: Record<StepperStageState, { fill: string; ring: string; text: string }> = {
-  done: { fill: '#16a34a', ring: '#16a34a', text: '#374151' },
-  active: { fill: '#2563eb', ring: '#2563eb', text: '#111827' },
-  pending: { fill: '#fff', ring: '#d1d5db', text: '#9ca3af' },
+  done: { fill: '#16a34a', ring: '#16a34a', text: 'var(--text)' },
+  active: { fill: 'var(--accent)', ring: 'var(--accent)', text: '#111827' },
+  pending: { fill: '#fff', ring: '#d1d5db', text: 'var(--text-subtle)' },
   warning: { fill: '#ca8a04', ring: '#ca8a04', text: '#111827' },
   error: { fill: '#dc2626', ring: '#dc2626', text: '#111827' },
   success: { fill: '#16a34a', ring: '#16a34a', text: '#111827' },
@@ -117,7 +117,7 @@ function DocumentStatusStepper({ status }: { status: DocumentStatus }) {
     <div
       style={{
         marginBottom: 24,
-        border: '1px solid #e5e7eb',
+        border: '1px solid var(--border)',
         borderRadius: 8,
         padding: '16px 20px',
         background: '#fff',
@@ -192,7 +192,7 @@ function DocumentStatusStepper({ status }: { status: DocumentStatus }) {
                   style={{
                     flex: 1,
                     height: 2,
-                    background: nextDone ? STAGE_COLORS.done.fill : '#e5e7eb',
+                    background: nextDone ? STAGE_COLORS.done.fill : 'var(--border)',
                     margin: '0 12px',
                     minWidth: 16,
                   }}
@@ -202,7 +202,7 @@ function DocumentStatusStepper({ status }: { status: DocumentStatus }) {
           );
         })}
       </div>
-      <div style={{ marginTop: 10, fontSize: 13, color: '#6b7280', paddingLeft: 34 }}>{hint}</div>
+      <div style={{ marginTop: 10, fontSize: 13, color: 'var(--text-muted)', paddingLeft: 34 }}>{hint}</div>
     </div>
   );
 }
@@ -425,7 +425,7 @@ export default function DocumentDetailPage() {
   return (
     <div>
       <div style={{ marginBottom: 24 }}>
-        <Link href="/documents" style={{ color: '#2563eb', textDecoration: 'none', fontSize: 14 }}>
+        <Link href="/documents" style={{ color: 'var(--accent)', textDecoration: 'none', fontSize: 14 }}>
           &larr; Назад к документам
         </Link>
       </div>
@@ -544,7 +544,7 @@ export default function DocumentDetailPage() {
             style={{
               flex: 1,
               padding: '6px 10px',
-              border: '1px solid #ddd',
+              border: '1px solid var(--border)',
               borderRadius: 4,
               fontSize: 14,
             }}
@@ -574,7 +574,7 @@ export default function DocumentDetailPage() {
             style={{
               padding: '6px 14px',
               background: '#fff',
-              border: '1px solid #ddd',
+              border: '1px solid var(--border)',
               borderRadius: 4,
               cursor: 'pointer',
               fontSize: 13,
@@ -614,7 +614,7 @@ export default function DocumentDetailPage() {
 
       {/* Token usage */}
       {doc.tokenUsage && Object.keys(doc.tokenUsage).length > 0 && (
-        <div style={{ marginBottom: 24, border: '1px solid #ddd', borderRadius: 8, padding: 16 }}>
+        <div style={{ marginBottom: 24, border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <h3 style={{ margin: 0 }}>AI-расходы</h3>
             <span style={{ fontSize: 20, fontWeight: 700 }}>{fmtCost(calcAiCostFromStages(doc.tokenUsage))}</span>
@@ -627,7 +627,7 @@ export default function DocumentDetailPage() {
                   <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{stageLabel(stage)}</div>
                   <div style={{ fontSize: 15, fontWeight: 700 }}>{fmtCost(stageCost)}</div>
                   {Object.entries(models).map(([model, usage]) => (
-                    <div key={model} style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+                    <div key={model} style={{ fontSize: 12, color: 'var(--text-subtle)', marginTop: 4 }}>
                       {modelLabel(model)}: {fmtTokens(usage.inputTokens)} in / {fmtTokens(usage.outputTokens)} out
                     </div>
                   ))}
@@ -705,7 +705,7 @@ export default function DocumentDetailPage() {
           >
             <h3 style={{ margin: 0 }}>Исходные данные (проверка)</h3>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-              <label style={{ fontSize: 13, color: '#555' }}>
+              <label style={{ fontSize: 13, color: 'var(--text-muted)' }}>
                 Валюта:
                 <input
                   type="text"
@@ -715,7 +715,7 @@ export default function DocumentDetailPage() {
                     marginLeft: 6,
                     width: 60,
                     padding: '4px 8px',
-                    border: '1px solid #ddd',
+                    border: '1px solid var(--border)',
                     borderRadius: 3,
                     fontSize: 13,
                     textAlign: 'center',
@@ -865,13 +865,13 @@ export default function DocumentDetailPage() {
               flexWrap: 'wrap',
               padding: 12,
               marginBottom: 16,
-              border: '1px solid #e5e7eb',
+              border: '1px solid var(--border)',
               borderRadius: 8,
               background: doc.countryOriginSource === 'default' ? '#fffbeb' : '#fafafa',
             }}
           >
             <div>
-              <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Страна происхождения</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Страна происхождения</div>
               <select
                 value={countryDraft}
                 onChange={(e) => setCountryDraft(e.target.value)}
@@ -879,7 +879,7 @@ export default function DocumentDetailPage() {
                   padding: '6px 10px',
                   fontSize: 14,
                   borderRadius: 4,
-                  border: '1px solid #ddd',
+                  border: '1px solid var(--border)',
                   background: '#fff',
                   minWidth: 260,
                 }}
@@ -893,7 +893,7 @@ export default function DocumentDetailPage() {
               </select>
             </div>
             <div>
-              <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Фрахт до границы</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Фрахт до границы</div>
               <div style={{ display: 'flex', gap: 6 }}>
                 <input
                   type="number"
@@ -907,7 +907,7 @@ export default function DocumentDetailPage() {
                     padding: '6px 10px',
                     fontSize: 14,
                     borderRadius: 4,
-                    border: '1px solid #ddd',
+                    border: '1px solid var(--border)',
                     background: '#fff',
                     width: 140,
                   }}
@@ -922,7 +922,7 @@ export default function DocumentDetailPage() {
                     padding: '6px 10px',
                     fontSize: 14,
                     borderRadius: 4,
-                    border: '1px solid #ddd',
+                    border: '1px solid var(--border)',
                     background: '#fff',
                   }}
                 >
@@ -933,14 +933,14 @@ export default function DocumentDetailPage() {
                   ))}
                 </select>
               </div>
-              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-subtle)', marginTop: 4 }}>
                 Введите 0 или очистите поле, чтобы сбросить фрахт.
               </div>
             </div>
-            <div style={{ flex: 1, minWidth: 200, fontSize: 12, color: '#6b7280' }}>
+            <div style={{ flex: 1, minWidth: 200, fontSize: 12, color: 'var(--text-muted)' }}>
               {doc.countryOriginSource && (
                 <div>
-                  Источник: <span style={{ color: '#374151' }}>{countryOriginSourceLabels[doc.countryOriginSource]}</span>
+                  Источник: <span style={{ color: 'var(--text)' }}>{countryOriginSourceLabels[doc.countryOriginSource]}</span>
                 </div>
               )}
               {doc.countryDetectionReason && (
@@ -952,7 +952,7 @@ export default function DocumentDetailPage() {
               disabled={recalculateDisabled}
               style={{
                 padding: '8px 16px',
-                background: recalculateDisabled ? '#9ca3af' : '#2563eb',
+                background: recalculateDisabled ? 'var(--text-subtle)' : 'var(--accent)',
                 color: '#fff',
                 border: 'none',
                 borderRadius: 4,
@@ -973,7 +973,7 @@ export default function DocumentDetailPage() {
             <h3 style={{ margin: 0 }}>Результаты расчёта</h3>
             {doc.exchangeRates && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <label style={{ fontSize: 13, color: '#666' }}>Валюта:</label>
+                <label style={{ fontSize: 13, color: 'var(--text-muted)' }}>Валюта:</label>
                 <select
                   value={displayCurrency}
                   onChange={(e) => {
@@ -986,7 +986,7 @@ export default function DocumentDetailPage() {
                     padding: '4px 8px',
                     fontSize: 13,
                     borderRadius: 4,
-                    border: '1px solid #ddd',
+                    border: '1px solid var(--border)',
                     background: '#fff',
                   }}
                 >
@@ -1041,7 +1041,7 @@ export default function DocumentDetailPage() {
       )}
 
       {(doc.status === 'processed' || doc.status === 'processed_with_errors') && rows.length === 0 && (
-        <p style={{ color: '#888' }}>Нет данных результата</p>
+        <p style={{ color: 'var(--text-subtle)' }}>Нет данных результата</p>
       )}
 
       {history.length >= 2 && (
@@ -1148,7 +1148,7 @@ const ResultRow = memo(function ResultRow({
               transition: 'transform 0.15s ease',
               transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
               fontSize: 14,
-              color: '#9ca3af',
+              color: 'var(--text-subtle)',
             }}
           >
             &#9662;
@@ -1192,7 +1192,7 @@ function ResultDetail({
 
   return (
     <tr>
-      <td colSpan={8} style={{ padding: 0, borderBottom: '1px solid #eee' }}>
+      <td colSpan={8} style={{ padding: 0, borderBottom: '1px solid var(--border-subtle)' }}>
         <div
           style={{
             display: 'flex',
@@ -1216,7 +1216,7 @@ function ResultDetail({
 
           {/* Center: calculation breakdown */}
           <div style={{ flex: 1, minWidth: 200 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#333' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: 'var(--text)' }}>
               Расчёт
             </div>
             <CalcLine label="Сумма товара" value={fmtMoney(row.totalPrice)} />
@@ -1240,7 +1240,7 @@ function ResultDetail({
                 justifyContent: 'space-between',
                 padding: '6px 0 0',
                 marginTop: 4,
-                borderTop: '1px solid #ddd',
+                borderTop: '1px solid var(--border)',
                 fontSize: 14,
                 fontWeight: 700,
               }}
@@ -1248,7 +1248,7 @@ function ResultDetail({
               <span>Итого</span>
               <span>{fmtMoney(row.totalCost)}</span>
             </div>
-            <div style={{ marginTop: 8, fontSize: 12, color: '#888' }}>
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-subtle)' }}>
               Ставка пошлины: {row.dutyRate}% &middot; НДС: {row.vatRate}%
               {row.exciseRate > 0 && <> &middot; Акциз: {row.exciseRate}%</>}
             </div>
@@ -1276,7 +1276,7 @@ function ResultDetail({
             )}
             {sortedNotes.length > 0 ? (
               <div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#333', marginBottom: 6 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>
                   Замечания
                 </div>
                 {sortedNotes.map((note, ni) => {
@@ -1291,7 +1291,7 @@ function ResultDetail({
                       </span>
                       <span
                         style={{
-                          color: note.severity === 'info' ? '#555' : cfg.color,
+                          color: note.severity === 'info' ? 'var(--text-muted)' : cfg.color,
                         }}
                       >
                         {note.message}
@@ -1302,7 +1302,7 @@ function ResultDetail({
               </div>
             ) : (
               !row.dutyFormula && (
-                <div style={{ fontSize: 13, color: '#888' }}>Нет замечаний</div>
+                <div style={{ fontSize: 13, color: 'var(--text-subtle)' }}>Нет замечаний</div>
               )
             )}
           </div>
@@ -1325,7 +1325,7 @@ function ResultDetail({
             />
           </div>
         ) : (
-          <div style={{ padding: '0 12px 16px', background: '#fafafa', fontSize: 12, color: '#888' }}>
+          <div style={{ padding: '0 12px 16px', background: '#fafafa', fontSize: 12, color: 'var(--text-subtle)' }}>
             Разрешительные документы для этой строки не рассчитаны (документ обработан до релиза
             фичи). Запустите пересчёт, чтобы получить список.
           </div>
@@ -1408,14 +1408,14 @@ function ChangeCodeSection({
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <code style={{ fontSize: 13, fontWeight: 600 }}>{cand.code}</code>
-                    <span style={{ fontSize: 11, color: '#6b7280' }}>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                       conf {cand.confidence.toFixed(2)}
                     </span>
                   </div>
-                  <div style={{ fontSize: 12, color: '#374151', lineHeight: 1.3 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text)', lineHeight: 1.3 }}>
                     {cand.description}
                   </div>
-                  <div style={{ fontSize: 11, color: '#6b7280' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                     Пошлина {cand.dutyRate}
                     {cand.dutyRateUnit ? ` ${cand.dutyRateUnit}` : '%'}
                     {' · '}НДС {cand.vatRate}%
@@ -1437,7 +1437,7 @@ function ChangeCodeSection({
                       borderRadius: 4,
                       border: 'none',
                       cursor: isCurrent || submitting !== null ? 'not-allowed' : 'pointer',
-                      background: isCurrent ? '#dcfce7' : '#2563eb',
+                      background: isCurrent ? '#dcfce7' : 'var(--accent)',
                       color: isCurrent ? '#15803d' : '#fff',
                       fontWeight: 500,
                     }}
@@ -1478,7 +1478,7 @@ function ChangeCodeSection({
             borderRadius: 4,
             border: 'none',
             cursor: customValid && submitting === null ? 'pointer' : 'not-allowed',
-            background: customValid && submitting === null ? '#2563eb' : '#9ca3af',
+            background: customValid && submitting === null ? 'var(--accent)' : 'var(--text-subtle)',
             color: '#fff',
             fontWeight: 500,
           }}
@@ -1506,11 +1506,11 @@ function ImagePlaceholder({ size, label = 'img' }: { size: number; label?: strin
         height: size,
         background: '#f3f4f6',
         borderRadius: size > 60 ? 6 : 4,
-        border: '1px solid #e5e7eb',
+        border: '1px solid var(--border)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        color: '#9ca3af',
+        color: 'var(--text-subtle)',
         fontSize: size > 60 ? 13 : 11,
       }}
     >
@@ -1522,7 +1522,7 @@ function ImagePlaceholder({ size, label = 'img' }: { size: number; label?: strin
 function DetailField({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div style={{ fontSize: 11, color: '#888' }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--text-subtle)' }}>{label}</div>
       <div style={{ fontSize: 13, fontWeight: 500 }}>{value}</div>
     </div>
   );
@@ -1538,7 +1538,7 @@ function CalcLine({ label, value, note }: { label: string; value: string; note?:
         fontSize: 13,
       }}
     >
-      <span style={{ color: '#555' }}>
+      <span style={{ color: 'var(--text-muted)' }}>
         {label}
         {note && (
           <span style={{ fontSize: 11, color: '#c2410c', marginLeft: 4 }}>({note})</span>
@@ -1552,11 +1552,11 @@ function CalcLine({ label, value, note }: { label: string; value: string; note?:
 const th: React.CSSProperties = {
   textAlign: 'left',
   padding: '6px 10px',
-  borderBottom: '2px solid #ddd',
+  borderBottom: '2px solid var(--border)',
   whiteSpace: 'nowrap',
 };
 const thR: React.CSSProperties = { ...th, textAlign: 'right' };
-const td: React.CSSProperties = { padding: '6px 10px', borderBottom: '1px solid #eee' };
+const td: React.CSSProperties = { padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)' };
 const tdR: React.CSSProperties = { ...td, textAlign: 'right' };
 const tdCenter: React.CSSProperties = { ...td, textAlign: 'center' };
 const tdDesc: React.CSSProperties = {
@@ -1569,7 +1569,7 @@ const tdDesc: React.CSSProperties = {
 const inputText: React.CSSProperties = {
   width: '100%',
   padding: '4px 8px',
-  border: '1px solid #ddd',
+  border: '1px solid var(--border)',
   borderRadius: 3,
   fontSize: 13,
   boxSizing: 'border-box',
@@ -1577,7 +1577,7 @@ const inputText: React.CSSProperties = {
 const inputNumber: React.CSSProperties = {
   width: 90,
   padding: '4px 8px',
-  border: '1px solid #ddd',
+  border: '1px solid var(--border)',
   borderRadius: 3,
   fontSize: 13,
   textAlign: 'right',

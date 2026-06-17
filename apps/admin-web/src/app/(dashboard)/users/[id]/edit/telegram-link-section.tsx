@@ -24,7 +24,7 @@ export function TelegramLinkSection({ user }: { user: User }) {
       style={{
         marginTop: 32,
         maxWidth: 500,
-        borderTop: '1px solid #e5e7eb',
+        borderTop: '1px solid var(--border)',
         paddingTop: 24,
       }}
     >
@@ -44,7 +44,7 @@ export function TelegramLinkSection({ user }: { user: User }) {
         </div>
       ) : (
         <div>
-          <p style={{ color: '#6b7280', marginBottom: 8 }}>
+          <p style={{ color: 'var(--text-muted)', marginBottom: 8 }}>
             Чтобы менеджер получал уведомления и общался с клиентами в боте, привяжите его
             Telegram-аккаунт.
           </p>
@@ -67,7 +67,7 @@ export function TelegramLinkSection({ user }: { user: User }) {
                   href={token.deepLink}
                   target="_blank"
                   rel="noreferrer"
-                  style={{ color: '#2563eb', wordBreak: 'break-all' }}
+                  style={{ color: 'var(--accent)', wordBreak: 'break-all' }}
                 >
                   {token.deepLink}
                 </a>

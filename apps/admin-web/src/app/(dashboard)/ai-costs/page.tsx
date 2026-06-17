@@ -54,7 +54,7 @@ export default function AiCostsPage() {
               style={{
                 ...btnOutline,
                 fontWeight: !modelFilter ? 700 : 400,
-                borderColor: !modelFilter ? '#000' : '#ddd',
+                borderColor: !modelFilter ? '#000' : 'var(--border)',
               }}
             >
               Все модели
@@ -66,7 +66,7 @@ export default function AiCostsPage() {
                 style={{
                   ...btnOutline,
                   fontWeight: modelFilter === m ? 700 : 400,
-                  borderColor: modelFilter === m ? '#000' : '#ddd',
+                  borderColor: modelFilter === m ? '#000' : 'var(--border)',
                 }}
               >
                 {modelLabel(m)}
@@ -102,7 +102,7 @@ export default function AiCostsPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, opacity: loading ? 0.5 : 1, transition: 'opacity 0.15s' }}>
         <div>
           <h3 style={{ marginBottom: 12 }}>Расходы по пользователям</h3>
-          <div style={{ border: '1px solid #ddd', borderRadius: 8, overflow: 'auto' }}>
+          <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
@@ -115,7 +115,7 @@ export default function AiCostsPage() {
               <tbody>
                 {stats.byUser.length === 0 && (
                   <tr>
-                    <td colSpan={4} style={{ ...td, color: '#888', textAlign: 'center' }}>
+                    <td colSpan={4} style={{ ...td, color: 'var(--text-subtle)', textAlign: 'center' }}>
                       Нет данных
                     </td>
                   </tr>
@@ -145,7 +145,7 @@ export default function AiCostsPage() {
 
         <div>
           <h3 style={{ marginBottom: 12 }}>Последние документы</h3>
-          <div style={{ border: '1px solid #ddd', borderRadius: 8, overflow: 'auto' }}>
+          <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
@@ -158,7 +158,7 @@ export default function AiCostsPage() {
               <tbody>
                 {stats.recentDocuments.length === 0 && (
                   <tr>
-                    <td colSpan={4} style={{ ...td, color: '#888', textAlign: 'center' }}>
+                    <td colSpan={4} style={{ ...td, color: 'var(--text-subtle)', textAlign: 'center' }}>
                       Нет данных
                     </td>
                   </tr>
@@ -175,12 +175,12 @@ export default function AiCostsPage() {
                           </span>
                         </Link>
                         {doc.telegramUsername && (
-                          <span style={{ color: '#888', fontSize: 12, marginLeft: 4 }}>@{doc.telegramUsername}</span>
+                          <span style={{ color: 'var(--text-subtle)', fontSize: 12, marginLeft: 4 }}>@{doc.telegramUsername}</span>
                         )}
                       </td>
                       <td style={{ ...td, textAlign: 'right' }}>{fmtTokens(totalTokens)}</td>
                       <td style={{ ...td, textAlign: 'right', fontWeight: 600 }}>{fmtCost(cost)}</td>
-                      <td style={{ ...td, fontSize: 13, color: '#666' }}>{fmtDateTime(doc.createdAt)}</td>
+                      <td style={{ ...td, fontSize: 13, color: 'var(--text-muted)' }}>{fmtDateTime(doc.createdAt)}</td>
                     </tr>
                   );
                 })}
@@ -190,7 +190,7 @@ export default function AiCostsPage() {
         </div>
       </div>
 
-      <div style={{ marginTop: 24, padding: 16, background: '#f9f9f9', borderRadius: 8, fontSize: 13, color: '#888' }}>
+      <div style={{ marginTop: 24, padding: 16, background: '#f9f9f9', borderRadius: 8, fontSize: 13, color: 'var(--text-subtle)' }}>
         Расчёт стоимости по моделям: Claude Haiku — $1 / $5 за 1M токенов (in/out), Claude Sonnet — $3 / $15 за 1M токенов (in/out), Claude Opus — $5 / $25 за 1M токенов (in/out)
       </div>
     </div>
@@ -202,10 +202,10 @@ function PeriodCard({ label, period }: { label: string; period: TokenStatsPeriod
   const models = Object.entries(period.models);
 
   return (
-    <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 20 }}>
-      <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>{label}</div>
+    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 20 }}>
+      <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 28, fontWeight: 700 }}>{fmtCost(cost)}</div>
-      <div style={{ fontSize: 13, color: '#888', marginTop: 8 }}>{period.documentCount} документов</div>
+      <div style={{ fontSize: 13, color: 'var(--text-subtle)', marginTop: 8 }}>{period.documentCount} документов</div>
       {models.map(([model, usage]) => (
         <div key={model} style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>
           {modelLabel(model)}: {fmtTokens(usage.inputTokens)} in / {fmtTokens(usage.outputTokens)} out
@@ -237,8 +237,8 @@ function DailyChart({ data }: { data: DailyTokenStats[] }) {
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
 
   return (
-    <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 20 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, fontSize: 13, color: '#666' }}>
+    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, fontSize: 13, color: 'var(--text-muted)' }}>
         <span>
           Последние {data.length} дней{' '}
           <span style={{ color: '#aaa' }}>· шкала {fmtCost(0)} – {fmtCost(axisMax)}</span>
@@ -267,7 +267,7 @@ function DailyChart({ data }: { data: DailyTokenStats[] }) {
                   width: '100%',
                   maxWidth: 24,
                   height: heightPx,
-                  background: isToday ? '#2563eb' : isActive ? '#60a5fa' : '#93c5fd',
+                  background: isToday ? 'var(--accent)' : isActive ? '#60a5fa' : '#93c5fd',
                   borderRadius: '3px 3px 0 0',
                   transition: 'height 0.3s, background 0.15s',
                 }}

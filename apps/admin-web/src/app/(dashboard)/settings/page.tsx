@@ -45,7 +45,7 @@ function NotificationSection({ config, loading, saving, error, save }: CalcConfi
   };
 
   return (
-    <div style={{ maxWidth: 500, padding: 24, border: '1px solid #ddd', borderRadius: 8, marginBottom: 32 }}>
+    <div style={{ maxWidth: 500, padding: 24, border: '1px solid var(--border)', borderRadius: 8, marginBottom: 32 }}>
       <h3 style={{ marginBottom: 16 }}>Уведомления в Telegram</h3>
 
       <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', marginBottom: 16 }}>
@@ -57,7 +57,7 @@ function NotificationSection({ config, loading, saving, error, save }: CalcConfi
         />
         <div>
           <div style={{ fontWeight: 500, fontSize: 14 }}>Отправлять файл-результат в Telegram</div>
-          <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
             {sendResultFile
               ? 'После обработки документа пользователь получит Excel-файл с результатами.'
               : 'После обработки документа пользователь получит сообщение с просьбой связаться с вами.'}
@@ -106,9 +106,9 @@ function ConfidenceSection({ config, loading, saving, error, save }: CalcConfigP
   };
 
   return (
-    <div style={{ maxWidth: 500, padding: 24, border: '1px solid #ddd', borderRadius: 8, marginBottom: 32 }}>
+    <div style={{ maxWidth: 500, padding: 24, border: '1px solid var(--border)', borderRadius: 8, marginBottom: 32 }}>
       <h3 style={{ marginBottom: 8 }}>Классификация ТН ВЭД</h3>
-      <p style={{ fontSize: 14, color: '#666', marginBottom: 20, lineHeight: 1.5 }}>
+      <p style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 20, lineHeight: 1.5 }}>
         Если ИИ подобрал код ТН ВЭД с уверенностью ниже порога — документ не будет обработан
         автоматически.
       </p>
@@ -144,7 +144,7 @@ function ConfidenceSection({ config, loading, saving, error, save }: CalcConfigP
             />
             <div>
               <div style={{ fontWeight: 500, fontSize: 14 }}>Запросить уточнение у пользователя в Telegram</div>
-              <div style={{ fontSize: 13, color: '#666', marginTop: 2, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.5 }}>
                 Бот пришлёт пользователю карточку на каждую сомнительную позицию с тремя
                 действиями: <strong>уточнить описание текстом</strong>, <strong>ввести код ТН ВЭД вручную</strong>{' '}
                 или <strong>пропустить</strong>. Система пересчитает только эти строки —
@@ -163,7 +163,7 @@ function ConfidenceSection({ config, loading, saving, error, save }: CalcConfigP
             />
             <div>
               <div style={{ fontWeight: 500, fontSize: 14 }}>Сразу отклонять</div>
-              <div style={{ fontSize: 13, color: '#666', marginTop: 2, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.5 }}>
                 Пользователь получит сводку сомнительных строк с просьбой исправить файл и
                 загрузить заново. Уточнить позиции в чате будет нельзя.
               </div>
@@ -216,9 +216,9 @@ function CommissionSection({ config, loading, saving, error, save }: CalcConfigP
   };
 
   return (
-    <div style={{ maxWidth: 500, padding: 24, border: '1px solid #ddd', borderRadius: 8, marginBottom: 32 }}>
+    <div style={{ maxWidth: 500, padding: 24, border: '1px solid var(--border)', borderRadius: 8, marginBottom: 32 }}>
       <h3 style={{ marginBottom: 16 }}>Формула комиссии за доставку</h3>
-      <p style={{ fontSize: 14, color: '#666', marginBottom: 20 }}>
+      <p style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 20 }}>
         Комиссия = (Стоимость × X%) + (Вес × Y) + Фикс. сбор
       </p>
 
@@ -291,9 +291,9 @@ function AiModelsSection() {
   );
 
   return (
-    <div style={{ maxWidth: 700, padding: 24, border: '1px solid #ddd', borderRadius: 8 }}>
+    <div style={{ maxWidth: 700, padding: 24, border: '1px solid var(--border)', borderRadius: 8 }}>
       <h3 style={{ marginBottom: 8 }}>Модели AI</h3>
-      <p style={{ fontSize: 14, color: '#555', marginBottom: 12, lineHeight: 1.6 }}>
+      <p style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.6 }}>
         Обработка каждого документа проходит через несколько этапов. На каждом этапе работает ИИ (Claude),
         и вы можете выбрать уровень модели — от базовой до максимальной.
       </p>
@@ -341,7 +341,7 @@ function AiStepCard({
   return (
     <div style={{ marginBottom: 28, padding: 20, background: '#f9fafb', borderRadius: 8 }}>
       <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 6 }}>{step.title}</div>
-      <div style={{ fontSize: 13, color: '#555', marginBottom: 16, lineHeight: 1.5 }}>{step.description}</div>
+      <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.5 }}>{step.description}</div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {AI_MODEL_TIERS.map((tier) => {
@@ -358,8 +358,8 @@ function AiStepCard({
                 gap: 10,
                 padding: '12px 14px',
                 borderRadius: 6,
-                border: isSelected ? '2px solid #2563eb' : '1px solid #e5e7eb',
-                background: isSelected ? '#eff6ff' : 'white',
+                border: isSelected ? '2px solid var(--accent)' : '1px solid var(--border)',
+                background: isSelected ? 'var(--accent-soft)' : 'var(--surface)',
                 cursor: 'pointer',
               }}
             >
@@ -377,11 +377,11 @@ function AiStepCard({
                     <span style={recommendedBadge}>рекомендуется</span>
                   )}
                 </div>
-                <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#888', marginBottom: 4 }}>
-                  <span>Точность: <strong style={{ color: '#333' }}>{info.accuracy}</strong></span>
-                  <span>Стоимость: <strong style={{ color: '#333' }}>{info.cost}</strong></span>
+                <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--text-subtle)', marginBottom: 4 }}>
+                  <span>Точность: <strong style={{ color: 'var(--text)' }}>{info.accuracy}</strong></span>
+                  <span>Стоимость: <strong style={{ color: 'var(--text)' }}>{info.cost}</strong></span>
                 </div>
-                <div style={{ fontSize: 13, color: '#555', lineHeight: 1.4 }}>{info.description}</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.4 }}>{info.description}</div>
               </div>
             </label>
           );
@@ -412,7 +412,7 @@ const labelStyle: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '8px 12px',
-  border: '1px solid #ddd',
+  border: '1px solid var(--border)',
   borderRadius: 4,
   fontSize: 14,
 };
@@ -420,7 +420,7 @@ const inputStyle: React.CSSProperties = {
 function btnStyle(disabled?: boolean): React.CSSProperties {
   return {
     padding: '10px 24px',
-    background: '#2563eb',
+    background: 'var(--accent)',
     color: 'white',
     border: 'none',
     borderRadius: 4,

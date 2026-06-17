@@ -16,7 +16,7 @@ import type {
 import { useCallback, useState } from 'react';
 import { RegulatoryRequirementsSection } from './regulatory-section';
 
-const labelStyle: React.CSSProperties = { color: '#888', marginRight: 4 };
+const labelStyle: React.CSSProperties = { color: 'var(--text-subtle)', marginRight: 4 };
 
 export default function TnVedPage() {
   const { query, setQuery, result, loading, debouncing, searchImmediate } = useTnVed();
@@ -49,7 +49,7 @@ export default function TnVedPage() {
             maxWidth: 500,
             padding: '10px 14px',
             fontSize: 15,
-            border: '1px solid #ddd',
+            border: '1px solid var(--border)',
             borderRadius: 6,
             boxSizing: 'border-box',
           }}
@@ -58,7 +58,7 @@ export default function TnVedPage() {
       </div>
 
       {result?.translatedQuery && (
-        <p style={{ color: '#666', fontSize: 14, marginBottom: 16 }}>
+        <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 16 }}>
           Перевод запроса: &laquo;{result.translatedQuery}&raquo;
         </p>
       )}
@@ -103,11 +103,11 @@ export default function TnVedPage() {
       )}
 
       {!busy && result?.mode === 'text_search' && result.results.length === 0 && query.trim() && (
-        <p style={{ color: '#888' }}>Ничего не найдено</p>
+        <p style={{ color: 'var(--text-subtle)' }}>Ничего не найдено</p>
       )}
 
       {!busy && !query.trim() && (
-        <p style={{ color: '#888' }}>
+        <p style={{ color: 'var(--text-subtle)' }}>
           Введите код ТН ВЭД или название товара для поиска (русский, английский, китайский)
         </p>
       )}
@@ -123,8 +123,8 @@ function Spinner() {
       style={{
         width: 20,
         height: 20,
-        border: '2px solid #ddd',
-        borderTopColor: '#555',
+        border: '2px solid var(--border)',
+        borderTopColor: 'var(--text-muted)',
         borderRadius: '50%',
         animation: 'tn-ved-spin 0.6s linear infinite',
         flexShrink: 0,
@@ -157,7 +157,7 @@ function CopyButton({ text }: { text: string }) {
         padding: '2px 8px',
         cursor: 'pointer',
         fontSize: 12,
-        color: copied ? '#16a34a' : '#666',
+        color: copied ? '#16a34a' : 'var(--text-muted)',
       }}
     >
       {copied ? 'Скопировано' : 'Копировать'}
@@ -171,7 +171,7 @@ function CodeDetailCard({ detail }: { detail: TnVedCodeDetail }) {
     <div
       style={{
         padding: 20,
-        border: '1px solid #ddd',
+        border: '1px solid var(--border)',
         borderRadius: 8,
         backgroundColor: '#f9f9f9',
       }}
@@ -208,7 +208,7 @@ function CodeDetailCard({ detail }: { detail: TnVedCodeDetail }) {
       </div>
 
       {detail.notes && (
-        <p style={{ marginTop: 12, fontSize: 13, color: '#666' }}>{detail.notes}</p>
+        <p style={{ marginTop: 12, fontSize: 13, color: 'var(--text-muted)' }}>{detail.notes}</p>
       )}
 
       <DutyCalculator rates={detail.rates} />
@@ -383,7 +383,7 @@ function DutyCalculator({ rates }: { rates: TnVedRateInfo }) {
   const total = totalPrice + dutyAmount + vatAmount + exciseAmount;
 
   return (
-    <div style={{ marginTop: 16, padding: 16, border: '1px solid #e5e7eb', borderRadius: 6, backgroundColor: '#fff' }}>
+    <div style={{ marginTop: 16, padding: 16, border: '1px solid var(--border)', borderRadius: 6, backgroundColor: '#fff' }}>
       <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Калькулятор пошлин</div>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -413,7 +413,7 @@ function DutyCalculator({ rates }: { rates: TnVedRateInfo }) {
       )}
 
       {canCalc && dutyFormula && (
-        <p style={{ fontSize: 12, color: '#888', marginTop: 8 }}>
+        <p style={{ fontSize: 12, color: 'var(--text-subtle)', marginTop: 8 }}>
           {impIsSpecific ? 'Специфическая пошлина: ' : 'Формула: '}
           {dutyFormula}
           {(impIsSpecific || hasImp2Specific) && ' — для сравнения/конвертации в валюту цены необходим курс.'}
@@ -421,7 +421,7 @@ function DutyCalculator({ rates }: { rates: TnVedRateInfo }) {
       )}
 
       {canCalc && exciseFormula && (
-        <p style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+        <p style={{ fontSize: 12, color: 'var(--text-subtle)', marginTop: 4 }}>
           Специфический акциз: {exciseFormula}
           {exciseCurrency && ` ${exciseCurrency}`}
           {' — для сравнения/конвертации в валюту цены необходим курс.'}
@@ -434,7 +434,7 @@ function DutyCalculator({ rates }: { rates: TnVedRateInfo }) {
 function CalcInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <div>
-      <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
       <input
         type="number"
         min="0"
@@ -445,7 +445,7 @@ function CalcInput({ label, value, onChange }: { label: string; value: string; o
           width: 130,
           padding: '6px 10px',
           fontSize: 14,
-          border: '1px solid #ddd',
+          border: '1px solid var(--border)',
           borderRadius: 4,
           boxSizing: 'border-box',
         }}
@@ -482,7 +482,7 @@ function ResultsTable({
                 style={{
                   fontSize: 13,
                   cursor: 'pointer',
-                  color: '#2563eb',
+                  color: 'var(--accent)',
                   textDecoration: 'underline',
                   textDecorationColor: '#93c5fd',
                   whiteSpace: 'nowrap',
@@ -522,13 +522,13 @@ function ConditionalExcisesSection({ items }: { items: TnVedConditionalExcise[] 
               <td style={{ ...td, textAlign: 'right' }}>
                 {e.rate != null ? formatConditionalExciseRate(e) : '—'}
               </td>
-              <td style={{ ...td, fontSize: 13, color: '#555' }}>
+              <td style={{ ...td, fontSize: 13, color: 'var(--text-muted)' }}>
                 {fmtPeriod(e.dateBegin, e.dateEnd)}
               </td>
-              <td style={{ ...td, fontSize: 13, color: '#555' }}>
+              <td style={{ ...td, fontSize: 13, color: 'var(--text-muted)' }}>
                 {fmtDocumentRef(e.documentNumber, e.documentDate)}
               </td>
-              <td style={{ ...td, fontSize: 13, color: '#555' }}>{e.note || '—'}</td>
+              <td style={{ ...td, fontSize: 13, color: 'var(--text-muted)' }}>{e.note || '—'}</td>
             </tr>
           ))}
         </tbody>
@@ -585,27 +585,27 @@ function CountryDutiesSection({ duties }: { duties: TnVedCountryDuty[] }) {
                         <>
                           <span style={{ fontWeight: 500 }}>{d.countryName}</span>
                           {d.countryCode && (
-                            <code style={{ marginLeft: 6, color: '#888', fontSize: 12 }}>
+                            <code style={{ marginLeft: 6, color: 'var(--text-subtle)', fontSize: 12 }}>
                               {d.countryCode}
                             </code>
                           )}
                         </>
                       ) : d.countryCode ? (
-                        <code style={{ color: '#888' }}>{d.countryCode}</code>
+                        <code style={{ color: 'var(--text-subtle)' }}>{d.countryCode}</code>
                       ) : (
-                        <span style={{ color: '#888' }}>—</span>
+                        <span style={{ color: 'var(--text-subtle)' }}>—</span>
                       )}
                     </td>
                     <td style={{ ...td, textAlign: 'right' }}>
                       {d.rate != null ? formatRateValue(d.rate, d.rateUnit) : '—'}
                     </td>
-                    <td style={{ ...td, fontSize: 13, color: '#555' }}>
+                    <td style={{ ...td, fontSize: 13, color: 'var(--text-muted)' }}>
                       {fmtPeriod(d.dateBegin, d.dateEnd)}
                     </td>
-                    <td style={{ ...td, fontSize: 13, color: '#555' }}>
+                    <td style={{ ...td, fontSize: 13, color: 'var(--text-muted)' }}>
                       {fmtDocumentRef(d.documentNumber, d.documentDate)}
                     </td>
-                    <td style={{ ...td, fontSize: 13, color: '#555' }}>{d.note || '—'}</td>
+                    <td style={{ ...td, fontSize: 13, color: 'var(--text-muted)' }}>{d.note || '—'}</td>
                   </tr>
                 ))}
               </tbody>

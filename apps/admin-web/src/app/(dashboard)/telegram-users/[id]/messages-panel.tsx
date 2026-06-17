@@ -17,7 +17,7 @@ export function MessagesPanel({ clientId }: { clientId: string }) {
   if (loading) return <p>Загрузка...</p>;
   if (error) return <p style={{ color: '#dc2626' }}>{error}</p>;
   if (messages.length === 0)
-    return <p style={{ color: '#6b7280' }}>Переписки пока нет.</p>;
+    return <p style={{ color: 'var(--text-muted)' }}>Переписки пока нет.</p>;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 720 }}>
@@ -35,19 +35,19 @@ export function MessagesPanel({ clientId }: { clientId: string }) {
                 padding: '8px 12px',
               }}
             >
-              <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 2 }}>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>
                 {fromClient ? 'Клиент' : (m.manager?.email ?? 'Менеджер')} ·{' '}
                 {fmtDateTimeLocale(m.createdAt)}
               </div>
               {m.text && <div style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div>}
               {m.attachmentType && (
-                <div style={{ fontSize: 13, color: '#374151' }}>
+                <div style={{ fontSize: 13, color: 'var(--text)' }}>
                   📎 {attachmentLabel(m.attachmentType)}
                   {m.documentId && (
                     <>
                       {' '}
                       —{' '}
-                      <Link href={`/documents/${m.documentId}`} style={{ color: '#2563eb' }}>
+                      <Link href={`/documents/${m.documentId}`} style={{ color: 'var(--accent)' }}>
                         открыть документ
                       </Link>
                     </>

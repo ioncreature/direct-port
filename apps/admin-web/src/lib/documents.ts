@@ -25,7 +25,7 @@ export const statusLabels: Record<DocumentStatus, string> = {
 export const statusColors: Record<DocumentStatus, string> = {
   intake: '#0891b2',
   parsing: '#8b5cf6',
-  pending: '#888',
+  pending: 'var(--text-subtle)',
   processing: '#2563eb',
   processed: '#16a34a',
   processed_with_errors: '#d97706',

@@ -47,7 +47,7 @@ export default function UploadDocumentPage() {
           />
         </div>
         {file && (
-          <p style={{ marginBottom: 16, color: file.size > 40 * 1024 * 1024 ? '#dc2626' : '#555' }}>
+          <p style={{ marginBottom: 16, color: file.size > 40 * 1024 * 1024 ? '#dc2626' : 'var(--text-muted)' }}>
             {file.name} ({fmtFileSize(file.size)})
             {file.size > 40 * 1024 * 1024 && ' — превышает лимит 40 МБ'}
           </p>
@@ -81,7 +81,7 @@ export default function UploadDocumentPage() {
               ))}
             </select>
           </div>
-          <p style={{ fontSize: 12, color: '#666', marginTop: 4, marginBottom: 0 }}>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, marginBottom: 0 }}>
             Распределится по позициям пропорционально весу (брутто, либо нетто, если
             брутто не указан) и войдёт в таможенную стоимость для пошлины и НДС.
             Оставьте пустым, если фрахт неизвестен.
@@ -93,7 +93,7 @@ export default function UploadDocumentPage() {
             <div
               style={{
                 height: 8,
-                backgroundColor: '#e5e7eb',
+                backgroundColor: 'var(--border)',
                 borderRadius: 4,
                 overflow: 'hidden',
                 marginBottom: 6,
@@ -102,7 +102,7 @@ export default function UploadDocumentPage() {
               <div
                 style={{
                   height: '100%',
-                  backgroundColor: '#2563eb',
+                  backgroundColor: 'var(--accent)',
                   width: progress.total
                     ? `${Math.min(100, (progress.loaded / progress.total) * 100)}%`
                     : '100%',
@@ -111,7 +111,7 @@ export default function UploadDocumentPage() {
                 }}
               />
             </div>
-            <p style={{ fontSize: 13, color: '#555', margin: 0 }}>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0 }}>
               {progress.loaded < progress.total
                 ? `Загрузка: ${fmtFileSize(progress.loaded)} из ${fmtFileSize(progress.total)} (${Math.round((progress.loaded / progress.total) * 100)}%)`
                 : 'Файл загружен, обрабатывается на сервере...'}

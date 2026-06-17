@@ -1,0 +1,240 @@
+/* =========================================================================
+   DirectPort admin — дизайн-токены и базовые стили.
+   Подход: всё остальное приложение использует inline-стили (style={{...}}).
+   CSS-переменные читаются и из inline-стилей React, поэтому единая палитра
+   задаётся здесь, а компоненты ссылаются на var(--...). Глобальные правила
+   ниже добавляют то, что inline-стили в принципе не умеют: hover, focus-ring,
+   переходы, скроллбары, типографику.
+   ========================================================================= */
+
+:root {
+  /* Типографика (--font-inter приходит из next/font, см. layout.tsx) */
+  --font-sans: var(--font-inter), system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+
+  /* Нейтральная шкала */
+  --bg: #f3f4f6;
+  --sidebar-bg: #fafafb;
+  --surface: #ffffff;
+  --surface-hover: #f6f7f9;
+  --row-hover: #f8f9fb;
+
+  --border: #e6e8ec;
+  --border-strong: #d6d9de;
+  --border-subtle: #eef0f2;
+
+  --text: #1b1f24;
+  --text-muted: #5e6672;
+  --text-subtle: #98a1ad;
+
+  /* Акцент — индиго */
+  --accent: #4f46e5;
+  --accent-soft: #eef2ff;
+  --accent-soft-text: #4338ca;
+  --ring: rgba(79, 70, 229, 0.32);
+
+  /* Семантические */
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
+
+  /* Радиусы */
+  --radius-sm: 7px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* Тени — мягкие, многослойные */
+  --shadow-xs: 0 1px 2px rgba(17, 24, 39, 0.05);
+  --shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.04), 0 1px 3px rgba(17, 24, 39, 0.06);
+  --shadow: 0 1px 3px rgba(17, 24, 39, 0.06), 0 6px 16px -4px rgba(17, 24, 39, 0.08);
+  --shadow-md: 0 4px 12px -2px rgba(17, 24, 39, 0.10), 0 12px 28px -6px rgba(17, 24, 39, 0.10);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Заголовки — единая шкала с tight letter-spacing */
+h1 {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.021em;
+  margin: 0 0 4px;
+  color: var(--text);
+}
+h2 {
+  font-size: 18px;
+  font-weight: 640;
+  letter-spacing: -0.014em;
+  margin: 0 0 4px;
+  color: var(--text);
+}
+h3 {
+  font-size: 15px;
+  font-weight: 620;
+  letter-spacing: -0.006em;
+  margin: 0 0 4px;
+  color: var(--text);
+}
+
+p {
+  margin: 0 0 4px;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* Кнопки: плавность + hover поверх любых inline-цветов через filter
+   (filter не конфликтует с inline background/color). */
+button {
+  font-family: inherit;
+  transition: filter 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease,
+    background-color 0.15s ease, color 0.15s ease, transform 0.06s ease;
+}
+button:not(:disabled) {
+  cursor: pointer;
+}
+button:not(:disabled):hover {
+  filter: brightness(0.96);
+}
+button:not(:disabled):active {
+  transform: translateY(0.5px);
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Поля ввода — общий вид и фокус-кольцо (кроме checkbox/radio/range) */
+input:not([type='checkbox']):not([type='radio']):not([type='range']),
+select,
+textarea {
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 11px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  outline: none;
+}
+input:not([type='checkbox']):not([type='radio']):not([type='range']):focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-subtle);
+}
+
+/* Нативные контролы — индиго-акцент */
+input[type='checkbox'],
+input[type='radio'],
+input[type='range'] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* Клавиатурный фокус для интерактивных элементов */
+a:focus-visible,
+button:focus-visible,
+[tabindex]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ring);
+  border-radius: var(--radius-sm);
+}
+
+/* Таблицы: мягкая подсветка строк данных при наведении.
+   Строки с собственным inline-фоном (выделенные) сохраняют свой цвет. */
+tbody tr {
+  transition: background-color 0.12s ease;
+}
+tbody tr:hover {
+  background-color: var(--row-hover);
+}
+
+/* Тонкие скроллбары */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cdd2da transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #cdd2da;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #b4bcc7;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+}
+
+/* Пункты бокового меню: hover только у неактивных (у активного inline-фон) */
+.dp-nav-link {
+  transition: background-color 0.13s ease, color 0.13s ease;
+}
+.dp-nav-link:hover {
+  background-color: var(--surface-hover);
+  color: var(--text);
+  text-decoration: none;
+}
+
+/* Карточка с hover-подъёмом — для кликабельных плиток (StatCard и т. п.) */
+.dp-card-hover {
+  transition: box-shadow 0.16s ease, transform 0.16s ease, border-color 0.16s ease;
+}
+.dp-card-hover:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+  border-color: var(--border-strong);
+}
+
+@keyframes dp-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scale(1.25);
+    opacity: 0;
+  }
+}

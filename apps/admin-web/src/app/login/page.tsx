@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@/hooks/use-auth';
+import { btnPrimary } from '@/lib/table-styles';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
 
@@ -27,45 +28,106 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{ maxWidth: 400, margin: '100px auto', padding: 24 }}>
-      <h1>DirectPort</h1>
-      <p style={{ color: '#666', marginBottom: 24 }}>Вход в систему</p>
-      <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: 16 }}>
-          <label htmlFor="email" style={{ display: 'block', marginBottom: 4 }}>
-            Email
-          </label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            style={{ width: '100%', padding: 8, boxSizing: 'border-box' }}
-          />
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          maxWidth: 384,
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: 'var(--shadow-md)',
+          padding: 32,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 20 }}>
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 9,
+              background: 'var(--accent)',
+              color: '#fff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 700,
+              fontSize: 15,
+              letterSpacing: '-0.02em',
+              boxShadow: 'var(--shadow-sm)',
+            }}
+          >
+            DP
+          </div>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em' }}>DirectPort</div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Вход в систему</div>
+          </div>
         </div>
-        <div style={{ marginBottom: 16 }}>
-          <label htmlFor="password" style={{ display: 'block', marginBottom: 4 }}>
-            Пароль
-          </label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            style={{ width: '100%', padding: 8, boxSizing: 'border-box' }}
-          />
-        </div>
-        {error && <p style={{ color: 'red', marginBottom: 16 }}>{error}</p>}
-        <button
-          type="submit"
-          disabled={loading}
-          style={{ width: '100%', padding: 10, cursor: 'pointer' }}
-        >
-          {loading ? 'Вход...' : 'Войти'}
-        </button>
-      </form>
+
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: 14 }}>
+            <label htmlFor="email" style={labelStyle}>
+              Email
+            </label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              style={{ width: '100%' }}
+            />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label htmlFor="password" style={labelStyle}>
+              Пароль
+            </label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              style={{ width: '100%' }}
+            />
+          </div>
+          {error && (
+            <p
+              style={{
+                color: 'var(--danger)',
+                background: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: 'var(--radius-sm)',
+                padding: '8px 11px',
+                fontSize: 13,
+                marginBottom: 14,
+              }}
+            >
+              {error}
+            </p>
+          )}
+          <button type="submit" disabled={loading} style={{ ...btnPrimary, width: '100%', padding: 10 }}>
+            {loading ? 'Вход...' : 'Войти'}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
+
+const labelStyle: React.CSSProperties = {
+  display: 'block',
+  marginBottom: 6,
+  fontSize: 13,
+  fontWeight: 500,
+  color: 'var(--text-muted)',
+};

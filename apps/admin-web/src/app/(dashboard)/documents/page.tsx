@@ -5,7 +5,7 @@ import { SortableTh } from '@/components/sortable-th';
 import { useDocuments } from '@/hooks/use-documents';
 import { statusColors, statusLabels } from '@/lib/documents';
 import { calcAiCostFromStages, fmtCost, fmtDateTime } from '@/lib/format';
-import { btnLink, btnOutline, td, tdEmpty, tdR, th, thR } from '@/lib/table-styles';
+import { btnLink, btnOutline, filterChip, primaryLink, td, tdEmpty, tdR, th, thR } from '@/lib/table-styles';
 import { getDocumentUploaderName } from '@/lib/telegram';
 import type { DocumentStatus } from '@/lib/types';
 import Link from 'next/link';
@@ -71,17 +71,7 @@ export default function DocumentsPage() {
       >
         <h1>Документы</h1>
         <div style={{ display: 'flex', gap: 8 }}>
-          <Link
-            href="/documents/upload"
-            style={{
-              padding: '8px 16px',
-              background: '#2563eb',
-              color: '#fff',
-              borderRadius: 4,
-              textDecoration: 'none',
-              fontSize: 14,
-            }}
-          >
+          <Link href="/documents/upload" style={primaryLink}>
             Загрузить
           </Link>
           <button onClick={refetch} style={btnOutline}>
@@ -92,19 +82,7 @@ export default function DocumentsPage() {
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
         {statuses.map((s) => (
-          <button
-            key={s.value}
-            onClick={() => filterByStatus(s.value)}
-            style={{
-              padding: '4px 12px',
-              borderRadius: 16,
-              cursor: 'pointer',
-              fontSize: 13,
-              border: '1px solid #ddd',
-              background: status === s.value ? '#2563eb' : '#fff',
-              color: status === s.value ? '#fff' : '#333',
-            }}
-          >
+          <button key={s.value} onClick={() => filterByStatus(s.value)} style={filterChip(status === s.value)}>
             {s.label}
           </button>
         ))}
@@ -139,7 +117,7 @@ export default function DocumentsPage() {
                   <td style={td}>
                     <Link
                       href={`/documents/${doc.id}`}
-                      style={{ color: '#2563eb', textDecoration: 'none' }}
+                      style={{ color: 'var(--accent)', textDecoration: 'none' }}
                     >
                       {doc.originalFileName}
                     </Link>
@@ -170,7 +148,7 @@ export default function DocumentsPage() {
                     {doc.status === 'processed' && (
                       <button
                         onClick={() => downloadDocument(doc.id)}
-                        style={{ ...btnLink, color: '#2563eb' }}
+                        style={{ ...btnLink, color: 'var(--accent)' }}
                       >
                         Скачать
                       </button>

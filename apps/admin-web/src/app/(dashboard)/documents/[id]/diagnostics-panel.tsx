@@ -42,7 +42,7 @@ const STATUS_CONFIG: Record<
   ok: { label: 'Успех', color: '#16a34a', bg: '#dcfce7' },
   partial_ok: { label: 'Частично (fallback)', color: '#c2410c', bg: '#fed7aa' },
   failed: { label: 'Ошибка', color: '#dc2626', bg: '#fee2e2' },
-  running: { label: 'Выполняется', color: '#2563eb', bg: '#dbeafe' },
+  running: { label: 'Выполняется', color: 'var(--accent)', bg: '#dbeafe' },
 };
 
 const PURPOSE_LABELS: Record<AiCallPurpose, string> = {
@@ -81,7 +81,7 @@ export function DiagnosticsPanel({ documentId }: { documentId: string }) {
   }, [load]);
 
   if (loading && stageRuns === null) {
-    return <div style={{ color: '#6b7280', padding: 16 }}>Загрузка диагностики…</div>;
+    return <div style={{ color: 'var(--text-muted)', padding: 16 }}>Загрузка диагностики…</div>;
   }
   if (error) {
     return (
@@ -109,7 +109,7 @@ export function DiagnosticsPanel({ documentId }: { documentId: string }) {
             ))}
           </div>
         ) : (
-          <div style={{ color: '#6b7280' }}>Этапы ещё не зафиксированы.</div>
+          <div style={{ color: 'var(--text-muted)' }}>Этапы ещё не зафиксированы.</div>
         )}
       </section>
 
@@ -156,7 +156,7 @@ function StageRunCard({
   return (
     <div
       style={{
-        border: '1px solid #e5e7eb',
+        border: '1px solid var(--border)',
         borderRadius: 8,
         background: '#fff',
         padding: '14px 16px',
@@ -177,17 +177,17 @@ function StageRunCard({
           {status.label}
         </span>
         {stageRun.attempt > 1 && (
-          <span style={{ fontSize: 12, color: '#6b7280' }}>попытка {stageRun.attempt}</span>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>попытка {stageRun.attempt}</span>
         )}
-        <span style={{ fontSize: 12, color: '#6b7280' }}>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
           {fmtDuration(stageRun.durationMs)}
         </span>
         {totalTokens > 0 && (
-          <span style={{ fontSize: 12, color: '#6b7280' }}>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
             {fmtTokens(totalTokens)} токенов · {fmtCost(cost)}
           </span>
         )}
-        <div style={{ marginLeft: 'auto', fontSize: 12, color: '#9ca3af' }}>
+        <div style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-subtle)' }}>
           {fmtDateTime(stageRun.startedAt)}
           {stageRun.finishedAt ? ` → ${fmtDateTime(stageRun.finishedAt)}` : ''}
         </div>
@@ -209,7 +209,7 @@ function StageRunCard({
           </div>
           {stageRun.error.stack && (
             <details>
-              <summary style={{ cursor: 'pointer', color: '#6b7280' }}>stack</summary>
+              <summary style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>stack</summary>
               <pre
                 style={{
                   marginTop: 6,
@@ -230,7 +230,7 @@ function StageRunCard({
         <div style={{ marginTop: 10 }}>
           <button
             type="button"
-            style={{ ...btnLink, color: '#2563eb', fontSize: 13 }}
+            style={{ ...btnLink, color: 'var(--accent)', fontSize: 13 }}
             onClick={() => setExpanded((v) => !v)}
           >
             {expanded ? '▾' : '▸'} Вызовы Claude ({stageRun.aiCalls.length})
@@ -243,7 +243,7 @@ function StageRunCard({
 
       {stageRun.metadata && Object.keys(stageRun.metadata).length > 0 && (
         <details style={{ marginTop: 10, fontSize: 12 }}>
-          <summary style={{ cursor: 'pointer', color: '#6b7280' }}>metadata</summary>
+          <summary style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>metadata</summary>
           <pre
             style={{
               marginTop: 6,
@@ -314,7 +314,7 @@ function AiCallsTable({
               <td style={td}>
                 <button
                   type="button"
-                  style={{ ...btnLink, color: '#2563eb' }}
+                  style={{ ...btnLink, color: 'var(--accent)' }}
                   onClick={() => onOpen(c.id)}
                 >
                   Показать
@@ -336,7 +336,7 @@ function VersionsTable({
   onSelect: (version: number) => void;
 }) {
   if (versions.length === 0) {
-    return <div style={{ color: '#6b7280' }}>Версии не зафиксированы.</div>;
+    return <div style={{ color: 'var(--text-muted)' }}>Версии не зафиксированы.</div>;
   }
   return (
     <div style={{ overflowX: 'auto' }}>
@@ -358,7 +358,7 @@ function VersionsTable({
               <td style={td}>
                 {v.actorType ? ACTOR_LABELS[v.actorType] : '—'}
                 {v.actorId ? (
-                  <span style={{ color: '#6b7280', marginLeft: 6, fontSize: 12 }}>
+                  <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: 12 }}>
                     {v.actorId.slice(0, 8)}
                   </span>
                 ) : null}
@@ -367,7 +367,7 @@ function VersionsTable({
               <td style={td}>
                 <button
                   type="button"
-                  style={{ ...btnLink, color: '#2563eb' }}
+                  style={{ ...btnLink, color: 'var(--accent)' }}
                   onClick={() => onSelect(v.version)}
                 >
                   Снимок
@@ -422,7 +422,7 @@ function ModalShell({
             alignItems: 'center',
             justifyContent: 'space-between',
             padding: '12px 16px',
-            borderBottom: '1px solid #e5e7eb',
+            borderBottom: '1px solid var(--border)',
           }}
         >
           <div style={{ fontWeight: 600 }}>{title}</div>
@@ -485,10 +485,10 @@ function AiCallModal({
   return (
     <ModalShell title="Вызов Claude" onClose={onClose}>
       {err && <div style={{ color: '#dc2626' }}>{err}</div>}
-      {!call && !err && <div style={{ color: '#6b7280' }}>Загрузка…</div>}
+      {!call && !err && <div style={{ color: 'var(--text-muted)' }}>Загрузка…</div>}
       {call && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ fontSize: 13, color: '#374151' }}>
+          <div style={{ fontSize: 13, color: 'var(--text)' }}>
             <strong>{PURPOSE_LABELS[call.purpose]}</strong> · {modelLabel(call.model)} ·{' '}
             попытка {call.attempt} · {fmtDuration(call.latencyMs)} ·{' '}
             {fmtTokens(call.inputTokens)} in / {fmtTokens(call.outputTokens)} out
@@ -551,17 +551,17 @@ function VersionModal({
   return (
     <ModalShell title={`Снимок версии v${version}`} onClose={onClose}>
       {err && <div style={{ color: '#dc2626' }}>{err}</div>}
-      {!data && !err && <div style={{ color: '#6b7280' }}>Загрузка…</div>}
+      {!data && !err && <div style={{ color: 'var(--text-muted)' }}>Загрузка…</div>}
       {data && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ fontSize: 13, color: '#374151' }}>
+          <div style={{ fontSize: 13, color: 'var(--text)' }}>
             Причина: <strong>{REASON_LABELS[data.reason]}</strong> · Валюта:{' '}
             {data.snapshot.currency ?? '—'}
           </div>
           <ParsedSnapshotTable rows={data.snapshot.parsedData ?? []} />
           {data.snapshot.columnMapping && (
             <details>
-              <summary style={{ cursor: 'pointer', color: '#6b7280', fontSize: 13 }}>
+              <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: 13 }}>
                 columnMapping
               </summary>
               <JsonBlock value={data.snapshot.columnMapping} />
@@ -575,7 +575,7 @@ function VersionModal({
 
 function ParsedSnapshotTable({ rows }: { rows: ParsedDataRow[] | Record<string, unknown>[] }) {
   if (!rows || rows.length === 0) {
-    return <div style={{ color: '#6b7280' }}>Нет данных.</div>;
+    return <div style={{ color: 'var(--text-muted)' }}>Нет данных.</div>;
   }
   return (
     <div style={{ overflowX: 'auto' }}>

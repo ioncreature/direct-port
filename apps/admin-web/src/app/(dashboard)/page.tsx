@@ -7,6 +7,7 @@ import { useUsers } from '@/hooks/use-users';
 import api from '@/lib/api';
 import { statusColors, statusLabels } from '@/lib/documents';
 import { calcAiCostFromMap, fmtCost } from '@/lib/format';
+import { cardSurface } from '@/lib/table-styles';
 import type { DocumentStatus, TokenStatsPeriod } from '@/lib/types';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
@@ -35,6 +36,15 @@ export default function DashboardPage() {
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 5);
 
+  const statusRows = [
+    'parsing',
+    'pending',
+    'processing',
+    'processed',
+    'processed_with_errors',
+    'failed',
+  ] as DocumentStatus[];
+
   return (
     <div>
       <h1 style={{ marginBottom: 24 }}>Дашборд</h1>
@@ -42,7 +52,7 @@ export default function DashboardPage() {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
           gap: 16,
           marginBottom: 32,
         }}
@@ -50,9 +60,13 @@ export default function DashboardPage() {
         <StatCard label="Пользователи" value={usersTotal} href="/users" />
         <StatCard label="Telegram" value={tgTotal} href="/telegram-users" />
         <StatCard label="Документы" value={docsTotal} href="/documents" />
-        <StatCard label="Обработано" value={statusCounts.processed ?? 0} color="#16a34a" />
-        <StatCard label="Частично" value={statusCounts.processed_with_errors ?? 0} color="#d97706" />
-        <StatCard label="Сбои" value={statusCounts.failed ?? 0} color="#dc2626" />
+        <StatCard label="Обработано" value={statusCounts.processed ?? 0} color="var(--success)" />
+        <StatCard
+          label="Частично"
+          value={statusCounts.processed_with_errors ?? 0}
+          color="var(--warning)"
+        />
+        <StatCard label="Сбои" value={statusCounts.failed ?? 0} color="var(--danger)" />
         <StatCard
           label="AI за месяц"
           value={aiCost != null ? fmtCost(aiCost) : '...'}
@@ -64,33 +78,54 @@ export default function DashboardPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
         <div>
           <h3 style={{ marginBottom: 12 }}>Статусы документов</h3>
-          <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 16 }}>
-            {(['parsing', 'pending', 'processing', 'processed', 'processed_with_errors', 'failed'] as DocumentStatus[]).map(
-              (status) => (
-                <div
-                  key={status}
-                  style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}
-                >
-                  <span style={{ color: statusColors[status] }}>{statusLabels[status]}</span>
-                  <strong>{statusCounts[status] ?? 0}</strong>
-                </div>
-              ),
-            )}
+          <div style={cardStyle}>
+            {statusRows.map((status, i) => (
+              <div
+                key={status}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '9px 0',
+                  borderBottom:
+                    i < statusRows.length - 1 ? '1px solid var(--border-subtle)' : undefined,
+                }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                  <span
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: '50%',
+                      flexShrink: 0,
+                      background: statusColors[status],
+                    }}
+                  />
+                  <span style={{ color: 'var(--text)' }}>{statusLabels[status]}</span>
+                </span>
+                <strong style={{ color: 'var(--text)' }}>{statusCounts[status] ?? 0}</strong>
+              </div>
+            ))}
           </div>
         </div>
 
         <div>
           <h3 style={{ marginBottom: 12 }}>Последние документы</h3>
-          <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 16 }}>
-            {recentDocs.length === 0 && <p style={{ color: '#888' }}>Документов пока нет</p>}
-            {recentDocs.map((doc) => (
+          <div style={cardStyle}>
+            {recentDocs.length === 0 && (
+              <p style={{ color: 'var(--text-subtle)' }}>Документов пока нет</p>
+            )}
+            {recentDocs.map((doc, i) => (
               <div
                 key={doc.id}
                 style={{
                   display: 'flex',
+                  alignItems: 'center',
                   justifyContent: 'space-between',
-                  padding: '6px 0',
-                  borderBottom: '1px solid #f0f0f0',
+                  gap: 12,
+                  padding: '9px 0',
+                  borderBottom:
+                    i < recentDocs.length - 1 ? '1px solid var(--border-subtle)' : undefined,
                 }}
               >
                 <span
@@ -99,12 +134,18 @@ export default function DashboardPage() {
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
-                    maxWidth: 200,
                   }}
                 >
                   {doc.originalFileName}
                 </span>
-                <span style={{ color: statusColors[doc.status], fontSize: 14 }}>
+                <span
+                  style={{
+                    color: statusColors[doc.status],
+                    fontSize: 13,
+                    fontWeight: 500,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   {statusLabels[doc.status]}
                 </span>
               </div>
@@ -118,6 +159,8 @@ export default function DashboardPage() {
   );
 }
 
+const cardStyle: React.CSSProperties = { ...cardSurface, padding: '8px 18px' };
+
 function StatCard({
   label,
   value,
@@ -130,15 +173,22 @@ function StatCard({
   color?: string;
 }) {
   const content = (
-    <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 20, textAlign: 'center' }}>
-      <div style={{ fontSize: 32, fontWeight: 700, color: color || '#000' }}>{value}</div>
-      <div style={{ fontSize: 14, color: '#666', marginTop: 4 }}>{label}</div>
+    <div
+      className={href ? 'dp-card-hover' : undefined}
+      style={{ ...cardSurface, padding: 20, height: '100%' }}
+    >
+      <div style={{ fontSize: 30, fontWeight: 700, letterSpacing: '-0.02em', color: color || 'var(--text)' }}>
+        {value}
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-muted)', marginTop: 6 }}>
+        {label}
+      </div>
     </div>
   );
 
   if (href) {
     return (
-      <Link href={href} style={{ textDecoration: 'none', color: 'inherit' }}>
+      <Link href={href} style={{ textDecoration: 'none', color: 'inherit', display: 'block', height: '100%' }}>
         {content}
       </Link>
     );

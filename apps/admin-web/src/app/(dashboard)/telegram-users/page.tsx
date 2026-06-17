@@ -71,7 +71,7 @@ export default function TelegramUsersPage() {
                   <td style={td}>
                     <Link
                       href={`/telegram-users/${u.id}`}
-                      style={{ color: '#2563eb', textDecoration: 'none' }}
+                      style={{ color: 'var(--accent)', textDecoration: 'none' }}
                     >
                       {u.telegramId}
                     </Link>
