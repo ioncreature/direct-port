@@ -18,16 +18,23 @@ spec:
         {{- include "directport.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: migration
     spec:
+      {{- $pgHost := ternary (printf "%s-postgresql" .Release.Name) .Values.postgresql.host .Values.postgresql.enabled }}
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       restartPolicy: Never
+      initContainers:
+        # Под ArgoCD это PostSync-хук: дожидаемся готовности БД к коннектам,
+        # чтобы migration:run не упал, если StatefulSet поднялся, но Postgres ещё не принимает соединения.
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z {{ $pgHost }} 5432; do echo waiting for postgres; sleep 2; done"]
       containers:
         - name: migration
           image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
           command: ["node", "apps/api/node_modules/typeorm/cli.js", "migration:run", "-d", "apps/api/dist/src/database/data-source.js"]
           envFrom:
             - secretRef:
-                name: {{ include "directport.fullname" . }}-secrets
+                name: {{ include "directport.secretName" . }}
 {{- end }}

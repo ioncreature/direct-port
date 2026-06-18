@@ -37,7 +37,7 @@ spec:
               protocol: TCP
           envFrom:
             - secretRef:
-                name: {{ include "directport.fullname" . }}-secrets
+                name: {{ include "directport.secretName" . }}
           env:
             - name: BOT_PORT
               value: {{ .Values.managerBot.port | quote }}
@@ -49,7 +49,7 @@ spec:
             - name: TELEGRAM_BOT_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "directport.fullname" . }}-secrets
+                  name: {{ include "directport.secretName" . }}
                   key: MANAGER_BOT_TELEGRAM_TOKEN
           livenessProbe:
             tcpSocket:

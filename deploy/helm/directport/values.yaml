@@ -139,6 +139,13 @@ redis:
     enabled: false
 
 secrets:
+  # create=true — чарт сам рендерит k8s Secret с переменными окружения из значений ниже
+  # (так работает stage и локальный запуск). На GitOps-проде ставим create=false:
+  # секрет создаёт External Secrets Operator из Vault, а его имя передаём через existingSecret.
+  # Значения ниже (databaseUrl, jwtSecret, tks*, токены ботов и т.д.) применяются ТОЛЬКО при
+  # create=true; при create=false они игнорируются — всё приходит из existingSecret (ESO/Vault).
+  create: true
+  existingSecret: ''
   databaseUrl: ''
   redisUrl: ''
   jwtSecret: ''

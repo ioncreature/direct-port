@@ -39,7 +39,7 @@ spec:
               protocol: TCP
           envFrom:
             - secretRef:
-                name: {{ include "directport.fullname" . }}-secrets
+                name: {{ include "directport.secretName" . }}
           env:
             - name: PORT
               value: {{ .Values.api.port | quote }}

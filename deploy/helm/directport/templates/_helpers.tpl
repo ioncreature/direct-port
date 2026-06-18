@@ -25,6 +25,16 @@ app.kubernetes.io/part-of: directport
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
+{{/*
+Имя k8s Secret с переменными окружения приложения.
+По умолчанию — секрет, который рендерит чарт ({fullname}-secrets).
+На GitOps-проде задаётся secrets.existingSecret (его создаёт External Secrets Operator),
+а рендер чарта отключается через secrets.create=false.
+*/}}
+{{- define "directport.secretName" -}}
+{{- default (printf "%s-secrets" (include "directport.fullname" .)) .Values.secrets.existingSecret -}}
+{{- end }}
+
 {{- define "directport.apiUrl" -}}
 http://{{ include "directport.fullname" . }}-api:{{ .Values.api.port }}/api
 {{- end }}
