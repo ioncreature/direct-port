@@ -17,6 +17,10 @@ export class RolesGuard implements CanActivate {
     const { user } = context.switchToHttp().getRequest();
     if (!user) return false;
 
+    // super_admin — глобальная «надроль»: проходит любую @Roles-проверку. Реальная
+    // изоляция данных по компании выполняется в сервисах (scope по companyId), не здесь.
+    if (user.role === UserRole.SUPER_ADMIN) return true;
+
     return requiredRoles.includes(user.role);
   }
 }

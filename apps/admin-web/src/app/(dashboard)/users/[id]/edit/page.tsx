@@ -1,5 +1,6 @@
 'use client';
 
+import { useAuth } from '@/hooks/use-auth';
 import { useUsers } from '@/hooks/use-users';
 import type { User } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
@@ -9,7 +10,9 @@ import { TelegramLinkSection } from './telegram-link-section';
 export default function EditUserPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { user: actor } = useAuth();
   const { users, loading: usersLoading, updateUser } = useUsers();
+  const isSuperAdmin = actor?.role === 'super_admin';
 
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<User['role']>('customs');
@@ -93,6 +96,9 @@ export default function EditUserPage() {
           >
             <option value="customs">Таможня</option>
             <option value="admin">Администратор</option>
+            {(isSuperAdmin || role === 'super_admin') && (
+              <option value="super_admin">Глобальный администратор</option>
+            )}
           </select>
         </div>
         <div style={{ marginBottom: 16 }}>

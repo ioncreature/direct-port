@@ -1,7 +1,9 @@
 'use client';
 
+import { CompanySelect } from '@/components/company-select';
 import { Pager } from '@/components/pager';
 import { SortableTh } from '@/components/sortable-th';
+import { useAuth } from '@/hooks/use-auth';
 import { useUsers } from '@/hooks/use-users';
 import { fmtDate } from '@/lib/format';
 import { btnLink, filterChip, primaryLink, tdEmpty, td, th } from '@/lib/table-styles';
@@ -21,6 +23,8 @@ const sortableColumns: { field: string; label: string }[] = [
 ];
 
 export default function UsersPage() {
+  const { user: actor } = useAuth();
+  const isSuperAdmin = actor?.role === 'super_admin';
   const {
     users,
     total,
@@ -30,9 +34,11 @@ export default function UsersPage() {
     sortBy,
     sortOrder,
     role,
+    companyId,
     setPage,
     toggleSort,
     filterByRole,
+    filterByCompany,
     deleteUser,
   } = useUsers();
 
@@ -52,12 +58,23 @@ export default function UsersPage() {
         </Link>
       </div>
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-        {roles.map((r) => (
-          <button key={r.value} onClick={() => filterByRole(r.value)} style={filterChip(role === r.value)}>
-            {r.label}
-          </button>
-        ))}
+      <div
+        style={{
+          display: 'flex',
+          gap: 12,
+          marginBottom: 16,
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        <div style={{ display: 'flex', gap: 6 }}>
+          {roles.map((r) => (
+            <button key={r.value} onClick={() => filterByRole(r.value)} style={filterChip(role === r.value)}>
+              {r.label}
+            </button>
+          ))}
+        </div>
+        {isSuperAdmin && <CompanySelect value={companyId} onChange={filterByCompany} />}
       </div>
 
       {loading ? (

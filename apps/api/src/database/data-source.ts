@@ -6,6 +6,7 @@ import { AiConfig } from './entities/ai-config.entity';
 import { AiUsageLog } from './entities/ai-usage-log.entity';
 import { CalculationConfig } from './entities/calculation-config.entity';
 import { CalculationLog } from './entities/calculation-log.entity';
+import { Company } from './entities/company.entity';
 import { ConversationMessage } from './entities/conversation-message.entity';
 import { Document } from './entities/document.entity';
 import { DocumentPhoto } from './entities/document-photo.entity';
@@ -26,6 +27,7 @@ export default new DataSource({
   url: process.env.DATABASE_URL || 'postgresql://directport:directport@localhost:5434/directport',
   entities: [
     User,
+    Company,
     RefreshToken,
     TnVedCode,
     CalculationLog,
@@ -44,4 +46,7 @@ export default new DataSource({
     RegulatoryInterpretationCache,
   ],
   migrations: ['src/database/migrations/*{.ts,.js}'],
+  // Каждая миграция в своей транзакции — чтобы новое значение enum 'super_admin' было
+  // закоммичено до использования в бэкафилле следующей миграции (иначе PG 55P04).
+  migrationsTransactionMode: 'each',
 });

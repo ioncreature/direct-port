@@ -7,13 +7,16 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
-const navItems = [
+// roles не задан → пункт виден всем ролям. super_admin проходит везде через bypass на бэке,
+// поэтому добавляем его в каждый ограниченный список явно.
+const navItems: { href: string; label: string; roles?: string[] }[] = [
   { href: '/', label: 'Дашборд' },
-  { href: '/users', label: 'Пользователи' },
-  { href: '/telegram-users', label: 'Telegram' },
+  { href: '/users', label: 'Пользователи', roles: ['admin', 'super_admin'] },
+  { href: '/telegram-users', label: 'Telegram', roles: ['admin', 'super_admin'] },
   { href: '/documents', label: 'Документы' },
   { href: '/tn-ved', label: 'ТН ВЭД' },
-  { href: '/ai-costs', label: 'AI-расходы' },
+  { href: '/ai-costs', label: 'AI-расходы', roles: ['admin', 'super_admin'] },
+  { href: '/companies', label: 'Компании', roles: ['super_admin'] },
   { href: '/settings', label: 'Настройки' },
 ];
 
@@ -79,7 +82,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
 
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
-          {navItems.map((item) => {
+          {navItems
+            .filter((item) => !item.roles || item.roles.includes(user.role))
+            .map((item) => {
             const active =
               item.href === '/'
                 ? pathname === '/'

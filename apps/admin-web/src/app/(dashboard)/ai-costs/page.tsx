@@ -1,5 +1,7 @@
 'use client';
 
+import { CompanySelect } from '@/components/company-select';
+import { useAuth } from '@/hooks/use-auth';
 import api from '@/lib/api';
 import {
   calcAiCostFromMap,
@@ -16,18 +18,24 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
 export default function AiCostsPage() {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'super_admin';
   const [stats, setStats] = useState<TokenStats | null>(null);
   const [daily, setDaily] = useState<DailyTokenStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [modelFilter, setModelFilter] = useState('');
+  const [companyFilter, setCompanyFilter] = useState('');
 
-  const fetchStats = useCallback((model: string) => {
+  const fetchStats = useCallback((model: string, company: string) => {
     setLoading(true);
     const params: Record<string, string> = {};
     if (model) params.model = model;
+    if (company) params.companyId = company;
     Promise.all([
       api.get<TokenStats>('/documents/token-stats', { params }),
-      api.get<DailyTokenStats[]>('/documents/token-stats/daily', { params: { days: '30', ...(model ? { model } : {}) } }),
+      api.get<DailyTokenStats[]>('/documents/token-stats/daily', {
+        params: { days: '30', ...(model ? { model } : {}), ...(company ? { companyId: company } : {}) },
+      }),
     ])
       .then(([statsRes, dailyRes]) => {
         setStats(statsRes.data);
@@ -37,8 +45,8 @@ export default function AiCostsPage() {
   }, []);
 
   useEffect(() => {
-    fetchStats(modelFilter);
-  }, [fetchStats, modelFilter]);
+    fetchStats(modelFilter, companyFilter);
+  }, [fetchStats, modelFilter, companyFilter]);
 
   if (loading && !stats) return <p>Загрузка...</p>;
   if (!stats) return <p>Не удалось загрузить статистику</p>;
@@ -47,6 +55,9 @@ export default function AiCostsPage() {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
         <h1 style={{ margin: 0 }}>AI-расходы</h1>
+        {isSuperAdmin && (
+          <CompanySelect value={companyFilter} onChange={setCompanyFilter} />
+        )}
         {stats.availableModels.length > 0 && (
           <div style={{ display: 'flex', gap: 6 }}>
             <button

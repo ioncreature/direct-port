@@ -11,6 +11,11 @@ export class AiUsageLog {
   @Column({ type: 'varchar', length: 50 })
   purpose: string;
 
+  /** Компания (тенант), которой атрибутирован расход. NULL — платформенные/кэш-разделяемые
+   *  вызовы (перевод запросов, regulatory-выжимки), которые нельзя отнести к одной компании. */
+  @Column({ type: 'uuid', name: 'company_id', nullable: true })
+  companyId: string | null;
+
   @Column({ type: 'int', name: 'input_tokens' })
   inputTokens: number;
 

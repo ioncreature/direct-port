@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
+import { Actor, assertSameCompany, resolveCompanyScope } from '../common/tenant/actor-context';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
 import { FindTelegramUsersQueryDto } from './dto/find-telegram-users-query.dto';
 import { RegisterTelegramUserDto } from './dto/register-telegram-user.dto';
@@ -40,26 +41,42 @@ export class TelegramUsersService {
 
   async findAll(
     query: FindTelegramUsersQueryDto,
+    actor: Actor,
   ): Promise<PaginatedResponse<TelegramUser & { documentCount: number }>> {
-    const [data, total] = (await this.repo
+    const scope = resolveCompanyScope(actor, query.companyId);
+    const qb = this.repo
       .createQueryBuilder('tu')
       .loadRelationCountAndMap('tu.documentCount', 'tu.documents')
       .orderBy(`tu.${query.sortBy}`, query.sortOrder)
       .skip((query.page - 1) * query.limit)
-      .take(query.limit)
-      .getManyAndCount()) as [Array<TelegramUser & { documentCount: number }>, number];
+      .take(query.limit);
+    // NULL-клиенты (общий пул, ещё не взяты менеджером) видны только super_admin.
+    if (scope !== undefined) qb.where('tu.company_id = :scope', { scope });
+
+    const [data, total] = (await qb.getManyAndCount()) as [
+      Array<TelegramUser & { documentCount: number }>,
+      number,
+    ];
 
     return paginate(data, total, query.page, query.limit);
   }
 
-  async findOneById(id: string): Promise<TelegramUser & { documentCount: number }> {
+  async findOneById(id: string, actor: Actor): Promise<TelegramUser & { documentCount: number }> {
     const [user] = (await this.repo
       .createQueryBuilder('tu')
       .loadRelationCountAndMap('tu.documentCount', 'tu.documents')
       .where('tu.id = :id', { id })
       .getMany()) as Array<TelegramUser & { documentCount: number }>;
     if (!user) throw new NotFoundException('Telegram user not found');
+    assertSameCompany(actor, user.companyId);
     return user;
+  }
+
+  /** Лёгкая проверка доступа к клиенту (для истории переписки): 404 на чужого/несуществующего. */
+  async assertAccess(id: string, actor: Actor): Promise<void> {
+    const user = await this.repo.findOne({ where: { id }, select: ['id', 'companyId'] });
+    if (!user) throw new NotFoundException('Telegram user not found');
+    assertSameCompany(actor, user.companyId);
   }
 
   async findByTelegramId(telegramId: number): Promise<TelegramUser | null> {

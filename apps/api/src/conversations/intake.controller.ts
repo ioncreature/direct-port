@@ -60,6 +60,7 @@ export class IntakeController {
     await this.conversations
       .appendClientMessage({
         clientId: client.id,
+        companyId: client.companyId,
         text: dto.text ?? null,
         attachmentType: 'document',
         attachmentFileId: dto.fileId ?? null,
@@ -79,6 +80,7 @@ export class IntakeController {
     const client = await this.conversations.resolveClientOrThrow(dto.telegramUserId);
     await this.conversations.appendClientMessage({
       clientId: client.id,
+      companyId: client.companyId,
       text: dto.text ?? null,
       attachmentType: dto.attachmentType ?? null,
       attachmentFileId: dto.attachmentFileId ?? null,

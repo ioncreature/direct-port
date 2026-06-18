@@ -10,8 +10,10 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Internal } from '../auth/decorators/internal.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { Actor } from '../common/tenant/actor-context';
 import { UserRole } from '../database/entities/user.entity';
 import { FindTelegramUsersQueryDto } from './dto/find-telegram-users-query.dto';
 import { RegisterTelegramUserDto } from './dto/register-telegram-user.dto';
@@ -28,20 +30,21 @@ export class TelegramUsersController {
 
   @Get()
   @Roles(UserRole.ADMIN)
-  findAll(@Query() query: FindTelegramUsersQueryDto) {
-    return this.service.findAll(query);
+  findAll(@Query() query: FindTelegramUsersQueryDto, @CurrentUser() actor: Actor) {
+    return this.service.findAll(query, actor);
   }
 
   @Get('by-id/:id')
   @Roles(UserRole.ADMIN)
-  findOneById(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.findOneById(id);
+  findOneById(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
+    return this.service.findOneById(id, actor);
   }
 
   /** История переписки клиента с менеджерами (read-only для админки). */
   @Get('by-id/:id/messages')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  messages(@Param('id', ParseUUIDPipe) id: string) {
+  async messages(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
+    await this.service.assertAccess(id, actor);
     return this.conversations.listByClient(id);
   }
 

@@ -6,6 +6,7 @@ import { AiConfig } from './entities/ai-config.entity';
 import { AiUsageLog } from './entities/ai-usage-log.entity';
 import { CalculationConfig } from './entities/calculation-config.entity';
 import { CalculationLog } from './entities/calculation-log.entity';
+import { Company } from './entities/company.entity';
 import { ConversationMessage } from './entities/conversation-message.entity';
 import { Document } from './entities/document.entity';
 import { DocumentPhoto } from './entities/document-photo.entity';
@@ -56,6 +57,8 @@ import { AddManagedIntake1778700000000 } from './migrations/1778700000000-AddMan
 import { AddManagerLinkAndAssignment1778800000000 } from './migrations/1778800000000-AddManagerLinkAndAssignment';
 import { AddConversationMessages1778900000000 } from './migrations/1778900000000-AddConversationMessages';
 import { AddDocumentsActiveStatusIndex1779000000000 } from './migrations/1779000000000-AddDocumentsActiveStatusIndex';
+import { AddSuperAdminEnumValue1779100000000 } from './migrations/1779100000000-AddSuperAdminEnumValue';
+import { AddMultiTenancy1779200000000 } from './migrations/1779200000000-AddMultiTenancy';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -67,6 +70,7 @@ import { SeedService } from './seeds/seed.service';
         url: config.getOrThrow<string>('DATABASE_URL'),
         entities: [
           User,
+          Company,
           RefreshToken,
           TnVedCode,
           CalculationLog,
@@ -124,8 +128,14 @@ import { SeedService } from './seeds/seed.service';
           AddManagerLinkAndAssignment1778800000000,
           AddConversationMessages1778900000000,
           AddDocumentsActiveStatusIndex1779000000000,
+          AddSuperAdminEnumValue1779100000000,
+          AddMultiTenancy1779200000000,
         ],
         migrationsRun: true,
+        // Каждая миграция в своей транзакции (по умолчанию TypeORM гонит все в одной).
+        // Нужно, чтобы новое значение enum 'super_admin' (AddSuperAdminEnumValue) было
+        // закоммичено до его использования в бэкафилле (AddMultiTenancy) — иначе PG 55P04.
+        migrationsTransactionMode: 'each' as const,
       }),
     }),
     TypeOrmModule.forFeature([User, TnVedCode]),

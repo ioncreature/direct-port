@@ -2,13 +2,19 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
+  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { Company } from './company.entity';
 import { RefreshToken } from './refresh-token.entity';
 
 export enum UserRole {
+  /** Глобальный администратор платформы: видит и управляет всеми компаниями.
+   *  Единственная роль с company_id = NULL. */
+  SUPER_ADMIN = 'super_admin',
   ADMIN = 'admin',
   CUSTOMS = 'customs',
 }
@@ -26,6 +32,15 @@ export class User {
 
   @Column({ type: 'enum', enum: UserRole })
   role: UserRole;
+
+  /** Компания (тенант) пользователя. NULL только у super_admin; admin/customs обязаны
+   *  иметь компанию (БД-инвариант CHK_users_company_role). */
+  @Column({ type: 'uuid', name: 'company_id', nullable: true })
+  companyId: string | null;
+
+  @ManyToOne(() => Company, { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'company_id' })
+  company: Company | null;
 
   @Column({ type: 'boolean', name: 'is_active', default: true })
   isActive: boolean;

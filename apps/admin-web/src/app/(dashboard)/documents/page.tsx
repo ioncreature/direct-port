@@ -1,7 +1,9 @@
 'use client';
 
+import { CompanySelect } from '@/components/company-select';
 import { Pager } from '@/components/pager';
 import { SortableTh } from '@/components/sortable-th';
+import { useAuth } from '@/hooks/use-auth';
 import { useDocuments } from '@/hooks/use-documents';
 import { statusColors, statusLabels } from '@/lib/documents';
 import { calcAiCostFromStages, fmtCost, fmtDateTime } from '@/lib/format';
@@ -27,6 +29,8 @@ const sortableColumns: { field: string; label: string }[] = [
 ];
 
 export default function DocumentsPage() {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'super_admin';
   const {
     documents,
     total,
@@ -36,9 +40,11 @@ export default function DocumentsPage() {
     sortBy,
     sortOrder,
     status,
+    companyId,
     setPage,
     toggleSort,
     filterByStatus,
+    filterByCompany,
     refetch,
     downloadDocument,
     reprocessDocument,
@@ -79,6 +85,12 @@ export default function DocumentsPage() {
           </button>
         </div>
       </div>
+
+      {isSuperAdmin && (
+        <div style={{ marginBottom: 12 }}>
+          <CompanySelect value={companyId} onChange={filterByCompany} />
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
         {statuses.map((s) => (

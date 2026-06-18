@@ -22,6 +22,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { CalculationLogsService } from '../calculation-logs/calculation-logs.service';
 import { ErrorCode } from '../common/error-codes';
 import { buildOutputFileName, getDocumentClientName } from '../common/output-filename';
+import { Actor, resolveCompanyScope } from '../common/tenant/actor-context';
 import { DocumentStatus } from '../database/entities/document.entity';
 import { UserRole } from '../database/entities/user.entity';
 import { DiagnosticsService } from '../diagnostics/diagnostics.service';
@@ -74,7 +75,7 @@ export class DocumentsController {
   async uploadAdmin(
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadAdminDto,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() user: Actor,
   ) {
     if (!file)
       throw new BadRequestException({
@@ -84,39 +85,52 @@ export class DocumentsController {
     return this.service.createFromFile(
       file.buffer,
       file.originalname,
-      { uploadedByUserId: user.id },
+      { uploadedByUserId: user.id, companyId: user.companyId },
       { freightCost: dto.freightCost, freightCurrency: dto.freightCurrency },
     );
   }
 
   @Get()
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  findAll(@Query() query: FindDocumentsQueryDto) {
-    return this.service.findAll(query);
+  findAll(@Query() query: FindDocumentsQueryDto, @CurrentUser() actor: Actor) {
+    return this.service.findAll(query, actor);
   }
 
   @Get('status-counts')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  getStatusCounts() {
-    return this.service.getStatusCounts();
+  getStatusCounts(@CurrentUser() actor: Actor, @Query('companyId') companyId?: string) {
+    return this.service.getStatusCounts(resolveCompanyScope(actor, companyId));
   }
 
   @Get('token-stats')
   @Roles(UserRole.ADMIN)
-  getTokenStats(@Query('model') model?: string) {
-    return this.service.getTokenStats(model || undefined);
+  getTokenStats(
+    @CurrentUser() actor: Actor,
+    @Query('model') model?: string,
+    @Query('companyId') companyId?: string,
+  ) {
+    return this.service.getTokenStats(model || undefined, resolveCompanyScope(actor, companyId));
   }
 
   @Get('token-stats/monthly')
   @Roles(UserRole.ADMIN)
-  getMonthlyTotal() {
-    return this.service.getMonthlyTotal();
+  getMonthlyTotal(@CurrentUser() actor: Actor, @Query('companyId') companyId?: string) {
+    return this.service.getMonthlyTotal(resolveCompanyScope(actor, companyId));
   }
 
   @Get('token-stats/daily')
   @Roles(UserRole.ADMIN)
-  getTokenStatsByDay(@Query('days') days?: string, @Query('model') model?: string) {
-    return this.service.getTokenStatsByDay(Math.min(Number(days) || 30, 90), model || undefined);
+  getTokenStatsByDay(
+    @CurrentUser() actor: Actor,
+    @Query('days') days?: string,
+    @Query('model') model?: string,
+    @Query('companyId') companyId?: string,
+  ) {
+    return this.service.getTokenStatsByDay(
+      Math.min(Number(days) || 30, 90),
+      model || undefined,
+      resolveCompanyScope(actor, companyId),
+    );
   }
 
   @Patch(':id/review')
@@ -124,34 +138,38 @@ export class DocumentsController {
   review(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ReviewDocumentDto,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() actor: Actor,
   ) {
-    return this.service.updateParsedData(id, dto, { userId: user.id });
+    return this.service.updateParsedData(id, dto, { userId: actor.id }, actor);
   }
 
   @Post(':id/reject')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  reject(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RejectDocumentDto) {
-    return this.service.reject(id, dto);
+  reject(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RejectDocumentDto,
+    @CurrentUser() actor: Actor,
+  ) {
+    return this.service.reject(id, dto, actor);
   }
 
   @Post(':id/approve')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  approve(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.approve(id);
+  approve(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
+    return this.service.approve(id, actor);
   }
 
   @Post(':id/reprocess')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  reprocess(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.reprocess(id);
+  reprocess(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
+    return this.service.reprocess(id, actor);
   }
 
   /** Запуск пайплайна для managed-документа в статусе INTAKE (кнопка «Запустить расчёт»). */
   @Post(':id/start')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  start(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.startProcessing(id);
+  start(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
+    return this.service.startProcessing(id, actor);
   }
 
   @Post(':id/recalculate')
@@ -159,8 +177,9 @@ export class DocumentsController {
   recalculate(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: RecalculateDocumentDto,
+    @CurrentUser() actor: Actor,
   ) {
-    return this.service.recalculate(id, dto);
+    return this.service.recalculate(id, dto, actor);
   }
 
   /**
@@ -171,11 +190,13 @@ export class DocumentsController {
    */
   @Post(':id/rows/:index/set-code')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  setRowCode(
+  async setRowCode(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('index', ParseIntPipe) index: number,
     @Body() dto: SetRowCodeDto,
+    @CurrentUser() actor: Actor,
   ) {
+    await this.service.assertAccess(id, actor);
     return this.manualCode.setRowCode(id, index, dto.tnVedCode);
   }
 
@@ -202,19 +223,21 @@ export class DocumentsController {
 
   @Get(':id')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.findOne(id);
+  findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
+    return this.service.findOne(id, actor);
   }
 
   @Get(':id/calculation-history')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  calculationHistory(@Param('id', ParseUUIDPipe) id: string) {
+  async calculationHistory(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
+    await this.service.assertAccess(id, actor);
     return this.calculationLogs.findByDocumentId(id);
   }
 
   @Get(':id/stage-runs')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  stageRuns(@Param('id', ParseUUIDPipe) id: string) {
+  async stageRuns(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
+    await this.service.assertAccess(id, actor);
     return this.diagnostics.findStageRunsByDocument(id);
   }
 
@@ -222,39 +245,49 @@ export class DocumentsController {
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   regulatoryExplanations(
     @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() actor: Actor,
     @Query('lang') lang?: string,
   ) {
-    return this.service.getRegulatoryExplanations(id, lang);
+    return this.service.getRegulatoryExplanations(id, lang, actor);
   }
 
   @Get(':id/ai-calls/:callId')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  aiCall(
+  async aiCall(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('callId', ParseUUIDPipe) callId: string,
+    @CurrentUser() actor: Actor,
   ) {
+    await this.service.assertAccess(id, actor);
     return this.diagnostics.findAiCallById(id, callId);
   }
 
   @Get(':id/versions')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  versions(@Param('id', ParseUUIDPipe) id: string) {
+  async versions(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
+    await this.service.assertAccess(id, actor);
     return this.diagnostics.findVersionsByDocument(id);
   }
 
   @Get(':id/versions/:version')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  version(
+  async version(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('version', ParseIntPipe) version: number,
+    @CurrentUser() actor: Actor,
   ) {
+    await this.service.assertAccess(id, actor);
     return this.diagnostics.findVersionByNumber(id, version);
   }
 
   @Get(':id/download')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  async download(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response) {
-    await this.sendExcel(id, res);
+  async download(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res() res: Response,
+    @CurrentUser() actor: Actor,
+  ) {
+    await this.sendExcel(id, res, actor);
   }
 
   /** Внутренний endpoint для бота (auth ТОЛЬКО через X-Internal-Key) */
@@ -264,8 +297,8 @@ export class DocumentsController {
     await this.sendExcel(id, res);
   }
 
-  private async sendExcel(id: string, res: Response) {
-    const doc = await this.service.findOne(id);
+  private async sendExcel(id: string, res: Response, actor?: Actor) {
+    const doc = await this.service.findOne(id, actor);
     if (doc.status !== DocumentStatus.PROCESSED) {
       throw new BadRequestException({
         code: ErrorCode.DOWNLOAD_NOT_AVAILABLE,

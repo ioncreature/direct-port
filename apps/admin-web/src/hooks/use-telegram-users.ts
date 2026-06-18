@@ -1,10 +1,23 @@
 'use client';
 
 import type { TelegramUser } from '@/lib/types';
+import { useCallback, useMemo, useState } from 'react';
 import { useServerPaginatedList } from './use-server-paginated-list';
 
 export function useTelegramUsers() {
-  const list = useServerPaginatedList<TelegramUser>('/telegram-users');
+  const [companyId, setCompanyId] = useState('');
+
+  const extraParams = useMemo(() => ({ companyId: companyId || undefined }), [companyId]);
+
+  const list = useServerPaginatedList<TelegramUser>('/telegram-users', { extraParams });
+
+  const filterByCompany = useCallback(
+    (c: string) => {
+      setCompanyId(c);
+      list.resetPage();
+    },
+    [list],
+  );
 
   return {
     telegramUsers: list.items,
@@ -14,8 +27,10 @@ export function useTelegramUsers() {
     limit: list.limit,
     sortBy: list.sortBy,
     sortOrder: list.sortOrder,
+    companyId,
     setPage: list.setPage,
     toggleSort: list.toggleSort,
+    filterByCompany,
     refetch: list.refetch,
   };
 }

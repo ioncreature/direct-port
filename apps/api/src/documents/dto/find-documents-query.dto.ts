@@ -11,6 +11,11 @@ export class FindDocumentsQueryDto extends PaginationQueryDto {
   @IsUUID()
   telegramUserId?: string;
 
+  /** Фильтр по компании — учитывается только для super_admin. */
+  @IsOptional()
+  @IsUUID()
+  companyId?: string;
+
   @IsOptional()
   @IsIn(['createdAt', 'originalFileName', 'status', 'rowCount'])
   sortBy: string = 'createdAt';

@@ -24,11 +24,19 @@ export class SeedService implements OnApplicationBootstrap {
     const existing = await this.userRepo.findOne({ where: { email: 'admin@directport.ru' } });
     if (existing) return;
 
+    // Корневой пользователь — глобальный super_admin (company_id = NULL). На проде миграция
+    // AddMultiTenancy уже сконвертировала существующего admin@directport.ru в super_admin,
+    // поэтому здесь создаётся только на полностью свежей БД.
     const passwordHash = await bcrypt.hash('admin123', 10);
     await this.userRepo.save(
-      this.userRepo.create({ email: 'admin@directport.ru', passwordHash, role: UserRole.ADMIN }),
+      this.userRepo.create({
+        email: 'admin@directport.ru',
+        passwordHash,
+        role: UserRole.SUPER_ADMIN,
+        companyId: null,
+      }),
     );
-    this.logger.log('Created admin user: admin@directport.ru');
+    this.logger.log('Created super admin user: admin@directport.ru');
   }
 
   private async seedTnVed() {

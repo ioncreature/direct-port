@@ -2,6 +2,7 @@ import * as bcrypt from 'bcrypt';
 import { config } from 'dotenv';
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
+import { Company } from '../entities/company.entity';
 import { RefreshToken } from '../entities/refresh-token.entity';
 import { TnVedCode } from '../entities/tn-ved-code.entity';
 import { User, UserRole } from '../entities/user.entity';
@@ -12,7 +13,7 @@ config();
 const dataSource = new DataSource({
   type: 'postgres',
   url: process.env.DATABASE_URL || 'postgresql://directport:directport@localhost:5434/directport',
-  entities: [User, RefreshToken, TnVedCode],
+  entities: [User, Company, RefreshToken, TnVedCode],
 });
 
 async function seed() {
@@ -21,7 +22,7 @@ async function seed() {
   const userRepo = dataSource.getRepository(User);
   const tnVedRepo = dataSource.getRepository(TnVedCode);
 
-  // Seed admin user
+  // Seed root super-admin (глобальный администратор платформы, company_id = NULL).
   const existing = await userRepo.findOne({ where: { email: 'admin@directport.ru' } });
   if (!existing) {
     const passwordHash = await bcrypt.hash('admin123', 10);
@@ -29,10 +30,11 @@ async function seed() {
       userRepo.create({
         email: 'admin@directport.ru',
         passwordHash,
-        role: UserRole.ADMIN,
+        role: UserRole.SUPER_ADMIN,
+        companyId: null,
       }),
     );
-    console.log('Admin user created: admin@directport.ru / admin123');
+    console.log('Super admin user created: admin@directport.ru / admin123');
   } else {
     console.log('Admin user already exists');
   }

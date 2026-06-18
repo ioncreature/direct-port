@@ -45,6 +45,11 @@ export class ConversationMessage {
   @JoinColumn({ name: 'manager_id' })
   manager: User | null;
 
+  /** Компания (тенант) сообщения. Наследуется от клиента/менеджера; денормализовано
+   *  для изоляции переписки по компании. */
+  @Column({ type: 'uuid', name: 'company_id', nullable: true })
+  companyId: string | null;
+
   @Column({ type: 'text', nullable: true })
   text: string | null;
 

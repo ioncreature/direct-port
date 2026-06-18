@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { ErrorCode } from '../common/error-codes';
 import {
   type ConversationAttachmentType,
@@ -48,6 +48,15 @@ export class ConversationsService {
     return client;
   }
 
+  /** Компания клиента для денормализации в сообщения переписки (NULL до claim). */
+  private async resolveClientCompany(clientId: string): Promise<string | null> {
+    const client = await this.clientsRepo.findOne({
+      where: { id: clientId },
+      select: ['companyId'],
+    });
+    return client?.companyId ?? null;
+  }
+
   async resolveManagerOrThrow(managerTelegramId: string): Promise<User> {
     const manager = await this.usersRepo.findOne({ where: { managerTelegramId } });
     if (!manager || !manager.isActive) {
@@ -61,14 +70,20 @@ export class ConversationsService {
 
   async appendClientMessage(input: {
     clientId: string;
+    companyId?: string | null;
     text?: string | null;
     attachmentType?: ConversationAttachmentType | null;
     attachmentFileId?: string | null;
     documentId?: string | null;
     telegramMessageId?: number | string | null;
   }): Promise<ConversationMessage> {
+    const companyId =
+      input.companyId !== undefined
+        ? input.companyId
+        : await this.resolveClientCompany(input.clientId);
     const msg = this.messagesRepo.create({
       clientId: input.clientId,
+      companyId,
       direction: 'client_to_manager',
       managerId: null,
       text: input.text ?? null,
@@ -84,12 +99,18 @@ export class ConversationsService {
   async appendManagerMessage(input: {
     clientId: string;
     managerId: string;
+    companyId?: string | null;
     text?: string | null;
     attachmentType?: ConversationAttachmentType | null;
     documentId?: string | null;
   }): Promise<ConversationMessage> {
+    const companyId =
+      input.companyId !== undefined
+        ? input.companyId
+        : await this.resolveClientCompany(input.clientId);
     const msg = this.messagesRepo.create({
       clientId: input.clientId,
+      companyId,
       direction: 'manager_to_client',
       managerId: input.managerId,
       text: input.text ?? null,
@@ -154,6 +175,21 @@ export class ConversationsService {
         message: 'Client already claimed by another manager',
       });
     }
+    // Клиент входит в компанию закрепившего менеджера; его уже присланные документы и
+    // сообщения без компании наследуют её (история, привязанная к другой компании, не
+    // трогается). Боты пока общие на платформу, поэтому компания клиента определяется
+    // именно в момент claim.
+    if (manager.companyId) {
+      // Независимые UPDATE'ы разных таблиц — параллельно.
+      await Promise.all([
+        this.clientsRepo.update({ id: clientId }, { companyId: manager.companyId }),
+        this.documents.assignCompanyToClientDocs(clientId, manager.companyId),
+        this.messagesRepo.update(
+          { clientId, companyId: IsNull() },
+          { companyId: manager.companyId },
+        ),
+      ]);
+    }
     // Один раз сообщаем клиенту, что менеджер подключился (а не на каждое его сообщение).
     // Best-effort: claim уже состоялся, ронять его из-за недоступной очереди нельзя —
     // клиент лишь не увидит «менеджер на связи».
@@ -176,7 +212,12 @@ export class ConversationsService {
     const manager = await this.resolveManagerOrThrow(managerTelegramId);
     const client = await this.resolveClientOrThrow(clientId);
     this.assertClientAssignedTo(client, manager);
-    await this.appendManagerMessage({ clientId, managerId: manager.id, text });
+    await this.appendManagerMessage({
+      clientId,
+      managerId: manager.id,
+      companyId: client.companyId,
+      text,
+    });
     await this.enqueueClientOutgoing({
       clientTelegramId: client.telegramId,
       text,
@@ -224,6 +265,7 @@ export class ConversationsService {
     await this.appendManagerMessage({
       clientId: client.id,
       managerId: manager.id,
+      companyId: client.companyId,
       attachmentType: 'document',
       documentId: doc.id,
     });

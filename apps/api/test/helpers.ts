@@ -34,6 +34,7 @@ import { AiCall } from '../src/database/entities/ai-call.entity';
 import { AiConfig } from '../src/database/entities/ai-config.entity';
 import { CalculationConfig } from '../src/database/entities/calculation-config.entity';
 import { CalculationLog } from '../src/database/entities/calculation-log.entity';
+import { Company } from '../src/database/entities/company.entity';
 import { ConversationMessage } from '../src/database/entities/conversation-message.entity';
 import { Document } from '../src/database/entities/document.entity';
 import { DocumentVersion } from '../src/database/entities/document-version.entity';
@@ -121,6 +122,19 @@ export function createMockCurrencyService(): Partial<CurrencyService> {
         from === 'RUB' ? amount : Math.round(amount * FIXED_RATE * 100) / 100,
       ),
     toRubSync: (amount: number, rate: number) => Math.round(amount * rate * 100) / 100,
+    // Без этого мока фоновый DocumentsProcessor падает на каждом документе
+    // (this.currencyService.buildCurrencyToDocRates is not a function) и шумит в логах.
+    buildCurrencyToDocRates: jest
+      .fn()
+      .mockImplementation(async (docCurrency: string, currencies: readonly string[]) => {
+        const targets = Array.from(new Set([docCurrency, ...currencies]));
+        const rubPerUnit: Record<string, number> = {};
+        for (const c of targets) rubPerUnit[c] = c === 'RUB' ? 1 : FIXED_RATE;
+        const docInRub = rubPerUnit[docCurrency] ?? 1;
+        const map: Record<string, number> = {};
+        for (const c of targets) map[c] = rubPerUnit[c] / docInRub;
+        return map;
+      }),
   };
 }
 
@@ -190,6 +204,7 @@ export async function createTestApp(): Promise<INestApplication> {
         entities: [
           AiConfig,
           User,
+          Company,
           RefreshToken,
           TnVedCode,
           CalculationLog,
@@ -324,13 +339,21 @@ export async function seedAdmin(app: INestApplication) {
   const bcrypt = await import('bcrypt');
   const passwordHash = await bcrypt.hash('admin123', 1);
 
+  // super_admin (company_id = NULL) — видит все компании (scope=undefined), поэтому
+  // существующие e2e на CRUD/листингах работают без привязки к конкретной компании.
   const admin = repo.create({
     email: 'admin@directport.ru',
     passwordHash,
-    role: UserRole.ADMIN,
+    role: UserRole.SUPER_ADMIN,
     isActive: true,
   });
   return repo.save(admin);
+}
+
+export async function seedCompany(app: INestApplication, name = 'Test Co') {
+  const ds = app.get(DataSource);
+  const repo = ds.getRepository(Company);
+  return repo.save(repo.create({ name }));
 }
 
 export async function seedTnVed(app: INestApplication) {

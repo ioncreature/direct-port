@@ -41,6 +41,11 @@ export class TelegramUser {
   @JoinColumn({ name: 'assigned_manager_id' })
   assignedManager: User | null;
 
+  /** Компания, которой принадлежит клиент. Проставляется при claim (= компания
+   *  закрепившего менеджера). NULL — клиент в общем пуле, ещё не взят. */
+  @Column({ type: 'uuid', name: 'company_id', nullable: true })
+  companyId: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

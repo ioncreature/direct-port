@@ -1,7 +1,11 @@
+export type UserRole = 'super_admin' | 'admin' | 'customs';
+
 export interface User {
   id: string;
   email: string;
-  role: 'admin' | 'customs';
+  role: UserRole;
+  /** Компания пользователя. null только у super_admin. */
+  companyId: string | null;
   isActive: boolean;
   managerTelegramId: string | null;
   createdAt: string;
@@ -11,7 +15,14 @@ export interface User {
 export interface AuthResponse {
   accessToken: string;
   refreshToken: string;
-  user: Pick<User, 'id' | 'email' | 'role'>;
+  user: Pick<User, 'id' | 'email' | 'role' | 'companyId'>;
+}
+
+export interface Company {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface TelegramUser {
@@ -23,6 +34,7 @@ export interface TelegramUser {
   createdAt: string;
   documentCount?: number;
   assignedManagerId?: string | null;
+  companyId?: string | null;
 }
 
 export interface ConversationMessage {
@@ -310,6 +322,7 @@ export interface Document {
   id: string;
   telegramUser: TelegramUser | null;
   uploadedBy: { id: string; email: string } | null;
+  companyId?: string | null;
   originalFileName: string;
   status: DocumentStatus;
   source: 'self_service' | 'managed';

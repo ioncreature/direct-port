@@ -1,14 +1,17 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
-import { closeTestApp, createTestApp, loginAsAdmin, seedAdmin } from './helpers';
+import { closeTestApp, createTestApp, loginAsAdmin, seedAdmin, seedCompany } from './helpers';
 
 describe('Users (e2e)', () => {
   let app: INestApplication;
   let accessToken: string;
+  // Логинимся как super_admin (seedAdmin) — он создаёт admin/customs с явной компанией.
+  let companyId: string;
 
   beforeAll(async () => {
     app = await createTestApp();
     await seedAdmin(app);
+    companyId = (await seedCompany(app)).id;
     ({ accessToken } = await loginAsAdmin(app));
   });
 
@@ -46,6 +49,7 @@ describe('Users (e2e)', () => {
           email: 'customs1@test.com',
           password: 'password123',
           role: 'customs',
+          companyId,
         })
         .expect(201);
 
@@ -93,7 +97,7 @@ describe('Users (e2e)', () => {
       const created = await request(app.getHttpServer())
         .post('/api/users')
         .set(auth())
-        .send({ email: 'findme@test.com', password: 'password123', role: 'customs' })
+        .send({ email: 'findme@test.com', password: 'password123', role: 'customs', companyId })
         .expect(201);
 
       const res = await request(app.getHttpServer())
@@ -122,7 +126,7 @@ describe('Users (e2e)', () => {
       const created = await request(app.getHttpServer())
         .post('/api/users')
         .set(auth())
-        .send({ email: 'toupdate@test.com', password: 'password123', role: 'customs' })
+        .send({ email: 'toupdate@test.com', password: 'password123', role: 'customs', companyId })
         .expect(201);
 
       const res = await request(app.getHttpServer())
@@ -139,7 +143,7 @@ describe('Users (e2e)', () => {
       const created = await request(app.getHttpServer())
         .post('/api/users')
         .set(auth())
-        .send({ email: 'pwdchange@test.com', password: 'oldpass123', role: 'admin' })
+        .send({ email: 'pwdchange@test.com', password: 'oldpass123', role: 'admin', companyId })
         .expect(201);
 
       await request(app.getHttpServer())
@@ -169,7 +173,7 @@ describe('Users (e2e)', () => {
       const created = await request(app.getHttpServer())
         .post('/api/users')
         .set(auth())
-        .send({ email: 'todelete@test.com', password: 'password123', role: 'customs' })
+        .send({ email: 'todelete@test.com', password: 'password123', role: 'customs', companyId })
         .expect(201);
 
       await request(app.getHttpServer())
@@ -197,7 +201,7 @@ describe('Users (e2e)', () => {
       await request(app.getHttpServer())
         .post('/api/users')
         .set(auth())
-        .send({ email: 'customs-role@test.com', password: 'password123', role: 'customs' })
+        .send({ email: 'customs-role@test.com', password: 'password123', role: 'customs', companyId })
         .expect(201);
 
       // Login as customs

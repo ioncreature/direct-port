@@ -26,7 +26,8 @@ describe('Auth (e2e)', () => {
       expect(res.body.user).toEqual(
         expect.objectContaining({
           email: 'admin@directport.ru',
-          role: 'admin',
+          role: 'super_admin',
+          companyId: null,
         }),
       );
       expect(res.body.user.id).toBeDefined();

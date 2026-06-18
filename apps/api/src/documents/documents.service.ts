@@ -2,7 +2,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
-import { FindOptionsWhere, Repository } from 'typeorm';
+import { FindOptionsWhere, IsNull, Repository } from 'typeorm';
 import { ErrorCode } from '../common/error-codes';
 import {
   InvalidFreightError,
@@ -11,6 +11,7 @@ import {
 } from '../common/freight';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 import { normalizeOksmtCode } from '../common/oksmt';
+import { Actor, assertSameCompany, resolveCompanyScope } from '../common/tenant/actor-context';
 import { CountriesService } from '../countries/countries.service';
 import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
 import {
@@ -69,11 +70,13 @@ export class DocumentsService {
   async getRegulatoryExplanations(
     documentId: string,
     language?: string,
+    actor?: Actor,
   ): Promise<Record<string, RegulatoryExplanation>> {
     const doc = await this.repo.findOne({ where: { id: documentId } });
     if (!doc) {
       throw new NotFoundException({ code: ErrorCode.DOCUMENT_NOT_FOUND, message: 'Document not found' });
     }
+    if (actor) assertSameCompany(actor, doc.companyId);
     const items: RegulatoryItem[] = [];
     const seen = new Set<string>();
     for (const row of (doc.resultData ?? []) as Array<{ regulatoryReport?: RegulatoryReport | null }>) {
@@ -107,7 +110,7 @@ export class DocumentsService {
   async createFromFile(
     buffer: Buffer,
     fileName: string,
-    source: { telegramUserId: string } | { uploadedByUserId: string },
+    source: { telegramUserId: string } | { uploadedByUserId: string; companyId: string | null },
     options: {
       freightCost?: number;
       freightCurrency?: FreightCurrency;
@@ -118,12 +121,18 @@ export class DocumentsService {
     } = {},
   ): Promise<Document> {
     let language: string | null = null;
+    let companyId: string | null = null;
     if ('telegramUserId' in source) {
+      // Документ telegram-клиента наследует его компанию (NULL пока клиент не взят
+      // менеджером — проставится при claim).
       const tgUser = await this.tgUserRepo.findOne({
         where: { id: source.telegramUserId },
-        select: ['language'],
+        select: ['language', 'companyId'],
       });
       language = tgUser?.language ?? null;
+      companyId = tgUser?.companyId ?? null;
+    } else {
+      companyId = source.companyId;
     }
 
     const freight = this.normalizeFreightOrThrow(options);
@@ -134,6 +143,7 @@ export class DocumentsService {
       ...('telegramUserId' in source
         ? { telegramUserId: source.telegramUserId }
         : { telegramUserId: null, uploadedByUserId: source.uploadedByUserId }),
+      companyId,
       originalFileName: fileName,
       fileBuffer: buffer,
       language,
@@ -159,9 +169,9 @@ export class DocumentsService {
    * Запуск пайплайна для INTAKE-документа (managed-флоу). Инициируется менеджером
    * из админки (POST /documents/:id/start) или из manager-bot. INTAKE → PARSING.
    */
-  async startProcessing(id: string): Promise<Document> {
+  async startProcessing(id: string, actor?: Actor): Promise<Document> {
     this.logger.log(`Starting processing for intake document ${id}`);
-    const doc = await this.findOne(id); // 404, если документа нет
+    const doc = await this.findOne(id, actor); // 404, если документа нет или чужая компания
     // Атомарный переход INTAKE → PARSING: кнопка «🚀 Запустить» разослана broadcast'ом
     // всем менеджерам, и два одновременных клика проходили read-then-write проверку
     // оба — в очередь падало два parse-job'а (двойной расход Claude, интерлив записей).
@@ -181,10 +191,12 @@ export class DocumentsService {
     return doc;
   }
 
-  async findAll(query: FindDocumentsQueryDto): Promise<PaginatedResponse<Document>> {
+  async findAll(query: FindDocumentsQueryDto, actor: Actor): Promise<PaginatedResponse<Document>> {
+    const scope = resolveCompanyScope(actor, query.companyId);
     const where: FindOptionsWhere<Document> = {};
     if (query.status) where.status = query.status;
     if (query.telegramUserId) where.telegramUserId = query.telegramUserId;
+    if (scope !== undefined) where.companyId = scope;
 
     const [data, total] = await this.repo.findAndCount({
       select: [
@@ -223,11 +235,12 @@ export class DocumentsService {
       freightCost?: number;
       freightCurrency?: FreightCurrency;
     },
+    actor?: Actor,
   ): Promise<Document> {
     this.logger.log(
       `Recalculating document ${id} with country=${dto.countryOfOrigin ?? '(unchanged)'}, freight=${dto.freightCost ?? '(unchanged)'} ${dto.freightCurrency ?? ''}`,
     );
-    const doc = await this.findOne(id);
+    const doc = await this.findOne(id, actor);
 
     // Пересчёт — операция над завершённым расчётом. REJECTED сюда сознательно не входит:
     // иначе отклонённый документ «воскресал» бы в PROCESSED одним запросом, минуя ревью.
@@ -325,9 +338,9 @@ export class DocumentsService {
     }
   }
 
-  async reprocess(id: string): Promise<Document> {
+  async reprocess(id: string, actor?: Actor): Promise<Document> {
     this.logger.log(`Reprocessing document ${id}`);
-    const doc = await this.findOne(id);
+    const doc = await this.findOne(id, actor);
     if (
       doc.status !== DocumentStatus.FAILED &&
       doc.status !== DocumentStatus.REQUIRES_REVIEW &&
@@ -388,8 +401,9 @@ export class DocumentsService {
     id: string,
     dto: ReviewDocumentDto,
     meta: { userId?: string } = {},
+    actor?: Actor,
   ): Promise<Document> {
-    const doc = await this.findOne(id);
+    const doc = await this.findOne(id, actor);
     if (doc.status !== DocumentStatus.REQUIRES_REVIEW) {
       throw new BadRequestException({
         code: ErrorCode.INVALID_STATUS_FOR_REVIEW,
@@ -421,9 +435,9 @@ export class DocumentsService {
     return saved;
   }
 
-  async reject(id: string, dto: RejectDocumentDto): Promise<Document> {
+  async reject(id: string, dto: RejectDocumentDto, actor?: Actor): Promise<Document> {
     this.logger.log(`Rejecting document ${id}: ${dto.reason ?? '(no reason)'}`);
-    const doc = await this.findOne(id);
+    const doc = await this.findOne(id, actor);
 
     if (
       doc.status !== DocumentStatus.REQUIRES_REVIEW &&
@@ -457,9 +471,9 @@ export class DocumentsService {
     return saved;
   }
 
-  async approve(id: string): Promise<Document> {
+  async approve(id: string, actor?: Actor): Promise<Document> {
     this.logger.log(`Approving document ${id} as-is`);
-    const doc = await this.findOne(id);
+    const doc = await this.findOne(id, actor);
 
     if (doc.status !== DocumentStatus.CODE_REVIEW_REQUIRED) {
       throw new BadRequestException({
@@ -475,7 +489,7 @@ export class DocumentsService {
     return saved;
   }
 
-  async getTokenStats(model?: string) {
+  async getTokenStats(model?: string, companyId?: string) {
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const startOfWeek = new Date(startOfDay);
@@ -484,14 +498,14 @@ export class DocumentsService {
 
     const [totalModels, todayModels, weekModels, monthModels, totalCount, todayCount, weekCount, monthCount] =
       await Promise.all([
-        this.tokensByModel(undefined, model),
-        this.tokensByModel(startOfDay, model),
-        this.tokensByModel(startOfWeek, model),
-        this.tokensByModel(startOfMonth, model),
-        this.tokenDocCount(undefined, model),
-        this.tokenDocCount(startOfDay, model),
-        this.tokenDocCount(startOfWeek, model),
-        this.tokenDocCount(startOfMonth, model),
+        this.tokensByModel(undefined, model, companyId),
+        this.tokensByModel(startOfDay, model, companyId),
+        this.tokensByModel(startOfWeek, model, companyId),
+        this.tokensByModel(startOfMonth, model, companyId),
+        this.tokenDocCount(undefined, model, companyId),
+        this.tokenDocCount(startOfDay, model, companyId),
+        this.tokenDocCount(startOfWeek, model, companyId),
+        this.tokenDocCount(startOfMonth, model, companyId),
       ]);
 
     let byUserQuery = `
@@ -509,10 +523,16 @@ export class DocumentsService {
       CROSS JOIN LATERAL jsonb_each(stage.value) model
       LEFT JOIN telegram_users tu ON tu.id = doc.telegram_user_id`;
     const byUserParams: unknown[] = [];
+    const byUserConds: string[] = [];
     if (model) {
       byUserParams.push(model);
-      byUserQuery += ` WHERE model_family(model.key) = $1`;
+      byUserConds.push(`model_family(model.key) = $${byUserParams.length}`);
     }
+    if (companyId) {
+      byUserParams.push(companyId);
+      byUserConds.push(`doc.company_id = $${byUserParams.length}`);
+    }
+    if (byUserConds.length) byUserQuery += ` WHERE ${byUserConds.join(' AND ')}`;
     byUserQuery += ` GROUP BY doc.telegram_user_id, tu.username, tu.first_name, model_family(model.key)`;
 
     const recentDocsQb = this.repo
@@ -523,6 +543,7 @@ export class DocumentsService {
       .where('doc.token_usage IS NOT NULL')
       .orderBy('doc.created_at', 'DESC')
       .limit(10);
+    if (companyId) recentDocsQb.andWhere('doc.company_id = :companyId', { companyId });
     if (model) {
       recentDocsQb.andWhere(
         `EXISTS (
@@ -536,25 +557,7 @@ export class DocumentsService {
     const [byUser, recentDocs, availableModels] = await Promise.all([
       this.repo.manager.query(byUserQuery, byUserParams),
       recentDocsQb.getMany(),
-      // availableModels — это меню выбора в UI, и его список НЕ должен зависеть
-      // от текущего фильтра: иначе при клике на семейство остальные табы
-      // пропадут. Группируем по семейству, чтобы устаревшие записи (те, что
-      // не попали под NormalizeModelFamilies — например translate, успевший
-      // записать полный version ID между миграцией и передеплоем API) не
-      // дублировали кнопки «Claude Haiku» и «Claude Opus» в фильтре.
-      this.repo.manager
-        .query(`
-          SELECT DISTINCT model_family(m) AS m FROM (
-            SELECT model.key AS m
-            FROM documents doc,
-              jsonb_each(doc.token_usage) stage,
-              jsonb_each(stage.value) model
-            UNION
-            SELECT model AS m FROM ai_usage_log
-          ) all_models
-          ORDER BY m
-        `)
-        .then((rows: Array<{ m: string }>) => rows.map((r) => r.m)),
+      this.availableModels(companyId),
     ]);
 
     return {
@@ -574,19 +577,19 @@ export class DocumentsService {
     };
   }
 
-  async getMonthlyTotal() {
+  async getMonthlyTotal(companyId?: string) {
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
 
     const [modelsRows, countRow] = await Promise.all([
-      this.tokensByModel(startOfMonth),
-      this.tokenDocCount(startOfMonth),
+      this.tokensByModel(startOfMonth, undefined, companyId),
+      this.tokenDocCount(startOfMonth, undefined, companyId),
     ]);
     return { models: this.toModelsMap(modelsRows), documentCount: Number(countRow?.count) || 0 };
   }
 
-  async getTokenStatsByDay(days: number, model?: string) {
+  async getTokenStatsByDay(days: number, model?: string, companyId?: string) {
     const since = new Date();
     since.setDate(since.getDate() - days + 1);
     since.setHours(0, 0, 0, 0);
@@ -603,7 +606,11 @@ export class DocumentsService {
     const docParams: unknown[] = [since];
     if (model) {
       docParams.push(model);
-      docQuery += ` AND model_family(model.key) = $2`;
+      docQuery += ` AND model_family(model.key) = $${docParams.length}`;
+    }
+    if (companyId) {
+      docParams.push(companyId);
+      docQuery += ` AND doc.company_id = $${docParams.length}`;
     }
     docQuery += ` GROUP BY "date", model_family(model.key) ORDER BY "date"`;
 
@@ -617,7 +624,11 @@ export class DocumentsService {
     const logParams: unknown[] = [since];
     if (model) {
       logParams.push(model);
-      logQuery += ` AND model_family(model) = $2`;
+      logQuery += ` AND model_family(model) = $${logParams.length}`;
+    }
+    if (companyId) {
+      logParams.push(companyId);
+      logQuery += ` AND company_id = $${logParams.length}`;
     }
     logQuery += ` GROUP BY "date", model_family(model) ORDER BY "date"`;
 
@@ -663,13 +674,14 @@ export class DocumentsService {
     return result;
   }
 
-  async getStatusCounts(): Promise<Record<string, number>> {
-    const rows: Array<{ status: string; count: string }> = await this.repo
+  async getStatusCounts(companyId?: string): Promise<Record<string, number>> {
+    const qb = this.repo
       .createQueryBuilder('doc')
       .select('doc.status', 'status')
       .addSelect('COUNT(*)', 'count')
-      .groupBy('doc.status')
-      .getRawMany();
+      .groupBy('doc.status');
+    if (companyId) qb.andWhere('doc.company_id = :companyId', { companyId });
+    const rows: Array<{ status: string; count: string }> = await qb.getRawMany();
 
     const counts: Record<string, number> = {};
     for (const row of rows) {
@@ -678,7 +690,7 @@ export class DocumentsService {
     return counts;
   }
 
-  async findOne(id: string): Promise<Document> {
+  async findOne(id: string, actor?: Actor): Promise<Document> {
     const doc = await this.repo.findOne({
       where: { id },
       relations: ['telegramUser', 'uploadedBy'],
@@ -688,22 +700,86 @@ export class DocumentsService {
         code: ErrorCode.DOCUMENT_NOT_FOUND,
         message: 'Document not found',
       });
+    if (actor) assertSameCompany(actor, doc.companyId);
     return doc;
+  }
+
+  /**
+   * Лёгкая проверка доступа к документу для под-ресурсов (diagnostics, calculation-logs,
+   * excel), которые делегируют в другие сервисы по documentId. Бросает 404, если документа
+   * нет или он принадлежит другой компании (для super_admin — только если не найден).
+   */
+  async assertAccess(id: string, actor: Actor): Promise<void> {
+    const doc = await this.repo.findOne({ where: { id }, select: ['id', 'companyId'] });
+    if (!doc)
+      throw new NotFoundException({
+        code: ErrorCode.DOCUMENT_NOT_FOUND,
+        message: 'Document not found',
+      });
+    assertSameCompany(actor, doc.companyId);
+  }
+
+  /**
+   * Наследование компании managed-документами клиента при claim менеджером: проставляет
+   * company_id только документам клиента без компании (историю уже привязанных к другой
+   * компании документов не трогаем). Вызывается из ConversationsService.
+   */
+  async assignCompanyToClientDocs(telegramUserId: string, companyId: string | null): Promise<void> {
+    if (!companyId) return;
+    await this.repo.update({ telegramUserId, companyId: IsNull() }, { companyId });
+  }
+
+  /**
+   * Список семейств моделей для меню фильтра на /ai-costs. Намеренно НЕ зависит от
+   * выбранного фильтра model (иначе при клике остальные кнопки пропадут — комментарий ниже
+   * про дубли семейств), но скоупится по компании: admin видит только модели своей компании,
+   * super_admin — все. ai_usage_log при заданной компании отфильтруется (company_id почти
+   * всегда NULL), поэтому для admin меню формируется из его документов.
+   */
+  private async availableModels(companyId?: string): Promise<string[]> {
+    const params: unknown[] = [];
+    let docFilter = '';
+    let logFilter = '';
+    if (companyId) {
+      params.push(companyId);
+      docFilter = ` WHERE doc.company_id = $1`;
+      logFilter = ` WHERE company_id = $1`;
+    }
+    const rows: Array<{ m: string }> = await this.repo.manager.query(
+      `SELECT DISTINCT model_family(m) AS m FROM (
+          SELECT model.key AS m
+          FROM documents doc,
+            jsonb_each(doc.token_usage) stage,
+            jsonb_each(stage.value) model${docFilter}
+          UNION
+          SELECT model AS m FROM ai_usage_log${logFilter}
+        ) all_models
+        ORDER BY m`,
+      params,
+    );
+    return rows.map((r) => r.m);
   }
 
   /** Aggregate per-model tokens from two sources: documents.token_usage (two-level
    *  JSONB { stage: { model: {...} } }) и ai_usage_log (translate/regulatory вне
    *  пайплайна). Объединяем UNION'ом — без log-источника сводные карточки /ai-costs
    *  недосчитывают расход вне документов (тот же UNION уже в getTokenStatsByDay). */
-  private tokensByModel(since?: Date, model?: string) {
+  private tokensByModel(since?: Date, model?: string, companyId?: string) {
     const params: unknown[] = [];
-    let sinceRef = '';
+    const docConds: string[] = [];
+    const logConds: string[] = [];
     if (since) {
       params.push(since);
-      sinceRef = `$${params.length}`;
+      docConds.push(`doc.created_at >= $${params.length}`);
+      logConds.push(`log.created_at >= $${params.length}`);
     }
-    const docWhere = sinceRef ? ` WHERE doc.created_at >= ${sinceRef}` : '';
-    const logWhere = sinceRef ? ` WHERE log.created_at >= ${sinceRef}` : '';
+    if (companyId) {
+      params.push(companyId);
+      docConds.push(`doc.company_id = $${params.length}`);
+      logConds.push(`log.company_id = $${params.length}`);
+    }
+    const docWhere = docConds.length ? ` WHERE ${docConds.join(' AND ')}` : '';
+    const logWhere = logConds.length ? ` WHERE ${logConds.join(' AND ')}` : '';
     let modelWhere = '';
     if (model) {
       params.push(model);
@@ -736,12 +812,13 @@ export class DocumentsService {
     return this.repo.manager.query(query, params);
   }
 
-  private tokenDocCount(since?: Date, model?: string) {
+  private tokenDocCount(since?: Date, model?: string, companyId?: string) {
     const qb = this.repo
       .createQueryBuilder('doc')
       .select('COUNT(*)', 'count')
       .where('doc.token_usage IS NOT NULL');
     if (since) qb.andWhere('doc.created_at >= :since', { since });
+    if (companyId) qb.andWhere('doc.company_id = :companyId', { companyId });
     if (model) {
       qb.andWhere(
         `EXISTS (

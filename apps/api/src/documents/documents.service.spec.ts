@@ -10,6 +10,7 @@ interface DocOverrides {
   resultData?: unknown[] | null;
   telegramUserId?: string | null;
   uploadedByUserId?: string | null;
+  companyId?: string | null;
   telegramUser?: { telegramId: string; language?: string } | null;
   rejectionReasons?: string[] | null;
   freightCost?: number | null;
@@ -23,6 +24,7 @@ function makeDoc(overrides: DocOverrides = {}) {
     id: 'doc-1',
     telegramUserId: 'tg-uuid-1',
     uploadedByUserId: null,
+    companyId: 'comp-1',
     originalFileName: 'goods.xlsx',
     status: DocumentStatus.PENDING,
     rowCount: 1,
@@ -52,7 +54,7 @@ function makeDoc(overrides: DocOverrides = {}) {
 function createService(
   opts: {
     doc?: ReturnType<typeof makeDoc> | null;
-    tgUser?: { language: string } | null;
+    tgUser?: { language: string; companyId?: string | null } | null;
     hasBuffer?: boolean;
     country?: { code: string; nameRu: string } | null;
   } = {},
@@ -177,23 +179,25 @@ describe('DocumentsService', () => {
       });
       expect(tgUserRepo.findOne).toHaveBeenCalledWith({
         where: { id: 'tg-uuid-1' },
-        select: ['language'],
+        select: ['language', 'companyId'],
       });
       expect(repo.create).toHaveBeenCalledWith(
         expect.objectContaining({ language: 'zh' }),
       );
     });
 
-    it('stores uploadedByUserId for admin uploads (no telegram lookup)', async () => {
+    it('stores uploadedByUserId + company for admin uploads (no telegram lookup)', async () => {
       const { service, repo, tgUserRepo } = createService({ doc: null });
       await service.createFromFile(Buffer.from('x'), 'f.xlsx', {
         uploadedByUserId: 'admin-uuid',
+        companyId: 'comp-1',
       });
       expect(tgUserRepo.findOne).not.toHaveBeenCalled();
       expect(repo.create).toHaveBeenCalledWith(
         expect.objectContaining({
           telegramUserId: null,
           uploadedByUserId: 'admin-uuid',
+          companyId: 'comp-1',
           language: null,
         }),
       );

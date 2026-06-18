@@ -25,7 +25,7 @@ export async function logout(): Promise<void> {
   localStorage.removeItem('user');
 }
 
-export function getStoredUser(): Pick<User, 'id' | 'email' | 'role'> | null {
+export function getStoredUser(): Pick<User, 'id' | 'email' | 'role' | 'companyId'> | null {
   if (typeof window === 'undefined') return null;
   const raw = localStorage.getItem('user');
   if (!raw) return null;

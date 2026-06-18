@@ -4,7 +4,7 @@ import { ConversationsService } from './conversations.service';
 
 interface Opts {
   client?: { id: string; telegramId: string; language: string; assignedManagerId: string | null } | null;
-  manager?: { id: string; isActive: boolean; managerTelegramId: string } | null;
+  manager?: { id: string; isActive: boolean; managerTelegramId: string; companyId?: string | null } | null;
   userById?: { id: string; managerTelegramId: string | null } | null;
   document?: {
     id: string;
@@ -27,6 +27,7 @@ function createService(opts: Opts = {}) {
     create: jest.fn().mockImplementation((d) => d),
     save: jest.fn().mockImplementation(async (d) => ({ ...d, id: 'msg-1' })),
     find: jest.fn().mockResolvedValue([]),
+    update: jest.fn().mockResolvedValue({ affected: 0 }),
   };
 
   const updateQb = {
@@ -62,6 +63,7 @@ function createService(opts: Opts = {}) {
   const documents = {
     startProcessing: jest.fn().mockResolvedValue({ id: 'doc-1' }),
     findOne: jest.fn().mockResolvedValue(opts.document ?? null),
+    assignCompanyToClientDocs: jest.fn().mockResolvedValue(undefined),
   };
 
   const service = new ConversationsService(
@@ -79,21 +81,29 @@ function createService(opts: Opts = {}) {
 // Доставочные очереди ставятся с ретраями (см. DELIVERY_JOB_OPTS).
 const RETRY_OPTS = expect.objectContaining({ attempts: 5 });
 
-const ACTIVE_MANAGER = { id: 'mgr-1', isActive: true, managerTelegramId: '999' };
+const ACTIVE_MANAGER = { id: 'mgr-1', isActive: true, managerTelegramId: '999', companyId: 'comp-1' };
 const UNASSIGNED_CLIENT = { id: 'cli-1', telegramId: '12345', language: 'ru', assignedManagerId: null };
 const ASSIGNED_CLIENT = { ...UNASSIGNED_CLIENT, assignedManagerId: 'mgr-1' };
 
 describe('ConversationsService', () => {
   describe('claimByManagerTelegram', () => {
-    it('assigns an unclaimed client and notifies them the manager joined', async () => {
-      const { service, updateQb, clientOutQueue } = createService({
-        manager: ACTIVE_MANAGER,
-        client: UNASSIGNED_CLIENT,
-        claimAffected: 1,
-      });
+    it('assigns an unclaimed client, inherits company to client+docs+messages, notifies', async () => {
+      const { service, updateQb, clientOutQueue, clientsRepo, documents, messagesRepo } =
+        createService({
+          manager: ACTIVE_MANAGER,
+          client: UNASSIGNED_CLIENT,
+          claimAffected: 1,
+        });
       const res = await service.claimByManagerTelegram('cli-1', '999');
       expect(res).toEqual({ clientId: 'cli-1', managerId: 'mgr-1' });
       expect(updateQb.execute).toHaveBeenCalled();
+      // клиент входит в компанию менеджера; его документы/сообщения без компании наследуют её
+      expect(clientsRepo.update).toHaveBeenCalledWith({ id: 'cli-1' }, { companyId: 'comp-1' });
+      expect(documents.assignCompanyToClientDocs).toHaveBeenCalledWith('cli-1', 'comp-1');
+      expect(messagesRepo.update).toHaveBeenCalledWith(
+        expect.objectContaining({ clientId: 'cli-1' }),
+        { companyId: 'comp-1' },
+      );
       expect(clientOutQueue.add).toHaveBeenCalledWith(
         'client-message',
         expect.objectContaining({ clientTelegramId: '12345', i18nKey: 'manager-assigned' }),

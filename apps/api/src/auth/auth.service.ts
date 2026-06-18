@@ -64,7 +64,12 @@ export class AuthService {
   }
 
   private async generateTokens(user: User) {
-    const payload = { sub: user.id, email: user.email, role: user.role };
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      companyId: user.companyId,
+    };
 
     const accessToken = this.jwtService.sign(payload, {
       expiresIn: this.config.get('JWT_ACCESS_EXPIRATION', '15m'),
@@ -88,6 +93,7 @@ export class AuthService {
         id: user.id,
         email: user.email,
         role: user.role,
+        companyId: user.companyId,
       },
     };
   }

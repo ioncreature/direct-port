@@ -1,8 +1,10 @@
 'use client';
 
 import { BotLinksSection } from '@/components/bot-links-section';
+import { CompanySelect } from '@/components/company-select';
 import { Pager } from '@/components/pager';
 import { SortableTh } from '@/components/sortable-th';
+import { useAuth } from '@/hooks/use-auth';
 import { useTelegramUsers } from '@/hooks/use-telegram-users';
 import { fmtDate } from '@/lib/format';
 import { btnOutline, tdEmpty, td, th } from '@/lib/table-styles';
@@ -14,6 +16,8 @@ const sortableColumns: { field: string; label: string }[] = [
 ];
 
 export default function TelegramUsersPage() {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'super_admin';
   const {
     telegramUsers,
     total,
@@ -22,8 +26,10 @@ export default function TelegramUsersPage() {
     limit,
     sortBy,
     sortOrder,
+    companyId,
     setPage,
     toggleSort,
+    filterByCompany,
     refetch,
   } = useTelegramUsers();
 
@@ -38,9 +44,12 @@ export default function TelegramUsersPage() {
         }}
       >
         <h1>Telegram-пользователи</h1>
-        <button onClick={refetch} style={btnOutline}>
-          Обновить
-        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {isSuperAdmin && <CompanySelect value={companyId} onChange={filterByCompany} />}
+          <button onClick={refetch} style={btnOutline}>
+            Обновить
+          </button>
+        </div>
       </div>
 
       {loading ? (

@@ -4,7 +4,7 @@ import { login as apiLogin, logout as apiLogout, getStoredUser } from '@/lib/aut
 import type { User } from '@/lib/types';
 import { createContext, useCallback, useEffect, useState, type ReactNode } from 'react';
 
-type AuthUser = Pick<User, 'id' | 'email' | 'role'> | null;
+type AuthUser = Pick<User, 'id' | 'email' | 'role' | 'companyId'> | null;
 
 interface AuthContextValue {
   user: AuthUser;

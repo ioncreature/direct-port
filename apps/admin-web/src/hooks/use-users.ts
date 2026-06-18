@@ -9,8 +9,12 @@ type RoleFilter = User['role'] | '';
 
 export function useUsers() {
   const [role, setRole] = useState<RoleFilter>('');
+  const [companyId, setCompanyId] = useState('');
 
-  const extraParams = useMemo(() => ({ role: role || undefined }), [role]);
+  const extraParams = useMemo(
+    () => ({ role: role || undefined, companyId: companyId || undefined }),
+    [role, companyId],
+  );
 
   const list = useServerPaginatedList<User>('/users', { extraParams });
 
@@ -22,8 +26,17 @@ export function useUsers() {
     [list],
   );
 
+  const filterByCompany = useCallback(
+    (c: string) => {
+      setCompanyId(c);
+      list.resetPage();
+    },
+    [list],
+  );
+
   const createUser = useCallback(
-    async (payload: { email: string; password: string; role: User['role'] }) => {
+    // companyId учитывается только когда создаёт super_admin; admin компании наследует свою.
+    async (payload: { email: string; password: string; role: User['role']; companyId?: string }) => {
       await api.post('/users', payload);
       await list.refetch();
     },
@@ -58,9 +71,11 @@ export function useUsers() {
     sortBy: list.sortBy,
     sortOrder: list.sortOrder,
     role,
+    companyId,
     setPage: list.setPage,
     toggleSort: list.toggleSort,
     filterByRole,
+    filterByCompany,
     refetch: list.refetch,
     createUser,
     updateUser,

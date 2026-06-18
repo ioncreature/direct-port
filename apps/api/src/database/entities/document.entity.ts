@@ -79,6 +79,12 @@ export class Document {
   @Column({ type: 'uuid', name: 'uploaded_by_user_id', nullable: true })
   uploadedByUserId: string | null;
 
+  /** Компания (тенант) документа. Денормализовано для фильтрации списков и статистики.
+   *  upload-admin → компания загрузившего; managed/self_service → компания telegram-клиента
+   *  (NULL пока клиент не взят менеджером, наследуется при claim). */
+  @Column({ type: 'uuid', name: 'company_id', nullable: true })
+  companyId: string | null;
+
   /** self_service (автозапуск пайплайна) | managed (запуск менеджером вручную). */
   @Column({ type: 'varchar', length: 16, default: 'self_service' })
   source: DocumentSource;
