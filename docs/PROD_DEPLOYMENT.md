@@ -11,7 +11,7 @@ stage. GitHub Actions только собирает образы; деплой �
 |---|---|---|
 | Деплой | GitHub Actions `helm upgrade` | **ArgoCD** Application (`apps/directport.yaml`) |
 | Ingress | nginx | **Traefik** (`className: traefik`) |
-| TLS | cert-manager / letsencrypt | **Cloudflare Origin Cert** (ESO, без ACME) |
+| TLS | cert-manager / letsencrypt | терминируется на внешнем **stage-proxy** (nginx); в Traefik re-encrypt с default cert (Origin Cert не нужен) |
 | Секреты | helm values → Secret | **Vault + External Secrets Operator** (`kv/platform/directport*`) |
 | Pull образов | `ghcr-pull` из GitHub Secrets | ESO-секрет `ghcr-directport` из Vault |
 | Версия образа | `--set image.tag=<sha>` | тег в `values/directport-prod.yaml` (`prod` → позже `<sha>`) |
@@ -20,8 +20,8 @@ stage. GitHub Actions только собирает образы; деплой �
 Где что лежит в `platform-gitops`:
 - `apps/directport.yaml` — ArgoCD Application (multi-source: чарт `deploy/helm/directport` из
   `ioncreature/direct-port` + `values/directport-prod.yaml`), namespace `directport`, sync-wave 2.
-- `values/directport-prod.yaml` — прод-оверрайды (Traefik, домены, образы, ESO-секреты).
-- `secrets/namespace-directport.yaml` + `secrets/external-secret-directport-*.yaml` — namespace и 4 ExternalSecret.
+- `values/directport-prod.yaml` — прод-оверрайды (Traefik ingress без TLS, домены, образы, ESO-секреты).
+- `secrets/namespace-directport.yaml` + `secrets/external-secret-directport-*.yaml` — namespace и 3 ExternalSecret (app, postgresql-auth, ghcr).
 - `vault/directport-seed.md` — команды засева Vault.
 
 ## Предусловия (в кластере уже есть)
@@ -36,22 +36,29 @@ ArgoCD (app-of-apps), External Secrets Operator (`ClusterSecretStore vault-kv`),
 ### 1. Засеять Vault
 
 Точные команды `vault kv put` и полный список ключей — в `platform-gitops/vault/directport-seed.md`.
-Всего три записи под `kv/platform/directport*` (ESO-роль `external-secrets` уже читает
+Две записи под `kv/platform/directport*` (ESO-роль `external-secrets` уже читает
 `kv/data/platform/*`, новых политик не нужно):
 
 - `kv/platform/directport` — переменные окружения приложения (DATABASE_URL, REDIS_URL, JWT/ключи,
   токены ботов; пароль PostgreSQL = тот же, что внутри DATABASE_URL).
 - `kv/platform/directport-ghcr` — `dockerconfigjson` (classic PAT с `read:packages` на `ioncreature/*`).
-- `kv/platform/directport-origin-cert` — `tls.crt` / `tls.key` (Cloudflare Origin Cert).
 
 Значения (TKS/Anthropic/JWT/боты) переносятся 1:1 из текущих GitHub Actions secrets stage.
+TLS — на внешнем stage-proxy, отдельной Vault-записи для сертификата нет.
 
-### 2. DNS и TLS (Cloudflare)
+### 2. DNS и маршрутизация (внешний stage-proxy)
 
-- Завести `directport.ru`, `admin.directport.ru`, `api.directport.ru` в ту же точку входа кластера,
-  что и `psy-health.systems` (Cloudflare → cloudflared-tunnel/Traefik).
-- Выпустить **Cloudflare Origin Certificate** на `directport.ru` + `*.directport.ru` и положить его
-  cert/key в Vault (шаг 1, `directport-origin-cert`).
+Трафик идёт через внешний nginx (тот же stage-proxy, `deploy/coreimport-stage-proxy.conf`): он
+терминирует публичный TLS (letsencrypt) и проксирует в Traefik кластера через `proxy_pass https://…`
+с re-encrypt. Traefik отдаёт свой default self-signed cert — nginx upstream не верифицирует, поэтому
+Cloudflare Origin Cert не нужен.
+
+- Завести DNS `directport.ru`, `admin.directport.ru`, `api.directport.ru` на этот nginx.
+- Добавить в nginx server-блоки для этих доменов (по образцу `coreimport-*` блоков):
+  `proxy_pass https://<traefik-websecure-host:port>`, `proxy_set_header Host $host` — Host передаётся
+  как есть (публичные домены directport).
+- В кластере `ingress.hosts` в `values/directport-prod.yaml` = эти же публичные домены, Traefik роутит
+  по Host. Проксировать на **websecure**-entrypoint (https): Traefik редиректит http→https, иначе вернёт 301.
 
 ### 3. Доступ ArgoCD к приватному репозиторию
 
@@ -98,6 +105,10 @@ kubectl delete namespace directport-stage
 
 ## Заметки и риски
 
+- **TLS — на внешнем stage-proxy**: ingress directport идёт **без TLS-секции**; Traefik принимает
+  re-encrypt от nginx со своим default cert. Origin Cert / cert-manager для directport не используются.
+  В кластере Traefik по умолчанию редиректит http→https — nginx должен ходить на websecure-entrypoint
+  (https), а не на web (http), иначе получит 301.
 - **Bitnami PG/Redis тянутся как `:latest` с docker.io** (поведение чарта, как на stage). На прод-кластере
   возможен docker.io rate-limit — стоит запиннить версии образов PG/Redis (или зеркалировать). Не блокер.
 - **`api.directport.ru` не обязателен**: админка ходит на свой origin (`/api`) и проксирует на API внутри
