@@ -220,7 +220,7 @@ function HowItWorks() {
       num: 2,
       icon: <IconUpload />,
       title: 'Отправляете прайс',
-      text: 'Excel или CSV на любом языке и в любой валюте. Менеджер называет сумму — $1 за позицию — и принимает оплату.',
+      text: 'Excel или CSV на любом языке и в любой валюте. Менеджер называет сумму — $1 за позицию плюс $10 за файл — и принимает оплату.',
     },
     {
       num: 3,
@@ -277,7 +277,7 @@ function Pricing() {
       <div className="container">
         <div className="section-head">
           <span className="label">Цена</span>
-          <h2>$1 за позицию. И всё.</h2>
+          <h2>$1 за позицию плюс $10 за файл.</h2>
           <p>
             Без подписок, абонплаты и минимального заказа. Платите только за то, что
             посчитали, — сумму видно до старта.
@@ -287,7 +287,7 @@ function Pricing() {
           <div className="card pricing-card fade-up">
             <div className="price-figure">
               <span className="price-amount">$1</span>
-              <span className="price-unit">за позицию</span>
+              <span className="price-unit">за позицию + $10 за файл</span>
               <p className="price-note">Оплата менеджеру при отправке файла</p>
             </div>
             <ul className="price-includes">
@@ -300,8 +300,8 @@ function Pricing() {
             </ul>
           </div>
           <p className="price-examples">
-            <strong>50</strong> позиций — $50 · <strong>200</strong> — $200 ·{' '}
-            <strong>500</strong> — $500
+            <strong>50</strong> позиций — $60 · <strong>200</strong> — $210 ·{' '}
+            <strong>500</strong> — $510
           </p>
         </div>
       </div>
@@ -519,7 +519,7 @@ function FinalCta() {
         <h2>Посчитаем ваш контейнер за 10 минут</h2>
         <p>
           Напишите менеджеру в Telegram, пришлите прайс — и получите готовый расчёт
-          по каждой позиции. $1 за позицию, без подписок.
+          по каждой позиции. $1 за позицию плюс $10 за файл, без подписок.
         </p>
         <div className="cta-buttons">
           <a

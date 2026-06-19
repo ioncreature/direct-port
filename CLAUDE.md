@@ -80,7 +80,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 ### apps/landing — Публичный лендинг (Next.js)
 
 - Маркетинговый сайт directport.ru (App Router, без бэкенда и БД). Деплоится отдельным подом: Dockerfile + Helm `landing-deployment`/`landing-service`; в локальном dev — в PM2 (`ecosystem.config.js`)
-- Одна страница `src/app/page.tsx`: Hero → блок боли → «Как работает» (managed-флоу: пишете боту → менеджер → 10 мин → Excel) → цена ($1/позиция) → «Почему расчёту можно доверять» → «Что внутри расчёта» → справочник ТН ВЭД → CTA. Тексты бренда и SEO вынесены в `src/app/_brand.ts`, стили — единый `globals.css` (CSS-переменные, без UI-библиотек; зависимости только next/react)
+- Одна страница `src/app/page.tsx`: Hero → блок боли → «Как работает» (managed-флоу: пишете боту → менеджер → 10 мин → Excel) → цена ($1/позиция + $10/файл) → «Почему расчёту можно доверять» → «Что внутри расчёта» → справочник ТН ВЭД → CTA. Тексты бренда и SEO вынесены в `src/app/_brand.ts`, стили — единый `globals.css` (CSS-переменные, без UI-библиотек; зависимости только next/react)
 - Позиционирование: расчёт пошлин на весь контейнер за 10 минут (до ~500 позиций), ЦА — логистические компании. Все CTA ведут в Telegram-бот (managed-флоу); self-service-загрузки файла на сайте нет
 - ENV: `NEXT_PUBLIC_TELEGRAM_BOT_URL` (ссылка на бота, дефолт `https://t.me/direct_port_bot`), `NEXT_PUBLIC_SITE_URL` (для metadataBase/OpenGraph). Контактный email захардкожен в `page.tsx`
 - ⚠️ Порт 3003 совпадает с `client-bot` (`BOT_PORT=3003`): в k8s изолировано по подам, но локально через `pnpm dev` оба одновременно не поднимутся (EADDRINUSE)
