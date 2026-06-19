@@ -1,23 +1,25 @@
 # Прод-деплой DirectPort (кластер psy-health, ArgoCD)
 
 Прод DirectPort выкатывается в **кластер psy-health** через **ArgoCD** (GitOps), а не в собственный
-stage. GitHub Actions только собирает образы; деплой делает ArgoCD из GitOps-репо
-`psy-health/platform-gitops`. Этот документ — чеклист того, **что нужно сделать руками** для bring-up
-(всё остальное — код чарта, Application, ESO-манифесты и CI — уже в репозиториях).
+stage. GitHub Actions собирает образы и открывает **deploy-PR** в GitOps-репо
+`psy-health/platform-gitops` (бамп `image.tag` → git sha в `values/directport-prod.yaml`); **merge
+этого PR = деплой** — ArgoCD синкает чарт. Этот документ — чеклист того, **что нужно сделать руками**
+для bring-up (всё остальное — код чарта, Application, ESO-манифесты и CI — уже в репозиториях).
 
 ## Архитектура (чем прод отличается от stage)
 
-| Аспект | stage (выводится) | прод psy-health |
-|---|---|---|
-| Деплой | GitHub Actions `helm upgrade` | **ArgoCD** Application (`apps/directport.yaml`) |
-| Ingress | nginx | **Traefik** (`className: traefik`) |
-| TLS | cert-manager / letsencrypt | терминируется на внешнем **stage-proxy** (nginx); в Traefik re-encrypt с default cert (Origin Cert не нужен) |
-| Секреты | helm values → Secret | **Vault + External Secrets Operator** (`kv/platform/directport*`) |
-| Pull образов | `ghcr-pull` из GitHub Secrets | ESO-секрет `ghcr-directport` из Vault |
-| Версия образа | `--set image.tag=<sha>` | тег в `values/directport-prod.yaml` (`prod` → позже `<sha>`) |
-| PostgreSQL/Redis | Bitnami in-cluster | Bitnami in-cluster (без изменений) |
+| Аспект           | stage (выводится)             | прод psy-health                                                                                              |
+| ---------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Деплой           | GitHub Actions `helm upgrade` | **ArgoCD** Application (`apps/directport.yaml`)                                                              |
+| Ingress          | nginx                         | **Traefik** (`className: traefik`)                                                                           |
+| TLS              | cert-manager / letsencrypt    | терминируется на внешнем **stage-proxy** (nginx); в Traefik re-encrypt с default cert (Origin Cert не нужен) |
+| Секреты          | helm values → Secret          | **Vault + External Secrets Operator** (`kv/platform/directport*`)                                            |
+| Pull образов     | `ghcr-pull` из GitHub Secrets | ESO-секрет `ghcr-directport` из Vault                                                                        |
+| Версия образа    | `--set image.tag=<sha>`       | git sha в `values/directport-prod.yaml`, бампится авто-PR из CI (`build-images`); merge PR = деплой          |
+| PostgreSQL/Redis | Bitnami in-cluster            | Bitnami in-cluster (без изменений)                                                                           |
 
 Где что лежит в `platform-gitops`:
+
 - `apps/directport.yaml` — ArgoCD Application (multi-source: чарт `deploy/helm/directport` из
   `ioncreature/direct-port` + `values/directport-prod.yaml`), namespace `directport`, sync-wave 2.
 - `values/directport-prod.yaml` — прод-оверрайды (Traefik ingress без TLS, домены, образы, ESO-секреты).
@@ -65,15 +67,22 @@ Cloudflare Origin Cert не нужен.
 В ArgoCD: Settings → Repositories → добавить `https://github.com/ioncreature/direct-port`
 (deploy key или PAT). Иначе source чарта не зарезолвится (как было для `brain-game`).
 
-### 4. Собрать образы
+### 4. Собрать образы и открыть deploy-PR
 
-Влить ветку с изменениями `direct-port` в `main` → workflow **`build-images.yml`** соберёт и запушит
-`ghcr.io/ioncreature/direct-port-{api,admin-web,client-bot,manager-bot,landing}` с тегами `<sha>` и `prod`.
-Убедиться, что прогон зелёный и образы появились в GHCR.
+Завести в репозитории `ioncreature/direct-port` secret **`GITOPS_PAT`** — fine-grained PAT к
+`psy-health/platform-gitops` (права `contents` + `pull-requests: write`). Без него job `bump-gitops`
+не сможет открыть PR в GitOps-репо.
+
+Влить ветку с изменениями `direct-port` в `main` → workflow **`build-images.yml`**: соберёт и запушит
+`ghcr.io/ioncreature/direct-port-{api,admin-web,client-bot,manager-bot,landing}` с тегами `<sha>` и `prod`,
+затем откроет **deploy-PR** в `platform-gitops` (бамп всех пяти `image.tag` → `<sha>` в
+`values/directport-prod.yaml`). Убедиться, что прогон зелёный и образы появились в GHCR.
+**Merge deploy-PR = выкат** (Argo синкает); пока PR не влит — прод остаётся на прежнем sha.
 
 ### 5. Включить приложение в ArgoCD
 
 Влить артефакты `platform-gitops` (apps/values/secrets/vault) в его `main`. ArgoCD засинкает по волнам:
+
 - **wave -1** (`secrets` app) — namespace `directport` + ExternalSecret'ы → k8s-секреты из Vault;
 - **wave 2** (`directport` app) — Bitnami PostgreSQL/Redis + сервисы;
 - **PostSync** — Job миграций (`migration:run`); API при старте сидит `admin@directport.ru`.
@@ -93,13 +102,15 @@ kubectl -n directport logs job/directport-migration  # миграции прош
 ### 7. Погасить stage
 
 После подтверждения работы прода:
+
 ```bash
 helm uninstall directport-stage -n directport-stage
 kubectl delete namespace directport-stage
 ```
-+ снять внешний nginx-прокси `coreimport.ru` (`deploy/coreimport-stage-proxy.conf`) и убедиться, что
-секреты stage в GitHub (`KUBE_CONFIG_STAGE` и т.д.) больше не нужны. Workflow `deploy-stage.yml` уже
-удалён из репозитория (заменён на `build-images.yml`).
+
+- снять внешний nginx-прокси `coreimport.ru` (`deploy/coreimport-stage-proxy.conf`) и убедиться, что
+  секреты stage в GitHub (`KUBE_CONFIG_STAGE` и т.д.) больше не нужны. Workflow `deploy-stage.yml` уже
+  удалён из репозитория (заменён на `build-images.yml`).
 
 ---
 

@@ -1,11 +1,12 @@
 name: Build & Push Images
 
 # CI для прод-деплоя через ArgoCD (psy-health/platform-gitops).
-# Этот workflow ТОЛЬКО собирает и публикует образы в GHCR — деплой делает ArgoCD,
-# который синкает Helm-чарт deploy/helm/directport с values из platform-gitops.
+# Этот workflow собирает и публикует образы в GHCR, затем открывает авто-PR в platform-gitops,
+# бампающий image.tag (→ git sha) в values/directport-prod.yaml. Merge PR = деплой = approval-gate
+# (Argo синкает Helm-чарт deploy/helm/directport с values из platform-gitops).
 # Образы тегируются:
-#   - <long git sha>  — для точного пиннинга версии (image.tag в values/directport-prod.yaml)
-#   - prod            — плавающий тег (только с дефолтной ветки); ArgoCD на pullPolicy: Always подхватит
+#   - <long git sha>  — для точного пиннинга версии (этим тегом bump-gitops правит values/directport-prod.yaml)
+#   - prod            — плавающий тег (только с дефолтной ветки); pullPolicy: Always оставлен как страховка
 on:
   push:
     branches: [main]
@@ -66,3 +67,77 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.app.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.app.name }}
+
+  # Метаданные триггернувшего коммита для информативного deploy-PR. Отдельная job, т.к. build-and-push —
+  # matrix, и его job-outputs из разных шардов перетирают друг друга (надёжного значения не получить).
+  commit-meta:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      subject: ${{ steps.meta.outputs.subject }}
+      message: ${{ steps.meta.outputs.message }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: meta
+        run: |
+          {
+            echo 'subject<<COMMIT_META_EOF'
+            git log -1 --pretty=%s
+            echo COMMIT_META_EOF
+            echo 'message<<COMMIT_META_EOF'
+            git log -1 --pretty=%B
+            echo COMMIT_META_EOF
+          } >> "$GITHUB_OUTPUT"
+
+  # Открывает PR в GitOps-репо с бампом image.tag всех 5 образов directport. Отдельная job: образы
+  # должны быть запушены раньше, чем Argo попытается их подтянуть. Merge PR = деплой = approval-gate
+  # (Argo синкает values/directport-prod.yaml). Cross-repo доступ — через GITOPS_PAT (fine-grained PAT
+  # к psy-health/platform-gitops: contents + pull-requests:write; заводит 👤 в secrets репо).
+  bump-gitops:
+    needs: [build-and-push, commit-meta]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout platform-gitops
+        uses: actions/checkout@v6
+        with:
+          repository: psy-health/platform-gitops
+          token: ${{ secrets.GITOPS_PAT }}
+          path: gitops
+      - name: Bump image tags in values/directport-prod.yaml
+        run: |
+          for svc in api adminWeb landing clientBot managerBot; do
+            yq -i ".${svc}.image.tag = \"${{ github.sha }}\"" gitops/values/directport-prod.yaml
+          done
+      - name: Create deploy PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITOPS_PAT }}
+          path: gitops
+          branch: deploy/directport-${{ github.sha }}
+          base: main
+          commit-message: 'chore(directport): deploy ${{ github.sha }}'
+          title: '[directport] Deploy: ${{ needs.commit-meta.outputs.subject }}'
+          body: |
+            **Проект:** DirectPort — `ioncreature/direct-port`
+            **Values:** `values/directport-prod.yaml`
+
+            Авто-PR из CI directport (`build-images`). **Merge = деплой** — Argo синкнет `values/directport-prod.yaml`.
+
+            Образы (`${{ github.sha }}`):
+            - `ghcr.io/ioncreature/direct-port-api`
+            - `ghcr.io/ioncreature/direct-port-admin-web`
+            - `ghcr.io/ioncreature/direct-port-landing`
+            - `ghcr.io/ioncreature/direct-port-client-bot`
+            - `ghcr.io/ioncreature/direct-port-manager-bot`
+
+            Source: [`ioncreature/direct-port@${{ github.sha }}`](https://github.com/ioncreature/direct-port/commit/${{ github.sha }})
+
+            ### Текст коммита
+
+            ```
+            ${{ needs.commit-meta.outputs.message }}
+            ```
+          delete-branch: true
