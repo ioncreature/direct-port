@@ -6,6 +6,8 @@ export interface User {
   role: UserRole;
   /** Компания пользователя. null только у super_admin. */
   companyId: string | null;
+  /** Название компании. Приходит только в списке пользователей (GET /users); null у super_admin. */
+  companyName?: string | null;
   isActive: boolean;
   managerTelegramId: string | null;
   createdAt: string;

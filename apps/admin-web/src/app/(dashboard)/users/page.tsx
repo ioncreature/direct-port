@@ -14,6 +14,7 @@ const roles: { value: User['role'] | ''; label: string }[] = [
   { value: '', label: 'Все' },
   { value: 'admin', label: 'Администратор' },
   { value: 'customs', label: 'Таможня' },
+  { value: 'super_admin', label: 'Глобальный администратор' },
 ];
 
 const sortableColumns: { field: string; label: string }[] = [
@@ -68,11 +69,17 @@ export default function UsersPage() {
         }}
       >
         <div style={{ display: 'flex', gap: 6 }}>
-          {roles.map((r) => (
-            <button key={r.value} onClick={() => filterByRole(r.value)} style={filterChip(role === r.value)}>
-              {r.label}
-            </button>
-          ))}
+          {roles
+            .filter((r) => r.value !== 'super_admin' || isSuperAdmin)
+            .map((r) => (
+              <button
+                key={r.value}
+                onClick={() => filterByRole(r.value)}
+                style={filterChip(role === r.value)}
+              >
+                {r.label}
+              </button>
+            ))}
         </div>
         {isSuperAdmin && <CompanySelect value={companyId} onChange={filterByCompany} />}
       </div>
@@ -94,6 +101,7 @@ export default function UsersPage() {
                     onToggle={toggleSort}
                   />
                 ))}
+                {isSuperAdmin && <th style={th}>Компания</th>}
                 <th style={th}>Активен</th>
                 <th style={th}></th>
               </tr>
@@ -104,6 +112,7 @@ export default function UsersPage() {
                   <td style={td}>{user.email}</td>
                   <td style={td}>{user.role}</td>
                   <td style={td}>{fmtDate(user.createdAt)}</td>
+                  {isSuperAdmin && <td style={td}>{user.companyName ?? '—'}</td>}
                   <td style={td}>{user.isActive ? 'Да' : 'Нет'}</td>
                   <td style={td}>
                     <Link
@@ -125,7 +134,7 @@ export default function UsersPage() {
               ))}
               {users.length === 0 && (
                 <tr>
-                  <td style={tdEmpty} colSpan={5}>
+                  <td style={tdEmpty} colSpan={isSuperAdmin ? 6 : 5}>
                     Пользователей не найдено
                   </td>
                 </tr>

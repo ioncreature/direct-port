@@ -1,5 +1,6 @@
 'use client';
 
+import { CompanySelect } from '@/components/company-select';
 import { useAuth } from '@/hooks/use-auth';
 import { useUsers } from '@/hooks/use-users';
 import type { User } from '@/lib/types';
@@ -18,16 +19,22 @@ export default function EditUserPage() {
   const [role, setRole] = useState<User['role']>('customs');
   const [isActive, setIsActive] = useState(true);
   const [password, setPassword] = useState('');
+  const [companyId, setCompanyId] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
   const user = users.find((u) => u.id === id);
+
+  // super_admin может перенести admin/customs в другую компанию. Для super_admin-пользователя
+  // компании нет — поле скрыто. admin компании поле не видит (наследует свою).
+  const needsCompany = isSuperAdmin && role !== 'super_admin';
 
   useEffect(() => {
     if (user) {
       setEmail(user.email);
       setRole(user.role);
       setIsActive(user.isActive);
+      setCompanyId(user.companyId ?? '');
     }
   }, [user]);
 
@@ -37,6 +44,10 @@ export default function EditUserPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError('');
+    if (needsCompany && !companyId) {
+      setError('Выберите компанию');
+      return;
+    }
     setSaving(true);
     try {
       await updateUser(id, {
@@ -44,6 +55,7 @@ export default function EditUserPage() {
         role,
         isActive,
         ...(password ? { password } : {}),
+        ...(needsCompany ? { companyId } : {}),
       });
       router.push('/users');
     } catch (err: unknown) {
@@ -101,6 +113,19 @@ export default function EditUserPage() {
             )}
           </select>
         </div>
+        {needsCompany && (
+          <div style={{ marginBottom: 16 }}>
+            <label htmlFor="company" style={labelStyle}>
+              Компания
+            </label>
+            <CompanySelect
+              value={companyId}
+              onChange={setCompanyId}
+              allLabel="— выберите компанию —"
+              style={{ width: '100%' }}
+            />
+          </div>
+        )}
         <div style={{ marginBottom: 16 }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
             <input

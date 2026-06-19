@@ -44,9 +44,16 @@ export function useUsers() {
   );
 
   const updateUser = useCallback(
+    // companyId учитывается только когда меняет super_admin (admin/customs); admin компании не шлёт его.
     async (
       id: string,
-      payload: { email?: string; password?: string; role?: User['role']; isActive?: boolean },
+      payload: {
+        email?: string;
+        password?: string;
+        role?: User['role'];
+        isActive?: boolean;
+        companyId?: string;
+      },
     ) => {
       await api.patch(`/users/${id}`, payload);
       await list.refetch();

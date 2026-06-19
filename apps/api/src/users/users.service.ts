@@ -15,6 +15,11 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { FindUsersQueryDto } from './dto/find-users-query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
+/** Пользователь без секрета и без relation-объекта company (наружу отдаём только companyId-скаляр). */
+type SanitizedUser = Omit<User, 'passwordHash' | 'company'>;
+/** Элемент списка пользователей: + название компании для отображения в админке. */
+type UserListItem = SanitizedUser & { companyName: string | null };
+
 @Injectable()
 export class UsersService {
   constructor(@InjectRepository(User) private usersRepo: Repository<User>) {}
@@ -22,7 +27,7 @@ export class UsersService {
   async findAll(
     query: FindUsersQueryDto,
     actor: Actor,
-  ): Promise<PaginatedResponse<Omit<User, 'passwordHash'>>> {
+  ): Promise<PaginatedResponse<UserListItem>> {
     const scope = resolveCompanyScope(actor, query.companyId);
     const where: FindOptionsWhere<User> = {};
     if (query.role) where.role = query.role;
@@ -30,13 +35,14 @@ export class UsersService {
 
     const [users, total] = await this.usersRepo.findAndCount({
       where,
+      relations: { company: true },
       order: { [query.sortBy]: query.sortOrder },
       skip: (query.page - 1) * query.limit,
       take: query.limit,
     });
 
     return paginate(
-      users.map((u) => this.sanitize(u)),
+      users.map((u) => ({ ...this.sanitize(u), companyName: u.company?.name ?? null })),
       total,
       query.page,
       query.limit,
@@ -70,6 +76,10 @@ export class UsersService {
     if (dto.email !== undefined) user.email = dto.email;
     if (dto.role !== undefined && dto.role !== user.role) {
       this.applyRoleChange(user, dto.role, actor);
+    }
+    // Смену компании обрабатываем после роли: роль определяет, допустима ли компания вообще.
+    if (dto.companyId !== undefined) {
+      this.applyCompanyChange(user, dto.companyId, actor);
     }
     if (dto.isActive !== undefined) user.isActive = dto.isActive;
     if (dto.password) {
@@ -133,8 +143,24 @@ export class UsersService {
     user.role = newRole; // admin ↔ customs внутри компании, company не меняется
   }
 
-  private sanitize(user: User) {
-    const { passwordHash, ...rest } = user;
+  /**
+   * Переносит admin/customs в другую компанию. Только глобальный super_admin: admin компании
+   * не может перемещать людей между тенантами. У super_admin компании нет (инвариант
+   * CHK_users_company_role) — задать её нельзя. Существование компании не проверяем: FK
+   * users.company_id отобьёт несуществующий id (как и при create).
+   */
+  private applyCompanyChange(user: User, companyId: string, actor: Actor): void {
+    if (actor.role !== UserRole.SUPER_ADMIN) {
+      throw new ForbiddenException('Only super admin can change a user company');
+    }
+    if (user.role === UserRole.SUPER_ADMIN) {
+      throw new BadRequestException('Super admin cannot belong to a company');
+    }
+    user.companyId = companyId;
+  }
+
+  private sanitize(user: User): SanitizedUser {
+    const { passwordHash, company, ...rest } = user;
     return rest;
   }
 }
