@@ -9,6 +9,8 @@ import {
 const TELEGRAM_BOT_URL = process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL || 'https://t.me/direct_port_bot';
 const CONTACT_EMAIL = 'hello@directport.ru';
 const CONTACT_EMAIL_HREF = `mailto:${CONTACT_EMAIL}`;
+const CONTACT_PHONE = '+7 909 760 7380';
+const CONTACT_PHONE_HREF = `tel:${CONTACT_PHONE.replace(/[^+\d]/g, '')}`;
 
 export default function LandingPage() {
   return (
@@ -92,6 +94,10 @@ function Hero() {
             <a href={CONTACT_EMAIL_HREF} className="btn btn-secondary btn-lg">
               <IconMail />
               {CONTACT_EMAIL}
+            </a>
+            <a href={CONTACT_PHONE_HREF} className="btn btn-secondary btn-lg">
+              <IconPhone />
+              {CONTACT_PHONE}
             </a>
           </div>
           <div className="hero-trust">
@@ -535,6 +541,10 @@ function FinalCta() {
             <IconMail />
             Написать на email
           </a>
+          <a href={CONTACT_PHONE_HREF} className="btn btn-ghost-on-dark btn-lg">
+            <IconPhone />
+            {CONTACT_PHONE}
+          </a>
         </div>
       </div>
     </section>
@@ -547,6 +557,7 @@ function Footer() {
       <div className="container footer-inner">
         <span>{BRAND_NAME} &copy; {new Date().getFullYear()}</span>
         <div className="footer-links">
+          <a href={CONTACT_PHONE_HREF}>{CONTACT_PHONE}</a>
           <a href={CONTACT_EMAIL_HREF}>{CONTACT_EMAIL}</a>
           <a href={TELEGRAM_BOT_URL} target="_blank" rel="noopener noreferrer">Telegram</a>
         </div>
@@ -576,6 +587,14 @@ function IconMail() {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <rect x="3" y="5" width="18" height="14" rx="2" />
       <polyline points="3 7 12 13 21 7" />
+    </svg>
+  );
+}
+
+function IconPhone() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3.1-8.7A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" />
     </svg>
   );
 }
