@@ -36,6 +36,12 @@ export class LeadsController {
     return this.service.getStatusCounts();
   }
 
+  @Get('searches')
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  searchHistory(@Query('limit') limit?: string) {
+    return this.service.getSearchHistory(Math.min(Number(limit) || 20, 50));
+  }
+
   @Get('export')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   async export(@Query() query: FindLeadsQueryDto, @Res() res: Response) {

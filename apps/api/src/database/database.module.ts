@@ -13,6 +13,7 @@ import { DocumentPhoto } from './entities/document-photo.entity';
 import { DocumentVersion } from './entities/document-version.entity';
 import { DutyInterpretationCache } from './entities/duty-interpretation-cache.entity';
 import { Lead } from './entities/lead.entity';
+import { LeadSearch } from './entities/lead-search.entity';
 import { PipelineStageRun } from './entities/pipeline-stage-run.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { RegulatoryInterpretationCache } from './entities/regulatory-interpretation-cache.entity';
@@ -62,6 +63,7 @@ import { AddSuperAdminEnumValue1779100000000 } from './migrations/1779100000000-
 import { AddMultiTenancy1779200000000 } from './migrations/1779200000000-AddMultiTenancy';
 import { AddLeads1779300000000 } from './migrations/1779300000000-AddLeads';
 import { AddLeadAiModels1779400000000 } from './migrations/1779400000000-AddLeadAiModels';
+import { AddLeadSearches1779500000000 } from './migrations/1779500000000-AddLeadSearches';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -91,6 +93,7 @@ import { SeedService } from './seeds/seed.service';
           RegulatoryInterpretationCache,
           ConversationMessage,
           Lead,
+          LeadSearch,
         ],
         synchronize: false,
         migrations: [
@@ -136,6 +139,7 @@ import { SeedService } from './seeds/seed.service';
           AddMultiTenancy1779200000000,
           AddLeads1779300000000,
           AddLeadAiModels1779400000000,
+          AddLeadSearches1779500000000,
         ],
         migrationsRun: true,
         // Каждая миграция в своей транзакции (по умолчанию TypeORM гонит все в одной).

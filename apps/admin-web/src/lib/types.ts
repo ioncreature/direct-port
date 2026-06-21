@@ -516,6 +516,22 @@ export type LeadStatus =
 
 export type LeadSource = 'fts_registry' | 'web_search' | 'manual' | 'import';
 
+export type LeadSearchStatus = 'running' | 'completed' | 'failed';
+
+export interface LeadSearch {
+  id: string;
+  query: string;
+  city: string | null;
+  maxResults: number;
+  status: LeadSearchStatus;
+  foundCount: number;
+  createdCount: number;
+  skippedCount: number;
+  errorMessage: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+}
+
 export interface Lead {
   id: string;
   companyName: string;

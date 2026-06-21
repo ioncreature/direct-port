@@ -4,9 +4,10 @@ import { Pager } from '@/components/pager';
 import { SortableTh } from '@/components/sortable-th';
 import { useLeads, type ImportItem } from '@/hooks/use-leads';
 import api from '@/lib/api';
-import { fmtDate } from '@/lib/format';
-import { SOURCE_LABELS, STATUS_COLORS, scoreColor } from '@/lib/lead-display';
+import { fmtDate, fmtDateTime } from '@/lib/format';
+import { SEARCH_STATUS_COLORS, SOURCE_LABELS, STATUS_COLORS, scoreColor } from '@/lib/lead-display';
 import {
+  btnLink,
   btnOutline,
   btnPrimary,
   cardSurface,
@@ -16,9 +17,21 @@ import {
   th,
   thR,
 } from '@/lib/table-styles';
-import type { Lead, LeadSource, LeadStatus } from '@/lib/types';
+import type { Lead, LeadSearch, LeadSource, LeadStatus } from '@/lib/types';
 import Link from 'next/link';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
+
+/** Типовые ниши ЦА DirectPort — заполняют поле «Запрос» в один клик (город вводится отдельно). */
+const QUERY_PRESETS: string[] = [
+  'таможенное оформление импорт',
+  'ВЭД услуги растаможка',
+  'импорт из Китая оптом',
+  'таможенный брокер',
+  'доставка грузов из Китая',
+  'оптовые поставки из Китая',
+  'импорт оборудования из Китая',
+  'логистика ВЭД Китай Россия',
+];
 
 const STATUS_FILTERS: { value: LeadStatus | ''; label: string }[] = [
   { value: '', label: 'Все' },
@@ -250,6 +263,14 @@ function DiscoverPanel({
   const [maxResults, setMaxResults] = useState('10');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [searches, setSearches] = useState<LeadSearch[]>([]);
+
+  useEffect(() => {
+    api
+      .get<LeadSearch[]>('/leads/searches', { params: { limit: 10 } })
+      .then((r) => setSearches(r.data))
+      .catch(() => {});
+  }, []);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -265,16 +286,22 @@ function DiscoverPanel({
     }
   }
 
+  function repeat(s: LeadSearch) {
+    setQuery(s.query);
+    setCity(s.city ?? '');
+    setMaxResults(String(s.maxResults));
+  }
+
   return (
     <form onSubmit={submit} style={{ ...cardSurface, padding: 16, marginBottom: 16 }}>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <Field label="Запрос (ниша + город)" style={{ flex: 2, minWidth: 280 }}>
+        <Field label="Запрос (ниша)" style={{ flex: 2, minWidth: 280 }}>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             required
             minLength={3}
-            placeholder="таможенное оформление импорт Владивосток"
+            placeholder="таможенное оформление импорт"
             style={inputStyle}
           />
         </Field>
@@ -298,13 +325,80 @@ function DiscoverPanel({
           Отмена
         </button>
       </div>
+
+      {/* Типовые запросы — клик подставляет в поле «Запрос» */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
+        {QUERY_PRESETS.map((p) => (
+          <button key={p} type="button" onClick={() => setQuery(p)} style={presetChip}>
+            {p}
+          </button>
+        ))}
+      </div>
+
       {error && <p style={{ color: 'var(--danger)', marginTop: 10, marginBottom: 0 }}>{error}</p>}
       <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 10, marginBottom: 0 }}>
         Claude найдёт компании через веб-поиск и поставит их на обогащение. Результаты появятся в списке через 1–2 минуты.
       </p>
+
+      {searches.length > 0 && <SearchHistory searches={searches} onRepeat={repeat} />}
     </form>
   );
 }
+
+function SearchHistory({ searches, onRepeat }: { searches: LeadSearch[]; onRepeat: (s: LeadSearch) => void }) {
+  return (
+    <div style={{ marginTop: 14, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>
+        Недавние поиски
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        {searches.map((s) => (
+          <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+            <button
+              type="button"
+              onClick={() => onRepeat(s)}
+              style={{ ...btnLink, textAlign: 'left' }}
+              title="Повторить запрос"
+            >
+              {s.query}
+              {s.city ? ` · ${s.city}` : ''}
+            </button>
+            <SearchStatusBadge search={s} />
+            <span style={{ color: 'var(--text-subtle)', marginLeft: 'auto', fontSize: 12, whiteSpace: 'nowrap' }}>
+              {fmtDateTime(s.createdAt)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SearchStatusBadge({ search: s }: { search: LeadSearch }) {
+  const style: React.CSSProperties = { color: SEARCH_STATUS_COLORS[s.status], fontSize: 12 };
+  if (s.status === 'running') return <span style={style}>идёт…</span>;
+  if (s.status === 'failed')
+    return (
+      <span style={style} title={s.errorMessage ?? ''}>
+        ошибка
+      </span>
+    );
+  return (
+    <span style={style}>
+      нашёл {s.foundCount}, +{s.createdCount} новых{s.skippedCount ? `, ${s.skippedCount} дубл.` : ''}
+    </span>
+  );
+}
+
+const presetChip: React.CSSProperties = {
+  padding: '3px 9px',
+  borderRadius: 'var(--radius-pill)',
+  border: '1px solid var(--border)',
+  background: 'var(--surface)',
+  color: 'var(--text-muted)',
+  fontSize: 12,
+  cursor: 'pointer',
+};
 
 function ImportPanel({
   onClose,

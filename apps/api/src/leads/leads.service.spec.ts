@@ -14,6 +14,12 @@ function createService() {
     delete: jest.fn().mockResolvedValue({ affected: 1 }),
     createQueryBuilder: jest.fn(),
   };
+  const searchRepo = {
+    create: jest.fn((x: Record<string, unknown>) => x),
+    save: jest.fn(async (x: Record<string, unknown>) => ({ id: 'search-1', ...x })),
+    update: jest.fn().mockResolvedValue({ affected: 1 }),
+    find: jest.fn().mockResolvedValue([]),
+  };
   const discoveryQueue = { add: jest.fn().mockResolvedValue(undefined) };
   const enrichmentQueue = {
     add: jest.fn().mockResolvedValue(undefined),
@@ -23,12 +29,13 @@ function createService() {
   const enrichmentService = { available: true };
   const service = new LeadsService(
     repo as never,
+    searchRepo as never,
     discoveryQueue as never,
     enrichmentQueue as never,
     discoveryService as never,
     enrichmentService as never,
   );
-  return { service, repo, discoveryQueue, enrichmentQueue };
+  return { service, repo, searchRepo, discoveryQueue, enrichmentQueue };
 }
 
 describe('LeadsService.create', () => {
@@ -53,6 +60,19 @@ describe('LeadsService.create', () => {
     await service.create({ companyName: 'Без сайта' });
     expect(repo.save).toHaveBeenCalled();
     expect(enrichmentQueue.add).not.toHaveBeenCalled();
+  });
+});
+
+describe('LeadsService.discover', () => {
+  it('создаёт запись поиска и ставит job с searchId', async () => {
+    const { service, searchRepo, discoveryQueue } = createService();
+    const res = await service.discover({ query: 'таможня Москва', city: 'Москва', maxResults: 10 });
+    expect(res).toEqual({ searchId: 'search-1' });
+    expect(searchRepo.save).toHaveBeenCalled();
+    expect(discoveryQueue.add).toHaveBeenCalledWith(
+      'discover-leads',
+      expect.objectContaining({ searchId: 'search-1', query: 'таможня Москва' }),
+    );
   });
 });
 

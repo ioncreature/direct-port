@@ -1,10 +1,12 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
+import { errMsg } from '../common/errors';
 import { LeadDiscoveryService } from './lead-discovery.service';
 import { LeadsService } from './leads.service';
 
 interface DiscoveryJob {
+  searchId?: string;
   query: string;
   city?: string;
   maxResults?: number;
@@ -22,19 +24,26 @@ export class LeadDiscoveryProcessor extends WorkerHost {
   }
 
   async process(job: Job<DiscoveryJob>): Promise<void> {
-    const { query, city, maxResults } = job.data;
+    const { searchId, query, city, maxResults } = job.data;
     this.logger.log(`Discovery start: «${query}»${city ? ` (${city})` : ''}`);
 
-    const companies = await this.discovery.discover(query, { city, maxResults });
-    if (companies.length === 0) {
-      this.logger.warn(`Discovery «${query}»: кандидатов не найдено`);
-      return;
+    try {
+      const companies = await this.discovery.discover(query, { city, maxResults });
+      let created = 0;
+      let skipped = 0;
+      if (companies.length > 0) {
+        const sourceDetail = (city ? `${query} · ${city}` : query).slice(0, 500);
+        ({ created, skipped } = await this.leads.saveDiscovered(companies, sourceDetail));
+      }
+      if (searchId) {
+        await this.leads.completeSearch(searchId, { found: companies.length, created, skipped });
+      }
+      this.logger.log(
+        `Discovery «${query}»: найдено ${companies.length}, создано ${created}, дублей ${skipped}`,
+      );
+    } catch (err) {
+      if (searchId) await this.leads.failSearch(searchId, errMsg(err));
+      throw err; // пусть BullMQ тоже зафиксирует падение джобы
     }
-
-    const sourceDetail = (city ? `${query} · ${city}` : query).slice(0, 500);
-    const { created, skipped } = await this.leads.saveDiscovered(companies, sourceDetail);
-    this.logger.log(
-      `Discovery «${query}»: найдено ${companies.length}, создано ${created}, дублей ${skipped}`,
-    );
   }
 }

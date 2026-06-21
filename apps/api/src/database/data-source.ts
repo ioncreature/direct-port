@@ -13,6 +13,7 @@ import { DocumentPhoto } from './entities/document-photo.entity';
 import { DocumentVersion } from './entities/document-version.entity';
 import { DutyInterpretationCache } from './entities/duty-interpretation-cache.entity';
 import { Lead } from './entities/lead.entity';
+import { LeadSearch } from './entities/lead-search.entity';
 import { PipelineStageRun } from './entities/pipeline-stage-run.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { RegulatoryInterpretationCache } from './entities/regulatory-interpretation-cache.entity';
@@ -46,6 +47,7 @@ export default new DataSource({
     DutyInterpretationCache,
     RegulatoryInterpretationCache,
     Lead,
+    LeadSearch,
   ],
   migrations: ['src/database/migrations/*{.ts,.js}'],
   // Каждая миграция в своей транзакции — чтобы новое значение enum 'super_admin' было

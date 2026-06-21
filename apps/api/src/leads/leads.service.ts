@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
 import { In, Repository } from 'typeorm';
 import { PaginatedResponse, paginate } from '../common/interfaces/paginated';
+import { LeadSearch } from '../database/entities/lead-search.entity';
 import { Lead, LeadStatus, type LeadSource } from '../database/entities/lead.entity';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { DiscoverLeadsDto } from './dto/discover-leads.dto';
@@ -30,6 +31,7 @@ export class LeadsService {
 
   constructor(
     @InjectRepository(Lead) private readonly repo: Repository<Lead>,
+    @InjectRepository(LeadSearch) private readonly searchRepo: Repository<LeadSearch>,
     @InjectQueue('lead-discovery') private readonly discoveryQueue: Queue,
     @InjectQueue('lead-enrichment') private readonly enrichmentQueue: Queue,
     private readonly discoveryService: LeadDiscoveryService,
@@ -117,17 +119,55 @@ export class LeadsService {
     if (!res.affected) throw new NotFoundException('Лид не найден');
   }
 
-  /** Ставит задание discovery в очередь (web-поиск компаний). */
-  async discover(dto: DiscoverLeadsDto): Promise<{ queued: boolean }> {
+  /** Ставит задание discovery в очередь (web-поиск компаний) и пишет запись в журнал. */
+  async discover(dto: DiscoverLeadsDto): Promise<{ searchId: string }> {
     if (!this.discoveryService.available) {
       throw new BadRequestException('Discovery недоступен: ANTHROPIC_API_KEY не настроен');
     }
+    const maxResults = dto.maxResults ?? 10;
+    const search = await this.searchRepo.save(
+      this.searchRepo.create({
+        query: dto.query,
+        city: dto.city ?? null,
+        maxResults,
+        status: 'running',
+      }),
+    );
     await this.discoveryQueue.add('discover-leads', {
+      searchId: search.id,
       query: dto.query,
       city: dto.city,
-      maxResults: dto.maxResults,
+      maxResults,
     });
-    return { queued: true };
+    return { searchId: search.id };
+  }
+
+  /** История discovery-заданий (последние N), новые сверху. */
+  getSearchHistory(limit = 20): Promise<LeadSearch[]> {
+    return this.searchRepo.find({ order: { createdAt: 'DESC' }, take: limit });
+  }
+
+  /** Воркер: завершить задание поиска с результатами. */
+  async completeSearch(
+    id: string,
+    counts: { found: number; created: number; skipped: number },
+  ): Promise<void> {
+    await this.searchRepo.update(id, {
+      status: 'completed',
+      foundCount: counts.found,
+      createdCount: counts.created,
+      skippedCount: counts.skipped,
+      finishedAt: new Date(),
+    });
+  }
+
+  /** Воркер: пометить задание поиска упавшим. */
+  async failSearch(id: string, error: string): Promise<void> {
+    await this.searchRepo.update(id, {
+      status: 'failed',
+      errorMessage: error,
+      finishedAt: new Date(),
+    });
   }
 
   /** Перезапускает обогащение конкретного лида. */

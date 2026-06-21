@@ -6,6 +6,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AiConfigModule } from '../ai-config/ai-config.module';
 import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
 import { Lead } from '../database/entities/lead.entity';
+import { LeadSearch } from '../database/entities/lead-search.entity';
 import { LeadDiscoveryProcessor } from './lead-discovery.processor';
 import { LeadDiscoveryService } from './lead-discovery.service';
 import { LeadEnrichmentProcessor } from './lead-enrichment.processor';
@@ -15,7 +16,7 @@ import { LeadsService } from './leads.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Lead, AiUsageLog]),
+    TypeOrmModule.forFeature([Lead, LeadSearch, AiUsageLog]),
     BullModule.registerQueue({ name: 'lead-discovery' }),
     BullModule.registerQueue({ name: 'lead-enrichment' }),
     ConfigModule,

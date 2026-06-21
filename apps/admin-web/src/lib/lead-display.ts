@@ -1,4 +1,4 @@
-import type { LeadSource, LeadStatus } from './types';
+import type { LeadSearchStatus, LeadSource, LeadStatus } from './types';
 
 export const SOURCE_LABELS: Record<LeadSource, string> = {
   fts_registry: 'Реестр ФТС',
@@ -37,6 +37,12 @@ export const MANAGER_STATUS_OPTIONS: LeadStatus[] = [
   'qualified',
   'rejected',
 ];
+
+export const SEARCH_STATUS_COLORS: Record<LeadSearchStatus, string> = {
+  running: 'var(--warning)',
+  completed: 'var(--text-muted)',
+  failed: 'var(--danger)',
+};
 
 export function scoreColor(s: number | null): string {
   if (s == null) return 'var(--text-subtle)';
