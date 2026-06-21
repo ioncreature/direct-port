@@ -503,3 +503,40 @@ export interface DocumentVersionSnapshot {
 export interface DocumentVersion extends DocumentVersionLite {
   snapshot: DocumentVersionSnapshot;
 }
+
+export type LeadStatus =
+  | 'new'
+  | 'enriching'
+  | 'enriched'
+  | 'in_progress'
+  | 'contacted'
+  | 'qualified'
+  | 'rejected'
+  | 'failed';
+
+export type LeadSource = 'fts_registry' | 'web_search' | 'manual' | 'import';
+
+export interface Lead {
+  id: string;
+  companyName: string;
+  website: string | null;
+  domain: string | null;
+  inn: string | null;
+  city: string | null;
+  phones: string[] | null;
+  emails: string[] | null;
+  services: string[] | null;
+  doesImport: boolean | null;
+  importDirections: string[] | null;
+  relevanceScore: number | null;
+  relevanceReason: string | null;
+  status: LeadStatus;
+  statusLabel: string;
+  source: LeadSource;
+  sourceDetail: string | null;
+  notes: string | null;
+  lastContactedAt: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

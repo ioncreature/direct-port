@@ -41,6 +41,8 @@ export class AiConfigService {
         interpreterModel: 'sonnet',
         photoClassifierModel: 'sonnet',
         regulatoryInterpreterModel: 'haiku',
+        leadDiscoveryModel: 'sonnet',
+        leadEnrichmentModel: 'haiku',
       }),
     );
     this.cached = created;
@@ -55,6 +57,8 @@ export class AiConfigService {
     interpreterModel?: AiModelTier;
     photoClassifierModel?: AiModelTier;
     regulatoryInterpreterModel?: AiModelTier;
+    leadDiscoveryModel?: AiModelTier;
+    leadEnrichmentModel?: AiModelTier;
   }): Promise<AiConfig> {
     const config = await this.get();
     if (dto.parserModel !== undefined) config.parserModel = dto.parserModel;
@@ -64,13 +68,16 @@ export class AiConfigService {
     if (dto.photoClassifierModel !== undefined) config.photoClassifierModel = dto.photoClassifierModel;
     if (dto.regulatoryInterpreterModel !== undefined)
       config.regulatoryInterpreterModel = dto.regulatoryInterpreterModel;
+    if (dto.leadDiscoveryModel !== undefined) config.leadDiscoveryModel = dto.leadDiscoveryModel;
+    if (dto.leadEnrichmentModel !== undefined) config.leadEnrichmentModel = dto.leadEnrichmentModel;
     const saved = await this.repo.save(config);
     this.cached = saved;
     this.cachedAt = Date.now();
     this.logger.log(
       `AI config updated: parser=${saved.parserModel}, queryFormulation=${saved.queryFormulationModel}, ` +
         `classifier=${saved.classifierModel}, interpreter=${saved.interpreterModel}, ` +
-        `photoClassifier=${saved.photoClassifierModel}, regulatoryInterpreter=${saved.regulatoryInterpreterModel}`,
+        `photoClassifier=${saved.photoClassifierModel}, regulatoryInterpreter=${saved.regulatoryInterpreterModel}, ` +
+        `leadDiscovery=${saved.leadDiscoveryModel}, leadEnrichment=${saved.leadEnrichmentModel}`,
     );
     return saved;
   }
@@ -109,5 +116,17 @@ export class AiConfigService {
   async getRegulatoryInterpreterModel(): Promise<string> {
     const config = await this.get();
     return MODEL_IDS[config.regulatoryInterpreterModel] ?? MODEL_IDS.haiku;
+  }
+
+  /** Возвращает model ID для discovery лидов (web-поиск компаний-импортёров). */
+  async getLeadDiscoveryModel(): Promise<string> {
+    const config = await this.get();
+    return MODEL_IDS[config.leadDiscoveryModel] ?? MODEL_IDS.sonnet;
+  }
+
+  /** Возвращает model ID для обогащения лида (скоринг сайта). */
+  async getLeadEnrichmentModel(): Promise<string> {
+    const config = await this.get();
+    return MODEL_IDS[config.leadEnrichmentModel] ?? MODEL_IDS.haiku;
   }
 }

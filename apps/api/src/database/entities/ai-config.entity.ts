@@ -38,6 +38,21 @@ export class AiConfig {
   @Column({ type: 'varchar', length: 10, name: 'regulatory_interpreter_model', default: 'haiku' })
   regulatoryInterpreterModel: AiModelTier;
 
+  /**
+   * Модель для discovery лидов (web-поиск компаний-импортёров через server-side
+   * web_search). Sonnet по умолчанию: поиск + отбор кандидатов выигрывает от модели
+   * посильнее haiku, но не требует Opus.
+   */
+  @Column({ type: 'varchar', length: 10, name: 'lead_discovery_model', default: 'sonnet' })
+  leadDiscoveryModel: AiModelTier;
+
+  /**
+   * Модель для обогащения лида (извлечение контактов с сайта + скоринг релевантности).
+   * Haiku по умолчанию: извлечение и классификация, не reasoning — дёшево и быстро.
+   */
+  @Column({ type: 'varchar', length: 10, name: 'lead_enrichment_model', default: 'haiku' })
+  leadEnrichmentModel: AiModelTier;
+
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 }

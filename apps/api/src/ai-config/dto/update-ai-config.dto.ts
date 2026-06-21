@@ -27,4 +27,12 @@ export class UpdateAiConfigDto {
   @IsOptional()
   @IsIn(TIERS)
   regulatoryInterpreterModel?: AiModelTier;
+
+  @IsOptional()
+  @IsIn(TIERS)
+  leadDiscoveryModel?: AiModelTier;
+
+  @IsOptional()
+  @IsIn(TIERS)
+  leadEnrichmentModel?: AiModelTier;
 }
