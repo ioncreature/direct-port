@@ -37,6 +37,8 @@ managerBot:
   image:
     repository: ghcr.io/your-org/directport-manager-bot
     pullPolicy: Always
+  # Дефолт чарта = прод-домен (admin-access.directport.ru); на stage deep-link ведут на свой публичный хост.
+  adminWebBaseUrl: 'https://coreimport-admin.lab42-stg.work'
 
 ingress:
   enabled: true
