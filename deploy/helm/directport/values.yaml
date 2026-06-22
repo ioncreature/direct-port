@@ -77,8 +77,15 @@ managerBot:
     tag: latest
     pullPolicy: IfNotPresent
   port: 3004
-  # Публичный URL админки для deep-link кнопок «Открыть в админке».
-  # Если пусто — выводится из ingress.hosts.admin.host (https).
+  # Публичный URL админки для deep-link кнопок «Открыть в админке» (по ним кликают
+  # менеджеры в Telegram). Должен быть ВНЕШНЕ резолвимым доменом.
+  # Если пусто — fallback на https://<ingress.hosts.admin.host>. Это верно только когда
+  # внутренний host совпадает с публичным (stage/local). На GitOps-проде они РАЗНЫЕ:
+  # ingress.hosts.admin.host = admin.directport.ru — внутренний Traefik-Host, на который
+  # внешний Caddy шлёт Host-заголовок; снаружи он не резолвится (публичен только
+  # admin-access.directport.ru). Поэтому на проде задавай ЯВНО:
+  #   adminWebBaseUrl: 'https://admin-access.directport.ru'
+  # иначе deep-link кнопки ведут в мёртвый домен.
   adminWebBaseUrl: ''
   resources:
     requests:

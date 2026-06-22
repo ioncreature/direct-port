@@ -48,19 +48,31 @@ ArgoCD (app-of-apps), External Secrets Operator (`ClusterSecretStore vault-kv`),
 Значения (TKS/Anthropic/JWT/боты) переносятся 1:1 из текущих GitHub Actions secrets stage.
 TLS — на внешнем stage-proxy, отдельной Vault-записи для сертификата нет.
 
-### 2. DNS и маршрутизация (внешний stage-proxy)
+### 2. DNS и маршрутизация (внешний Caddy-прокси)
 
-Трафик идёт через внешний nginx (тот же stage-proxy, `deploy/coreimport-stage-proxy.conf`): он
-терминирует публичный TLS (letsencrypt) и проксирует в Traefik кластера через `proxy_pass https://…`
-с re-encrypt. Traefik отдаёт свой default self-signed cert — nginx upstream не верифицирует, поэтому
-Cloudflare Origin Cert не нужен.
+Трафик идёт через внешний **Caddy** (`ssh cicd@stage-proxy`, конфиг `/etc/caddy/Caddyfile`): он
+терминирует публичный TLS (letsencrypt, авто-выпуск по доменам из Caddyfile) и проксирует в Traefik
+кластера (`reverse_proxy https://<traefik>` с `tls_insecure_skip_verify`, re-encrypt). Origin Cert не нужен.
 
-- Завести DNS `directport.ru`, `admin.directport.ru`, `api.directport.ru` на этот nginx.
-- Добавить в nginx server-блоки для этих доменов (по образцу `coreimport-*` блоков):
-  `proxy_pass https://<traefik-websecure-host:port>`, `proxy_set_header Host $host` — Host передаётся
-  как есть (публичные домены directport).
-- В кластере `ingress.hosts` в `values/directport-prod.yaml` = эти же публичные домены, Traefik роутит
-  по Host. Проксировать на **websecure**-entrypoint (https): Traefik редиректит http→https, иначе вернёт 301.
+**Публичные домены** (DNS заведён на Caddy-хост + есть блок в Caddyfile):
+
+- `directport.ru` — лендинг (Caddy шлёт `Host directport.ru`).
+- `admin-access.directport.ru` — админка (Caddy шлёт `Host admin.directport.ru`).
+
+⚠️ **Публичный домен админки — `admin-access.directport.ru`, а НЕ `admin.directport.ru`.** Внутри
+кластера Traefik роутит по `Host: admin.directport.ru` (= `ingress.hosts.admin.host`), на который Caddy
+переписывает заголовок; снаружи `admin.directport.ru` и `api.directport.ru` НЕ резолвятся (блоков в
+Caddy нет). Отдельным публичным доменом API наружу не выставлен — внешний доступ к нему идёт через
+админку-прокси: `https://admin-access.directport.ru/api/*` (admin-web проксирует `/api` на API-сервис,
+`X-Internal-Key` проходит насквозь). Это и есть базовый URL для внешних service-to-service клиентов
+(напр. routine лидген-агента).
+
+- В кластере `ingress.hosts` в `values/directport-prod.yaml` = ВНУТРЕННИЕ хосты (`admin.directport.ru`,
+  `api.directport.ru`), по которым роутит Traefik; публичными их делает только блок в Caddy. Проксировать
+  на **websecure**-entrypoint (https): Traefik редиректит http→https, иначе вернёт 301.
+- ‼️ **`managerBot.adminWebBaseUrl` в `values/directport-prod.yaml` ДОЛЖЕН быть `https://admin-access.directport.ru`.**
+  Если не задан — `ADMIN_WEB_BASE_URL` выведется из внутреннего `ingress.hosts.admin.host` и deep-link
+  кнопки менеджерского бота («Открыть в админке») будут вести в мёртвый `admin.directport.ru`.
 
 ### 3. Доступ ArgoCD к приватному репозиторию
 
@@ -96,7 +108,7 @@ kubectl -n directport logs job/directport-migration  # миграции прош
 ```
 
 - `https://directport.ru` — лендинг открывается, CTA ведёт в client-bot.
-- `https://admin.directport.ru` — вход `admin@directport.ru` (пароль из сида / смена при первом входе).
+- `https://admin-access.directport.ru` — вход `admin@directport.ru` (пароль из сида / смена при первом входе).
 - Загрузка тестового `.xlsx` через client-bot → пайплайн доходит до `PROCESSED`, manager-bot получает уведомление.
 
 ### 7. Погасить stage
