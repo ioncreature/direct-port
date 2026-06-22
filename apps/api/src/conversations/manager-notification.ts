@@ -11,21 +11,23 @@ export type ManagerEventType =
   | 'pipeline_done' // расчёт завершён (processed / processed_with_errors)
   | 'pipeline_failed' // ошибка обработки
   | 'pipeline_review' // нужна ручная проверка (requires_review / code_review_required)
-  | 'pipeline_rejected'; // документ отклонён
+  | 'pipeline_rejected' // документ отклонён
+  | 'leads_report'; // автономный поиск лидов — текстовый отчёт менеджерам (без клиента)
 
 export interface ManagerNotification {
   event: ManagerEventType;
   /** Telegram ID менеджеров-адресатов (resolved: назначенный или broadcast всем привязанным). */
   managerTelegramIds: string[];
-  clientId: string; // TelegramUser.id (uuid)
-  clientName: string;
-  clientTelegramId: string; // numeric Telegram ID клиента — для справки
+  // Поля клиента есть у всех событий, КРОМЕ leads_report (он не про клиента, а про лидген).
+  clientId?: string; // TelegramUser.id (uuid)
+  clientName?: string;
+  clientTelegramId?: string; // numeric Telegram ID клиента — для справки
   /** Закреплён ли уже менеджер за клиентом (если нет — бот покажет кнопку «Взять»). */
-  assigned: boolean;
+  assigned?: boolean;
   documentId?: string;
   documentName?: string;
   statusLabel?: string; // человекочитаемый статус документа (для pipeline_*)
-  text?: string; // текст сообщения клиента (для client_message / подпись к new_document)
+  text?: string; // текст клиента (client_message) / подпись (new_document) / тело отчёта (leads_report)
   attachmentType?: string; // 'document' | 'photo' | 'file' (для client_message)
   /** Результат готов к отправке клиенту (PROCESSED — download доступен). Для pipeline_done. */
   resultReady?: boolean;

@@ -99,3 +99,29 @@ describe('ManagerNotifyService.notifyDocumentEvent', () => {
     expect(queue.add).not.toHaveBeenCalled();
   });
 });
+
+describe('ManagerNotifyService.notifyLeadsReport', () => {
+  it('broadcasts the report text to all linked managers', async () => {
+    const { service, queue } = createService({
+      allManagers: [{ managerTelegramId: '111' }, { managerTelegramId: '222' }],
+    });
+    const res = await service.notifyLeadsReport('Найдено 8 лидов, 3 горячих');
+    expect(res).toEqual({ delivered: true });
+    expect(queue.add).toHaveBeenCalledWith(
+      'manager-notify',
+      expect.objectContaining({
+        event: 'leads_report',
+        managerTelegramIds: ['111', '222'],
+        text: 'Найдено 8 лидов, 3 горячих',
+      }),
+      RETRY_OPTS,
+    );
+  });
+
+  it('does not enqueue when no managers are linked', async () => {
+    const { service, queue } = createService({ allManagers: [] });
+    const res = await service.notifyLeadsReport('отчёт');
+    expect(res).toEqual({ delivered: false });
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+});

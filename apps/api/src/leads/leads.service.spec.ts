@@ -27,6 +27,7 @@ function createService() {
   };
   const discoveryService = { available: true };
   const enrichmentService = { available: true };
+  const managerNotify = { notifyLeadsReport: jest.fn().mockResolvedValue({ delivered: true }) };
   const service = new LeadsService(
     repo as never,
     searchRepo as never,
@@ -34,8 +35,9 @@ function createService() {
     enrichmentQueue as never,
     discoveryService as never,
     enrichmentService as never,
+    managerNotify as never,
   );
-  return { service, repo, searchRepo, discoveryQueue, enrichmentQueue };
+  return { service, repo, searchRepo, discoveryQueue, enrichmentQueue, managerNotify };
 }
 
 describe('LeadsService.create', () => {
@@ -152,5 +154,25 @@ describe('LeadsService.exportCsv', () => {
     expect(csv.charCodeAt(0)).toBe(0xfeff); // BOM для Excel
     expect(csv).toContain("'=SUM(1)"); // формула обезврежена ведущим апострофом
     expect(csv).toContain('"ООО ""Рога, Копыта"""'); // кавычки и запятая экранированы
+  });
+});
+
+describe('LeadsService.reportToManagers', () => {
+  it('делегирует доставку отчёта менеджерам', async () => {
+    const { service, managerNotify } = createService();
+    const res = await service.reportToManagers('Найдено 5 горячих лидов');
+    expect(managerNotify.notifyLeadsReport).toHaveBeenCalledWith('Найдено 5 горячих лидов');
+    expect(res).toEqual({ delivered: true });
+  });
+});
+
+describe('LeadsService.getDigest', () => {
+  it('запрашивает свежих лидов и возвращает их', async () => {
+    const { service, repo } = createService();
+    const leads = [{ id: 'l1', relevanceScore: 0.9 }];
+    repo.find.mockResolvedValue(leads);
+    const res = await service.getDigest(24);
+    expect(repo.find).toHaveBeenCalled();
+    expect(res).toBe(leads);
   });
 });

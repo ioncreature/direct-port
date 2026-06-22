@@ -13,15 +13,16 @@ export type ManagerEventType =
   | 'pipeline_done'
   | 'pipeline_failed'
   | 'pipeline_review'
-  | 'pipeline_rejected';
+  | 'pipeline_rejected'
+  | 'leads_report';
 
 export interface ManagerNotification {
   event: ManagerEventType;
   managerTelegramIds: string[];
-  clientId: string;
-  clientName: string;
-  clientTelegramId: string;
-  assigned: boolean;
+  clientId?: string;
+  clientName?: string;
+  clientTelegramId?: string;
+  assigned?: boolean;
   documentId?: string;
   documentName?: string;
   statusLabel?: string;
@@ -32,7 +33,11 @@ export interface ManagerNotification {
 
 /** Текст уведомления менеджеру (HTML) по типу события. */
 export function buildNotificationText(n: ManagerNotification): string {
-  const client = `<b>${escapeHtml(n.clientName)}</b>`;
+  if (n.event === 'leads_report') {
+    // Отчёт лидген-агента — тело приходит готовым, экранируем как plain-текст.
+    return `🔎 <b>Поиск лидов</b>\n${escapeHtml(n.text ?? 'отчёт пуст')}`;
+  }
+  const client = `<b>${escapeHtml(n.clientName ?? '')}</b>`;
   const doc = escapeHtml(n.documentName ?? 'файл');
   switch (n.event) {
     case 'new_document': {
@@ -66,6 +71,9 @@ export function buildNotificationKeyboard(
   adminBase: string,
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
+  if (n.event === 'leads_report') {
+    return kb.url('↗️ Лиды в админке', `${adminBase}/leads`);
+  }
   if (n.event === 'new_document') {
     if (n.documentId) kb.text('🚀 Запустить расчёт', `start:${n.documentId}`).row();
     if (!n.assigned) kb.text('👤 Взять', `claim:${n.clientId}`).row();

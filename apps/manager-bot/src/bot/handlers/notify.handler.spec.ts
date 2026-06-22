@@ -72,6 +72,17 @@ describe('buildNotificationText', () => {
     expect(buildNotificationText({ ...base, event: 'pipeline_review' })).toContain('проверки');
     expect(buildNotificationText({ ...base, event: 'pipeline_rejected' })).toContain('отклонён');
   });
+
+  it('leads_report — заголовок и экранированный текст отчёта (без клиента)', () => {
+    const t = buildNotificationText({
+      event: 'leads_report',
+      managerTelegramIds: ['1'],
+      text: 'Найдено 8 лидов <топ>',
+    });
+    expect(t).toContain('Поиск лидов');
+    expect(t).toContain('Найдено 8 лидов');
+    expect(t).toContain('&lt;топ&gt;');
+  });
 });
 
 describe('buildNotificationKeyboard', () => {
@@ -127,6 +138,14 @@ describe('buildNotificationKeyboard', () => {
     const buttons = flat(kb);
     expect(buttons.some((b) => b.callback_data === 'send:doc-1')).toBe(true);
     expect(buttons.some((b) => b.url?.includes('/documents/doc-1'))).toBe(true);
+  });
+
+  it('leads_report: ссылка на раздел лидов', () => {
+    const kb = buildNotificationKeyboard(
+      { event: 'leads_report', managerTelegramIds: ['1'] },
+      ADMIN,
+    );
+    expect(flat(kb).some((b) => b.url?.includes('/leads'))).toBe(true);
   });
 });
 

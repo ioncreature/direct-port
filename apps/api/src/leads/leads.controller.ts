@@ -11,12 +11,14 @@ import {
   Res,
 } from '@nestjs/common';
 import { Response } from 'express';
+import { Internal } from '../auth/decorators/internal.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../database/entities/user.entity';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { DiscoverLeadsDto } from './dto/discover-leads.dto';
 import { FindLeadsQueryDto } from './dto/find-leads-query.dto';
 import { ImportLeadsDto } from './dto/import-leads.dto';
+import { ReportLeadsDto } from './dto/report-leads.dto';
 import { UpdateLeadDto } from './dto/update-lead.dto';
 import { LeadsService } from './leads.service';
 
@@ -40,6 +42,40 @@ export class LeadsController {
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   searchHistory(@Query('limit') limit?: string) {
     return this.service.getSearchHistory(Math.min(Number(limit) || 20, 50));
+  }
+
+  // --- Контур автономного агента (routine), доступ по X-Internal-Key ---
+
+  /** История поисков — агент решает, что искать дальше, не повторяясь. */
+  @Get('agent/searches')
+  @Internal()
+  agentSearches(@Query('limit') limit?: string) {
+    return this.service.getSearchHistory(Math.min(Number(limit) || 30, 100));
+  }
+
+  /** Запуск web-поиска агентом. */
+  @Post('agent/discover')
+  @Internal()
+  agentDiscover(@Body() dto: DiscoverLeadsDto) {
+    return this.service.discover(dto);
+  }
+
+  /** Дайджест свежих горячих лидов за период (часы); порог score настраивается агентом. */
+  @Get('agent/digest')
+  @Internal()
+  agentDigest(@Query('hours') hours?: string, @Query('minScore') minScore?: string) {
+    const parsedScore = Number(minScore);
+    return this.service.getDigest(
+      Math.min(Number(hours) || 24, 168),
+      Number.isFinite(parsedScore) ? Math.min(Math.max(parsedScore, 0), 1) : undefined,
+    );
+  }
+
+  /** Доставить готовый отчёт менеджерам в Telegram. */
+  @Post('agent/report')
+  @Internal()
+  agentReport(@Body() dto: ReportLeadsDto) {
+    return this.service.reportToManagers(dto.text);
   }
 
   @Get('export')

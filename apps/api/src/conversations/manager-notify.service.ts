@@ -65,6 +65,21 @@ export class ManagerNotifyService {
     });
   }
 
+  /**
+   * Текстовый отчёт автономного лидген-агента. Не про клиента — broadcast всем
+   * привязанным менеджерам. Переиспользует очередь и доставку manager-bot.
+   */
+  async notifyLeadsReport(text: string): Promise<{ delivered: boolean }> {
+    const managerTelegramIds = await this.resolveManagers(null);
+    if (managerTelegramIds.length === 0) {
+      this.logger.warn('No linked managers to notify (leads_report)');
+      return { delivered: false };
+    }
+    const payload: ManagerNotification = { event: 'leads_report', managerTelegramIds, text };
+    await this.queue.add('manager-notify', payload, DELIVERY_JOB_OPTS);
+    return { delivered: true };
+  }
+
   private async enqueue(
     event: ManagerEventType,
     client: ConversationClient,

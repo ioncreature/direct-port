@@ -2,8 +2,9 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
-import { In, Repository } from 'typeorm';
+import { In, MoreThanOrEqual, Repository } from 'typeorm';
 import { PaginatedResponse, paginate } from '../common/interfaces/paginated';
+import { ManagerNotifyService } from '../conversations/manager-notify.service';
 import { LeadSearch } from '../database/entities/lead-search.entity';
 import { Lead, LeadStatus, type LeadSource } from '../database/entities/lead.entity';
 import { CreateLeadDto } from './dto/create-lead.dto';
@@ -36,6 +37,7 @@ export class LeadsService {
     @InjectQueue('lead-enrichment') private readonly enrichmentQueue: Queue,
     private readonly discoveryService: LeadDiscoveryService,
     private readonly enrichmentService: LeadEnrichmentService,
+    private readonly managerNotify: ManagerNotifyService,
   ) {}
 
   async findAll(query: FindLeadsQueryDto): Promise<PaginatedResponse<Lead>> {
@@ -145,6 +147,21 @@ export class LeadsService {
   /** История discovery-заданий (последние N), новые сверху. */
   getSearchHistory(limit = 20): Promise<LeadSearch[]> {
     return this.searchRepo.find({ order: { createdAt: 'DESC' }, take: limit });
+  }
+
+  /** Дайджест свежих горячих лидов за период — для отчёта автономного агента. */
+  getDigest(hours: number, minScore = 0.7): Promise<Lead[]> {
+    const since = new Date(Date.now() - hours * 3600_000);
+    return this.repo.find({
+      where: { createdAt: MoreThanOrEqual(since), relevanceScore: MoreThanOrEqual(minScore) },
+      order: { relevanceScore: 'DESC' },
+      take: 50,
+    });
+  }
+
+  /** Передать текстовый отчёт агента менеджерам в Telegram (через manager-bot). */
+  reportToManagers(text: string): Promise<{ delivered: boolean }> {
+    return this.managerNotify.notifyLeadsReport(text);
   }
 
   /** Воркер: завершить задание поиска с результатами. */

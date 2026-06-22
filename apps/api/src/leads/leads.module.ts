@@ -4,6 +4,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AiConfigModule } from '../ai-config/ai-config.module';
+import { ManagerNotifyModule } from '../conversations/manager-notify.module';
 import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
 import { Lead } from '../database/entities/lead.entity';
 import { LeadSearch } from '../database/entities/lead-search.entity';
@@ -21,6 +22,7 @@ import { LeadsService } from './leads.service';
     BullModule.registerQueue({ name: 'lead-enrichment' }),
     ConfigModule,
     AiConfigModule,
+    ManagerNotifyModule,
   ],
   controllers: [LeadsController],
   providers: [
