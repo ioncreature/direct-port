@@ -124,7 +124,7 @@ jobs:
           branch: deploy/directport-${{ github.sha }}
           base: main
           commit-message: 'chore(directport): deploy ${{ github.sha }}'
-          title: '[directport] Deploy: ${{ needs.commit-meta.outputs.subject }}'
+          title: '[directport] ${{ needs.commit-meta.outputs.subject }}'
           body: |
             **Проект:** DirectPort — `ioncreature/direct-port`
             **Values:** `values/directport-prod.yaml`
