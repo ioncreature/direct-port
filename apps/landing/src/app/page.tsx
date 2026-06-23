@@ -23,7 +23,6 @@ export default function LandingPage() {
         <Pricing />
         <WhyAccurate />
         <WhatIsCalculated />
-        <TnVed />
         <FinalCta />
       </main>
       <Footer />
@@ -43,19 +42,33 @@ function Header() {
           <a href="#how">Как работает</a>
           <a href="#pricing">Цена</a>
           <a href="#why">Почему точно</a>
-          <a href="#tnved">Справочник</a>
         </nav>
         <div className="header-cta">
-          <a href={CONTACT_EMAIL_HREF} className="btn btn-secondary">
-            Связаться
+          <a
+            href={CONTACT_EMAIL_HREF}
+            className="icon-btn"
+            aria-label="Написать на email"
+            title="Написать на email"
+          >
+            <IconMail />
           </a>
           <a
             href={TELEGRAM_BOT_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="btn btn-primary"
+            className="icon-btn icon-btn-primary"
+            aria-label="Написать менеджеру в Telegram"
+            title="Написать менеджеру в Telegram"
           >
-            Написать менеджеру
+            <IconTelegram />
+          </a>
+          <a
+            href={CONTACT_PHONE_HREF}
+            className="icon-btn"
+            aria-label={`Позвонить ${CONTACT_PHONE}`}
+            title={CONTACT_PHONE}
+          >
+            <IconPhone />
           </a>
         </div>
       </div>
@@ -226,7 +239,7 @@ function HowItWorks() {
       num: 2,
       icon: <IconUpload />,
       title: 'Отправляете прайс',
-      text: 'Excel или CSV на любом языке и в любой валюте. Менеджер называет сумму — $1 за позицию плюс $10 за файл — и принимает оплату.',
+      text: 'Excel или CSV на любом языке и в любой валюте. Менеджер называет сумму — $1 за позицию — и принимает оплату.',
     },
     {
       num: 3,
@@ -274,6 +287,7 @@ function Pricing() {
     'Код ТН ВЭД из справочника ФТС с AI-верификацией',
     'Пошлина, НДС и акциз по каждой позиции',
     'Конвертация валют по курсу ЦБ РФ',
+    'Фрахт до границы в таможенной стоимости',
     'Логистика по вашей формуле доставки',
     'Разрешительные требования: сертификация, маркировка, утильсбор',
     'Готовый Excel — в исходной валюте и в рублях',
@@ -283,7 +297,7 @@ function Pricing() {
       <div className="container">
         <div className="section-head">
           <span className="label">Цена</span>
-          <h2>$1 за позицию плюс $10 за файл.</h2>
+          <h2>$1 за позицию.</h2>
           <p>
             Без подписок, абонплаты и минимального заказа. Платите только за то, что
             посчитали, — сумму видно до старта.
@@ -293,7 +307,7 @@ function Pricing() {
           <div className="card pricing-card fade-up">
             <div className="price-figure">
               <span className="price-amount">$1</span>
-              <span className="price-unit">за позицию + $10 за файл</span>
+              <span className="price-unit">за каждую позицию</span>
               <p className="price-note">Оплата менеджеру при отправке файла</p>
             </div>
             <ul className="price-includes">
@@ -306,8 +320,8 @@ function Pricing() {
             </ul>
           </div>
           <p className="price-examples">
-            <strong>50</strong> позиций — $60 · <strong>200</strong> — $210 ·{' '}
-            <strong>500</strong> — $510
+            <strong>50</strong> позиций — $50 · <strong>200</strong> — $200 ·{' '}
+            <strong>500</strong> — $500
           </p>
         </div>
       </div>
@@ -402,6 +416,11 @@ function WhatIsCalculated() {
       text: 'Юани, доллары, евро и десятки других — конвертация по курсу ЦБ РФ. В Excel суммы в исходной валюте и в рублях.',
     },
     {
+      icon: <IconShip />,
+      title: 'Фрахт до границы',
+      text: 'Стоимость доставки до границы распределяется по позициям пропорционально весу и входит в таможенную стоимость — то есть в базу пошлины, акциза и НДС, как требует ТК ЕАЭС.',
+    },
+    {
       icon: <IconTruck />,
       title: 'Логистика',
       text: 'Настраиваемая формула: процент от стоимости, ставка за килограмм и фиксированная доставка. Под вашу схему работы.',
@@ -432,92 +451,6 @@ function WhatIsCalculated() {
   );
 }
 
-function TnVed() {
-  return (
-    <section className="section" id="tnved">
-      <div className="container tnved">
-        <div className="fade-up">
-          <span className="label">Бонус</span>
-          <h2 className="heading-2">Полноценный справочник ТН ВЭД</h2>
-          <p className="lede">
-            Не только pipeline — отдельный инструмент для повседневной работы:
-            найдите код, проверьте ставки, посчитайте пошлину для конкретной партии.
-          </p>
-          <div className="tnved-list">
-            <div className="tnved-item">
-              <span className="icon-wrap"><IconSearch /></span>
-              <div>
-                <h4>Поиск по описанию или коду</h4>
-                <p>Прямой запрос в справочник ФТС через TKS API. Кликабельные коды, копирование одной кнопкой.</p>
-              </div>
-            </div>
-            <div className="tnved-item">
-              <span className="icon-wrap"><IconTranslate /></span>
-              <div>
-                <h4>Перевод запросов</h4>
-                <p>Введите название на китайском или английском — Claude переведёт его на русский для точного поиска.</p>
-              </div>
-            </div>
-            <div className="tnved-item">
-              <span className="icon-wrap"><IconCalculator /></span>
-              <div>
-                <h4>Калькулятор пошлин</h4>
-                <p>Любая единица измерения: килограммы, литры, м², м³, штуки. Видны и ввозная пошлина, и НДС, и акциз.</p>
-              </div>
-            </div>
-            <div className="tnved-item">
-              <span className="icon-wrap"><IconShield /></span>
-              <div>
-                <h4>Разрешительные документы</h4>
-                <p>Сертификаты, лицензии, маркировка, утильсбор и страновые запреты — со сводкой и AI-выжимкой по каждой записи.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="preview-wrap fade-up delay-2" aria-hidden="true">
-          <div className="preview">
-            <div className="preview-header">
-              <span className="dot dot-r" />
-              <span className="dot dot-y" />
-              <span className="dot dot-g" />
-              <span className="preview-title">Справочник ТН ВЭД</span>
-            </div>
-            <div className="tnved-mock-body">
-              <div className="tnved-mock-search">
-                <IconSearch />
-                <span>беспроводные наушники с шумоподавлением</span>
-              </div>
-              <div className="tnved-mock-card">
-                <div className="tnved-mock-card-head">
-                  <span className="tnved-mock-code">8518 30 200 0</span>
-                  <span className="tag tag-green">Найдено</span>
-                </div>
-                <div className="tnved-mock-desc">
-                  Наушники, в том числе совмещённые с микрофоном
-                </div>
-                <div className="tnved-mock-rates">
-                  <span><strong>Пошлина:</strong> 5%</span>
-                  <span><strong>НДС:</strong> 20%</span>
-                  <span><strong>Акциз:</strong> —</span>
-                </div>
-              </div>
-              <div className="tnved-mock-card">
-                <div className="tnved-mock-label">Калькулятор</div>
-                <div className="tnved-mock-calc">
-                  <span>Стоимость:</span><span className="right">$1 200</span>
-                  <span>Количество:</span><span className="right">50 шт</span>
-                  <span className="total">Итого с пошлинами:</span>
-                  <span className="total-value">137 280 ₽</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function FinalCta() {
   return (
     <section className="cta-section">
@@ -525,7 +458,7 @@ function FinalCta() {
         <h2>Посчитаем ваш контейнер за 10 минут</h2>
         <p>
           Напишите менеджеру в Telegram, пришлите прайс — и получите готовый расчёт
-          по каждой позиции. $1 за позицию плюс $10 за файл, без подписок.
+          по каждой позиции. $1 за позицию, без подписок.
         </p>
         <div className="cta-buttons">
           <a
@@ -716,6 +649,17 @@ function IconTruck() {
   );
 }
 
+function IconShip() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" />
+      <path d="M19.4 20A11.6 11.6 0 0 0 21 14l-9-4-9 4c0 2.9.9 5.3 2.8 7.8" />
+      <path d="M19 13V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6" />
+      <path d="M12 10v4M12 2v3" />
+    </svg>
+  );
+}
+
 function IconColumns() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -765,15 +709,6 @@ function IconBook() {
   );
 }
 
-function IconSearch() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="11" cy="11" r="7" />
-      <line x1="21" y1="21" x2="16.5" y2="16.5" />
-    </svg>
-  );
-}
-
 function IconTranslate() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -783,20 +718,3 @@ function IconTranslate() {
   );
 }
 
-function IconCalculator() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="4" y="2" width="16" height="20" rx="2" />
-      <line x1="8" y1="6" x2="16" y2="6" />
-      <line x1="8" y1="11" x2="9" y2="11" />
-      <line x1="12" y1="11" x2="12" y2="11" />
-      <line x1="16" y1="11" x2="16" y2="11" />
-      <line x1="8" y1="15" x2="9" y2="15" />
-      <line x1="12" y1="15" x2="12" y2="15" />
-      <line x1="16" y1="15" x2="16" y2="15" />
-      <line x1="8" y1="19" x2="9" y2="19" />
-      <line x1="12" y1="19" x2="12" y2="19" />
-      <line x1="16" y1="19" x2="16" y2="19" />
-    </svg>
-  );
-}
