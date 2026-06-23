@@ -394,6 +394,14 @@ export interface TokenStats {
   month: TokenStatsPeriod;
   byUser: TokenStatsUser[];
   recentDocuments: TokenStatsDocument[];
+  /** Расход на автопоиск лидов (всего). null — в скоупе конкретной компании
+   *  (лиды платформенные, к компании не относятся). */
+  leads: TokenUsageMap | null;
+}
+
+/** Ответ /documents/token-stats/monthly: общий месячный итог + расход на лиды за месяц. */
+export interface MonthlyTokenStats extends TokenStatsPeriod {
+  leads: TokenUsageMap | null;
 }
 
 export interface DailyTokenStats {

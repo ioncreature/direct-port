@@ -554,10 +554,12 @@ export class DocumentsService {
       );
     }
 
-    const [byUser, recentDocs, availableModels] = await Promise.all([
+    const [byUser, recentDocs, availableModels, leadRows] = await Promise.all([
       this.repo.manager.query(byUserQuery, byUserParams),
       recentDocsQb.getMany(),
       this.availableModels(companyId),
+      // Лиды — платформенный расход (company_id NULL): считаем только в общем разрезе.
+      companyId ? Promise.resolve([]) : this.leadTokens(undefined, model),
     ]);
 
     return {
@@ -574,6 +576,9 @@ export class DocumentsService {
         createdAt: doc.createdAt,
         telegramUsername: doc.telegramUser?.username ?? null,
       })),
+      // Расход на автопоиск лидов (всего) для отдельной карточки на /ai-costs;
+      // null в скоупе компании — это не её расход.
+      leads: companyId ? null : this.toModelsMap(leadRows),
     };
   }
 
@@ -582,11 +587,18 @@ export class DocumentsService {
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
 
-    const [modelsRows, countRow] = await Promise.all([
+    const [modelsRows, countRow, leadRows] = await Promise.all([
       this.tokensByModel(startOfMonth, undefined, companyId),
       this.tokenDocCount(startOfMonth, undefined, companyId),
+      // Лиды — платформенный расход (company_id NULL): считаем только в общем разрезе.
+      companyId ? Promise.resolve([]) : this.leadTokens(startOfMonth),
     ]);
-    return { models: this.toModelsMap(modelsRows), documentCount: Number(countRow?.count) || 0 };
+    return {
+      models: this.toModelsMap(modelsRows),
+      documentCount: Number(countRow?.count) || 0,
+      // Расход на автопоиск лидов за месяц для карточки на дашборде; null в скоупе компании.
+      leads: companyId ? null : this.toModelsMap(leadRows),
+    };
   }
 
   async getTokenStatsByDay(days: number, model?: string, companyId?: string) {
@@ -810,6 +822,34 @@ export class DocumentsService {
       ) t${modelWhere}
       GROUP BY model_family(t.m)`;
     return this.repo.manager.query(query, params);
+  }
+
+  /** Расход на автопоиск лидов (purpose lead_discover|lead_enrich) из ai_usage_log,
+   *  сгруппированный по семейству модели. Эти вызовы платформенные (company_id NULL) —
+   *  метод НЕ скоупится по компании; вызывающий показывает их только в общем разрезе
+   *  (без выбранной компании). model — опциональный фильтр семейства для согласования
+   *  с фильтром моделей на /ai-costs. */
+  private leadTokens(since?: Date, model?: string) {
+    const params: unknown[] = [];
+    const conds: string[] = [`purpose IN ('lead_discover', 'lead_enrich')`];
+    if (since) {
+      params.push(since);
+      conds.push(`created_at >= $${params.length}`);
+    }
+    if (model) {
+      params.push(model);
+      conds.push(`model_family(model) = $${params.length}`);
+    }
+    const query = `
+      SELECT model_family(model) AS "model",
+        COALESCE(SUM(input_tokens), 0) AS "inputTokens",
+        COALESCE(SUM(output_tokens), 0) AS "outputTokens",
+        COALESCE(SUM(cache_creation_tokens), 0) AS "cacheCreationTokens",
+        COALESCE(SUM(cache_read_tokens), 0) AS "cacheReadTokens"
+      FROM ai_usage_log
+      WHERE ${conds.join(' AND ')}
+      GROUP BY model_family(model)`;
+    return this.aiUsageLogRepo.manager.query(query, params);
   }
 
   private tokenDocCount(since?: Date, model?: string, companyId?: string) {

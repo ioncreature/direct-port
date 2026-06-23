@@ -10,6 +10,7 @@ import {
   fmtDateTime,
   fmtTokens,
   modelLabel,
+  totalTokensFromMap,
   totalTokensFromStages,
 } from '@/lib/format';
 import { th, td, btnOutline } from '@/lib/table-styles';
@@ -102,6 +103,12 @@ export default function AiCostsPage() {
         <PeriodCard label="Месяц" period={stats.month} />
         <PeriodCard label="Всего" period={stats.total} />
       </div>
+
+      {stats.leads && (
+        <div style={{ marginBottom: 32, opacity: loading ? 0.5 : 1, transition: 'opacity 0.15s' }}>
+          <LeadsCard models={stats.leads} />
+        </div>
+      )}
 
       {daily.length > 0 && (
         <div style={{ marginBottom: 32, opacity: loading ? 0.5 : 1, transition: 'opacity 0.15s' }}>
@@ -208,20 +215,49 @@ export default function AiCostsPage() {
   );
 }
 
+/** Разбивка токенов по семействам моделей («модель: in / out») — общий футер карточек. */
+function ModelBreakdown({ models }: { models: TokenUsageMap }) {
+  return (
+    <>
+      {Object.entries(models).map(([model, usage]) => (
+        <div key={model} style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>
+          {modelLabel(model)}: {fmtTokens(usage.inputTokens)} in / {fmtTokens(usage.outputTokens)} out
+        </div>
+      ))}
+    </>
+  );
+}
+
+/** Отдельная карточка платформенного расхода на автопоиск лидов (discovery +
+ *  обогащение). Не входит в периодный грид: лиды не привязаны к документам/
+ *  пользователям, поэтому показываем накопленный итог отдельной выноской. */
+function LeadsCard({ models }: { models: TokenUsageMap }) {
+  const cost = calcAiCostFromMap(models);
+  const tokens = totalTokensFromMap(models);
+
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 20, maxWidth: 360 }}>
+      <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>
+        Поиск лидов <span style={{ color: '#aaa' }}>· всего</span>
+      </div>
+      <div style={{ fontSize: 28, fontWeight: 700, color: '#7c3aed' }}>{fmtCost(cost)}</div>
+      <div style={{ fontSize: 13, color: 'var(--text-subtle)', marginTop: 8 }}>
+        {fmtTokens(tokens)} токенов · discovery + обогащение
+      </div>
+      <ModelBreakdown models={models} />
+    </div>
+  );
+}
+
 function PeriodCard({ label, period }: { label: string; period: TokenStatsPeriod }) {
   const cost = calcAiCostFromMap(period.models);
-  const models = Object.entries(period.models);
 
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 20 }}>
       <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 28, fontWeight: 700 }}>{fmtCost(cost)}</div>
       <div style={{ fontSize: 13, color: 'var(--text-subtle)', marginTop: 8 }}>{period.documentCount} документов</div>
-      {models.map(([model, usage]) => (
-        <div key={model} style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>
-          {modelLabel(model)}: {fmtTokens(usage.inputTokens)} in / {fmtTokens(usage.outputTokens)} out
-        </div>
-      ))}
+      <ModelBreakdown models={period.models} />
     </div>
   );
 }

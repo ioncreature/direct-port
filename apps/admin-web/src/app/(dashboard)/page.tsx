@@ -8,7 +8,7 @@ import api from '@/lib/api';
 import { statusColors, statusLabels } from '@/lib/documents';
 import { calcAiCostFromMap, fmtCost } from '@/lib/format';
 import { cardSurface } from '@/lib/table-styles';
-import type { DocumentStatus, TokenStatsPeriod } from '@/lib/types';
+import type { DocumentStatus, MonthlyTokenStats } from '@/lib/types';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
@@ -17,11 +17,14 @@ export default function DashboardPage() {
   const { documents, total: docsTotal, loading: docsLoading } = useDocuments();
   const { total: tgTotal, loading: tgLoading } = useTelegramUsers();
   const [aiCost, setAiCost] = useState<number | null>(null);
+  const [leadCost, setLeadCost] = useState<number | null>(null);
   const [statusCounts, setStatusCounts] = useState<Partial<Record<DocumentStatus, number>>>({});
 
   useEffect(() => {
-    api.get<TokenStatsPeriod>('/documents/token-stats/monthly').then(({ data }) => {
+    api.get<MonthlyTokenStats>('/documents/token-stats/monthly').then(({ data }) => {
       setAiCost(calcAiCostFromMap(data.models));
+      // Лиды приходят только в общем разрезе (для super_admin); у admin'а компании — null.
+      if (data.leads) setLeadCost(calcAiCostFromMap(data.leads));
     }).catch(() => {});
     api.get<Partial<Record<DocumentStatus, number>>>('/documents/status-counts').then(({ data }) => {
       setStatusCounts(data);
@@ -73,6 +76,14 @@ export default function DashboardPage() {
           href="/ai-costs"
           color="#7c3aed"
         />
+        {leadCost != null && (
+          <StatCard
+            label="Поиск лидов за месяц"
+            value={fmtCost(leadCost)}
+            href="/ai-costs"
+            color="#7c3aed"
+          />
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
