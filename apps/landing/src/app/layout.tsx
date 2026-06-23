@@ -1,8 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import { SITE_DESCRIPTION, SITE_DESCRIPTION_OG, SITE_TITLE } from './_brand';
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://directport.ru';
+import { SITE_DESCRIPTION, SITE_DESCRIPTION_OG, SITE_TITLE, SITE_URL } from './_brand';
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

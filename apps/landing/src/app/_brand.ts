@@ -3,6 +3,8 @@ export const BRAND_MARK = 'DP';
 
 export const SITE_TITLE = 'DirectPort — таможенный расчёт на весь контейнер за 10 минут';
 
+export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://directport.ru';
+
 export const SITE_DESCRIPTION =
   'Расчёт таможенных пошлин, НДС и акцизов по всему прайс-листу за 10 минут — хоть 500 позиций в одном файле. Для логистических компаний и импортёров. $1 за позицию, классификация ТН ВЭД по справочнику ФТС.';
 

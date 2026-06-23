@@ -3,6 +3,7 @@ import {
   BRAND_NAME,
   HEADLINE_ACCENT,
   HEADLINE_PRIMARY,
+  SITE_URL,
   TAGLINE,
 } from './_brand';
 
@@ -12,9 +13,65 @@ const CONTACT_EMAIL_HREF = `mailto:${CONTACT_EMAIL}`;
 const CONTACT_PHONE = '+7 909 760 7380';
 const CONTACT_PHONE_HREF = `tel:${CONTACT_PHONE.replace(/[^+\d]/g, '')}`;
 
+const FAQ_ITEMS: { q: string; a: string }[] = [
+  {
+    q: 'Это готовая таможенная декларация?',
+    a: 'Нет. DirectPort даёт точный расчёт пошлин, НДС, акцизов и логистики по всему прайсу — чтобы оценить себестоимость ввоза и рентабельность сделки ещё до отгрузки. Подача декларации на таможне — отдельный шаг, его делает ваш брокер или таможенный представитель, опираясь на наш расчёт.',
+  },
+  {
+    q: 'Насколько можно доверять кодам ТН ВЭД?',
+    a: 'Коды подбираются по официальному справочнику ФТС и проходят AI-верификацию. Однозначные помечаются зелёным, спорные — жёлтым «проверить» и разбираются вручную, наугад мы их не выдаём. Если в коде или ставке всё же окажется ошибка — пересчитаем бесплатно.',
+  },
+  {
+    q: 'Что с конфиденциальностью прайса?',
+    a: 'Файл используется только для расчёта вашего заказа. Мы не передаём прайсы, закупочные цены и контрагентов третьим лицам и нигде их не публикуем.',
+  },
+  {
+    q: 'Нужно регистрироваться или ставить программу?',
+    a: 'Нет. Всё происходит в Telegram: пишете боту, отправляете прайс, менеджер ведёт вас до готового файла. Ни личного кабинета, ни установки софта.',
+  },
+  {
+    q: 'Сколько занимает расчёт?',
+    a: 'Сам расчёт — около 10 минут на весь прайс, будь в нём 10 позиций или 500. Общий срок зависит от того, насколько готов файл и нужны ли уточнения по отдельным товарам.',
+  },
+  {
+    q: 'Как и за что я плачу?',
+    a: 'Пополняете баланс через менеджера — $1 за позицию. Списываем только за успешно обработанные строки, спорные и нераспознанные не тарифицируются. Без подписок и абонплаты, сумму видно до старта.',
+  },
+  {
+    q: 'В каком виде присылать прайс?',
+    a: 'Excel или CSV на любом языке (часто китайском) и в любой валюте. AI сам находит нужные колонки в любом порядке, переводит наименования и определяет валюту — переформатировать файл вручную не нужно.',
+  },
+];
+
+const STRUCTURED_DATA = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      name: BRAND_NAME,
+      url: SITE_URL,
+      email: CONTACT_EMAIL,
+      telephone: CONTACT_PHONE,
+    },
+    {
+      '@type': 'FAQPage',
+      mainEntity: FAQ_ITEMS.map((it) => ({
+        '@type': 'Question',
+        name: it.q,
+        acceptedAnswer: { '@type': 'Answer', text: it.a },
+      })),
+    },
+  ],
+};
+
 export default function LandingPage() {
   return (
     <div className="page">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(STRUCTURED_DATA) }}
+      />
       <Header />
       <main>
         <Hero />
@@ -23,6 +80,8 @@ export default function LandingPage() {
         <Pricing />
         <WhyAccurate />
         <WhatIsCalculated />
+        <Guarantee />
+        <Faq />
         <FinalCta />
       </main>
       <Footer />
@@ -42,6 +101,7 @@ function Header() {
           <a href="#how">Как работает</a>
           <a href="#pricing">Цена</a>
           <a href="#why">Почему точно</a>
+          <a href="#guarantee">Гарантия</a>
         </nav>
         <div className="header-cta">
           <a
@@ -89,10 +149,11 @@ function Hero() {
             {HEADLINE_PRIMARY} <span className="accent">{HEADLINE_ACCENT}</span>
           </h1>
           <p className="lede">
-            Оформление одной позиции у брокера — час-полтора. Контейнер на десятки видов
-            товара превращается в недели работы, и за сборные грузы берётся мало кто.
-            Мы считаем пошлины, НДС, акцизы и логистику по всему прайсу за 10 минут —
-            хоть 10 позиций, хоть 500.
+            Оформление одной позиции у брокера — час-полтора, а контейнер на десятки
+            видов товара растягивается на недели. Мы считаем пошлины, НДС, акцизы и
+            логистику по всему прайсу за 10 минут — хоть 10 позиций, хоть 500. Берите
+            сборные грузы, за которые другие не берутся, и отвечайте клиенту точной
+            сметой в тот же день.
           </p>
           <div className="hero-ctas">
             <a
@@ -104,15 +165,12 @@ function Hero() {
               <IconTelegram />
               Написать менеджеру в Telegram
             </a>
-            <a href={CONTACT_EMAIL_HREF} className="btn btn-secondary btn-lg">
-              <IconMail />
-              {CONTACT_EMAIL}
-            </a>
-            <a href={CONTACT_PHONE_HREF} className="btn btn-secondary btn-lg">
-              <IconPhone />
-              {CONTACT_PHONE}
-            </a>
           </div>
+          <p className="hero-cta-alt">
+            или <a href={CONTACT_EMAIL_HREF}>{CONTACT_EMAIL}</a>
+            <span aria-hidden="true"> · </span>
+            <a href={CONTACT_PHONE_HREF}>{CONTACT_PHONE}</a>
+          </p>
           <div className="hero-trust">
             <span><IconCheck /> 10 минут на весь прайс</span>
             <span><IconCheck /> $1 за позицию</span>
@@ -309,7 +367,7 @@ function Pricing() {
               <span className="price-amount">$1</span>
               <span className="price-unit">за каждую позицию</span>
               <p className="price-note">
-                Пополняете баланс у менеджера — списываем по позиции за успешно обработанную позицию
+                Пополняете баланс у менеджера — списываем только за успешно обработанные позиции
               </p>
             </div>
             <ul className="price-includes">
@@ -453,6 +511,74 @@ function WhatIsCalculated() {
   );
 }
 
+function Guarantee() {
+  const items = [
+    {
+      icon: <IconShield />,
+      title: 'Наугад не выдаём',
+      text: 'Однозначные коды помечаем зелёным, спорные — жёлтым «проверить» и разбираем вручную. В расчёте сразу видно, где всё точно, а где нужна доп. проверка.',
+    },
+    {
+      icon: <IconBook />,
+      title: 'Ставки — из справочника ФТС',
+      text: 'Каждый код и ставка берутся из официального справочника ФТС, а не из «памяти» AI. Источник тот же, по которому работает таможня.',
+    },
+    {
+      icon: <IconRefresh />,
+      title: 'Ошиблись — пересчёт за наш счёт',
+      text: 'Нашли ошибку в коде или ставке — пересчитаем бесплатно и дадим скидку 50% на следующие 100 позиций. За результат отвечаем деньгами.',
+    },
+  ];
+  return (
+    <section className="section" id="guarantee">
+      <div className="container">
+        <div className="section-head">
+          <span className="label">Гарантия точности</span>
+          <h2>Отвечаем за каждый код</h2>
+          <p>
+            Точность в классификации ТН ВЭД нельзя обещать на словах — поэтому мы
+            подкрепляем её процессом и обязательством: помечаем спорное, опираемся на
+            официальный справочник и исправляем ошибки за свой счёт.
+          </p>
+        </div>
+        <div className="grid grid-3 guarantee-panel fade-up">
+          {items.map((it) => (
+            <div key={it.title} className="guarantee-item">
+              <span className="icon-wrap icon-wrap-trust">{it.icon}</span>
+              <h3>{it.title}</h3>
+              <p>{it.text}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Faq() {
+  return (
+    <section className="section section-alt" id="faq">
+      <div className="container">
+        <div className="section-head">
+          <span className="label">Вопросы</span>
+          <h2>Коротко о главном</h2>
+        </div>
+        <div className="faq">
+          {FAQ_ITEMS.map((it) => (
+            <details key={it.q} className="faq-item">
+              <summary>
+                <span>{it.q}</span>
+                <IconChevron />
+              </summary>
+              <p>{it.a}</p>
+            </details>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function FinalCta() {
   return (
     <section className="cta-section">
@@ -498,6 +624,24 @@ function Footer() {
         </div>
       </div>
     </footer>
+  );
+}
+
+function IconRefresh() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="23 4 23 10 17 10" />
+      <polyline points="1 20 1 14 7 14" />
+      <path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15" />
+    </svg>
+  );
+}
+
+function IconChevron() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
   );
 }
 
