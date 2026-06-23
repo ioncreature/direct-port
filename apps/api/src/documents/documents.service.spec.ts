@@ -116,6 +116,11 @@ function createService(
     deleteForDocument: jest.fn().mockResolvedValue(undefined),
   };
 
+  const clientBalance = {
+    settle: jest.fn().mockResolvedValue(undefined),
+    checkProcessingAllowed: jest.fn().mockResolvedValue({ allowed: true, need: 0, available: 0 }),
+  };
+
   const service = new DocumentsService(
     repo as never,
     tgUserRepo as never,
@@ -127,6 +132,7 @@ function createService(
     regulatoryInterpreter as never,
     pipelineNotifier as never,
     photoStorage as never,
+    clientBalance as never,
   );
 
   return {
@@ -139,6 +145,7 @@ function createService(
     audit,
     pipelineNotifier,
     photoStorage,
+    clientBalance,
     queryBuilder,
   };
 }

@@ -144,6 +144,12 @@ export class Document {
   @Column({ type: 'int', name: 'row_count', default: 0 })
   rowCount: number;
 
+  /** Сколько позиций уже списано с депозита клиента за этот документ. Делает списание
+   *  идемпотентным: reprocess/recalculate сверяют новое число успешных позиций с уже
+   *  списанным и доводят разницу, а не списывают повторно (ClientBalanceService.settle). */
+  @Column({ type: 'int', name: 'balance_charged_amount', default: 0 })
+  balanceChargedAmount: number;
+
   @Column({ type: 'text', name: 'error_message', nullable: true })
   errorMessage: string | null;
 

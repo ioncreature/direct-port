@@ -8,6 +8,7 @@ import { CalculationConfig } from './entities/calculation-config.entity';
 import { CalculationLog } from './entities/calculation-log.entity';
 import { Company } from './entities/company.entity';
 import { ConversationMessage } from './entities/conversation-message.entity';
+import { DepositTransaction } from './entities/deposit-transaction.entity';
 import { Document } from './entities/document.entity';
 import { DocumentPhoto } from './entities/document-photo.entity';
 import { DocumentVersion } from './entities/document-version.entity';
@@ -64,6 +65,7 @@ import { AddMultiTenancy1779200000000 } from './migrations/1779200000000-AddMult
 import { AddLeads1779300000000 } from './migrations/1779300000000-AddLeads';
 import { AddLeadAiModels1779400000000 } from './migrations/1779400000000-AddLeadAiModels';
 import { AddLeadSearches1779500000000 } from './migrations/1779500000000-AddLeadSearches';
+import { AddClientDeposit1779600000000 } from './migrations/1779600000000-AddClientDeposit';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -94,6 +96,7 @@ import { SeedService } from './seeds/seed.service';
           ConversationMessage,
           Lead,
           LeadSearch,
+          DepositTransaction,
         ],
         synchronize: false,
         migrations: [
@@ -140,6 +143,7 @@ import { SeedService } from './seeds/seed.service';
           AddLeads1779300000000,
           AddLeadAiModels1779400000000,
           AddLeadSearches1779500000000,
+          AddClientDeposit1779600000000,
         ],
         migrationsRun: true,
         // Каждая миграция в своей транзакции (по умолчанию TypeORM гонит все в одной).

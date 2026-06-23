@@ -9,6 +9,7 @@ import {
   normalizeFreightInput,
   type NormalizedFreight,
 } from '../common/freight';
+import { ClientBalanceService } from '../balance/client-balance.service';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 import { normalizeOksmtCode } from '../common/oksmt';
 import { Actor, assertSameCompany, resolveCompanyScope } from '../common/tenant/actor-context';
@@ -59,6 +60,7 @@ export class DocumentsService {
     private regulatoryInterpreter: RegulatoryInterpreterService,
     private pipelineNotifier: PipelineNotifierService,
     private photoStorage: PhotoStorageService,
+    private clientBalance: ClientBalanceService,
   ) {}
 
   /**
@@ -485,6 +487,9 @@ export class DocumentsService {
     doc.status = DocumentStatus.PROCESSED;
     doc.rejectionReasons = null;
     const saved = await this.repo.save(doc);
+    // Одобрение из CODE_REVIEW_REQUIRED — оплачиваемый исход: списываем депозит
+    // (идемпотентно — за этот документ ещё ничего не списывалось).
+    await this.clientBalance.settle(saved);
     await this.pipelineNotifier.notify(saved);
     return saved;
   }

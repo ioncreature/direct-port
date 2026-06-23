@@ -33,6 +33,12 @@ export class TelegramUser {
   @Column({ type: 'varchar', length: 5, default: 'ru' })
   language: string;
 
+  /** Депозит клиента в «обработанных позициях». Менеджер пополняет вручную после оплаты
+   *  вне системы (см. DepositTransaction — журнал операций). Успешная обработка документа
+   *  списывает по 1 за каждую успешно посчитанную позицию (ClientBalanceService.settle). */
+  @Column({ type: 'int', default: 0 })
+  balance: number;
+
   /** Менеджер, закреплённый за клиентом (claim). null — клиент в общем пуле (broadcast). */
   @Column({ type: 'uuid', name: 'assigned_manager_id', nullable: true })
   assignedManagerId: string | null;

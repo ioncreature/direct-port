@@ -5,6 +5,7 @@ import { Job } from 'bullmq';
 import { Repository } from 'typeorm';
 import { CalculationConfigService } from '../calculation-config/calculation-config.service';
 import { CalculationLogsService } from '../calculation-logs/calculation-logs.service';
+import { ClientBalanceService } from '../balance/client-balance.service';
 import { CalculatorService, type CalculatedProduct, type CalculatorInput } from '../calculator/calculator.service';
 import { ClassifierService, type ProductRow } from '../classifier/classifier.service';
 import { rowNeedsCodeReview } from '../common/confidence';
@@ -48,8 +49,31 @@ export class DocumentsProcessor extends WorkerHost {
     private audit: PipelineAuditService,
     private regulatoryService: RegulatoryRequirementsService,
     private pipelineNotifier: PipelineNotifierService,
+    private clientBalance: ClientBalanceService,
   ) {
     super();
+  }
+
+  /**
+   * Блокировка обработки при нехватке депозита клиента. Число позиций известно только
+   * после парсинга, поэтому гейт стоит здесь, на входе воркера: при нехватке документ
+   * уходит в FAILED с понятным сообщением (менеджер пополняет баланс и жмёт «Переобработать»).
+   * Документы без привязанного клиента (загрузки из админки) пропускаются. Возвращает
+   * true, если обработку нужно прервать.
+   */
+  private async blockIfInsufficientBalance(doc: Document): Promise<boolean> {
+    const gate = await this.clientBalance.checkProcessingAllowed(doc);
+    if (gate.allowed) return false;
+    doc.status = DocumentStatus.FAILED;
+    doc.errorMessage =
+      `Недостаточно баланса клиента: нужно ${gate.need}, на балансе ${gate.available}. ` +
+      `Пополните депозит клиента в админке и запустите обработку снова.`;
+    await this.repo.save(doc);
+    await this.pipelineNotifier.notify(doc);
+    this.logger.warn(
+      `Document ${doc.id} blocked: insufficient balance (need ${gate.need}, have ${gate.available})`,
+    );
+    return true;
   }
 
   async process(job: Job<{ documentId: string }>): Promise<void> {
@@ -80,6 +104,8 @@ export class DocumentsProcessor extends WorkerHost {
       );
       return;
     }
+
+    if (await this.blockIfInsufficientBalance(doc)) return;
 
     doc.status = DocumentStatus.PROCESSING;
     await this.repo.save(doc);
@@ -381,6 +407,8 @@ export class DocumentsProcessor extends WorkerHost {
       );
       return;
     }
+
+    if (await this.blockIfInsufficientBalance(doc)) return;
 
     doc.status = DocumentStatus.PROCESSING;
     await this.repo.save(doc);
@@ -723,6 +751,8 @@ export class DocumentsProcessor extends WorkerHost {
       ? DocumentStatus.PROCESSED_WITH_ERRORS
       : DocumentStatus.PROCESSED;
     await this.repo.save(doc);
+    // Списание депозита за успешно посчитанные позиции (идемпотентно, best-effort).
+    await this.clientBalance.settle(doc);
     await this.pipelineNotifier.notify(doc);
   }
 }

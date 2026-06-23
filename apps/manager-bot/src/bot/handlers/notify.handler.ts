@@ -26,6 +26,7 @@ export interface ManagerNotification {
   documentId?: string;
   documentName?: string;
   statusLabel?: string;
+  reason?: string;
   text?: string;
   attachmentType?: string;
   resultReady?: boolean;
@@ -55,7 +56,7 @@ export function buildNotificationText(n: ManagerNotification): string {
     case 'pipeline_done':
       return `✅ Расчёт готов — ${doc}\nКлиент: ${client}${n.statusLabel ? `\nСтатус: ${escapeHtml(n.statusLabel)}` : ''}`;
     case 'pipeline_failed':
-      return `❌ Ошибка обработки — ${doc}\nКлиент: ${client}`;
+      return `❌ Ошибка обработки — ${doc}\nКлиент: ${client}${n.reason ? `\n${escapeHtml(n.reason)}` : ''}`;
     case 'pipeline_review':
       return `⚠️ Требует проверки — ${doc}\nКлиент: ${client}`;
     case 'pipeline_rejected':

@@ -27,6 +27,7 @@ export interface ManagerNotification {
   documentId?: string;
   documentName?: string;
   statusLabel?: string; // человекочитаемый статус документа (для pipeline_*)
+  reason?: string; // причина ошибки (errorMessage) для pipeline_failed — например, нехватка баланса
   text?: string; // текст клиента (client_message) / подпись (new_document) / тело отчёта (leads_report)
   attachmentType?: string; // 'document' | 'photo' | 'file' (для client_message)
   /** Результат готов к отправке клиенту (PROCESSED — download доступен). Для pipeline_done. */

@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TksApiClient, type TnvedCode } from '@direct-port/tks-api';
+import { ClientBalanceService } from '../balance/client-balance.service';
 import { CalculationConfigService } from '../calculation-config/calculation-config.service';
 import { CalculationLogsService } from '../calculation-logs/calculation-logs.service';
 import { CalculatorService } from '../calculator/calculator.service';
@@ -94,6 +95,7 @@ export class ManualCodeService {
     private calculationLogs: CalculationLogsService,
     private regulatoryService: RegulatoryRequirementsService,
     private pipelineNotifier: PipelineNotifierService,
+    private clientBalance: ClientBalanceService,
   ) {}
 
   async setRowCode(
@@ -190,6 +192,9 @@ export class ManualCodeService {
       addTokenUsage: [{ stage: 'interpreter', usage: interpretResult.tokenUsage }],
     });
 
+    // Доводка кода могла довести документ до PROCESSED — списываем депозит за успешные
+    // позиции (идемпотентно: settle сверяет с уже списанным и не задваивает).
+    await this.clientBalance.settle(saved);
     await this.pipelineNotifier.notify(saved);
 
     this.calculationLogs
@@ -353,6 +358,9 @@ export class ManualCodeService {
       ],
     });
 
+    // Уточнение могло довести документ до PROCESSED — списываем депозит за успешные
+    // позиции (идемпотентно: settle сверяет с уже списанным и не задваивает).
+    await this.clientBalance.settle(saved);
     await this.pipelineNotifier.notify(saved);
 
     this.calculationLogs

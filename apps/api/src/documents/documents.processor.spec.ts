@@ -153,6 +153,7 @@ interface Opts {
   rate?: number;
   rateError?: Error;
   calcLogError?: Error;
+  balanceGate?: { allowed: boolean; need: number; available: number };
 }
 
 function createProcessor(opts: Opts = {}) {
@@ -271,6 +272,13 @@ function createProcessor(opts: Opts = {}) {
   // self_service → no-op (после удаления tg-bot self_service-уведомлений нет).
   const pipelineNotifier = new PipelineNotifierService(managerNotify as any);
 
+  const clientBalance = {
+    checkProcessingAllowed: jest
+      .fn()
+      .mockResolvedValue(opts.balanceGate ?? { allowed: true, need: 0, available: 0 }),
+    settle: jest.fn().mockResolvedValue(undefined),
+  };
+
   const processor = new DocumentsProcessor(
     repo as any,
     classifier as any,
@@ -282,6 +290,7 @@ function createProcessor(opts: Opts = {}) {
     audit as any,
     regulatoryService as any,
     pipelineNotifier as any,
+    clientBalance as any,
   );
 
   return {
@@ -289,6 +298,7 @@ function createProcessor(opts: Opts = {}) {
     doc,
     repo,
     managerNotify,
+    clientBalance,
     classifier,
     dutyInterpreter,
     calculator,
@@ -682,6 +692,50 @@ describe('DocumentsProcessor.process', () => {
 
       expect(doc.status).toBe(DocumentStatus.PROCESSED);
       expect(managerNotify.notifyDocumentEvent).toHaveBeenCalledWith(doc);
+    });
+  });
+
+  describe('депозит клиента', () => {
+    it('недостаточно баланса → FAILED, обработка не запускается, settle не вызывается', async () => {
+      const doc = makeDoc({
+        telegramUserId: 'tg-1',
+        source: 'managed',
+        telegramUser: { telegramId: '123' } as any,
+      });
+      const { processor, classifier, clientBalance, managerNotify } = createProcessor({
+        doc,
+        balanceGate: { allowed: false, need: 1, available: 0 },
+      });
+
+      await processor.process(fakeJob('doc-1'));
+
+      expect(doc.status).toBe(DocumentStatus.FAILED);
+      expect(doc.errorMessage).toContain('Недостаточно баланса');
+      expect(classifier.classify).not.toHaveBeenCalled();
+      expect(clientBalance.settle).not.toHaveBeenCalled();
+      // managed-документ → менеджер получает уведомление об ошибке
+      expect(managerNotify.notifyDocumentEvent).toHaveBeenCalledWith(doc);
+    });
+
+    it('успешная обработка → settle(doc) вызывается', async () => {
+      const doc = makeDoc({ telegramUserId: 'tg-1', telegramUser: { telegramId: '123' } as any });
+      const { processor, clientBalance } = createProcessor({ doc });
+
+      await processor.process(fakeJob('doc-1'));
+
+      expect(doc.status).toBe(DocumentStatus.PROCESSED);
+      expect(clientBalance.settle).toHaveBeenCalledWith(doc);
+    });
+
+    it('документ без клиента (загрузка из админки) — гейт пропускает, settle вызывается (no-op внутри)', async () => {
+      const doc = makeDoc({ telegramUserId: null });
+      const { processor, clientBalance } = createProcessor({ doc });
+
+      await processor.process(fakeJob('doc-1'));
+
+      expect(doc.status).toBe(DocumentStatus.PROCESSED);
+      expect(clientBalance.checkProcessingAllowed).toHaveBeenCalled();
+      expect(clientBalance.settle).toHaveBeenCalledWith(doc);
     });
   });
 

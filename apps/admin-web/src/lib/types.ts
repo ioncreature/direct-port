@@ -37,6 +37,22 @@ export interface TelegramUser {
   documentCount?: number;
   assignedManagerId?: string | null;
   companyId?: string | null;
+  /** Депозит клиента в «обработанных позициях». */
+  balance?: number;
+}
+
+export type DepositTransactionType = 'topup' | 'charge' | 'adjustment';
+
+export interface DepositTransaction {
+  id: string;
+  /** Изменение баланса: + пополнение/возврат, − списание. */
+  delta: number;
+  type: DepositTransactionType;
+  balanceAfter: number;
+  documentId: string | null;
+  comment: string | null;
+  createdByEmail: string | null;
+  createdAt: string;
 }
 
 export interface ConversationMessage {

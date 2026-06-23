@@ -62,6 +62,8 @@ export class ManagerNotifyService {
       documentName: doc.originalFileName,
       statusLabel: doc.statusLabel,
       resultReady: doc.status === DocumentStatus.PROCESSED,
+      // Причину показываем только для ошибки (нехватка баланса, недоступность курсов и т.п.).
+      reason: doc.status === DocumentStatus.FAILED ? (doc.errorMessage ?? undefined) : undefined,
     });
   }
 

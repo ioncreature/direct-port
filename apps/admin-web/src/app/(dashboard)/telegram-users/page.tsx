@@ -72,6 +72,7 @@ export default function TelegramUsersPage() {
                 ))}
                 <th style={th}>Имя</th>
                 <th style={th}>Документов</th>
+                <th style={th}>Баланс, поз.</th>
               </tr>
             </thead>
             <tbody>
@@ -89,11 +90,20 @@ export default function TelegramUsersPage() {
                   <td style={td}>{fmtDate(u.createdAt)}</td>
                   <td style={td}>{[u.firstName, u.lastName].filter(Boolean).join(' ') || '—'}</td>
                   <td style={td}>{u.documentCount ?? 0}</td>
+                  <td
+                    style={{
+                      ...td,
+                      fontWeight: 600,
+                      color: (u.balance ?? 0) > 0 ? 'var(--success)' : 'var(--danger)',
+                    }}
+                  >
+                    {u.balance ?? 0}
+                  </td>
                 </tr>
               ))}
               {telegramUsers.length === 0 && (
                 <tr>
-                  <td style={tdEmpty} colSpan={5}>
+                  <td style={tdEmpty} colSpan={6}>
                     Telegram-пользователей пока нет
                   </td>
                 </tr>

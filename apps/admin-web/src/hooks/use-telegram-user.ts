@@ -26,5 +26,5 @@ export function useTelegramUser(id: string) {
     fetch();
   }, [fetch]);
 
-  return { user, loading, error };
+  return { user, loading, error, refetch: fetch };
 }

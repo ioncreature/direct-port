@@ -2,6 +2,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AiParserModule } from '../ai-parser/ai-parser.module';
+import { BalanceModule } from '../balance/balance.module';
 import { CalculationConfigModule } from '../calculation-config/calculation-config.module';
 import { CalculationLogsModule } from '../calculation-logs/calculation-logs.module';
 import { CalculatorModule } from '../calculator/calculator.module';
@@ -35,6 +36,7 @@ import { ManagerNotifyModule } from '../conversations/manager-notify.module';
     CalculatorModule,
     CalculationConfigModule,
     AiParserModule,
+    BalanceModule,
     CurrencyModule,
     DutyInterpreterModule,
     CalculationLogsModule,

@@ -12,6 +12,7 @@ import { getTelegramName } from '@/lib/telegram';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
+import { DepositPanel } from './deposit-panel';
 import { MessagesPanel } from './messages-panel';
 import { TabsNav } from '@/components/tabs-nav';
 
@@ -24,8 +25,8 @@ const sortableColumns: { field: string; label: string }[] = [
 
 export default function TelegramUserDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [activeTab, setActiveTab] = useState<'documents' | 'messages'>('documents');
-  const { user, loading: userLoading, error } = useTelegramUser(id);
+  const [activeTab, setActiveTab] = useState<'documents' | 'messages' | 'deposit'>('documents');
+  const { user, loading: userLoading, error, refetch } = useTelegramUser(id);
   const {
     documents,
     total,
@@ -71,17 +72,24 @@ export default function TelegramUserDetailPage() {
           value={[user.firstName, user.lastName].filter(Boolean).join(' ') || '—'}
         />
         <InfoCard label="Документов" value={String(user.documentCount ?? 0)} />
+        <InfoCard
+          label="Баланс, поз."
+          value={String(user.balance ?? 0)}
+          color={(user.balance ?? 0) > 0 ? 'var(--success)' : 'var(--danger)'}
+        />
         <InfoCard label="Регистрация" value={fmtDateTimeLocale(user.createdAt)} />
       </div>
 
       <TabsNav
-        tabs={['documents', 'messages'] as const}
+        tabs={['documents', 'messages', 'deposit'] as const}
         active={activeTab}
         onChange={setActiveTab}
-        labels={{ documents: 'Документы', messages: 'Переписка' }}
+        labels={{ documents: 'Документы', messages: 'Переписка', deposit: 'Депозит' }}
       />
 
-      {activeTab === 'messages' ? (
+      {activeTab === 'deposit' ? (
+        <DepositPanel clientId={id} balance={user.balance ?? 0} onChanged={refetch} />
+      ) : activeTab === 'messages' ? (
         <MessagesPanel clientId={id} />
       ) : docsLoading ? (
         <p>Загрузка...</p>

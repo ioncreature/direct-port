@@ -13,8 +13,11 @@ import {
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Internal } from '../auth/decorators/internal.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { ClientBalanceService } from '../balance/client-balance.service';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { Actor } from '../common/tenant/actor-context';
 import { UserRole } from '../database/entities/user.entity';
+import { AdjustDepositDto } from './dto/adjust-deposit.dto';
 import { FindTelegramUsersQueryDto } from './dto/find-telegram-users-query.dto';
 import { RegisterTelegramUserDto } from './dto/register-telegram-user.dto';
 import { UpdateLanguageDto } from './dto/update-language.dto';
@@ -26,6 +29,7 @@ export class TelegramUsersController {
   constructor(
     private service: TelegramUsersService,
     private conversations: ConversationsService,
+    private clientBalance: ClientBalanceService,
   ) {}
 
   @Get()
@@ -46,6 +50,33 @@ export class TelegramUsersController {
   async messages(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
     await this.service.assertAccess(id, actor);
     return this.conversations.listByClient(id);
+  }
+
+  /** Ручное пополнение/корректировка депозита клиента (баланс в обработанных позициях). */
+  @Post('by-id/:id/deposit')
+  @Roles(UserRole.ADMIN)
+  async adjustDeposit(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AdjustDepositDto,
+    @CurrentUser() actor: Actor,
+  ) {
+    await this.service.assertAccess(id, actor);
+    return this.clientBalance.adjust(id, dto.amount, {
+      actorUserId: actor.id,
+      comment: dto.comment,
+    });
+  }
+
+  /** История операций по депозиту клиента (пополнения/списания/корректировки). */
+  @Get('by-id/:id/deposit-transactions')
+  @Roles(UserRole.ADMIN)
+  async depositTransactions(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: PaginationQueryDto,
+    @CurrentUser() actor: Actor,
+  ) {
+    await this.service.assertAccess(id, actor);
+    return this.clientBalance.listTransactions(id, { page: query.page, limit: query.limit });
   }
 
   @Post('register')
