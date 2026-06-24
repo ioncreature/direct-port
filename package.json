@@ -18,7 +18,8 @@
     "format:check": "prettier --check .",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
-    "read-doc": "pnpm --filter @direct-port/api read-doc --"
+    "read-doc": "pnpm --filter @direct-port/api read-doc --",
+    "lint-email": "pnpm --filter @direct-port/api lint-email --"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
