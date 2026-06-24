@@ -1,6 +1,7 @@
 'use client';
 
 import { InfoCard } from '@/components/info-card';
+import { useBotLinks } from '@/hooks/use-bot-links';
 import api from '@/lib/api';
 import { fmtDate, fmtDateTime } from '@/lib/format';
 import {
@@ -20,6 +21,7 @@ import { useCallback, useEffect, useState } from 'react';
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { links } = useBotLinks();
   const [lead, setLead] = useState<Lead | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -130,6 +132,8 @@ export default function LeadDetailPage() {
   if (loading) return <p style={{ color: 'var(--text-muted)' }}>Загрузка...</p>;
   if (error || !lead) return <p style={{ color: 'var(--danger)' }}>{error || 'Лид не найден'}</p>;
 
+  const inviteLink = links?.client ? `${links.client.url}?start=lead_${id}` : null;
+
   return (
     <div>
       <Link href="/leads" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: 13 }}>
@@ -198,6 +202,34 @@ export default function LeadDetailPage() {
       <Section title="Клиент">
         <ClientLink lead={lead} busy={busy} onLink={linkClient} onUnlink={unlinkClient} />
       </Section>
+
+      {!lead.convertedTelegramUserId && inviteLink && (
+        <Section title="Ссылка-приглашение">
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input
+              readOnly
+              value={inviteLink}
+              onFocus={(e) => e.target.select()}
+              style={{
+                flex: 1,
+                minWidth: 280,
+                padding: 8,
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border)',
+                fontSize: 13,
+                boxSizing: 'border-box',
+              }}
+            />
+            <button onClick={() => navigator.clipboard?.writeText(inviteLink)} style={btnOutline}>
+              Копировать
+            </button>
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6, marginBottom: 0 }}>
+            Вставьте в холодное письмо — клиент, перешедший по ней, автоматически привяжется к
+            этому лиду.
+          </p>
+        </Section>
+      )}
 
       {/* Карточки */}
       <div

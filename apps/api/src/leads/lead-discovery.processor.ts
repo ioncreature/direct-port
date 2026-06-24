@@ -10,6 +10,7 @@ interface DiscoveryJob {
   query: string;
   city?: string;
   maxResults?: number;
+  companyId?: string | null;
 }
 
 @Processor('lead-discovery')
@@ -24,7 +25,7 @@ export class LeadDiscoveryProcessor extends WorkerHost {
   }
 
   async process(job: Job<DiscoveryJob>): Promise<void> {
-    const { searchId, query, city, maxResults } = job.data;
+    const { searchId, query, city, maxResults, companyId } = job.data;
     this.logger.log(`Discovery start: «${query}»${city ? ` (${city})` : ''}`);
 
     try {
@@ -33,7 +34,11 @@ export class LeadDiscoveryProcessor extends WorkerHost {
       let skipped = 0;
       if (companies.length > 0) {
         const sourceDetail = (city ? `${query} · ${city}` : query).slice(0, 500);
-        ({ created, skipped } = await this.leads.saveDiscovered(companies, sourceDetail));
+        ({ created, skipped } = await this.leads.saveDiscovered(
+          companies,
+          sourceDetail,
+          companyId ?? null,
+        ));
       }
       if (searchId) {
         await this.leads.completeSearch(searchId, { found: companies.length, created, skipped });

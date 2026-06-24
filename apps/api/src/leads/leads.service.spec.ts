@@ -1,5 +1,10 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { Actor } from '../common/tenant/actor-context';
+import { UserRole } from '../database/entities/user.entity';
 import { LeadsService } from './leads.service';
+
+const admin: Actor = { id: 'adm', role: UserRole.ADMIN, companyId: 'comp-1' };
+const superAdmin: Actor = { id: 'sa', role: UserRole.SUPER_ADMIN, companyId: null };
 
 function createService() {
   const repo = {
@@ -46,7 +51,7 @@ function createService() {
 describe('LeadsService.create', () => {
   it('создаёт лид и ставит обогащение при наличии сайта', async () => {
     const { service, repo, enrichmentQueue } = createService();
-    await service.create({ companyName: 'ВЭД-Сервис', website: 'ved.ru' });
+    await service.create({ companyName: 'ВЭД-Сервис', website: 'ved.ru' }, admin);
     expect(repo.save).toHaveBeenCalled();
     expect(enrichmentQueue.add).toHaveBeenCalledWith('enrich-lead', { leadId: 'lead-1' });
   });
@@ -54,7 +59,7 @@ describe('LeadsService.create', () => {
   it('дедуп: лид с тем же доменом → BadRequest, без enqueue', async () => {
     const { service, repo, enrichmentQueue } = createService();
     repo.findOne.mockResolvedValue({ id: 'x', domain: 'ved.ru' });
-    await expect(service.create({ companyName: 'Дубль', website: 'https://www.ved.ru' })).rejects.toThrow(
+    await expect(service.create({ companyName: 'Дубль', website: 'https://www.ved.ru' }, admin)).rejects.toThrow(
       BadRequestException,
     );
     expect(enrichmentQueue.add).not.toHaveBeenCalled();
@@ -62,7 +67,7 @@ describe('LeadsService.create', () => {
 
   it('без сайта — создаёт, но обогащение не ставит', async () => {
     const { service, repo, enrichmentQueue } = createService();
-    await service.create({ companyName: 'Без сайта' });
+    await service.create({ companyName: 'Без сайта' }, admin);
     expect(repo.save).toHaveBeenCalled();
     expect(enrichmentQueue.add).not.toHaveBeenCalled();
   });
@@ -71,7 +76,7 @@ describe('LeadsService.create', () => {
 describe('LeadsService.discover', () => {
   it('создаёт запись поиска и ставит job с searchId', async () => {
     const { service, searchRepo, discoveryQueue } = createService();
-    const res = await service.discover({ query: 'таможня Москва', city: 'Москва', maxResults: 10 });
+    const res = await service.discover({ query: 'таможня Москва', city: 'Москва', maxResults: 10 }, 'comp-1');
     expect(res).toEqual({ searchId: 'search-1' });
     expect(searchRepo.save).toHaveBeenCalled();
     expect(discoveryQueue.add).toHaveBeenCalledWith(
@@ -90,7 +95,7 @@ describe('LeadsService.import', () => {
         { companyName: 'A-зеркало', website: 'https://www.a.ru/contacts' },
         { companyName: 'B', website: 'b.ru' },
       ],
-    });
+    }, admin);
     expect(res).toEqual({ created: 2, skipped: 1 });
   });
 
@@ -102,7 +107,7 @@ describe('LeadsService.import', () => {
         { companyName: 'X', website: 'exist.ru' },
         { companyName: 'Y', website: 'new.ru' },
       ],
-    });
+    }, admin);
     expect(res).toEqual({ created: 1, skipped: 1 });
     // одна проверка дублей вместо построчной
     expect(repo.find).toHaveBeenCalledTimes(1);
@@ -114,7 +119,7 @@ describe('LeadsService.import', () => {
 
   it('autoEnrich=false — лиды создаются без постановки обогащения', async () => {
     const { service, enrichmentQueue } = createService();
-    await service.import({ items: [{ companyName: 'Z', website: 'z.ru' }], autoEnrich: false });
+    await service.import({ items: [{ companyName: 'Z', website: 'z.ru' }], autoEnrich: false }, admin);
     expect(enrichmentQueue.addBulk).not.toHaveBeenCalled();
   });
 });
@@ -152,7 +157,7 @@ describe('LeadsService.exportCsv', () => {
       limit: 20,
       sortOrder: 'DESC',
       sortBy: 'createdAt',
-    } as never);
+    } as never, superAdmin);
 
     expect(csv.charCodeAt(0)).toBe(0xfeff); // BOM для Excel
     expect(csv).toContain("'=SUM(1)"); // формула обезврежена ведущим апострофом
@@ -187,11 +192,13 @@ describe('LeadsService.linkClient', () => {
     const { service, repo, telegramRepo } = createService();
     // findOne(id) → лид; запрос по convertedTelegramUserId → клиент свободен.
     repo.findOne.mockImplementation(async (opts: FindOneOpts) =>
-      opts.where?.convertedTelegramUserId ? null : { id: 'lead-1', companyName: 'Лид' },
+      opts.where?.convertedTelegramUserId
+        ? null
+        : { id: 'lead-1', companyName: 'Лид', companyId: 'comp-1' },
     );
-    telegramRepo.findOne.mockResolvedValue({ id: 'tu-1' });
+    telegramRepo.findOne.mockResolvedValue({ id: 'tu-1', companyId: 'comp-1' });
 
-    await service.linkClient('lead-1', 'tu-1');
+    await service.linkClient('lead-1', 'tu-1', admin);
 
     expect(repo.update).toHaveBeenCalledWith(
       'lead-1',
@@ -201,10 +208,10 @@ describe('LeadsService.linkClient', () => {
 
   it('клиент не найден → NotFound, без update', async () => {
     const { service, repo, telegramRepo } = createService();
-    repo.findOne.mockResolvedValue({ id: 'lead-1', companyName: 'Лид' });
+    repo.findOne.mockResolvedValue({ id: 'lead-1', companyName: 'Лид', companyId: 'comp-1' });
     telegramRepo.findOne.mockResolvedValue(null);
 
-    await expect(service.linkClient('lead-1', 'tu-x')).rejects.toThrow(NotFoundException);
+    await expect(service.linkClient('lead-1', 'tu-x', admin)).rejects.toThrow(NotFoundException);
     expect(repo.update).not.toHaveBeenCalled();
   });
 
@@ -212,12 +219,21 @@ describe('LeadsService.linkClient', () => {
     const { service, repo, telegramRepo } = createService();
     repo.findOne.mockImplementation(async (opts: FindOneOpts) =>
       opts.where?.convertedTelegramUserId
-        ? { id: 'lead-2', companyName: 'Другой' }
-        : { id: 'lead-1', companyName: 'Лид' },
+        ? { id: 'lead-2', companyName: 'Другой', companyId: 'comp-1' }
+        : { id: 'lead-1', companyName: 'Лид', companyId: 'comp-1' },
     );
-    telegramRepo.findOne.mockResolvedValue({ id: 'tu-1' });
+    telegramRepo.findOne.mockResolvedValue({ id: 'tu-1', companyId: 'comp-1' });
 
-    await expect(service.linkClient('lead-1', 'tu-1')).rejects.toThrow(BadRequestException);
+    await expect(service.linkClient('lead-1', 'tu-1', admin)).rejects.toThrow(BadRequestException);
+    expect(repo.update).not.toHaveBeenCalled();
+  });
+
+  it('клиент чужой компании → 404, без update', async () => {
+    const { service, repo, telegramRepo } = createService();
+    repo.findOne.mockResolvedValue({ id: 'lead-1', companyName: 'Лид', companyId: 'comp-1' });
+    telegramRepo.findOne.mockResolvedValue({ id: 'tu-1', companyId: 'comp-2' });
+
+    await expect(service.linkClient('lead-1', 'tu-1', admin)).rejects.toThrow(NotFoundException);
     expect(repo.update).not.toHaveBeenCalled();
   });
 });
@@ -225,13 +241,68 @@ describe('LeadsService.linkClient', () => {
 describe('LeadsService.unlinkClient', () => {
   it('сбрасывает привязку клиента', async () => {
     const { service, repo } = createService();
-    repo.findOne.mockResolvedValue({ id: 'lead-1', companyName: 'Лид' });
+    repo.findOne.mockResolvedValue({ id: 'lead-1', companyName: 'Лид', companyId: 'comp-1' });
 
-    await service.unlinkClient('lead-1');
+    await service.unlinkClient('lead-1', admin);
 
     expect(repo.update).toHaveBeenCalledWith('lead-1', {
       convertedTelegramUserId: null,
       convertedAt: null,
     });
+  });
+});
+
+describe('LeadsService tenant-скоуп', () => {
+  it('findOne чужой компании → 404', async () => {
+    const { service, repo } = createService();
+    repo.findOne.mockResolvedValue({ id: 'lead-1', companyName: 'Чужой', companyId: 'comp-2' });
+    await expect(service.findOne('lead-1', admin)).rejects.toThrow(NotFoundException);
+  });
+
+  it('findOne своей компании — возвращает лид', async () => {
+    const { service, repo } = createService();
+    const lead = { id: 'lead-1', companyName: 'Свой', companyId: 'comp-1' };
+    repo.findOne.mockResolvedValue(lead);
+    await expect(service.findOne('lead-1', admin)).resolves.toBe(lead);
+  });
+
+  it('create проставляет companyId актора', async () => {
+    const { service, repo } = createService();
+    await service.create({ companyName: 'Новый' }, admin);
+    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ companyId: 'comp-1' }));
+  });
+
+  it('findAll фильтрует по компании актора', async () => {
+    const { service, repo } = createService();
+    const qb = {
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+    };
+    repo.createQueryBuilder.mockReturnValue(qb);
+    await service.findAll(
+      { page: 1, limit: 20, sortOrder: 'DESC', sortBy: 'createdAt' } as never,
+      admin,
+    );
+    expect(qb.andWhere).toHaveBeenCalledWith('lead.company_id = :scope', { scope: 'comp-1' });
+  });
+
+  it('super_admin видит все компании — без company-фильтра в findAll', async () => {
+    const { service, repo } = createService();
+    const qb = {
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+    };
+    repo.createQueryBuilder.mockReturnValue(qb);
+    await service.findAll(
+      { page: 1, limit: 20, sortOrder: 'DESC', sortBy: 'createdAt' } as never,
+      superAdmin,
+    );
+    expect(qb.andWhere).not.toHaveBeenCalledWith('lead.company_id = :scope', expect.anything());
   });
 });

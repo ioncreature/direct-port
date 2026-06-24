@@ -11,8 +11,10 @@ import {
   Res,
 } from '@nestjs/common';
 import { Response } from 'express';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Internal } from '../auth/decorators/internal.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { Actor, DEFAULT_COMPANY_ID, resolveCompanyScope } from '../common/tenant/actor-context';
 import { UserRole } from '../database/entities/user.entity';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { DiscoverLeadsDto } from './dto/discover-leads.dto';
@@ -29,14 +31,14 @@ export class LeadsController {
 
   @Get()
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  findAll(@Query() query: FindLeadsQueryDto) {
-    return this.service.findAll(query);
+  findAll(@Query() query: FindLeadsQueryDto, @CurrentUser() actor: Actor) {
+    return this.service.findAll(query, actor);
   }
 
   @Get('status-counts')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  statusCounts() {
-    return this.service.getStatusCounts();
+  statusCounts(@CurrentUser() actor: Actor) {
+    return this.service.getStatusCounts(actor);
   }
 
   @Get('searches')
@@ -58,7 +60,7 @@ export class LeadsController {
   @Post('agent/discover')
   @Internal()
   agentDiscover(@Body() dto: DiscoverLeadsDto) {
-    return this.service.discover(dto);
+    return this.service.discover(dto, DEFAULT_COMPANY_ID);
   }
 
   /** Дайджест свежих горячих лидов за период (часы); порог score настраивается агентом. */
@@ -69,6 +71,7 @@ export class LeadsController {
     return this.service.getDigest(
       Math.min(Number(hours) || 24, 168),
       Number.isFinite(parsedScore) ? Math.min(Math.max(parsedScore, 0), 1) : undefined,
+      DEFAULT_COMPANY_ID,
     );
   }
 
@@ -81,8 +84,8 @@ export class LeadsController {
 
   @Get('export')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  async export(@Query() query: FindLeadsQueryDto, @Res() res: Response) {
-    const csv = await this.service.exportCsv(query);
+  async export(@Query() query: FindLeadsQueryDto, @Res() res: Response, @CurrentUser() actor: Actor) {
+    const csv = await this.service.exportCsv(query, actor);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="leads.csv"');
     res.send(csv);
@@ -90,57 +93,72 @@ export class LeadsController {
 
   @Post()
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  create(@Body() dto: CreateLeadDto) {
-    return this.service.create(dto);
+  create(@Body() dto: CreateLeadDto, @CurrentUser() actor: Actor) {
+    return this.service.create(dto, actor);
   }
 
   @Post('discover')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  discover(@Body() dto: DiscoverLeadsDto) {
-    return this.service.discover(dto);
+  discover(@Body() dto: DiscoverLeadsDto, @CurrentUser() actor: Actor) {
+    return this.service.discover(dto, resolveCompanyScope(actor) ?? null);
   }
 
   @Post('import')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  import(@Body() dto: ImportLeadsDto) {
-    return this.service.import(dto);
+  import(@Body() dto: ImportLeadsDto, @CurrentUser() actor: Actor) {
+    return this.service.import(dto, actor);
   }
 
   @Get(':id')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.findOne(id);
+  findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
+    return this.service.findOne(id, actor);
   }
 
   @Patch(':id')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateLeadDto) {
-    return this.service.update(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateLeadDto,
+    @CurrentUser() actor: Actor,
+  ) {
+    return this.service.update(id, dto, actor);
   }
 
   @Post(':id/reenrich')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  reenrich(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.reenrich(id);
+  reenrich(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
+    return this.service.reenrich(id, actor);
   }
 
   /** Привязать клиента (telegram-пользователя), пришедшего от лида. */
   @Post(':id/link-client')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  linkClient(@Param('id', ParseUUIDPipe) id: string, @Body() dto: LinkClientDto) {
-    return this.service.linkClient(id, dto.telegramUserId);
+  linkClient(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: LinkClientDto,
+    @CurrentUser() actor: Actor,
+  ) {
+    return this.service.linkClient(id, dto.telegramUserId, actor);
   }
 
   /** Снять привязку клиента. */
   @Delete(':id/link-client')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  unlinkClient(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.unlinkClient(id);
+  unlinkClient(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
+    return this.service.unlinkClient(id, actor);
+  }
+
+  /** Привязка клиента к лиду по deep-link из client-bot (X-Internal-Key, best-effort). */
+  @Post(':id/attach-client')
+  @Internal()
+  attachClient(@Param('id', ParseUUIDPipe) id: string, @Body() dto: LinkClientDto) {
+    return this.service.attachClientFromBot(id, dto.telegramUserId);
   }
 
   @Delete(':id')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.remove(id);
+  remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
+    return this.service.remove(id, actor);
   }
 }

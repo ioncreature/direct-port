@@ -65,9 +65,17 @@ const nullableScoreTransformer = {
 @Entity('leads')
 @Index('idx_leads_status', ['status'])
 @Index('idx_leads_domain', ['domain'])
+@Index('idx_leads_company_id', ['companyId'])
 export class Lead {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  /**
+   * Компания-провайдер, которой принадлежит лид. NULL — общий пул (виден только super_admin).
+   * Существующие лиды и лиды автономного discovery-агента — в компании «По умолчанию».
+   */
+  @Column({ type: 'uuid', name: 'company_id', nullable: true })
+  companyId: string | null;
 
   @Column({ type: 'varchar', length: 500, name: 'company_name' })
   companyName: string;

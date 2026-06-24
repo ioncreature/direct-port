@@ -33,11 +33,32 @@ export class StartHandler {
       });
       await this.stateService.setState(ctx.chat!.id, { telegramUserId: tgUser.id, language });
       this.logger.log(`Registered client: internalId=${tgUser.id} telegramId=${from.id}`);
+      // Fire-and-forget: не задерживаем приветствие на сетевой запрос атрибуции.
+      void this.attributeLead(ctx, tgUser.id);
     } catch (err) {
       this.logger.error(`Failed to register client id=${from.id}: ${(err as Error).message}`);
     }
 
     const keyboard = new Keyboard().text(ctx.t('btn-help')).resized();
     await ctx.reply(ctx.t('welcome'), { reply_markup: keyboard });
+  }
+
+  /**
+   * Атрибуция лида по deep-link `?start=lead_<id>` (из холодного письма). Best-effort:
+   * любая ошибка только логируется и не ломает /start. Привязка идемпотентна на стороне API.
+   */
+  private async attributeLead(ctx: BotContext, telegramUserId: string): Promise<void> {
+    const payload = typeof ctx.match === 'string' ? ctx.match.trim() : '';
+    if (!payload.startsWith('lead_')) return;
+    const leadId = payload.slice('lead_'.length);
+    if (!leadId) return;
+    try {
+      const res = await this.apiClient.attachLeadClient(leadId, telegramUserId);
+      this.logger.log(
+        `Lead attribution lead=${leadId} client=${telegramUserId}: ${res.linked ? 'linked' : res.reason}`,
+      );
+    } catch (err) {
+      this.logger.warn(`Lead attribution failed lead=${leadId}: ${(err as Error).message}`);
+    }
   }
 }

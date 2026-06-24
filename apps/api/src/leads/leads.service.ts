@@ -2,8 +2,9 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
-import { In, MoreThanOrEqual, Repository } from 'typeorm';
+import { In, IsNull, MoreThanOrEqual, Repository } from 'typeorm';
 import { PaginatedResponse, paginate } from '../common/interfaces/paginated';
+import { Actor, assertSameCompany, resolveCompanyScope } from '../common/tenant/actor-context';
 import { ManagerNotifyService } from '../conversations/manager-notify.service';
 import { LeadSearch } from '../database/entities/lead-search.entity';
 import { Lead, LeadStatus, type LeadSource } from '../database/entities/lead.entity';
@@ -42,8 +43,8 @@ export class LeadsService {
     @InjectRepository(TelegramUser) private readonly telegramRepo: Repository<TelegramUser>,
   ) {}
 
-  async findAll(query: FindLeadsQueryDto): Promise<PaginatedResponse<Lead>> {
-    const qb = this.buildQuery(query);
+  async findAll(query: FindLeadsQueryDto, actor: Actor): Promise<PaginatedResponse<Lead>> {
+    const qb = this.buildQuery(query, actor);
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     qb.skip((page - 1) * limit).take(limit);
@@ -51,20 +52,23 @@ export class LeadsService {
     return paginate(data, total, page, limit);
   }
 
-  async findOne(id: string): Promise<Lead> {
+  async findOne(id: string, actor: Actor): Promise<Lead> {
     const lead = await this.repo.findOne({ where: { id }, relations: { convertedClient: true } });
     if (!lead) throw new NotFoundException('Лид не найден');
+    assertSameCompany(actor, lead.companyId);
     return lead;
   }
 
   /** Счётчики по статусам для бейджей воронки в админке. */
-  async getStatusCounts(): Promise<Record<string, number>> {
-    const rows = await this.repo
+  async getStatusCounts(actor: Actor): Promise<Record<string, number>> {
+    const scope = resolveCompanyScope(actor);
+    const qb = this.repo
       .createQueryBuilder('lead')
       .select('lead.status', 'status')
       .addSelect('COUNT(*)', 'count')
-      .groupBy('lead.status')
-      .getRawMany<{ status: LeadStatus; count: string }>();
+      .groupBy('lead.status');
+    if (scope !== undefined) qb.where('lead.company_id = :scope', { scope });
+    const rows = await qb.getRawMany<{ status: LeadStatus; count: string }>();
     const counts: Record<string, number> = {};
     for (const status of Object.values(LeadStatus)) counts[status] = 0;
     for (const row of rows) counts[row.status] = Number(row.count);
@@ -72,16 +76,20 @@ export class LeadsService {
   }
 
   /** Ручное создание лида. Дедуп по домену; при наличии сайта ставит enrichment. */
-  async create(dto: CreateLeadDto): Promise<Lead> {
+  async create(dto: CreateLeadDto, actor: Actor): Promise<Lead> {
+    const companyId = resolveCompanyScope(actor) ?? null;
     const domain = normalizeDomain(dto.website);
     if (domain) {
-      const existing = await this.repo.findOne({ where: { domain } });
+      const existing = await this.repo.findOne({
+        where: { domain, companyId: companyId ?? IsNull() },
+      });
       if (existing) {
         throw new BadRequestException(`Лид с доменом ${domain} уже есть (#${existing.id})`);
       }
     }
     const lead = await this.repo.save(
       this.repo.create({
+        companyId,
         companyName: dto.companyName,
         website: dto.website ?? null,
         domain,
@@ -106,8 +114,9 @@ export class LeadsService {
       emails?: string[];
       markContacted?: boolean;
     },
+    actor: Actor,
   ): Promise<Lead> {
-    const lead = await this.findOne(id);
+    const lead = await this.findOne(id, actor);
     if (dto.status !== undefined) lead.status = dto.status;
     if (dto.notes !== undefined) lead.notes = dto.notes;
     if (dto.city !== undefined) lead.city = dto.city;
@@ -118,19 +127,20 @@ export class LeadsService {
     return this.repo.save(lead);
   }
 
-  async remove(id: string): Promise<void> {
-    const res = await this.repo.delete({ id });
-    if (!res.affected) throw new NotFoundException('Лид не найден');
+  async remove(id: string, actor: Actor): Promise<void> {
+    await this.findOne(id, actor);
+    await this.repo.delete({ id });
   }
 
   /**
    * Привязать клиента, пришедшего от лида (конверсия). Один клиент — один лид-источник:
    * привязка к второму лиду отклоняется. Статус воронки не трогаем (связь ортогональна).
    */
-  async linkClient(id: string, telegramUserId: string): Promise<Lead> {
-    const lead = await this.findOne(id);
+  async linkClient(id: string, telegramUserId: string, actor: Actor): Promise<Lead> {
+    const lead = await this.findOne(id, actor);
     const client = await this.telegramRepo.findOne({ where: { id: telegramUserId } });
     if (!client) throw new NotFoundException('Клиент не найден');
+    assertSameCompany(actor, client.companyId);
     const other = await this.repo.findOne({ where: { convertedTelegramUserId: telegramUserId } });
     if (other && other.id !== id) {
       throw new BadRequestException(`Клиент уже привязан к лиду «${other.companyName}»`);
@@ -145,8 +155,8 @@ export class LeadsService {
   }
 
   /** Снять привязку клиента (ошибочная конверсия). */
-  async unlinkClient(id: string): Promise<Lead> {
-    const lead = await this.findOne(id);
+  async unlinkClient(id: string, actor: Actor): Promise<Lead> {
+    const lead = await this.findOne(id, actor);
     await this.repo.update(id, { convertedTelegramUserId: null, convertedAt: null });
     lead.convertedTelegramUserId = null;
     lead.convertedAt = null;
@@ -154,8 +164,35 @@ export class LeadsService {
     return lead;
   }
 
+  /**
+   * Привязка клиента к лиду по deep-link (?start=lead_<id>) из client-bot. Best-effort и
+   * идемпотентна: не перезаписывает уже сконвертированный лид и не уводит клиента от
+   * другого лида-источника. Вызывается по X-Internal-Key (без actor — нет проверки company).
+   */
+  async attachClientFromBot(
+    leadId: string,
+    telegramUserId: string,
+  ): Promise<{ linked: boolean; reason?: string }> {
+    const lead = await this.repo.findOne({ where: { id: leadId } });
+    if (!lead) return { linked: false, reason: 'lead_not_found' };
+    if (lead.convertedTelegramUserId) {
+      return lead.convertedTelegramUserId === telegramUserId
+        ? { linked: true }
+        : { linked: false, reason: 'lead_already_converted' };
+    }
+    const client = await this.telegramRepo.findOne({ where: { id: telegramUserId } });
+    if (!client) return { linked: false, reason: 'client_not_found' };
+    const other = await this.repo.findOne({ where: { convertedTelegramUserId: telegramUserId } });
+    if (other) return { linked: false, reason: 'client_already_linked' };
+    await this.repo.update(leadId, {
+      convertedTelegramUserId: telegramUserId,
+      convertedAt: new Date(),
+    });
+    return { linked: true };
+  }
+
   /** Ставит задание discovery в очередь (web-поиск компаний) и пишет запись в журнал. */
-  async discover(dto: DiscoverLeadsDto): Promise<{ searchId: string }> {
+  async discover(dto: DiscoverLeadsDto, companyId: string | null): Promise<{ searchId: string }> {
     if (!this.discoveryService.available) {
       throw new BadRequestException('Discovery недоступен: ANTHROPIC_API_KEY не настроен');
     }
@@ -173,6 +210,7 @@ export class LeadsService {
       query: dto.query,
       city: dto.city,
       maxResults,
+      companyId,
     });
     return { searchId: search.id };
   }
@@ -183,10 +221,14 @@ export class LeadsService {
   }
 
   /** Дайджест свежих горячих лидов за период — для отчёта автономного агента. */
-  getDigest(hours: number, minScore = 0.7): Promise<Lead[]> {
+  getDigest(hours: number, minScore = 0.7, companyId?: string): Promise<Lead[]> {
     const since = new Date(Date.now() - hours * 3600_000);
     return this.repo.find({
-      where: { createdAt: MoreThanOrEqual(since), relevanceScore: MoreThanOrEqual(minScore) },
+      where: {
+        createdAt: MoreThanOrEqual(since),
+        relevanceScore: MoreThanOrEqual(minScore),
+        ...(companyId ? { companyId } : {}),
+      },
       order: { relevanceScore: 'DESC' },
       take: 50,
     });
@@ -221,8 +263,8 @@ export class LeadsService {
   }
 
   /** Перезапускает обогащение конкретного лида. */
-  async reenrich(id: string): Promise<{ queued: boolean }> {
-    const lead = await this.findOne(id);
+  async reenrich(id: string, actor: Actor): Promise<{ queued: boolean }> {
+    const lead = await this.findOne(id, actor);
     if (!toFetchUrl(lead.website)) {
       throw new BadRequestException('У лида нет сайта — обогащать нечего');
     }
@@ -234,11 +276,12 @@ export class LeadsService {
   }
 
   /** Массовый импорт (реестр ФТС / CSV). Дедуп по домену, опц. enrichment. */
-  async import(dto: ImportLeadsDto): Promise<{ created: number; skipped: number }> {
+  async import(dto: ImportLeadsDto, actor: Actor): Promise<{ created: number; skipped: number }> {
     return this.insertMany(dto.items, {
       source: dto.source ?? 'fts_registry',
       autoEnrich: dto.autoEnrich ?? true,
       sourceDetail: null,
+      companyId: resolveCompanyScope(actor) ?? null,
     });
   }
 
@@ -246,6 +289,7 @@ export class LeadsService {
   async saveDiscovered(
     companies: DiscoveredCompany[],
     sourceDetail: string,
+    companyId: string | null,
   ): Promise<{ created: number; skipped: number }> {
     return this.insertMany(
       companies.map((c) => ({
@@ -253,19 +297,21 @@ export class LeadsService {
         website: c.website ?? undefined,
         city: c.city ?? undefined,
       })),
-      { source: 'web_search', autoEnrich: true, sourceDetail },
+      { source: 'web_search', autoEnrich: true, sourceDetail, companyId },
     );
   }
 
-  async exportCsv(query: FindLeadsQueryDto): Promise<string> {
-    const leads = await this.buildQuery(query).take(EXPORT_CAP).getMany();
+  async exportCsv(query: FindLeadsQueryDto, actor: Actor): Promise<string> {
+    const leads = await this.buildQuery(query, actor).take(EXPORT_CAP).getMany();
     return toCsv(leads);
   }
 
   // --- внутреннее ---
 
-  private buildQuery(query: FindLeadsQueryDto) {
+  private buildQuery(query: FindLeadsQueryDto, actor: Actor) {
     const qb = this.repo.createQueryBuilder('lead');
+    const scope = resolveCompanyScope(actor);
+    if (scope !== undefined) qb.andWhere('lead.company_id = :scope', { scope });
     if (query.status) qb.andWhere('lead.status = :status', { status: query.status });
     if (query.source) qb.andWhere('lead.source = :source', { source: query.source });
     if (query.minScore != null) {
@@ -284,7 +330,12 @@ export class LeadsService {
 
   private async insertMany(
     items: Pick<ImportLeadItemDto, 'companyName' | 'website' | 'inn' | 'city'>[],
-    opts: { source: LeadSource; autoEnrich: boolean; sourceDetail: string | null },
+    opts: {
+      source: LeadSource;
+      autoEnrich: boolean;
+      sourceDetail: string | null;
+      companyId: string | null;
+    },
   ): Promise<{ created: number; skipped: number }> {
     let skipped = 0;
 
@@ -308,7 +359,10 @@ export class LeadsService {
       seenDomains.size > 0
         ? new Set(
             (
-              await this.repo.find({ where: { domain: In([...seenDomains]) }, select: ['domain'] })
+              await this.repo.find({
+                where: { domain: In([...seenDomains]), companyId: opts.companyId ?? IsNull() },
+                select: ['domain'],
+              })
             ).map((l) => l.domain),
           )
         : new Set<string | null>();
@@ -321,6 +375,7 @@ export class LeadsService {
       }
       toCreate.push(
         this.repo.create({
+          companyId: opts.companyId,
           companyName: item.companyName,
           website: item.website ?? null,
           domain,

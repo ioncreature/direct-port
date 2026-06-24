@@ -112,4 +112,13 @@ export class ApiClientService {
   async publishBotIdentity(username: string): Promise<void> {
     await this.client.post('/bot-links/identity', { kind: 'client', username });
   }
+
+  /** Привязка клиента к лиду по deep-link (?start=lead_<id>). Best-effort атрибуция. */
+  async attachLeadClient(
+    leadId: string,
+    telegramUserId: string,
+  ): Promise<{ linked: boolean; reason?: string }> {
+    const { data } = await this.client.post(`/leads/${leadId}/attach-client`, { telegramUserId });
+    return data;
+  }
 }
