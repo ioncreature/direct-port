@@ -778,7 +778,9 @@ main {
   color: var(--text-muted);
 }
 
-.price-note {
+/* Scoped under .price-figure to outrank `.card p` (0,1,1) — otherwise its
+   `margin: 0` overrides the auto-centering and the note shifts left. */
+.price-figure .price-note {
   margin: 12px auto 0;
   max-width: 440px;
   font-size: 13px;
