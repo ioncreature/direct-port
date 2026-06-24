@@ -3,9 +3,12 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  JoinColumn,
+  ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { TelegramUser } from './telegram-user.entity';
 
 /**
  * Статус лида в sales-воронке DirectPort.
@@ -134,6 +137,22 @@ export class Lead {
 
   @Column({ type: 'text', name: 'error_message', nullable: true })
   errorMessage: string | null;
+
+  /**
+   * Клиент (telegram-пользователь), в которого сконвертировался лид — написал в бот.
+   * null — ещё не клиент. Бейдж «Клиент» в админке выводится из факта привязки;
+   * отдельного статуса воронки для конверсии намеренно нет (связь — источник правды).
+   */
+  @Column({ type: 'uuid', name: 'converted_telegram_user_id', nullable: true })
+  convertedTelegramUserId: string | null;
+
+  @ManyToOne(() => TelegramUser, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'converted_telegram_user_id' })
+  convertedClient: TelegramUser | null;
+
+  /** Момент привязки клиента к лиду (конверсия). */
+  @Column({ type: 'timestamptz', name: 'converted_at', nullable: true })
+  convertedAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

@@ -577,6 +577,13 @@ export interface Lead {
   notes: string | null;
   lastContactedAt: string | null;
   errorMessage: string | null;
+  /** Клиент, в которого сконвертировался лид (написал в бот). null — ещё не клиент. */
+  convertedTelegramUserId: string | null;
+  convertedAt: string | null;
+  convertedClient?: Pick<
+    TelegramUser,
+    'id' | 'telegramId' | 'username' | 'firstName' | 'lastName'
+  > | null;
   createdAt: string;
   updatedAt: string;
 }

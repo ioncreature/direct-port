@@ -97,6 +97,15 @@ export const primaryLink: React.CSSProperties = {
   textDecoration: 'none',
 };
 
+/** Pill-бейдж «успех» (например, «Клиент»). Padding/fontSize задаются по месту спредом. */
+export const successBadge: React.CSSProperties = {
+  display: 'inline-block',
+  borderRadius: 'var(--radius-pill)',
+  background: 'var(--success)',
+  color: '#fff',
+  fontWeight: 600,
+};
+
 /** Pill-чип фильтра (списки документов/пользователей). */
 export function filterChip(active: boolean): React.CSSProperties {
   return {

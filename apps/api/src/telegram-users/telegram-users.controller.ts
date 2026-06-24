@@ -38,6 +38,13 @@ export class TelegramUsersController {
     return this.service.findAll(query, actor);
   }
 
+  /** Автокомплит клиентов для привязки к лиду (доступен и менеджеру-customs). */
+  @Get('search')
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  search(@Query('q') q: string, @CurrentUser() actor: Actor) {
+    return this.service.search(q ?? '', actor);
+  }
+
   @Get('by-id/:id')
   @Roles(UserRole.ADMIN)
   findOneById(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {

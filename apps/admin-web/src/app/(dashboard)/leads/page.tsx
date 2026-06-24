@@ -12,6 +12,7 @@ import {
   btnPrimary,
   cardSurface,
   filterChip,
+  successBadge,
   td,
   tdEmpty,
   th,
@@ -238,6 +239,9 @@ function LeadRow({ lead: l }: { lead: Lead }) {
         <span style={{ color: STATUS_COLORS[l.status], fontWeight: 600, fontSize: 13 }}>
           {l.statusLabel}
         </span>
+        {l.convertedTelegramUserId && (
+          <span style={{ ...successBadge, marginLeft: 6, padding: '1px 7px', fontSize: 11 }}>Клиент</span>
+        )}
       </td>
       <td style={{ ...td, textAlign: 'right', color: scoreColor(l.relevanceScore), fontWeight: 600 }}>
         {l.relevanceScore == null ? '—' : l.relevanceScore.toFixed(2)}

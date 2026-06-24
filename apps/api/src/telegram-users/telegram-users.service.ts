@@ -61,6 +61,28 @@ export class TelegramUsersService {
     return paginate(data, total, query.page, query.limit);
   }
 
+  /**
+   * Поиск клиентов для привязки к лиду (автокомплит): по username/имени/telegram_id,
+   * скоуп по компании актора, до 10 совпадений. Отдаёт только поля для отображения.
+   */
+  async search(q: string, actor: Actor): Promise<TelegramUser[]> {
+    const scope = resolveCompanyScope(actor);
+    const qb = this.repo
+      .createQueryBuilder('tu')
+      .select(['tu.id', 'tu.telegramId', 'tu.username', 'tu.firstName', 'tu.lastName'])
+      .orderBy('tu.createdAt', 'DESC')
+      .take(10);
+    if (scope !== undefined) qb.where('tu.company_id = :scope', { scope });
+    const term = q.trim();
+    if (term) {
+      qb.andWhere(
+        '(tu.username ILIKE :s OR tu.first_name ILIKE :s OR tu.last_name ILIKE :s OR CAST(tu.telegram_id AS TEXT) ILIKE :s)',
+        { s: `%${term}%` },
+      );
+    }
+    return qb.getMany();
+  }
+
   async findOneById(id: string, actor: Actor): Promise<TelegramUser & { documentCount: number }> {
     const [user] = (await this.repo
       .createQueryBuilder('tu')

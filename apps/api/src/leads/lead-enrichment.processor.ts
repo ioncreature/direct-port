@@ -40,7 +40,8 @@ export class LeadEnrichmentProcessor extends WorkerHost {
 
     try {
       const e = await this.enrichment.enrich(lead);
-      const patch: Partial<Lead> = {
+      // Omit relation convertedClient — это не колонка, её тип ломает сигнатуру repo.update().
+      const patch: Partial<Omit<Lead, 'convertedClient'>> = {
         phones: e.phones,
         emails: e.emails,
         services: e.services,

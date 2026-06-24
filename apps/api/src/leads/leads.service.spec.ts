@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { LeadsService } from './leads.service';
 
 function createService() {
@@ -11,6 +11,7 @@ function createService() {
         ? x.map((e, i) => ({ id: `lead-${i + 1}`, ...(e as object) }))
         : { id: 'lead-1', ...(x as object) },
     ),
+    update: jest.fn().mockResolvedValue({ affected: 1 }),
     delete: jest.fn().mockResolvedValue({ affected: 1 }),
     createQueryBuilder: jest.fn(),
   };
@@ -28,6 +29,7 @@ function createService() {
   const discoveryService = { available: true };
   const enrichmentService = { available: true };
   const managerNotify = { notifyLeadsReport: jest.fn().mockResolvedValue({ delivered: true }) };
+  const telegramRepo = { findOne: jest.fn().mockResolvedValue(null) };
   const service = new LeadsService(
     repo as never,
     searchRepo as never,
@@ -36,8 +38,9 @@ function createService() {
     discoveryService as never,
     enrichmentService as never,
     managerNotify as never,
+    telegramRepo as never,
   );
-  return { service, repo, searchRepo, discoveryQueue, enrichmentQueue, managerNotify };
+  return { service, repo, searchRepo, discoveryQueue, enrichmentQueue, managerNotify, telegramRepo };
 }
 
 describe('LeadsService.create', () => {
@@ -174,5 +177,61 @@ describe('LeadsService.getDigest', () => {
     const res = await service.getDigest(24);
     expect(repo.find).toHaveBeenCalled();
     expect(res).toBe(leads);
+  });
+});
+
+type FindOneOpts = { where?: { id?: string; convertedTelegramUserId?: string } };
+
+describe('LeadsService.linkClient', () => {
+  it('привязывает клиента и проставляет convertedAt', async () => {
+    const { service, repo, telegramRepo } = createService();
+    // findOne(id) → лид; запрос по convertedTelegramUserId → клиент свободен.
+    repo.findOne.mockImplementation(async (opts: FindOneOpts) =>
+      opts.where?.convertedTelegramUserId ? null : { id: 'lead-1', companyName: 'Лид' },
+    );
+    telegramRepo.findOne.mockResolvedValue({ id: 'tu-1' });
+
+    await service.linkClient('lead-1', 'tu-1');
+
+    expect(repo.update).toHaveBeenCalledWith(
+      'lead-1',
+      expect.objectContaining({ convertedTelegramUserId: 'tu-1', convertedAt: expect.any(Date) }),
+    );
+  });
+
+  it('клиент не найден → NotFound, без update', async () => {
+    const { service, repo, telegramRepo } = createService();
+    repo.findOne.mockResolvedValue({ id: 'lead-1', companyName: 'Лид' });
+    telegramRepo.findOne.mockResolvedValue(null);
+
+    await expect(service.linkClient('lead-1', 'tu-x')).rejects.toThrow(NotFoundException);
+    expect(repo.update).not.toHaveBeenCalled();
+  });
+
+  it('клиент уже привязан к другому лиду → BadRequest, без update', async () => {
+    const { service, repo, telegramRepo } = createService();
+    repo.findOne.mockImplementation(async (opts: FindOneOpts) =>
+      opts.where?.convertedTelegramUserId
+        ? { id: 'lead-2', companyName: 'Другой' }
+        : { id: 'lead-1', companyName: 'Лид' },
+    );
+    telegramRepo.findOne.mockResolvedValue({ id: 'tu-1' });
+
+    await expect(service.linkClient('lead-1', 'tu-1')).rejects.toThrow(BadRequestException);
+    expect(repo.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('LeadsService.unlinkClient', () => {
+  it('сбрасывает привязку клиента', async () => {
+    const { service, repo } = createService();
+    repo.findOne.mockResolvedValue({ id: 'lead-1', companyName: 'Лид' });
+
+    await service.unlinkClient('lead-1');
+
+    expect(repo.update).toHaveBeenCalledWith('lead-1', {
+      convertedTelegramUserId: null,
+      convertedAt: null,
+    });
   });
 });

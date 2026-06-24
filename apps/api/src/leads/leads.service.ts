@@ -7,6 +7,7 @@ import { PaginatedResponse, paginate } from '../common/interfaces/paginated';
 import { ManagerNotifyService } from '../conversations/manager-notify.service';
 import { LeadSearch } from '../database/entities/lead-search.entity';
 import { Lead, LeadStatus, type LeadSource } from '../database/entities/lead.entity';
+import { TelegramUser } from '../database/entities/telegram-user.entity';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { DiscoverLeadsDto } from './dto/discover-leads.dto';
 import { FindLeadsQueryDto } from './dto/find-leads-query.dto';
@@ -38,6 +39,7 @@ export class LeadsService {
     private readonly discoveryService: LeadDiscoveryService,
     private readonly enrichmentService: LeadEnrichmentService,
     private readonly managerNotify: ManagerNotifyService,
+    @InjectRepository(TelegramUser) private readonly telegramRepo: Repository<TelegramUser>,
   ) {}
 
   async findAll(query: FindLeadsQueryDto): Promise<PaginatedResponse<Lead>> {
@@ -50,7 +52,7 @@ export class LeadsService {
   }
 
   async findOne(id: string): Promise<Lead> {
-    const lead = await this.repo.findOne({ where: { id } });
+    const lead = await this.repo.findOne({ where: { id }, relations: { convertedClient: true } });
     if (!lead) throw new NotFoundException('Лид не найден');
     return lead;
   }
@@ -119,6 +121,37 @@ export class LeadsService {
   async remove(id: string): Promise<void> {
     const res = await this.repo.delete({ id });
     if (!res.affected) throw new NotFoundException('Лид не найден');
+  }
+
+  /**
+   * Привязать клиента, пришедшего от лида (конверсия). Один клиент — один лид-источник:
+   * привязка к второму лиду отклоняется. Статус воронки не трогаем (связь ортогональна).
+   */
+  async linkClient(id: string, telegramUserId: string): Promise<Lead> {
+    const lead = await this.findOne(id);
+    const client = await this.telegramRepo.findOne({ where: { id: telegramUserId } });
+    if (!client) throw new NotFoundException('Клиент не найден');
+    const other = await this.repo.findOne({ where: { convertedTelegramUserId: telegramUserId } });
+    if (other && other.id !== id) {
+      throw new BadRequestException(`Клиент уже привязан к лиду «${other.companyName}»`);
+    }
+    const convertedAt = new Date();
+    await this.repo.update(id, { convertedTelegramUserId: telegramUserId, convertedAt });
+    // Возвращаем уже загруженный лид с проставленной связью — без повторного findOne.
+    lead.convertedTelegramUserId = telegramUserId;
+    lead.convertedAt = convertedAt;
+    lead.convertedClient = client;
+    return lead;
+  }
+
+  /** Снять привязку клиента (ошибочная конверсия). */
+  async unlinkClient(id: string): Promise<Lead> {
+    const lead = await this.findOne(id);
+    await this.repo.update(id, { convertedTelegramUserId: null, convertedAt: null });
+    lead.convertedTelegramUserId = null;
+    lead.convertedAt = null;
+    lead.convertedClient = null;
+    return lead;
   }
 
   /** Ставит задание discovery в очередь (web-поиск компаний) и пишет запись в журнал. */

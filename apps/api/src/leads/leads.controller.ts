@@ -18,6 +18,7 @@ import { CreateLeadDto } from './dto/create-lead.dto';
 import { DiscoverLeadsDto } from './dto/discover-leads.dto';
 import { FindLeadsQueryDto } from './dto/find-leads-query.dto';
 import { ImportLeadsDto } from './dto/import-leads.dto';
+import { LinkClientDto } from './dto/link-client.dto';
 import { ReportLeadsDto } from './dto/report-leads.dto';
 import { UpdateLeadDto } from './dto/update-lead.dto';
 import { LeadsService } from './leads.service';
@@ -121,6 +122,20 @@ export class LeadsController {
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   reenrich(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.reenrich(id);
+  }
+
+  /** Привязать клиента (telegram-пользователя), пришедшего от лида. */
+  @Post(':id/link-client')
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  linkClient(@Param('id', ParseUUIDPipe) id: string, @Body() dto: LinkClientDto) {
+    return this.service.linkClient(id, dto.telegramUserId);
+  }
+
+  /** Снять привязку клиента. */
+  @Delete(':id/link-client')
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  unlinkClient(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.unlinkClient(id);
   }
 
   @Delete(':id')

@@ -8,6 +8,7 @@ import { ManagerNotifyModule } from '../conversations/manager-notify.module';
 import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
 import { Lead } from '../database/entities/lead.entity';
 import { LeadSearch } from '../database/entities/lead-search.entity';
+import { TelegramUser } from '../database/entities/telegram-user.entity';
 import { LeadDiscoveryProcessor } from './lead-discovery.processor';
 import { LeadDiscoveryService } from './lead-discovery.service';
 import { LeadEnrichmentProcessor } from './lead-enrichment.processor';
@@ -17,7 +18,7 @@ import { LeadsService } from './leads.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Lead, LeadSearch, AiUsageLog]),
+    TypeOrmModule.forFeature([Lead, LeadSearch, AiUsageLog, TelegramUser]),
     BullModule.registerQueue({ name: 'lead-discovery' }),
     BullModule.registerQueue({ name: 'lead-enrichment' }),
     ConfigModule,

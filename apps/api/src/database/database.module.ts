@@ -66,6 +66,7 @@ import { AddLeads1779300000000 } from './migrations/1779300000000-AddLeads';
 import { AddLeadAiModels1779400000000 } from './migrations/1779400000000-AddLeadAiModels';
 import { AddLeadSearches1779500000000 } from './migrations/1779500000000-AddLeadSearches';
 import { AddClientDeposit1779600000000 } from './migrations/1779600000000-AddClientDeposit';
+import { AddLeadConvertedClient1779700000000 } from './migrations/1779700000000-AddLeadConvertedClient';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -144,6 +145,7 @@ import { SeedService } from './seeds/seed.service';
           AddLeadAiModels1779400000000,
           AddLeadSearches1779500000000,
           AddClientDeposit1779600000000,
+          AddLeadConvertedClient1779700000000,
         ],
         migrationsRun: true,
         // Каждая миграция в своей транзакции (по умолчанию TypeORM гонит все в одной).
