@@ -751,46 +751,93 @@ main {
   padding: 40px;
 }
 
-.price-figure {
-  text-align: center;
-  padding-bottom: 28px;
-  margin-bottom: 28px;
-  border-bottom: 1px solid var(--border);
+.price-tiers {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.price-amount {
-  display: block;
-  font-size: 64px;
-  font-weight: 800;
-  line-height: 1;
-  letter-spacing: -0.03em;
-  background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+.price-tier {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-radius: 12px;
 }
 
-.price-unit {
-  display: block;
-  margin-top: 10px;
-  font-size: 15px;
-  font-weight: 600;
+.price-tier-free {
+  background: var(--primary-tint);
+}
+
+.price-tier-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.price-tier-count {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.price-tier-unit {
+  font-weight: 500;
   color: var(--text-muted);
 }
 
-/* Scoped under .price-figure to outrank `.card p` (0,1,1) — otherwise its
-   `margin: 0` overrides the auto-centering and the note shifts left. */
-.price-figure .price-note {
-  margin: 12px auto 0;
-  max-width: 440px;
+.price-tier-sub {
   font-size: 13px;
   color: var(--text-muted);
 }
 
+.price-tier-amount {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
+.price-tier-value {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.price-tier-free .price-tier-value {
+  color: var(--primary);
+}
+
+.price-tier-badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary);
+  background: var(--primary-soft);
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* `.pricing-card .price-note` (0,2,0) outranks `.card p` (0,1,1); otherwise
+   `.card p { margin: 0 }` kills the centering and font size. */
+.pricing-card .price-note {
+  margin: 0 auto;
+  max-width: 460px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 .price-includes {
   list-style: none;
-  padding: 0;
-  margin: 0;
+  padding: 28px 0 0;
+  margin: 28px 0 0;
+  border-top: 1px solid var(--border);
   columns: 2;
   column-gap: 32px;
 }
@@ -812,22 +859,21 @@ main {
   color: var(--primary);
 }
 
-.price-examples {
-  text-align: center;
-  margin: 24px 0 0;
-  font-size: 15px;
-  color: var(--text-muted);
-}
-
-.price-examples strong {
-  color: var(--text);
-  font-weight: 700;
-}
-
 @media (max-width: 640px) {
   .pricing-card {
     padding: 28px;
-    text-align: center;
+  }
+
+  .price-tier {
+    padding: 12px 14px;
+  }
+
+  .price-tier-count {
+    font-size: 15px;
+  }
+
+  .price-tier-value {
+    font-size: 19px;
   }
 
   .price-includes {

@@ -350,6 +350,12 @@ function Pricing() {
     'Разрешительные требования: сертификация, маркировка, утильсбор',
     'Готовый Excel — в исходной валюте и в рублях',
   ];
+  const tiers = [
+    { count: 'Первые 50', price: 'Бесплатно', sub: 'проверяете качество без оплаты', free: true },
+    { count: '100', price: '$100', sub: '$1 за позицию' },
+    { count: '500', price: '$450', sub: '$0,90 за позицию', discount: '−10%' },
+    { count: '5 000', price: '$4 000', sub: '$0,80 за позицию', discount: '−20%' },
+  ];
   return (
     <section className="section section-alt" id="pricing">
       <div className="container">
@@ -357,19 +363,31 @@ function Pricing() {
           <span className="label">Цена</span>
           <h2>$1 за позицию.</h2>
           <p>
-            Без подписок и абонплаты. Пополняете баланс и платите только за обработанные
-            позиции — сумму видно до старта.
+            Без подписок и абонплаты. Платите только за обработанные позиции — сумму
+            видно до старта, а на объёме цена за позицию ниже.
           </p>
         </div>
         <div className="pricing">
           <div className="card pricing-card fade-up">
-            <div className="price-figure">
-              <span className="price-amount">$1</span>
-              <span className="price-unit">за каждую позицию</span>
-              <p className="price-note">
-                Пополняете баланс у менеджера — списываем только за успешно обработанные позиции
-              </p>
-            </div>
+            <ul className="price-tiers">
+              {tiers.map((t) => (
+                <li key={t.count} className={`price-tier${t.free ? ' price-tier-free' : ''}`}>
+                  <div className="price-tier-info">
+                    <span className="price-tier-count">
+                      {t.count} <span className="price-tier-unit">позиций</span>
+                    </span>
+                    <span className="price-tier-sub">{t.sub}</span>
+                  </div>
+                  <div className="price-tier-amount">
+                    {t.discount && <span className="price-tier-badge">{t.discount}</span>}
+                    <span className="price-tier-value">{t.price}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <p className="price-note">
+              Пополняете баланс у менеджера — списываем только за успешно обработанные позиции
+            </p>
             <ul className="price-includes">
               {includes.map((it) => (
                 <li key={it}>
@@ -379,10 +397,6 @@ function Pricing() {
               ))}
             </ul>
           </div>
-          <p className="price-examples">
-            <strong>50</strong> позиций — $50 · <strong>200</strong> — $200 ·{' '}
-            <strong>500</strong> — $500
-          </p>
         </div>
       </div>
     </section>
