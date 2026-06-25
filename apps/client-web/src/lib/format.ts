@@ -10,6 +10,12 @@ export function fmtMoney(amount: number, currency: string): string {
   return `${amount.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ${currency}`;
 }
 
+/** Рублёвая сумма (для построчного расчёта в деталях документа). */
+export function fmtRub(amount: number | null | undefined): string {
+  if (amount == null) return '—';
+  return `${amount.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`;
+}
+
 export const TOP_UP_STATUS_LABELS: Record<TopUpStatus, string> = {
   pending: 'Ожидает оплаты',
   confirmed: 'Зачислено',
@@ -56,6 +62,35 @@ export function statusTone(status: string): 'ok' | 'warn' | 'error' | 'neutral' 
     case 'requires_review':
     case 'code_review_required':
       return 'warn';
+    default:
+      return 'neutral';
+  }
+}
+
+/** Документ ещё обрабатывается — кабинет поллит статус, пока такие есть. */
+const IN_PROGRESS_STATUSES = new Set(['parsing', 'pending', 'processing', 'intake']);
+
+export function isInProgress(status: string): boolean {
+  return IN_PROGRESS_STATUSES.has(status);
+}
+
+/** Метка построчного статуса расчёта (calculationStatus в resultData). */
+export const CALC_STATUS_LABELS: Record<string, string> = {
+  exact: 'Точно',
+  partial: 'С замечаниями',
+  needs_info: 'Нужны данные',
+  error: 'Код не определён',
+};
+
+export function calcStatusTone(status: string | undefined): 'ok' | 'warn' | 'error' | 'neutral' {
+  switch (status) {
+    case 'exact':
+      return 'ok';
+    case 'partial':
+      return 'warn';
+    case 'needs_info':
+    case 'error':
+      return 'error';
     default:
       return 'neutral';
   }

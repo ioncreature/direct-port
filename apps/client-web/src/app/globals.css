@@ -167,12 +167,108 @@ button {
 .section-head {
   padding: 18px 20px;
   border-bottom: 1px solid var(--border-soft);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .section-title {
   font-size: 16px;
   font-weight: 700;
   margin: 0;
+}
+
+.section-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.section-hint {
+  padding: 12px 20px 0;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.doc-link {
+  color: var(--primary);
+  font-weight: 600;
+}
+.doc-link:hover {
+  text-decoration: underline;
+}
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 16px;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.back-link:hover {
+  color: var(--primary);
+}
+
+/* ===== Document detail ===== */
+.detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  padding: 18px 20px;
+}
+
+.detail-meta > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.meta-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+
+.meta-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.notes-row td {
+  padding: 0 20px 12px;
+}
+
+.notes-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.note {
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--neutral-bg);
+  background: var(--bg);
+  color: var(--text-soft);
+}
+.note-warning {
+  border-left-color: var(--warn);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.note-blocker {
+  border-left-color: var(--error);
+  background: var(--error-bg);
+  color: var(--error);
+}
+.note-info {
+  border-left-color: var(--primary);
 }
 
 /* ===== Table ===== */

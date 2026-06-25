@@ -9,6 +9,7 @@ import { ErrorCode } from '../common/error-codes';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 import { buildOutputFileName, getDocumentClientName } from '../common/output-filename';
 import { Document, DocumentStatus, documentStatusLabels } from '../database/entities/document.entity';
+import { DocumentsService } from '../documents/documents.service';
 import { ExcelExportService } from '../documents/excel-export.service';
 import { TelegramUsersService } from '../telegram-users/telegram-users.service';
 import { ClientDocumentsQueryDto } from './dto/client-documents-query.dto';
@@ -56,6 +57,7 @@ export class ClientPortalService {
   constructor(
     @InjectRepository(Document) private docRepo: Repository<Document>,
     private telegramUsers: TelegramUsersService,
+    private documents: DocumentsService,
     private balance: ClientBalanceService,
     private excelExport: ExcelExportService,
   ) {}
@@ -132,6 +134,28 @@ export class ClientPortalService {
     };
   }
 
+  /**
+   * Self-service загрузка из кабинета (Ф3): тот же штатный pipeline, что у админки и
+   * managed-флоу. Документ заводится с source='self_service' и telegramUserId →
+   * PARSING → AiParser → гейт по балансу (blockIfInsufficientBalance в processing-воркере,
+   * по rowCount) → document-processing. Уведомление о готовности уйдёт клиенту через
+   * PipelineNotifierService (self_service + telegramUserId).
+   */
+  async uploadDocument(
+    accountId: string,
+    telegramUserId: string,
+    file: Express.Multer.File,
+  ): Promise<ClientDocumentListItem> {
+    await this.telegramUsers.resolveAccountMember(telegramUserId, accountId);
+    const doc = await this.documents.createFromFile(
+      file.buffer,
+      file.originalname,
+      { telegramUserId },
+      { documentSource: 'self_service', autoStart: true },
+    );
+    return this.toListItem(doc);
+  }
+
   /** Готовый Excel результата (только PROCESSED, только свой). */
   async downloadDocument(
     accountId: string,
@@ -175,7 +199,8 @@ export class ClientPortalService {
       originalFileName: doc.originalFileName,
       status: doc.status,
       statusLabel: documentStatusLabels[doc.status] ?? doc.status,
-      rowCount: doc.rowCount,
+      // Свежезагруженный документ ещё не распарсен — rowCount проставится позже (default 0).
+      rowCount: doc.rowCount ?? 0,
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
     };

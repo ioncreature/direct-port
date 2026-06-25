@@ -32,6 +32,9 @@ import { ManagerNotifyModule } from '../conversations/manager-notify.module';
     TypeOrmModule.forFeature([Document, TelegramUser, AiUsageLog]),
     BullModule.registerQueue({ name: 'document-parsing' }),
     BullModule.registerQueue({ name: 'document-processing' }),
+    // Доставка готового расчёта/уведомления клиенту кабинета (потребляет client-bot).
+    // Продюсер для self_service-документов из кабинета — PipelineNotifierService.
+    BullModule.registerQueue({ name: 'client-bot-outgoing' }),
     ClassifierModule,
     CalculatorModule,
     CalculationConfigModule,

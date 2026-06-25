@@ -40,6 +40,42 @@ export interface ClientDocument {
   updatedAt: string;
 }
 
+export interface ProductNote {
+  stage: string;
+  severity: 'info' | 'warning' | 'blocker';
+  message: string;
+  messageLocalized?: string;
+  field?: string;
+}
+
+/** Строка resultData (CalculatedProduct) — подмножество полей для построчного показа. */
+export interface CalculatedRow {
+  description: string;
+  quantity: number;
+  price: number;
+  weight: number;
+  tnVedCode: string | null;
+  tnVedDescription: string | null;
+  dutyRateDisplay?: string | null;
+  vatRate?: number | null;
+  totalCost?: number;
+  dutyAmountRub?: number;
+  vatAmountRub?: number;
+  exciseAmountRub?: number;
+  logisticsCommissionRub?: number;
+  totalCostRub?: number;
+  calculationStatus?: string;
+  notes?: ProductNote[];
+}
+
+export interface ClientDocumentDetail extends ClientDocument {
+  currency: string | null;
+  countryOfOrigin: string | null;
+  errorMessage: string | null;
+  rejectionReasons: string[] | null;
+  resultData: CalculatedRow[] | null;
+}
+
 export interface Paginated<T> {
   data: T[];
   total: number;

@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { ErrorCode } from '../common/error-codes';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 import { Actor, assertSameCompany, resolveCompanyScope } from '../common/tenant/actor-context';
 import { BillingAccount } from '../database/entities/billing-account.entity';
@@ -134,5 +135,22 @@ export class TelegramUsersService {
 
   async findByTelegramId(telegramId: number): Promise<TelegramUser | null> {
     return this.repo.findOne({ where: { telegramId: String(telegramId) } });
+  }
+
+  /**
+   * Единый гейт client-scoped writer'ов кабинета (загрузка документа, заявка на пополнение):
+   * проверяет, что клиент принадлежит биллинг-аккаунту, и возвращает его. telegramUserId
+   * приходит из проверенного client-JWT, но api всё равно сверяет принадлежность — BFF не
+   * привилегирован. Чужой/несуществующий → 403, без утечки факта существования.
+   */
+  async resolveAccountMember(telegramUserId: string, accountId: string): Promise<TelegramUser> {
+    const user = await this.repo.findOne({ where: { id: telegramUserId } });
+    if (!user || user.billingAccountId !== accountId) {
+      throw new ForbiddenException({
+        code: ErrorCode.UNKNOWN_ROW,
+        message: 'Telegram user does not belong to this account',
+      });
+    }
+    return user;
   }
 }

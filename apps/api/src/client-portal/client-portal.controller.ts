@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -7,15 +8,21 @@ import {
   Post,
   Query,
   Res,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { Internal } from '../auth/decorators/internal.decorator';
+import { ErrorCode } from '../common/error-codes';
 import { xlsxDownloadHeaders } from '../common/excel-download';
+import { SPREADSHEET_UPLOAD } from '../common/spreadsheet-upload';
 import { TopUpService } from '../top-up/top-up.service';
 import { ClientPortalService } from './client-portal.service';
 import { ClientDocumentsQueryDto } from './dto/client-documents-query.dto';
 import { CreateTopUpDto } from './dto/create-top-up.dto';
 import { ResolveClientDto } from './dto/resolve-client.dto';
+import { UploadClientDocumentDto } from './dto/upload-document.dto';
 
 /**
  * Client-scoped internal-эндпоинты кабинета (auth ТОЛЬКО по X-Internal-Key, @Internal).
@@ -68,6 +75,24 @@ export class ClientPortalController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.service.getDocument(accountId, id);
+  }
+
+  /** Self-service загрузка документа из кабинета (Ф3) → штатный pipeline с автозапуском. */
+  @Post(':accountId/documents')
+  @Internal()
+  @UseInterceptors(FileInterceptor('file', SPREADSHEET_UPLOAD))
+  uploadDocument(
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: UploadClientDocumentDto,
+  ) {
+    if (!file) {
+      throw new BadRequestException({
+        code: ErrorCode.FILE_REQUIRED,
+        message: 'File is required',
+      });
+    }
+    return this.service.uploadDocument(accountId, dto.telegramUserId, file);
   }
 
   /** Справочник покупаемых пакетов (account-independent). */

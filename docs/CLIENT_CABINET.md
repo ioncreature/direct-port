@@ -1,11 +1,10 @@
 # Client Cabinet (личный кабинет клиента)
 
-> **Статус: Ф0 + Ф1 + Ф2 реализованы; Ф3 — дизайн.** Документ фиксирует согласованную
-> продуктовую рамку и архитектуру для разворачивания по фазам (см. раздел «Фазы»). Имена
-> сущностей/эндпоинтов Ф0–Ф2 — фактические (`apps/client-bff`, `apps/client-web`, модули
-> `ClientPortal`/`TopUp` в api, неймспейс `/internal/client/*`, `TopUpRequest`); имена Ф3 —
-> предложения. Онбординг (claim первого касания + free-grant) и `CHECK balance>=0` —
-> сознательно отложены (см. «Отложено»).
+> **Статус: Ф0–Ф3 реализованы.** Документ фиксирует согласованную продуктовую рамку и
+> архитектуру (см. раздел «Фазы»). Имена сущностей/эндпоинтов — фактические
+> (`apps/client-bff`, `apps/client-web`, модули `ClientPortal`/`TopUp` в api, неймспейс
+> `/internal/client/*`, `TopUpRequest`). Онбординг (claim первого касания + free-grant) и
+> `CHECK balance>=0` — сознательно отложены (см. «Отложено»).
 
 Личный кабинет клиента на отдельном домене: клиент видит баланс и историю, сам
 загружает документы и запускает расчёт (self-service), оформляет пополнение баланса.
@@ -47,8 +46,9 @@
   `document-processing`.
 - **Уведомления менеджеру:** очередь `manager-notifications` + `ManagerNotifyService`
   (переиспользуется для заявок на пополнение и онбординга нового клиента).
-- **`Document.source='self_service'`** уже существует в enum; `PipelineNotifierService`
-  для него — no-op.
+- **`Document.source='self_service'`** существует в enum; `PipelineNotifierService` для
+  кабинетного self_service (с `telegramUserId`) уведомляет клиента через `client-bot-outgoing`,
+  для админского (без `telegramUserId`) — no-op.
 - **Регистрация клиента:** `POST /telegram-users/register` (upsert по `telegramId`).
 
 Новое: отдельный фронт + BFF, контур client-auth, денежный слой (заявки/пакеты),
@@ -238,13 +238,19 @@ const PACKAGES = [
 
 ## Self-service обработка
 
-- Загрузка из кабинета → `Document(source='self_service', telegramUserId, billingAccountId)`
-  → гейт по балансу → `PARSING` → штатный pipeline (тот же, что у админки/бота).
+- Загрузка из кабинета (`POST /client/documents` → BFF → `POST /internal/client/:accountId/documents`)
+  → `DocumentsService.createFromFile` заводит `Document(source='self_service', telegramUserId)`
+  с автозапуском → `PARSING` → штатный pipeline (тот же, что у админки/бота). Гейт по балансу
+  (`checkProcessingAllowed`, по `rowCount`) активен для документа с `telegramUserId` и срабатывает
+  в processing-воркере — нехватка → `FAILED` с понятным сообщением.
 - `REQUIRES_REVIEW` / `CODE_REVIEW_REQUIRED` / `FAILED` → разбирает оператор; клиент видит
-  статус и ошибки построчно (`ProductNote.message` / `messageLocalized`). Клиентский
-  review-UI (правка `parsedData`) не строим.
-- Уведомление о готовности — через client-bot (`client-bot-outgoing`, у клиента уже есть бот)
-  и/или статус в кабинете.
+  статус и построчные ошибки (`ProductNote`) на странице деталей `/dashboard/documents/[id]`.
+  Клиентский review-UI (правка `parsedData`) не строим.
+- Уведомление о готовности — `PipelineNotifierService` отличает кабинетный self_service от
+  админской загрузки по наличию `telegramUserId` (у админских он `null`) и шлёт клиенту в
+  `client-bot-outgoing`: PROCESSED → готовый Excel (`result-ready`), прочие терминальные статусы
+  → текстовый нудж (`cabinet-doc-issue`, ru/zh/en). Промежуточные статусы не шлёт; плюс статус
+  виден в кабинете (дашборд поллит незавершённые документы).
 
 ## Онбординг нового клиента (claim + free-grant)
 
@@ -310,8 +316,13 @@ Self-service-клиент может прийти в кабинет, ни раз
   (`/manager/topups/:id/confirm|cancel`) + идемпотентное зачисление (`ClientBalanceService.confirmTopUp`,
   `sourceRequestId`). **Отложено в этой фазе по согласованию:** claim первого касания + free-grant
   (онбординг) и `CHECK balance>=0`.
-- **Ф3 — self-service:** загрузка + запуск из кабинета + построчный показ ошибок + уведомление
-  о готовности.
+- **Ф3 — self-service ✅ сделано:** загрузка из кабинета (`POST /client/documents` → `ClientPortal`
+  `POST /internal/client/:accountId/documents` → `createFromFile` self_service+autoStart, сверка
+  принадлежности `telegramUserId` аккаунту), форма загрузки + поллинг статусов и построчная страница
+  деталей в `client-web` (`/dashboard/documents/[id]`), уведомление клиенту о готовности
+  (`PipelineNotifierService` → `client-bot-outgoing`: PROCESSED → Excel, иначе нудж `cabinet-doc-issue`).
+  **Отложено по согласованию:** онбординг (claim первого касания + free-grant), rate-limit на загрузки
+  (anti-abuse) и `CHECK balance>=0`.
 
 Каждая фаза самостоятельно ценна.
 

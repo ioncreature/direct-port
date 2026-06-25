@@ -1,19 +1,13 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ClientBalanceService } from '../balance/client-balance.service';
 import { ErrorCode } from '../common/error-codes';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
-import { TelegramUser } from '../database/entities/telegram-user.entity';
 import { TopUpRequest, TopUpStatus } from '../database/entities/top-up-request.entity';
 import { ConversationsService } from '../conversations/conversations.service';
 import { ManagerNotifyService } from '../conversations/manager-notify.service';
+import { TelegramUsersService } from '../telegram-users/telegram-users.service';
 import { findPurchasablePackage, purchasablePackages, TopUpPackage } from './packages';
 
 /** Заявка на пополнение для отображения в кабинете (без внутренних полей менеджера). */
@@ -41,7 +35,7 @@ export class TopUpService {
 
   constructor(
     @InjectRepository(TopUpRequest) private repo: Repository<TopUpRequest>,
-    @InjectRepository(TelegramUser) private tgRepo: Repository<TelegramUser>,
+    private telegramUsers: TelegramUsersService,
     private balance: ClientBalanceService,
     private managerNotify: ManagerNotifyService,
     private conversations: ConversationsService,
@@ -65,13 +59,7 @@ export class TopUpService {
     if (!pkg) {
       throw new BadRequestException({ code: ErrorCode.INVALID_PACKAGE, message: 'Unknown package' });
     }
-    const client = await this.tgRepo.findOne({ where: { id: telegramUserId } });
-    if (!client || client.billingAccountId !== accountId) {
-      throw new ForbiddenException({
-        code: ErrorCode.UNKNOWN_ROW,
-        message: 'Telegram user does not belong to this account',
-      });
-    }
+    const client = await this.telegramUsers.resolveAccountMember(telegramUserId, accountId);
     const request = await this.repo.save(
       this.repo.create({
         billingAccountId: accountId,

@@ -1,4 +1,17 @@
-import { Body, Controller, Get, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  Res,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { ApiClientService } from '../api-client/api-client.service';
 import { ClientAuthGuard } from '../auth/client-auth.guard';
@@ -6,6 +19,7 @@ import { ClientProfile } from '../auth/client-token.service';
 import { CurrentClient } from '../auth/current-client.decorator';
 import { CreateTopUpDto } from './dto/create-top-up.dto';
 import { PortalQueryDto } from './dto/portal-query.dto';
+import { SPREADSHEET_UPLOAD } from './spreadsheet-upload';
 
 /**
  * Client-facing витрина кабинета (Ф1, read-only). Все ресурсы скоупятся по accountId
@@ -42,6 +56,22 @@ export class PortalController {
   @Get('documents/:id')
   document(@CurrentClient() client: ClientProfile, @Param('id') id: string) {
     return this.api.getDocument(client.accountId, id);
+  }
+
+  /** Self-service загрузка документа (Ф3). telegramUserId берётся из JWT, не из тела. */
+  @Post('documents')
+  @UseInterceptors(FileInterceptor('file', SPREADSHEET_UPLOAD))
+  uploadDocument(
+    @CurrentClient() client: ClientProfile,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('File is required');
+    return this.api.uploadDocument(
+      client.accountId,
+      client.telegramUserId,
+      file.buffer,
+      file.originalname,
+    );
   }
 
   @Get('packages')

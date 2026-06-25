@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'axios';
+import FormData from 'form-data';
 
 interface TimedRequestConfig extends InternalAxiosRequestConfig {
   metadata?: { startedAt: number };
@@ -98,6 +99,27 @@ export class ApiClientService {
   async getDocument(accountId: string, documentId: string): Promise<unknown> {
     const { data } = await this.client.get(
       `/internal/client/${accountId}/documents/${documentId}`,
+    );
+    return data;
+  }
+
+  /**
+   * Self-service загрузка (Ф3): пересобираем multipart и форвардим в api. telegramUserId
+   * берётся из проверенного client-JWT (не из тела клиентского запроса) и кладётся полем.
+   */
+  async uploadDocument(
+    accountId: string,
+    telegramUserId: string,
+    file: Buffer,
+    fileName: string,
+  ): Promise<unknown> {
+    const form = new FormData();
+    form.append('file', file, { filename: fileName });
+    form.append('telegramUserId', telegramUserId);
+    const { data } = await this.client.post(
+      `/internal/client/${accountId}/documents`,
+      form,
+      { headers: form.getHeaders(), timeout: 30_000 },
     );
     return data;
   }

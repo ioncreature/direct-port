@@ -19,6 +19,7 @@ relay-error = 无法将您的消息转交给经理。请稍后再试。
 greeting-ack = ✅ 已收到！经理会尽快在此回复您。
 manager-assigned = ✅ 经理已接入，将在此回复您。
 result-ready = ✅ 您的计算已完成——请查看附件。
+cabinet-doc-issue = 📄 您的文档状态已更新——请打开个人中心查看详情。
 language-prompt = 选择语言：
 language-set = ✅ 语言已切换为中文。
 

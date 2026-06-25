@@ -231,6 +231,9 @@ importers:
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
+      form-data:
+        specifier: ^4.0.5
+        version: 4.0.5
       reflect-metadata:
         specifier: ^0.2.0
         version: 0.2.2
@@ -250,6 +253,9 @@ importers:
       '@types/jest':
         specifier: ^30.0.0
         version: 30.0.0
+      '@types/multer':
+        specifier: ^2.1.0
+        version: 2.1.0
       '@types/node':
         specifier: ^24.0.0
         version: 24.12.2

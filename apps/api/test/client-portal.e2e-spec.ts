@@ -239,4 +239,58 @@ describe('ClientPortal (e2e)', () => {
         .expect(404);
     });
   });
+
+  describe('self-service upload (Ф3)', () => {
+    const csv = () => Buffer.from('description,price,weight,quantity\nТовар,100,10,1\n');
+
+    it('creates a self_service document for own account and starts the pipeline', async () => {
+      const res = await request(app.getHttpServer())
+        .post(`/api/internal/client/${accountA}/documents`)
+        .set(INTERNAL_KEY_HEADER)
+        .field('telegramUserId', telegramUserAId)
+        .attach('file', csv(), 'goods.csv')
+        .expect(201);
+      expect(res.body).toMatchObject({ originalFileName: 'goods.csv', status: 'parsing' });
+      expect(res.body.id).toBeDefined();
+
+      const saved = await ds.getRepository(Document).findOne({ where: { id: res.body.id } });
+      expect(saved?.source).toBe('self_service');
+      expect(saved?.telegramUserId).toBe(telegramUserAId);
+      expect(saved?.status).toBe(DocumentStatus.PARSING);
+    });
+
+    it('rejects a member that does not belong to the account (403, no cross-account upload)', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/internal/client/${accountB}/documents`)
+        .set(INTERNAL_KEY_HEADER)
+        .field('telegramUserId', telegramUserAId)
+        .attach('file', csv(), 'goods.csv')
+        .expect(403);
+    });
+
+    it('rejects an unsupported file extension (400)', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/internal/client/${accountA}/documents`)
+        .set(INTERNAL_KEY_HEADER)
+        .field('telegramUserId', telegramUserAId)
+        .attach('file', csv(), 'goods.txt')
+        .expect(400);
+    });
+
+    it('requires a file (400)', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/internal/client/${accountA}/documents`)
+        .set(INTERNAL_KEY_HEADER)
+        .field('telegramUserId', telegramUserAId)
+        .expect(400);
+    });
+
+    it('is closed to non-internal callers (403)', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/internal/client/${accountA}/documents`)
+        .field('telegramUserId', telegramUserAId)
+        .attach('file', csv(), 'goods.csv')
+        .expect(403);
+    });
+  });
 });

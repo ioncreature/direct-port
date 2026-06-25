@@ -268,9 +268,14 @@ function createProcessor(opts: Opts = {}) {
     notifyDocumentEvent: jest.fn().mockResolvedValue(undefined),
   };
 
-  // Реальный нотификатор поверх мок-менеджера: managed-документ → notifyDocumentEvent,
-  // self_service → no-op (после удаления tg-bot self_service-уведомлений нет).
-  const pipelineNotifier = new PipelineNotifierService(managerNotify as any);
+  // Реальный нотификатор поверх моков: managed → менеджеру (notifyDocumentEvent),
+  // кабинетный self_service (с telegramUserId + загруженным relation) → клиенту в
+  // client-bot-outgoing (мок-очередь), админский self_service (без telegramUserId) → no-op.
+  const clientOutQueue = { add: jest.fn().mockResolvedValue(undefined) };
+  const pipelineNotifier = new PipelineNotifierService(
+    managerNotify as any,
+    clientOutQueue as any,
+  );
 
   const clientBalance = {
     checkProcessingAllowed: jest

@@ -19,6 +19,7 @@ relay-error = Could not pass your message to the manager. Please try again a lit
 greeting-ack = ✅ Got it! A manager will reply here shortly.
 manager-assigned = ✅ A manager has joined and will reply here.
 result-ready = ✅ Your calculation is ready — see the attached file.
+cabinet-doc-issue = 📄 Your document status has changed — open your cabinet to see the details.
 language-prompt = Choose a language:
 language-set = ✅ Language switched to English.
 

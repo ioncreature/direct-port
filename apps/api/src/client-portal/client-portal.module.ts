@@ -10,9 +10,10 @@ import { ClientPortalService } from './client-portal.service';
 
 /**
  * Личный кабинет клиента — внутренний (X-Internal-Key) client-scoped API для client-bff.
- * Тонкий слой поверх уже готовых TelegramUsersService (резолв/регистрация клиента),
- * ClientBalanceService (баланс/журнал) и ExcelExportService (выгрузка результата);
- * собственной записи в БД/биллинг не делает — Ф1 кабинета только на чтение.
+ * Тонкий слой поверх уже готовых сервисов: TelegramUsersService (резолв/регистрация),
+ * ClientBalanceService (баланс/журнал), ExcelExportService (выгрузка результата),
+ * DocumentsService (self-service загрузка, Ф3) и TopUpService (пополнение, Ф2).
+ * Собственного writer'а баланса не заводит — движение по балансу только через api.
  */
 @Module({
   imports: [
