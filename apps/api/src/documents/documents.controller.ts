@@ -21,6 +21,7 @@ import { Internal } from '../auth/decorators/internal.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CalculationLogsService } from '../calculation-logs/calculation-logs.service';
 import { ErrorCode } from '../common/error-codes';
+import { xlsxDownloadHeaders } from '../common/excel-download';
 import { buildOutputFileName, getDocumentClientName } from '../common/output-filename';
 import { Actor, resolveCompanyScope } from '../common/tenant/actor-context';
 import { DocumentStatus } from '../database/entities/document.entity';
@@ -309,12 +310,7 @@ export class DocumentsController {
 
     const clientName = getDocumentClientName(doc);
     const outputName = buildOutputFileName(doc.createdAt, clientName);
-    const encoded = encodeURIComponent(outputName);
-    res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename="${encoded}"; filename*=UTF-8''${encoded}`,
-    });
-
+    res.set(xlsxDownloadHeaders(outputName));
     res.send(buffer);
   }
 }

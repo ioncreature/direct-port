@@ -10,6 +10,8 @@
 - Лендинг: Next.js (apps/landing, порт 3003) — публичный маркетинговый сайт directport.ru, CTA ведут в client-bot (managed-флоу)
 - Клиентский бот: NestJS + grammY (apps/client-bot, порт 3003) — приём файлов от клиентов + чат с менеджером
 - Менеджерский бот: NestJS + grammY (apps/manager-bot, порт 3004) — уведомления, запуск пайплайна, ответы клиентам
+- BFF кабинета: NestJS (apps/client-bff, порт 3005) — backend-for-frontend личного кабинета: Telegram Login → client-JWT, ходит в api по X-Internal-Key, в БД напрямую не лезет
+- Кабинет клиента: Next.js (apps/client-web, порт 3006) — личный кабинет (вход через Telegram, баланс, история операций, документы, скачивание результата)
 - Библиотеки: libs/tks-api (клиент API таможенного справочника)
 - БД: PostgreSQL 17
 - Очереди: BullMQ + Redis 7
@@ -37,7 +39,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 - JWT-авторизация (access + refresh tokens)
 - Роли: admin, customs
 - Глобальные guards: JwtAuthGuard (пропускает X-Internal-Key), RolesGuard
-- Модули верхнего уровня (app.module.ts): Auth, Users, TnVed, TelegramUsers, Documents, Conversations, CalculationConfig, AiConfig, Countries, Regulatory, BotLinks
+- Модули верхнего уровня (app.module.ts): Auth, Users, TnVed, TelegramUsers, Documents, Conversations, CalculationConfig, AiConfig, Countries, Regulatory, BotLinks, ClientPortal
   - Auth, Users — авторизация и управление пользователями
   - TnVed — справочник ТН ВЭД: поиск по TKS API (searchGoodsGrouped + getTnvedCode), перевод запросов через Claude, обогащение ставками + блок `regulatoryReport` в `codeDetail` (Regulatory)
   - TelegramUsers — регистрация пользователей Telegram, детальный просмотр по UUID, PATCH :telegramId/language
@@ -48,6 +50,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
   - Regulatory — формирует RegulatoryReport (сертификация, лицензии, маркировка, утильсбор, страновые запреты) из блоков `TnvedCode.TNVEDALL` по PRIZNAK 6/7/11–15/21/27–29/33–35. Парсер NOTE извлекает ТР ТС/ЕАЭС, форму оценки, регулятора. Отдельных запросов к TKS не делает — использует уже загруженный TnvedCode. В pipeline вызывается из `DocumentsProcessor` после Calculator (см. `attachRegulatoryReports`) и сохраняется в `resultData[i].regulatoryReport`. Lazy AI-обогащение через `RegulatoryInterpreterService` (Claude haiku по умолчанию, persistent-кэш `regulatory_interpretation_cache` 180д, ключ — sha256(NOTE)+language+model). Endpoints: `GET /tn-ved/:code/regulatory-explanations?lang=ru` (для справочника) и `GET /documents/:id/regulatory-explanations?lang=ru` (для всех позиций документа одним запросом)
   - Conversations — API-мост managed-флоу (client-bot ↔ manager-bot). От client-bot (X-Internal-Key): `POST /intake/documents` (managed-документ без автозапуска), `POST /intake/messages`. Для manager-bot (X-Internal-Key): `POST /manager/link`, `GET /manager/clients`, `POST /manager/clients/:id/claim`, `POST /manager/messages`, `POST /manager/documents/:id/start`. Привязка из админки (ADMIN): `POST /managers/:userId/telegram-link-token`, `DELETE /managers/:userId/telegram-link`. История переписки: `GET /telegram-users/by-id/:id/messages`. Очереди `manager-notifications` (→ manager-bot) и `client-bot-outgoing` (→ client-bot). `ManagerNotifyService` резолвит адресата (назначенный менеджер или broadcast по всем привязанным). Уведомления о состоянии документа идут только по managed-флоу: `PipelineNotifierService.notify(doc)` (в `DocumentsModule`) для `Document.source='managed'` зовёт `ManagerNotifyService.notifyDocumentEvent`, для self_service — no-op (после удаления tg-bot self_service-уведомлений нет). Entity `ConversationMessage`; токены привязки в Redis (`RedisModule`)
   - BotLinks — ссылки на Telegram-ботов для админки. client-bot и manager-bot при старте резолвят свой username через `getMe` и публикуют его: `POST /bot-links/identity` (X-Internal-Key, body `{kind: 'client'|'manager', username}`). Админка читает `GET /bot-links` (ADMIN/CUSTOMS) → `{client, manager}` с полем `url` (`https://t.me/<username>`). Хранилище — Redis без TTL (`bot-link:<kind>`, `BotLinksService`); при сбросе Redis ссылки восстанавливаются после ближайшего рестарта ботов. Отображается блоком «Telegram-боты» на дашборде
+  - ClientPortal — client-scoped internal-API личного кабинета (потребитель — client-bff, auth ТОЛЬКО по X-Internal-Key, `@Internal()`). Неймспейс `/internal/client/*`: `POST /resolve` (upsert клиента → `{telegramUserId, billingAccountId}`, обёртка над `TelegramUsersService.register`), `GET /:accountId/balance`, `GET /:accountId/transactions`, `GET /:accountId/documents`, `GET /:accountId/documents/:id`, `GET /:accountId/documents/:id/download` (Excel, только PROCESSED). `accountId` приходит из проверенного client-JWT; документы скоупятся join'ом `documents → telegram_users.billing_account_id = :accountId`, чужой ресурс → 404. Собственной записи в БД/биллинг не делает (Ф1 кабинета read-only); переиспользует `ClientBalanceService` + `ExcelExportService` (экспортирован из `DocumentsModule`). См. `docs/CLIENT_CABINET.md`
 - Вложенные модули (внутри DocumentsModule):
   - AiParser — AI-парсинг таблиц (Claude): определение валюты, перевод, извлечение данных, автодетект страны происхождения. Retry + валидация
   - Classifier — классификация+верификация ТН ВЭД: TKS search (батчи по 5) → Claude classify+verify (батчи по 10) → getTnvedCode
@@ -100,6 +103,21 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 - Воркер `manager-notifications` (BullMQ) → уведомления менеджерам с inline-кнопками (🚀 Запустить расчёт, 👤 Взять, ✍️ Ответить, ↗️ В админке — deep-link через ADMIN_WEB_BASE_URL)
 - Callback: `claim:<clientId>` (закрепить клиента), `start:<docId>` (запустить пайплайн), `reply:<clientId>` (режим ответа). Активный диалог в Redis `mgr:active:<chatId>`, TTL 1ч
 - Маршрутизация нового клиента — broadcast всем привязанным менеджерам, первый жмёт «Взять» (claim, атомарно)
+
+### apps/client-bff — BFF личного кабинета (Telegram Login → client-JWT)
+
+- NestJS, порт 3005. Третий принципал безопасности (помимо User-JWT и X-Internal-Key) — client-session. **В БД напрямую не ходит**: вся доменная логика и биллинг — в api (единственный writer баланса)
+- `POST /client/auth/telegram` — приём данных Telegram Login Widget, верификация подписи (`TelegramAuthService`: `secret=SHA256(bot_token)`, `hash==HMAC_SHA256(data_check_string, secret)` + свежесть `auth_date`; `TELEGRAM_BOT_TOKEN` — токен client-bot, к которому привязан виджет). Затем резолв клиента в api (`/internal/client/resolve`) и выдача client-JWT
+- client-JWT (`ClientTokenService`): `sub=billingAccountId`, stateless access+refresh (refresh — тоже JWT, `typ='refresh'`, отзыва нет — осознанный компромисс Ф1, BFF без БД/Redis). Профиль для дашборда переносится в токен. `ClientAuthGuard` защищает неймспейс `/client/*` (кроме `/client/auth/*`), кладёт принципал в `req.client` (`@CurrentClient()`)
+- `PortalController` (`/client/me`, `/transactions`, `/documents`, `/:id`, `/:id/download`) — проксирует в api по X-Internal-Key, `accountId` берётся ТОЛЬКО из JWT (никогда из тела/пути запроса). `AxiosExceptionFilter` пробрасывает статус ошибок api (404 остаётся 404, недоступность api → 502)
+- Подробности — `docs/CLIENT_CABINET.md`. Ф2 (пополнение) и Ф3 (self-service загрузка) — следующие фазы
+
+### apps/client-web — Личный кабинет клиента (Next.js)
+
+- Next.js App Router, порт 3006. Отдельный домен (напр. `cabinet.directport.ru`). Браузер ходит в свой `/api/[...path]` → проксируется в client-bff (`CLIENT_BFF_URL`), токены — в localStorage (как admin-web)
+- Страница входа (`/`): Telegram Login Widget (`NEXT_PUBLIC_TELEGRAM_BOT_USERNAME`, домен кабинета прописывается боту через `@BotFather` → `/setdomain`) → `loginWithTelegram` → дашборд
+- Дашборд (`/dashboard`): баланс (в позициях), история операций (`DepositTransaction`), список документов со статусами, скачивание Excel (только PROCESSED). Read-only (Ф1)
+- Стиль — единый `globals.css` (CSS-переменные, палитра как у landing/admin-web; без UI-библиотек). `lib/api.ts` — axios с авто-refresh (зеркало admin-web)
 
 ### libs/tks-api — Клиент API таможенного справочника (api1.tks.ru)
 

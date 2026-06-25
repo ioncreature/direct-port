@@ -9,6 +9,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
 import { AiConfigModule } from './ai-config/ai-config.module';
 import { BotLinksModule } from './bot-links/bot-links.module';
 import { CalculationConfigModule } from './calculation-config/calculation-config.module';
+import { ClientPortalModule } from './client-portal/client-portal.module';
 import { CompaniesModule } from './companies/companies.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { CountriesModule } from './countries/countries.module';
@@ -56,6 +57,7 @@ import { UsersModule } from './users/users.module';
     CountriesModule,
     BotLinksModule,
     LeadsModule,
+    ClientPortalModule,
   ],
   controllers: [AppController],
   providers: [

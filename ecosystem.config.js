@@ -35,5 +35,19 @@ module.exports = {
       args: 'dev',
       watch: false,
     },
+    {
+      name: 'client-bff',
+      cwd: './apps/client-bff',
+      script: 'pnpm',
+      args: 'dev',
+      watch: false,
+    },
+    {
+      name: 'client-web',
+      cwd: './apps/client-web',
+      script: 'pnpm',
+      args: 'dev',
+      watch: false,
+    },
   ],
 };

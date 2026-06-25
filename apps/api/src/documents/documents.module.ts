@@ -57,6 +57,6 @@ import { ManagerNotifyModule } from '../conversations/manager-notify.module';
     PipelineNotifierService,
     StuckDocumentsWatchdog,
   ],
-  exports: [DocumentsService],
+  exports: [DocumentsService, ExcelExportService],
 })
 export class DocumentsModule {}

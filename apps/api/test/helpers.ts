@@ -16,6 +16,7 @@ import { CurrencyService } from '../src/currency/currency.service';
 // Modules
 import { AuthModule } from '../src/auth/auth.module';
 import { CalculationConfigModule } from '../src/calculation-config/calculation-config.module';
+import { ClientPortalModule } from '../src/client-portal/client-portal.module';
 import { DocumentsModule } from '../src/documents/documents.module';
 import { DocumentsParsingProcessor } from '../src/documents/documents-parsing.processor';
 import { DocumentsProcessor } from '../src/documents/documents.processor';
@@ -232,6 +233,7 @@ export async function createTestApp(): Promise<INestApplication> {
       TelegramUsersModule,
       DocumentsModule,
       CalculationConfigModule,
+      ClientPortalModule,
     ],
     controllers: [AppController],
     providers: [

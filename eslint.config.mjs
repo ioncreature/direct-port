@@ -14,10 +14,12 @@ const compat = new FlatCompat({ baseDirectory: __dirname });
 const nextFiles = [
   'apps/admin-web/**/*.{ts,tsx,js,jsx}',
   'apps/landing/**/*.{ts,tsx,js,jsx}',
+  'apps/client-web/**/*.{ts,tsx,js,jsx}',
 ];
 
 const nodeFiles = [
   'apps/api/**/*.{ts,js}',
+  'apps/client-bff/**/*.{ts,js}',
   'apps/tg-bot/**/*.{ts,js}',
   'libs/**/*.{ts,js}',
 ];

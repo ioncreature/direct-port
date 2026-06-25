@@ -1,0 +1,79 @@
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  Res,
+} from '@nestjs/common';
+import { Response } from 'express';
+import { Internal } from '../auth/decorators/internal.decorator';
+import { xlsxDownloadHeaders } from '../common/excel-download';
+import { ClientPortalService } from './client-portal.service';
+import { ClientDocumentsQueryDto } from './dto/client-documents-query.dto';
+import { ResolveClientDto } from './dto/resolve-client.dto';
+
+/**
+ * Client-scoped internal-эндпоинты кабинета (auth ТОЛЬКО по X-Internal-Key, @Internal).
+ * Единственный потребитель — client-bff. accountId в пути приходит из проверенного
+ * client-JWT (BFF никогда не берёт его из тела клиентского запроса). Сервис скоупит
+ * каждый ресурс по этому accountId и отдаёт 404 на чужое.
+ */
+@Controller('internal/client')
+export class ClientPortalController {
+  constructor(private service: ClientPortalService) {}
+
+  /** Upsert клиента по Telegram identity → id для выдачи client-JWT. */
+  @Post('resolve')
+  @Internal()
+  resolve(@Body() dto: ResolveClientDto) {
+    return this.service.resolve(dto);
+  }
+
+  @Get(':accountId/balance')
+  @Internal()
+  balance(@Param('accountId', ParseUUIDPipe) accountId: string) {
+    return this.service.getBalance(accountId);
+  }
+
+  @Get(':accountId/transactions')
+  @Internal()
+  transactions(
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Query() query: ClientDocumentsQueryDto,
+  ) {
+    return this.service.listTransactions(accountId, { page: query.page, limit: query.limit });
+  }
+
+  @Get(':accountId/documents')
+  @Internal()
+  documents(
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Query() query: ClientDocumentsQueryDto,
+  ) {
+    return this.service.listDocuments(accountId, query);
+  }
+
+  @Get(':accountId/documents/:id')
+  @Internal()
+  document(
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.service.getDocument(accountId, id);
+  }
+
+  @Get(':accountId/documents/:id/download')
+  @Internal()
+  async download(
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res() res: Response,
+  ) {
+    const { buffer, fileName } = await this.service.downloadDocument(accountId, id);
+    res.set(xlsxDownloadHeaders(fileName));
+    res.send(buffer);
+  }
+}

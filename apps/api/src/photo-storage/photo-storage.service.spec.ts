@@ -4,7 +4,6 @@ import type { DocumentPhoto } from '../database/entities/document-photo.entity';
 import { PhotoStorageService, type ProductPhotoInput } from './photo-storage.service';
 
 /* eslint-disable @typescript-eslint/no-require-imports */
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const sharp = require('sharp');
 
 async function makePng(width: number, height: number): Promise<Buffer> {

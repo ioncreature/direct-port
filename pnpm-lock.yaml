@@ -199,6 +199,70 @@ importers:
         specifier: ^5.7.0
         version: 5.9.3
 
+  apps/client-bff:
+    dependencies:
+      '@direct-port/common':
+        specifier: workspace:*
+        version: link:../../libs/common
+      '@nestjs/common':
+        specifier: ^11.1.19
+        version: 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/config':
+        specifier: ^4.0.4
+        version: 4.0.4(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(rxjs@7.8.2)
+      '@nestjs/core':
+        specifier: ^11.1.19
+        version: 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/jwt':
+        specifier: ^11.0.2
+        version: 11.0.2(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))
+      '@nestjs/platform-express':
+        specifier: ^11.1.19
+        version: 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)
+      axios:
+        specifier: ^1.15.0
+        version: 1.15.0
+      class-transformer:
+        specifier: ^0.5.1
+        version: 0.5.1
+      class-validator:
+        specifier: ^0.15.1
+        version: 0.15.1
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
+      reflect-metadata:
+        specifier: ^0.2.0
+        version: 0.2.2
+      rxjs:
+        specifier: ^7.8.0
+        version: 7.8.2
+    devDependencies:
+      '@nestjs/cli':
+        specifier: ^11.0.21
+        version: 11.0.21(@types/node@24.12.2)
+      '@nestjs/testing':
+        specifier: ^11.1.19
+        version: 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(@nestjs/platform-express@11.1.19)
+      '@types/express':
+        specifier: ^5.0.0
+        version: 5.0.6
+      '@types/jest':
+        specifier: ^30.0.0
+        version: 30.0.0
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.12.2
+      jest:
+        specifier: ^30.3.0
+        version: 30.3.0(@types/node@24.12.2)(ts-node@10.9.2(@types/node@24.12.2)(typescript@5.9.3))
+      ts-jest:
+        specifier: ^29.4.9
+        version: 29.4.9(@babel/core@7.29.0)(@jest/transform@30.3.0)(@jest/types@30.3.0)(babel-jest@30.3.0(@babel/core@7.29.0))(jest-util@30.3.0)(jest@30.3.0(@types/node@24.12.2)(ts-node@10.9.2(@types/node@24.12.2)(typescript@5.9.3)))(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
   apps/client-bot:
     dependencies:
       '@direct-port/common':
@@ -262,6 +326,40 @@ importers:
       ts-jest:
         specifier: ^29.4.9
         version: 29.4.9(@babel/core@7.29.0)(@jest/transform@30.3.0)(@jest/types@30.3.0)(babel-jest@30.3.0(@babel/core@7.29.0))(jest-util@30.3.0)(jest@30.3.0(@types/node@24.12.2)(ts-node@10.9.2(@types/node@24.12.2)(typescript@5.9.3)))(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
+  apps/client-web:
+    dependencies:
+      '@direct-port/common':
+        specifier: workspace:*
+        version: link:../../libs/common
+      axios:
+        specifier: ^1.15.0
+        version: 1.15.0
+      next:
+        specifier: ^15.5.15
+        version: 15.5.15(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+      react:
+        specifier: ^19.2.5
+        version: 19.2.5
+      react-dom:
+        specifier: ^19.2.5
+        version: 19.2.5(react@19.2.5)
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.12.2
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: ^19.0.0
+        version: 19.2.3(@types/react@19.2.14)
+      eslint-config-next:
+        specifier: ^15.5.15
+        version: 15.5.15(eslint@9.39.4)(typescript@5.9.3)
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
@@ -351,70 +449,6 @@ importers:
       ts-jest:
         specifier: ^29.4.9
         version: 29.4.9(@babel/core@7.29.0)(@jest/transform@30.3.0)(@jest/types@30.3.0)(babel-jest@30.3.0(@babel/core@7.29.0))(jest-util@30.3.0)(jest@30.3.0(@types/node@24.12.2)(ts-node@10.9.2(@types/node@24.12.2)(typescript@5.9.3)))(typescript@5.9.3)
-      typescript:
-        specifier: ^5.7.0
-        version: 5.9.3
-
-  apps/tg-bot:
-    dependencies:
-      '@direct-port/common':
-        specifier: workspace:*
-        version: link:../../libs/common
-      '@grammyjs/i18n':
-        specifier: ^1.1.2
-        version: 1.1.2(grammy@1.42.0)
-      '@nestjs/bullmq':
-        specifier: ^11.0.4
-        version: 11.0.4(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(bullmq@5.74.1)
-      '@nestjs/common':
-        specifier: ^11.1.19
-        version: 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@nestjs/config':
-        specifier: ^4.0.4
-        version: 4.0.4(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(rxjs@7.8.2)
-      '@nestjs/core':
-        specifier: ^11.1.19
-        version: 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@nestjs/platform-express':
-        specifier: ^11.1.19
-        version: 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)
-      axios:
-        specifier: ^1.15.0
-        version: 1.15.0
-      bullmq:
-        specifier: ^5.74.1
-        version: 5.74.1
-      csv-parse:
-        specifier: ^6.2.1
-        version: 6.2.1
-      dotenv:
-        specifier: ^17.4.2
-        version: 17.4.2
-      exceljs:
-        specifier: ^4.4.0
-        version: 4.4.0
-      form-data:
-        specifier: ^4.0.5
-        version: 4.0.5
-      grammy:
-        specifier: ^1.35.0
-        version: 1.42.0
-      ioredis:
-        specifier: ^5.10.1
-        version: 5.10.1
-      reflect-metadata:
-        specifier: ^0.2.0
-        version: 0.2.2
-      rxjs:
-        specifier: ^7.8.0
-        version: 7.8.2
-    devDependencies:
-      '@nestjs/cli':
-        specifier: ^11.0.21
-        version: 11.0.21(@types/node@24.12.2)
-      '@types/node':
-        specifier: ^24.0.0
-        version: 24.12.2
       typescript:
         specifier: ^5.7.0
         version: 5.9.3

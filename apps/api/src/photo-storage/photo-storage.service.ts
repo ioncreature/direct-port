@@ -5,7 +5,6 @@ import { Repository } from 'typeorm';
 // sharp — CommonJS-модуль; без esModuleInterop default-import ломается в runtime,
 // а TS-namespace import не парсит Babel jest. Простой require обходит оба.
 /* eslint-disable @typescript-eslint/no-require-imports */
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const sharp = require('sharp');
 import { errMsg } from '../common/errors';
 import { DocumentPhoto } from '../database/entities/document-photo.entity';
