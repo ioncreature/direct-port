@@ -4,10 +4,12 @@ import { DataSource } from 'typeorm';
 import { AiCall } from './entities/ai-call.entity';
 import { AiConfig } from './entities/ai-config.entity';
 import { AiUsageLog } from './entities/ai-usage-log.entity';
+import { BillingAccount } from './entities/billing-account.entity';
 import { CalculationConfig } from './entities/calculation-config.entity';
 import { CalculationLog } from './entities/calculation-log.entity';
 import { Company } from './entities/company.entity';
 import { ConversationMessage } from './entities/conversation-message.entity';
+import { DepositTransaction } from './entities/deposit-transaction.entity';
 import { Document } from './entities/document.entity';
 import { DocumentPhoto } from './entities/document-photo.entity';
 import { DocumentVersion } from './entities/document-version.entity';
@@ -48,6 +50,8 @@ export default new DataSource({
     RegulatoryInterpretationCache,
     Lead,
     LeadSearch,
+    BillingAccount,
+    DepositTransaction,
   ],
   migrations: ['src/database/migrations/*{.ts,.js}'],
   // Каждая миграция в своей транзакции — чтобы новое значение enum 'super_admin' было

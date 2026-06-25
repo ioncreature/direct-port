@@ -1,10 +1,14 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { ErrorCode } from '../common/error-codes';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 import { isIncompleteCalculationStatus } from '../common/product-notes';
-import { DepositTransaction } from '../database/entities/deposit-transaction.entity';
+import { BillingAccount } from '../database/entities/billing-account.entity';
+import {
+  DepositTransaction,
+  DepositTransactionType,
+} from '../database/entities/deposit-transaction.entity';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
 
@@ -31,23 +35,34 @@ export interface DepositTransactionView {
 /**
  * Депозит клиента в «обработанных позициях»: проверка перед запуском обработки,
  * идемпотентное списание после успешной обработки, ручные пополнения/корректировки.
- * Денормализованный баланс — в TelegramUser.balance, журнал — в deposit_transactions.
+ * Владелец баланса и журнала — BillingAccount (пока 1:1 с TelegramUser); документ привязан
+ * к клиенту, аккаунт резолвится по telegram_users.billing_account_id.
  */
 @Injectable()
 export class ClientBalanceService {
   private logger = new Logger(ClientBalanceService.name);
 
   constructor(
-    @InjectRepository(TelegramUser) private tgUserRepo: Repository<TelegramUser>,
+    @InjectRepository(BillingAccount) private accountRepo: Repository<BillingAccount>,
     @InjectRepository(DepositTransaction) private txRepo: Repository<DepositTransaction>,
+    @InjectRepository(TelegramUser) private tgUserRepo: Repository<TelegramUser>,
   ) {}
 
-  async getBalance(telegramUserId: string): Promise<number> {
-    const row = await this.tgUserRepo.findOne({
-      where: { id: telegramUserId },
+  async getBalance(billingAccountId: string): Promise<number> {
+    const row = await this.accountRepo.findOne({
+      where: { id: billingAccountId },
       select: ['id', 'balance'],
     });
     return row?.balance ?? 0;
+  }
+
+  /** billing_account_id клиента (связь 1:1, неизменна после создания). */
+  private async resolveAccountId(telegramUserId: string): Promise<string | null> {
+    const row = await this.tgUserRepo.findOne({
+      where: { id: telegramUserId },
+      select: ['id', 'billingAccountId'],
+    });
+    return row?.billingAccountId ?? null;
   }
 
   /**
@@ -58,7 +73,8 @@ export class ClientBalanceService {
     if (!doc.telegramUserId) return { allowed: true, need: 0, available: 0 };
     const positions = doc.rowCount || doc.parsedData?.length || 0;
     const need = Math.max(0, positions - (doc.balanceChargedAmount ?? 0));
-    const available = await this.getBalance(doc.telegramUserId);
+    const accountId = await this.resolveAccountId(doc.telegramUserId);
+    const available = accountId ? await this.getBalance(accountId) : 0;
     return { allowed: need === 0 || available >= need, need, available };
   }
 
@@ -80,6 +96,8 @@ export class ClientBalanceService {
     ) {
       return;
     }
+    const accountId = await this.resolveAccountId(doc.telegramUserId);
+    if (!accountId) return;
     const successfulCount = (doc.resultData ?? []).filter(
       (r) =>
         !isIncompleteCalculationStatus(
@@ -87,34 +105,29 @@ export class ClientBalanceService {
         ),
     ).length;
     try {
-      await this.reconcileCharge(
-        doc.telegramUserId,
-        doc.id,
-        doc.originalFileName,
-        successfulCount,
-      );
+      await this.reconcileCharge(accountId, doc.id, doc.originalFileName, successfulCount);
       doc.balanceChargedAmount = successfulCount;
     } catch (err) {
       this.logger.error(
-        `Failed to settle deposit for document ${doc.id} (client ${doc.telegramUserId}, ${successfulCount} positions)`,
+        `Failed to settle deposit for document ${doc.id} (account ${accountId}, ${successfulCount} positions)`,
         err instanceof Error ? err.stack : err,
       );
     }
   }
 
-  /** Атомарная сверка списанного с числом успешных позиций под локом на клиенте. */
+  /** Атомарная сверка списанного с числом успешных позиций под локом на аккаунте. */
   private async reconcileCharge(
-    telegramUserId: string,
+    billingAccountId: string,
     documentId: string,
     fileName: string,
     successfulCount: number,
   ): Promise<void> {
-    await this.tgUserRepo.manager.transaction(async (em) => {
-      const tgUser = await em.findOne(TelegramUser, {
-        where: { id: telegramUserId },
+    await this.accountRepo.manager.transaction(async (em) => {
+      const account = await em.findOne(BillingAccount, {
+        where: { id: billingAccountId },
         lock: { mode: 'pessimistic_write' },
       });
-      if (!tgUser) return;
+      if (!account) return;
       // Свежее число уже списанного под локом: между save статуса и settle документ
       // мог быть пересчитан в другом потоке.
       const docRow = await em.findOne(Document, {
@@ -125,15 +138,8 @@ export class ClientBalanceService {
       const chargeDelta = successfulCount - alreadyCharged; // + дозалистываем, − возвращаем
       if (chargeDelta === 0) return;
 
-      const balanceDelta = -chargeDelta; // списание уменьшает баланс
-      const newBalance = tgUser.balance + balanceDelta;
-      await em.update(TelegramUser, { id: telegramUserId }, { balance: newBalance });
-      await em.update(Document, { id: documentId }, { balanceChargedAmount: successfulCount });
-      await em.insert(DepositTransaction, {
-        telegramUserId,
-        delta: balanceDelta,
+      await this.writeDelta(em, account, -chargeDelta, {
         type: chargeDelta > 0 ? 'charge' : 'adjustment',
-        balanceAfter: newBalance,
         documentId,
         createdByUserId: null,
         comment:
@@ -141,7 +147,35 @@ export class ClientBalanceService {
             ? `Списание за обработку «${fileName}» (${successfulCount} поз.)`
             : `Возврат по пересчёту «${fileName}» (${alreadyCharged} → ${successfulCount} поз.)`,
       });
+      await em.update(Document, { id: documentId }, { balanceChargedAmount: successfulCount });
     });
+  }
+
+  /**
+   * Единственная точка изменения баланса: под уже взятым локом аккаунта сдвигает баланс
+   * на delta и пишет ровно одну строку журнала с balanceAfter. Гарантирует инвариант
+   * «любое движение баланса сопровождается записью в ledger». Вызывать внутри транзакции.
+   */
+  private async writeDelta(
+    em: EntityManager,
+    account: BillingAccount,
+    delta: number,
+    ledger: {
+      type: DepositTransactionType;
+      documentId: string | null;
+      createdByUserId: string | null;
+      comment: string | null;
+    },
+  ): Promise<number> {
+    const newBalance = account.balance + delta;
+    await em.update(BillingAccount, { id: account.id }, { balance: newBalance });
+    await em.insert(DepositTransaction, {
+      billingAccountId: account.id,
+      delta,
+      balanceAfter: newBalance,
+      ...ledger,
+    });
+    return newBalance;
   }
 
   /**
@@ -149,7 +183,7 @@ export class ClientBalanceService {
    * системы или корректировка (amount < 0). Атомарно под локом + запись в журнал.
    */
   async adjust(
-    telegramUserId: string,
+    billingAccountId: string,
     amount: number,
     opts: { actorUserId: string; comment?: string },
   ): Promise<{ balance: number }> {
@@ -159,21 +193,16 @@ export class ClientBalanceService {
         message: 'Deposit amount must be a non-zero integer',
       });
     }
-    return this.tgUserRepo.manager.transaction(async (em) => {
-      const tgUser = await em.findOne(TelegramUser, {
-        where: { id: telegramUserId },
+    return this.accountRepo.manager.transaction(async (em) => {
+      const account = await em.findOne(BillingAccount, {
+        where: { id: billingAccountId },
         lock: { mode: 'pessimistic_write' },
       });
-      if (!tgUser) {
-        throw new NotFoundException('Telegram user not found');
+      if (!account) {
+        throw new NotFoundException('Billing account not found');
       }
-      const newBalance = tgUser.balance + amount;
-      await em.update(TelegramUser, { id: telegramUserId }, { balance: newBalance });
-      await em.insert(DepositTransaction, {
-        telegramUserId,
-        delta: amount,
+      const newBalance = await this.writeDelta(em, account, amount, {
         type: amount > 0 ? 'topup' : 'adjustment',
-        balanceAfter: newBalance,
         documentId: null,
         createdByUserId: opts.actorUserId,
         comment: opts.comment?.trim() || null,
@@ -183,11 +212,11 @@ export class ClientBalanceService {
   }
 
   async listTransactions(
-    telegramUserId: string,
+    billingAccountId: string,
     query: { page: number; limit: number },
   ): Promise<PaginatedResponse<DepositTransactionView>> {
     const [data, total] = await this.txRepo.findAndCount({
-      where: { telegramUserId },
+      where: { billingAccountId },
       relations: ['createdBy'],
       order: { createdAt: 'DESC' },
       skip: (query.page - 1) * query.limit,

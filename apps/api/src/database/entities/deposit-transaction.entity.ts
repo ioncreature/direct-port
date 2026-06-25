@@ -7,35 +7,36 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { BillingAccount } from './billing-account.entity';
 import { Document } from './document.entity';
-import { TelegramUser } from './telegram-user.entity';
 import { User } from './user.entity';
 
 /**
  * Тип операции с депозитом клиента:
- *  - topup      — ручное пополнение менеджером (delta > 0)
+ *  - topup      — ручное пополнение менеджером после оплаты (delta > 0)
+ *  - grant      — бесплатные позиции, начисленные менеджером (delta > 0; не выручка)
  *  - charge     — списание pipeline за успешно обработанные позиции (delta < 0)
  *  - adjustment — ручная корректировка менеджером или возврат при пересчёте (любой знак)
  */
-export type DepositTransactionType = 'topup' | 'charge' | 'adjustment';
+export type DepositTransactionType = 'topup' | 'charge' | 'adjustment' | 'grant';
 
 /**
  * Журнал операций с депозитом клиента (ledger). Денормализованный баланс лежит в
- * TelegramUser.balance; здесь — полная история изменений для аудита и отображения.
+ * BillingAccount.balance; здесь — полная история изменений для аудита и отображения.
  * Запись только добавляется, не правится.
  */
 @Entity('deposit_transactions')
-@Index(['telegramUserId', 'createdAt'])
+@Index(['billingAccountId', 'createdAt'])
 export class DepositTransaction {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid', name: 'telegram_user_id' })
-  telegramUserId: string;
+  @Column({ type: 'uuid', name: 'billing_account_id' })
+  billingAccountId: string;
 
-  @ManyToOne(() => TelegramUser, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'telegram_user_id' })
-  telegramUser: TelegramUser;
+  @ManyToOne(() => BillingAccount, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'billing_account_id' })
+  billingAccount: BillingAccount;
 
   /** Изменение баланса в позициях: + пополнение/возврат, − списание. */
   @Column({ type: 'int' })

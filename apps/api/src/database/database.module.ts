@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AiCall } from './entities/ai-call.entity';
 import { AiConfig } from './entities/ai-config.entity';
 import { AiUsageLog } from './entities/ai-usage-log.entity';
+import { BillingAccount } from './entities/billing-account.entity';
 import { CalculationConfig } from './entities/calculation-config.entity';
 import { CalculationLog } from './entities/calculation-log.entity';
 import { Company } from './entities/company.entity';
@@ -68,6 +69,7 @@ import { AddLeadSearches1779500000000 } from './migrations/1779500000000-AddLead
 import { AddClientDeposit1779600000000 } from './migrations/1779600000000-AddClientDeposit';
 import { AddLeadConvertedClient1779700000000 } from './migrations/1779700000000-AddLeadConvertedClient';
 import { AddLeadCompany1779800000000 } from './migrations/1779800000000-AddLeadCompany';
+import { AddBillingAccount1779900000000 } from './migrations/1779900000000-AddBillingAccount';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -80,6 +82,7 @@ import { SeedService } from './seeds/seed.service';
         entities: [
           User,
           Company,
+          BillingAccount,
           RefreshToken,
           TnVedCode,
           CalculationLog,
@@ -148,6 +151,7 @@ import { SeedService } from './seeds/seed.service';
           AddClientDeposit1779600000000,
           AddLeadConvertedClient1779700000000,
           AddLeadCompany1779800000000,
+          AddBillingAccount1779900000000,
         ],
         migrationsRun: true,
         // Каждая миграция в своей транзакции (по умолчанию TypeORM гонит все в одной).

@@ -67,8 +67,8 @@ export class TelegramUsersController {
     @Body() dto: AdjustDepositDto,
     @CurrentUser() actor: Actor,
   ) {
-    await this.service.assertAccess(id, actor);
-    return this.clientBalance.adjust(id, dto.amount, {
+    const billingAccountId = await this.service.assertAccess(id, actor);
+    return this.clientBalance.adjust(billingAccountId, dto.amount, {
       actorUserId: actor.id,
       comment: dto.comment,
     });
@@ -82,8 +82,11 @@ export class TelegramUsersController {
     @Query() query: PaginationQueryDto,
     @CurrentUser() actor: Actor,
   ) {
-    await this.service.assertAccess(id, actor);
-    return this.clientBalance.listTransactions(id, { page: query.page, limit: query.limit });
+    const billingAccountId = await this.service.assertAccess(id, actor);
+    return this.clientBalance.listTransactions(billingAccountId, {
+      page: query.page,
+      limit: query.limit,
+    });
   }
 
   @Post('register')

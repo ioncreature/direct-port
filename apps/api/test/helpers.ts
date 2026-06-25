@@ -32,10 +32,12 @@ import { RolesGuard } from '../src/auth/guards/roles.guard';
 // Entities
 import { AiCall } from '../src/database/entities/ai-call.entity';
 import { AiConfig } from '../src/database/entities/ai-config.entity';
+import { BillingAccount } from '../src/database/entities/billing-account.entity';
 import { CalculationConfig } from '../src/database/entities/calculation-config.entity';
 import { CalculationLog } from '../src/database/entities/calculation-log.entity';
 import { Company } from '../src/database/entities/company.entity';
 import { ConversationMessage } from '../src/database/entities/conversation-message.entity';
+import { DepositTransaction } from '../src/database/entities/deposit-transaction.entity';
 import { Document } from '../src/database/entities/document.entity';
 import { DocumentVersion } from '../src/database/entities/document-version.entity';
 import { PipelineStageRun } from '../src/database/entities/pipeline-stage-run.entity';
@@ -216,6 +218,8 @@ export async function createTestApp(): Promise<INestApplication> {
           AiCall,
           DocumentVersion,
           ConversationMessage,
+          BillingAccount,
+          DepositTransaction,
         ],
         synchronize: true,
       }),
@@ -396,6 +400,9 @@ export async function seedTnVed(app: INestApplication) {
 
 export async function seedTelegramUser(app: INestApplication) {
   const ds = app.get(DataSource);
+  // Биллинг-аккаунт обязателен (billing_account_id NOT NULL) — заводим вместе с клиентом.
+  const accountRepo = ds.getRepository(BillingAccount);
+  const account = await accountRepo.save(accountRepo.create({ balance: 0 }));
   const repo = ds.getRepository(TelegramUser);
   return repo.save(
     repo.create({
@@ -403,6 +410,7 @@ export async function seedTelegramUser(app: INestApplication) {
       username: 'testuser',
       firstName: 'Test',
       lastName: 'User',
+      billingAccountId: account.id,
     }),
   );
 }

@@ -3,9 +3,16 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 import { Actor, assertSameCompany, resolveCompanyScope } from '../common/tenant/actor-context';
+import { BillingAccount } from '../database/entities/billing-account.entity';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
 import { FindTelegramUsersQueryDto } from './dto/find-telegram-users-query.dto';
 import { RegisterTelegramUserDto } from './dto/register-telegram-user.dto';
+
+/** Postgres unique_violation (23505) — TypeORM прячет код в driverError. */
+function isUniqueViolation(err: unknown): boolean {
+  const e = err as { code?: string; driverError?: { code?: string } };
+  return e?.code === '23505' || e?.driverError?.code === '23505';
+}
 
 @Injectable()
 export class TelegramUsersService {
@@ -13,25 +20,40 @@ export class TelegramUsersService {
 
   async register(dto: RegisterTelegramUserDto): Promise<TelegramUser> {
     const telegramId = String(dto.telegramId);
-    // Язык из регистрации — это автодетект Telegram-локали, и он применяется только
-    // при первом знакомстве (INSERT): повторная регистрация (повторный /start,
-    // протухшее Redis-состояние client-bot) откатывала ручной выбор /language →
-    // следующий документ уходил в pipeline с чужим языком. Поэтому language есть
-    // в VALUES, но исключён из DO UPDATE SET. Ручная смена — updateLanguage (PATCH).
-    await this.repo
-      .createQueryBuilder()
-      .insert()
-      .into(TelegramUser)
-      .values({
-        telegramId,
-        username: dto.username ?? null,
-        firstName: dto.firstName ?? null,
-        lastName: dto.lastName ?? null,
-        ...(dto.language ? { language: dto.language } : {}),
-      })
-      .orUpdate(['username', 'first_name', 'last_name'], ['telegram_id'])
-      .execute();
+    const mutable = {
+      username: dto.username ?? null,
+      firstName: dto.firstName ?? null,
+      lastName: dto.lastName ?? null,
+    };
 
+    // Повторная регистрация (повторный /start, протухшее Redis-состояние client-bot) —
+    // обновляем только изменяемые поля. Язык НЕ трогаем: при первом знакомстве он ставится
+    // автодетектом локали, дальше им владеет ручной /language (updateLanguage), иначе
+    // повторный /start откатывал бы выбор и следующий документ ушёл бы с чужим языком.
+    const existing = await this.repo.findOne({ where: { telegramId } });
+    if (existing) {
+      await this.repo.update({ telegramId }, mutable);
+      return this.repo.findOneByOrFail({ telegramId });
+    }
+
+    // Новый клиент заводится вместе с биллинг-аккаунтом (1:1) в одной транзакции, чтобы у
+    // каждого клиента всегда был владелец баланса. Гонка одновременных первых /start от
+    // одного клиента: один INSERT побеждает, второй падает на unique(telegram_id), и аккаунт
+    // его откатившейся транзакции не остаётся — добираем уже существующего клиента.
+    try {
+      await this.repo.manager.transaction(async (em) => {
+        const account = await em.save(em.create(BillingAccount, { balance: 0 }));
+        await em.insert(TelegramUser, {
+          telegramId,
+          ...mutable,
+          billingAccountId: account.id,
+          ...(dto.language ? { language: dto.language } : {}),
+        });
+      });
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+      await this.repo.update({ telegramId }, mutable);
+    }
     return this.repo.findOneByOrFail({ telegramId });
   }
 
@@ -83,22 +105,31 @@ export class TelegramUsersService {
     return qb.getMany();
   }
 
-  async findOneById(id: string, actor: Actor): Promise<TelegramUser & { documentCount: number }> {
+  async findOneById(
+    id: string,
+    actor: Actor,
+  ): Promise<TelegramUser & { documentCount: number; balance: number }> {
     const [user] = (await this.repo
       .createQueryBuilder('tu')
+      .leftJoinAndSelect('tu.billingAccount', 'ba')
       .loadRelationCountAndMap('tu.documentCount', 'tu.documents')
       .where('tu.id = :id', { id })
       .getMany()) as Array<TelegramUser & { documentCount: number }>;
     if (!user) throw new NotFoundException('Telegram user not found');
     assertSameCompany(actor, user.companyId);
-    return user;
+    // Баланс переехал на BillingAccount — отдаём его плоско, как ждёт админка.
+    return Object.assign(user, { balance: user.billingAccount?.balance ?? 0 });
   }
 
-  /** Лёгкая проверка доступа к клиенту (для истории переписки): 404 на чужого/несуществующего. */
-  async assertAccess(id: string, actor: Actor): Promise<void> {
-    const user = await this.repo.findOne({ where: { id }, select: ['id', 'companyId'] });
+  /** Проверка доступа к клиенту + резолв его биллинг-аккаунта (404 на чужого/несуществующего). */
+  async assertAccess(id: string, actor: Actor): Promise<string> {
+    const user = await this.repo.findOne({
+      where: { id },
+      select: ['id', 'companyId', 'billingAccountId'],
+    });
     if (!user) throw new NotFoundException('Telegram user not found');
     assertSameCompany(actor, user.companyId);
+    return user.billingAccountId;
   }
 
   async findByTelegramId(telegramId: number): Promise<TelegramUser | null> {

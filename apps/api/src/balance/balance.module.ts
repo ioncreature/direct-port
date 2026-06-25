@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BillingAccount } from '../database/entities/billing-account.entity';
 import { DepositTransaction } from '../database/entities/deposit-transaction.entity';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
 import { ClientBalanceService } from './client-balance.service';
@@ -10,7 +11,7 @@ import { ClientBalanceService } from './client-balance.service';
  * пополнения и история операций из админки).
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([TelegramUser, DepositTransaction])],
+  imports: [TypeOrmModule.forFeature([TelegramUser, DepositTransaction, BillingAccount])],
   providers: [ClientBalanceService],
   exports: [ClientBalanceService],
 })
