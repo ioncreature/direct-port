@@ -14,6 +14,7 @@ export type ManagerEventType =
   | 'pipeline_failed'
   | 'pipeline_review'
   | 'pipeline_rejected'
+  | 'topup_request'
   | 'leads_report';
 
 export interface ManagerNotification {
@@ -30,6 +31,10 @@ export interface ManagerNotification {
   text?: string;
   attachmentType?: string;
   resultReady?: boolean;
+  topUpId?: string;
+  positions?: number;
+  amount?: number;
+  currency?: string;
 }
 
 /** Текст уведомления менеджеру (HTML) по типу события. */
@@ -61,6 +66,11 @@ export function buildNotificationText(n: ManagerNotification): string {
       return `⚠️ Требует проверки — ${doc}\nКлиент: ${client}`;
     case 'pipeline_rejected':
       return `🚫 Документ отклонён — ${doc}\nКлиент: ${client}`;
+    case 'topup_request': {
+      const positions = n.positions ?? 0;
+      const amount = `${n.amount ?? 0} ${escapeHtml(n.currency ?? '')}`.trim();
+      return `💳 Заявка на пополнение от ${client}\n${positions} поз. — ${amount}\nПодтвердите после поступления оплаты.`;
+    }
     default:
       return `Событие по клиенту ${client}`;
   }
@@ -83,6 +93,10 @@ export function buildNotificationKeyboard(
     kb.text('✍️ Ответить', `reply:${n.clientId}`).row();
     if (!n.assigned) kb.text('👤 Взять', `claim:${n.clientId}`).row();
     kb.url('↗️ В админке', `${adminBase}/telegram-users/${n.clientId}`);
+  } else if (n.event === 'topup_request' && n.topUpId) {
+    kb.text('✅ Подтвердить оплату', `confirm-topup:${n.topUpId}`).row();
+    kb.text('🚫 Отклонить', `cancel-topup:${n.topUpId}`).row();
+    if (n.clientId) kb.url('↗️ В админке', `${adminBase}/telegram-users/${n.clientId}`);
   } else if (n.documentId) {
     if (n.event === 'pipeline_done' && n.resultReady) {
       kb.text('📤 Отправить клиенту', `send:${n.documentId}`).row();

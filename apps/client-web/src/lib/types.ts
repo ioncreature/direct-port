@@ -46,3 +46,26 @@ export interface Paginated<T> {
   page: number;
   limit: number;
 }
+
+export interface TopUpPackage {
+  key: string;
+  positions: number;
+  amount: number;
+  perPosition: number;
+  currency: string;
+}
+
+export type TopUpStatus = 'pending' | 'confirmed' | 'canceled';
+
+export interface TopUpRequest {
+  id: string;
+  packageKey: string | null;
+  positions: number;
+  amount: number;
+  currency: string;
+  pricePerPosition: number;
+  status: TopUpStatus;
+  comment: string | null;
+  createdAt: string;
+  confirmedAt: string | null;
+}

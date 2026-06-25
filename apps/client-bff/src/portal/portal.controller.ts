@@ -1,9 +1,10 @@
-import { Controller, Get, Param, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiClientService } from '../api-client/api-client.service';
 import { ClientAuthGuard } from '../auth/client-auth.guard';
 import { ClientProfile } from '../auth/client-token.service';
 import { CurrentClient } from '../auth/current-client.decorator';
+import { CreateTopUpDto } from './dto/create-top-up.dto';
 import { PortalQueryDto } from './dto/portal-query.dto';
 
 /**
@@ -41,6 +42,30 @@ export class PortalController {
   @Get('documents/:id')
   document(@CurrentClient() client: ClientProfile, @Param('id') id: string) {
     return this.api.getDocument(client.accountId, id);
+  }
+
+  @Get('packages')
+  packages() {
+    return this.api.getPackages();
+  }
+
+  @Post('topups')
+  createTopUp(@CurrentClient() client: ClientProfile, @Body() dto: CreateTopUpDto) {
+    // telegramUserId берётся из проверенного JWT, не из тела — клиент не подменит автора.
+    return this.api.createTopUp(client.accountId, {
+      packageKey: dto.packageKey,
+      telegramUserId: client.telegramUserId,
+    });
+  }
+
+  @Get('topups')
+  topUps(@CurrentClient() client: ClientProfile, @Query() query: PortalQueryDto) {
+    return this.api.getTopUps(client.accountId, { page: query.page, limit: query.limit });
+  }
+
+  @Post('topups/:id/cancel')
+  cancelTopUp(@CurrentClient() client: ClientProfile, @Param('id') id: string) {
+    return this.api.cancelTopUp(client.accountId, id);
   }
 
   @Get('documents/:id/download')

@@ -12,6 +12,7 @@ export type ManagerEventType =
   | 'pipeline_failed' // ошибка обработки
   | 'pipeline_review' // нужна ручная проверка (requires_review / code_review_required)
   | 'pipeline_rejected' // документ отклонён
+  | 'topup_request' // клиент оформил заявку на пополнение — ждёт подтверждения оплаты
   | 'leads_report'; // автономный поиск лидов — текстовый отчёт менеджерам (без клиента)
 
 export interface ManagerNotification {
@@ -32,6 +33,11 @@ export interface ManagerNotification {
   attachmentType?: string; // 'document' | 'photo' | 'file' (для client_message)
   /** Результат готов к отправке клиенту (PROCESSED — download доступен). Для pipeline_done. */
   resultReady?: boolean;
+  // Поля заявки на пополнение (для topup_request).
+  topUpId?: string;
+  positions?: number;
+  amount?: number;
+  currency?: string;
 }
 
 /** Человекочитаемое имя клиента для шапки уведомления. */

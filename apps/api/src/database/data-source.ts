@@ -22,6 +22,7 @@ import { RegulatoryInterpretationCache } from './entities/regulatory-interpretat
 import { TelegramUser } from './entities/telegram-user.entity';
 import { TksCache } from './entities/tks-cache.entity';
 import { TnVedCode } from './entities/tn-ved-code.entity';
+import { TopUpRequest } from './entities/top-up-request.entity';
 import { User } from './entities/user.entity';
 
 config();
@@ -52,6 +53,7 @@ export default new DataSource({
     LeadSearch,
     BillingAccount,
     DepositTransaction,
+    TopUpRequest,
   ],
   migrations: ['src/database/migrations/*{.ts,.js}'],
   // Каждая миграция в своей транзакции — чтобы новое значение enum 'super_admin' было

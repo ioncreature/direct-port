@@ -27,6 +27,18 @@ describe('describeCallbackError', () => {
     ).toContain('не готов');
   });
 
+  it('заявка на пополнение: не найдена / уже подтверждена / отменена', () => {
+    expect(
+      describeCallbackError({ response: { data: { code: 'TOPUP_NOT_FOUND' } } }),
+    ).toContain('не найдена');
+    expect(
+      describeCallbackError({ response: { data: { code: 'TOPUP_ALREADY_CONFIRMED' } } }),
+    ).toContain('уже подтверждена');
+    expect(
+      describeCallbackError({ response: { data: { code: 'TOPUP_NOT_PENDING' } } }),
+    ).toContain('уже отменена');
+  });
+
   it('неизвестная ошибка → общий текст', () => {
     expect(describeCallbackError(new Error('boom'))).toBe('Не удалось выполнить действие');
   });

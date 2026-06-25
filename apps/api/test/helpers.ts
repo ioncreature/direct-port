@@ -46,6 +46,7 @@ import { RefreshToken } from '../src/database/entities/refresh-token.entity';
 import { TelegramUser } from '../src/database/entities/telegram-user.entity';
 import { TksCache } from '../src/database/entities/tks-cache.entity';
 import { TnVedCode } from '../src/database/entities/tn-ved-code.entity';
+import { TopUpRequest } from '../src/database/entities/top-up-request.entity';
 import { User, UserRole } from '../src/database/entities/user.entity';
 
 // Controllers
@@ -221,6 +222,7 @@ export async function createTestApp(): Promise<INestApplication> {
           ConversationMessage,
           BillingAccount,
           DepositTransaction,
+          TopUpRequest,
         ],
         synchronize: true,
       }),

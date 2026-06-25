@@ -1,8 +1,25 @@
-import type { DepositTransactionType } from './types';
+import type { DepositTransactionType, TopUpStatus } from './types';
 
 /** Целое число позиций с разделителями разрядов. */
 export function fmtInt(n: number): string {
   return n.toLocaleString('ru-RU');
+}
+
+/** Денежная сумма с валютой (для заявок на пополнение). */
+export function fmtMoney(amount: number, currency: string): string {
+  return `${amount.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ${currency}`;
+}
+
+export const TOP_UP_STATUS_LABELS: Record<TopUpStatus, string> = {
+  pending: 'Ожидает оплаты',
+  confirmed: 'Зачислено',
+  canceled: 'Отменена',
+};
+
+export function topUpStatusTone(status: TopUpStatus): 'ok' | 'warn' | 'neutral' {
+  if (status === 'confirmed') return 'ok';
+  if (status === 'pending') return 'warn';
+  return 'neutral';
 }
 
 /** Знаковая дельта позиций для истории операций. */

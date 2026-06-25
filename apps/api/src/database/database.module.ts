@@ -22,6 +22,7 @@ import { RegulatoryInterpretationCache } from './entities/regulatory-interpretat
 import { TelegramUser } from './entities/telegram-user.entity';
 import { TksCache } from './entities/tks-cache.entity';
 import { TnVedCode } from './entities/tn-ved-code.entity';
+import { TopUpRequest } from './entities/top-up-request.entity';
 import { User } from './entities/user.entity';
 import { Init1775502921706 } from './migrations/1775502921706-Init';
 import { AddTelegramUsersAndDocuments1775509193348 } from './migrations/1775509193348-AddTelegramUsersAndDocuments';
@@ -70,6 +71,7 @@ import { AddClientDeposit1779600000000 } from './migrations/1779600000000-AddCli
 import { AddLeadConvertedClient1779700000000 } from './migrations/1779700000000-AddLeadConvertedClient';
 import { AddLeadCompany1779800000000 } from './migrations/1779800000000-AddLeadCompany';
 import { AddBillingAccount1779900000000 } from './migrations/1779900000000-AddBillingAccount';
+import { AddTopUpRequests1780000000000 } from './migrations/1780000000000-AddTopUpRequests';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -102,6 +104,7 @@ import { SeedService } from './seeds/seed.service';
           Lead,
           LeadSearch,
           DepositTransaction,
+          TopUpRequest,
         ],
         synchronize: false,
         migrations: [
@@ -152,6 +155,7 @@ import { SeedService } from './seeds/seed.service';
           AddLeadConvertedClient1779700000000,
           AddLeadCompany1779800000000,
           AddBillingAccount1779900000000,
+          AddTopUpRequests1780000000000,
         ],
         migrationsRun: true,
         // Каждая миграция в своей транзакции (по умолчанию TypeORM гонит все в одной).

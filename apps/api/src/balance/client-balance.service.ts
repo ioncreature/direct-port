@@ -11,6 +11,7 @@ import {
 } from '../database/entities/deposit-transaction.entity';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
+import { TopUpRequest } from '../database/entities/top-up-request.entity';
 
 export interface ProcessingBalanceGate {
   allowed: boolean;
@@ -165,6 +166,7 @@ export class ClientBalanceService {
       documentId: string | null;
       createdByUserId: string | null;
       comment: string | null;
+      sourceRequestId?: string | null;
     },
   ): Promise<number> {
     const newBalance = account.balance + delta;
@@ -174,6 +176,7 @@ export class ClientBalanceService {
       delta,
       balanceAfter: newBalance,
       ...ledger,
+      sourceRequestId: ledger.sourceRequestId ?? null,
     });
     return newBalance;
   }
@@ -208,6 +211,56 @@ export class ClientBalanceService {
         comment: opts.comment?.trim() || null,
       });
       return { balance: newBalance };
+    });
+  }
+
+  /**
+   * Зачисление кредитов по подтверждённой заявке на пополнение. Идемпотентно: статус
+   * заявки перечитывается ПОД локом аккаунта, поэтому конкурентное/повторное
+   * подтверждение (два менеджера, двойной клик) второй раз вернёт already-confirmed без
+   * задвоения. Уникальный индекс deposit_transactions(source_request_id) — финальный
+   * страховочный барьер. Меняет баланс только здесь — единый writer сохраняется.
+   */
+  async confirmTopUp(requestId: string, confirmedByUserId: string): Promise<TopUpRequest> {
+    return this.accountRepo.manager.transaction(async (em) => {
+      const head = await em.findOne(TopUpRequest, {
+        where: { id: requestId },
+        select: ['id', 'billingAccountId'],
+      });
+      if (!head) {
+        throw new NotFoundException({ code: ErrorCode.TOPUP_NOT_FOUND, message: 'Top-up request not found' });
+      }
+      // Лок на аккаунте сериализует конкурентные подтверждения этой же заявки.
+      const account = await em.findOne(BillingAccount, {
+        where: { id: head.billingAccountId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!account) {
+        throw new NotFoundException({ code: ErrorCode.TOPUP_NOT_FOUND, message: 'Billing account not found' });
+      }
+      // Свежий статус под локом: первый подтвердивший уже мог перевести в confirmed.
+      const request = await em.findOneOrFail(TopUpRequest, { where: { id: requestId } });
+      if (request.status === 'confirmed') return request;
+      if (request.status === 'canceled') {
+        throw new BadRequestException({
+          code: ErrorCode.TOPUP_NOT_PENDING,
+          message: 'Top-up request is canceled',
+        });
+      }
+      await this.writeDelta(em, account, request.positions, {
+        type: 'topup',
+        documentId: null,
+        createdByUserId: confirmedByUserId,
+        comment: `Пополнение по заявке (${request.positions} поз., ${request.amount} ${request.currency})`,
+        sourceRequestId: request.id,
+      });
+      const confirmedAt = new Date();
+      await em.update(
+        TopUpRequest,
+        { id: request.id },
+        { status: 'confirmed', confirmedByUserId, confirmedAt },
+      );
+      return { ...request, status: 'confirmed', confirmedByUserId, confirmedAt };
     });
   }
 

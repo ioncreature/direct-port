@@ -50,6 +50,19 @@ export class ManagerNotifyService {
     });
   }
 
+  /** Клиент оформил заявку на пополнение — менеджер подтверждает оплату кнопкой. */
+  async notifyTopUpRequest(
+    request: { id: string; positions: number; amount: number; currency: string },
+    client: ConversationClient,
+  ): Promise<void> {
+    await this.enqueue('topup_request', client, {
+      topUpId: request.id,
+      positions: request.positions,
+      amount: request.amount,
+      currency: request.currency,
+    });
+  }
+
   /**
    * Финальное событие пайплайна. Маппит doc.status в менеджерское событие;
    * промежуточные статусы игнорируются (вернёт без отправки).

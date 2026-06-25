@@ -20,6 +20,7 @@ import { LeadsModule } from './leads/leads.module';
 import { PipelineAuditModule } from './pipeline-audit/pipeline-audit.module';
 import { TelegramUsersModule } from './telegram-users/telegram-users.module';
 import { TnVedModule } from './tn-ved/tn-ved.module';
+import { TopUpModule } from './top-up/top-up.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -57,6 +58,7 @@ import { UsersModule } from './users/users.module';
     CountriesModule,
     BotLinksModule,
     LeadsModule,
+    TopUpModule,
     ClientPortalModule,
   ],
   controllers: [AppController],

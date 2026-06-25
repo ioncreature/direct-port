@@ -27,6 +27,15 @@ export function describeCallbackError(err: unknown): string {
   if (code === 'DOWNLOAD_NOT_AVAILABLE') {
     return 'Расчёт ещё не готов к отправке';
   }
+  if (code === 'TOPUP_NOT_FOUND') {
+    return 'Заявка не найдена';
+  }
+  if (code === 'TOPUP_ALREADY_CONFIRMED') {
+    return 'Заявка уже подтверждена — отменить нельзя';
+  }
+  if (code === 'TOPUP_NOT_PENDING') {
+    return 'Заявка уже отменена';
+  }
   return 'Не удалось выполнить действие';
 }
 
@@ -64,6 +73,14 @@ export class CallbackHandler {
         await this.apiClient.sendDocument(arg, from.id);
         await ctx.answerCallbackQuery({ text: '📤 Расчёт отправлен клиенту' });
         await this.removePressedButton(ctx, data);
+      } else if (action === 'confirm-topup') {
+        await this.apiClient.confirmTopUp(arg, from.id);
+        await ctx.answerCallbackQuery({ text: '✅ Пополнение подтверждено' });
+        await this.clearKeyboard(ctx);
+      } else if (action === 'cancel-topup') {
+        await this.apiClient.cancelTopUp(arg, from.id);
+        await ctx.answerCallbackQuery({ text: '🚫 Заявка отклонена' });
+        await this.clearKeyboard(ctx);
       } else if (action === 'reply') {
         await this.activeDialog.set(ctx.chat!.id, { clientId: arg, clientName: '' });
         await ctx.answerCallbackQuery({ text: '✍️ Режим ответа включён' });
@@ -98,5 +115,13 @@ export class CallbackHandler {
     await ctx
       .editMessageReplyMarkup(rows.length > 0 ? { reply_markup: { inline_keyboard: rows } } : undefined)
       .catch(() => undefined);
+  }
+
+  /**
+   * Полностью убирает клавиатуру уведомления после разрешения заявки на пополнение
+   * (подтверждена/отклонена): обе кнопки больше не актуальны, оставлять «другую» нельзя.
+   */
+  private async clearKeyboard(ctx: Context): Promise<void> {
+    await ctx.editMessageReplyMarkup(undefined).catch(() => undefined);
   }
 }

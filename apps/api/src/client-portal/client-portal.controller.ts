@@ -11,8 +11,10 @@ import {
 import { Response } from 'express';
 import { Internal } from '../auth/decorators/internal.decorator';
 import { xlsxDownloadHeaders } from '../common/excel-download';
+import { TopUpService } from '../top-up/top-up.service';
 import { ClientPortalService } from './client-portal.service';
 import { ClientDocumentsQueryDto } from './dto/client-documents-query.dto';
+import { CreateTopUpDto } from './dto/create-top-up.dto';
 import { ResolveClientDto } from './dto/resolve-client.dto';
 
 /**
@@ -23,7 +25,10 @@ import { ResolveClientDto } from './dto/resolve-client.dto';
  */
 @Controller('internal/client')
 export class ClientPortalController {
-  constructor(private service: ClientPortalService) {}
+  constructor(
+    private service: ClientPortalService,
+    private topUp: TopUpService,
+  ) {}
 
   /** Upsert клиента по Telegram identity → id для выдачи client-JWT. */
   @Post('resolve')
@@ -63,6 +68,40 @@ export class ClientPortalController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.service.getDocument(accountId, id);
+  }
+
+  /** Справочник покупаемых пакетов (account-independent). */
+  @Get('packages')
+  @Internal()
+  packages() {
+    return this.topUp.getPackages();
+  }
+
+  @Post(':accountId/topups')
+  @Internal()
+  createTopUp(
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Body() dto: CreateTopUpDto,
+  ) {
+    return this.topUp.createRequest(accountId, dto.telegramUserId, dto.packageKey);
+  }
+
+  @Get(':accountId/topups')
+  @Internal()
+  topUps(
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Query() query: ClientDocumentsQueryDto,
+  ) {
+    return this.topUp.listRequests(accountId, { page: query.page, limit: query.limit });
+  }
+
+  @Post(':accountId/topups/:id/cancel')
+  @Internal()
+  cancelTopUp(
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.topUp.cancelOwnRequest(accountId, id);
   }
 
   @Get(':accountId/documents/:id/download')

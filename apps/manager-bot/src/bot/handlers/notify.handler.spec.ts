@@ -83,6 +83,20 @@ describe('buildNotificationText', () => {
     expect(t).toContain('Найдено 8 лидов');
     expect(t).toContain('&lt;топ&gt;');
   });
+
+  it('topup_request — сумма, позиции и призыв подтвердить', () => {
+    const t = buildNotificationText({
+      ...base,
+      event: 'topup_request',
+      topUpId: 'tu-1',
+      positions: 100,
+      amount: 100,
+      currency: 'USD',
+    });
+    expect(t).toContain('Заявка на пополнение');
+    expect(t).toContain('100 поз.');
+    expect(t).toContain('100 USD');
+  });
 });
 
 describe('buildNotificationKeyboard', () => {
@@ -146,6 +160,17 @@ describe('buildNotificationKeyboard', () => {
       ADMIN,
     );
     expect(flat(kb).some((b) => b.url?.includes('/leads'))).toBe(true);
+  });
+
+  it('topup_request: кнопки подтвердить/отклонить + ссылка на клиента', () => {
+    const kb = buildNotificationKeyboard(
+      { ...base, event: 'topup_request', topUpId: 'tu-1' },
+      ADMIN,
+    );
+    const buttons = flat(kb);
+    expect(buttons.some((b) => b.callback_data === 'confirm-topup:tu-1')).toBe(true);
+    expect(buttons.some((b) => b.callback_data === 'cancel-topup:tu-1')).toBe(true);
+    expect(buttons.some((b) => b.url?.includes('/telegram-users/cli-1'))).toBe(true);
   });
 });
 

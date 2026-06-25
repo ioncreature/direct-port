@@ -88,6 +88,16 @@ export class ApiClientService {
     });
   }
 
+  /** Подтвердить оплату заявки на пополнение → зачисление кредитов клиенту. */
+  async confirmTopUp(topUpId: string, managerTelegramId: number): Promise<void> {
+    await this.client.post(`/manager/topups/${topUpId}/confirm`, { managerTelegramId });
+  }
+
+  /** Отклонить неоплаченную заявку на пополнение. */
+  async cancelTopUp(topUpId: string, managerTelegramId: number): Promise<void> {
+    await this.client.post(`/manager/topups/${topUpId}/cancel`, { managerTelegramId });
+  }
+
   /** Публикация username бота для отображения ссылки в админке (при старте). */
   async publishBotIdentity(username: string): Promise<void> {
     await this.client.post('/bot-links/identity', { kind: 'manager', username });

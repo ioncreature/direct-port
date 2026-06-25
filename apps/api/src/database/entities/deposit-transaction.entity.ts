@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { BillingAccount } from './billing-account.entity';
 import { Document } from './document.entity';
+import { TopUpRequest } from './top-up-request.entity';
 import { User } from './user.entity';
 
 /**
@@ -67,6 +68,15 @@ export class DepositTransaction {
 
   @Column({ type: 'text', nullable: true })
   comment: string | null;
+
+  /** Заявка-источник для topup из кабинета. NULL для ручных операций админки. Уникален
+   *  (где не NULL) — гарантирует идемпотентность подтверждения заявки (один topup на заявку). */
+  @Column({ type: 'uuid', name: 'source_request_id', nullable: true })
+  sourceRequestId: string | null;
+
+  @ManyToOne(() => TopUpRequest, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'source_request_id' })
+  sourceRequest: TopUpRequest | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

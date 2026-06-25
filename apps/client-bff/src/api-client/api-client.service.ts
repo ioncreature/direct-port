@@ -102,6 +102,37 @@ export class ApiClientService {
     return data;
   }
 
+  async getPackages(): Promise<unknown> {
+    const { data } = await this.client.get('/internal/client/packages');
+    return data;
+  }
+
+  async createTopUp(
+    accountId: string,
+    payload: { packageKey: string; telegramUserId: string },
+  ): Promise<unknown> {
+    const { data } = await this.client.post(`/internal/client/${accountId}/topups`, payload);
+    return data;
+  }
+
+  async getTopUps(
+    accountId: string,
+    query: { page: number; limit: number },
+  ): Promise<PaginatedResult> {
+    const { data } = await this.client.get(`/internal/client/${accountId}/topups`, {
+      params: query,
+    });
+    return data;
+  }
+
+  async cancelTopUp(accountId: string, topUpId: string): Promise<unknown> {
+    const { data } = await this.client.post(
+      `/internal/client/${accountId}/topups/${topUpId}/cancel`,
+      {},
+    );
+    return data;
+  }
+
   /** Готовый Excel результата (бинарный поток + заголовки для проксирования в браузер). */
   async downloadDocument(
     accountId: string,

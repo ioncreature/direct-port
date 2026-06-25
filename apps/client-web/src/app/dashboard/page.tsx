@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
+import { TopUpSection } from '@/components/top-up-section';
 import api from '@/lib/api';
 import { getStoredProfile, isAuthenticated, logout } from '@/lib/auth';
 import {
@@ -117,6 +118,8 @@ export default function DashboardPage() {
                 <p className="card-sub">всего загружено</p>
               </div>
             </div>
+
+            <TopUpSection />
 
             <section className="section">
               <div className="section-head">
