@@ -180,7 +180,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     bot.use(async (ctx, next) => {
       const chatId = ctx.chat?.id;
       if (chatId) {
-        const state = await this.stateService.getState(chatId);
+        const state = await this.stateService.getState(companyId, chatId);
         if (state?.language) ctx.i18n.useLocale(state.language);
       }
       return next();

@@ -3,7 +3,13 @@ import { DocumentStatus } from '../database/entities/document.entity';
 import { ConversationsService } from './conversations.service';
 
 interface Opts {
-  client?: { id: string; telegramId: string; language: string; assignedManagerId: string | null } | null;
+  client?: {
+    id: string;
+    telegramId: string;
+    language: string;
+    assignedManagerId: string | null;
+    companyId?: string | null;
+  } | null;
   manager?: { id: string; isActive: boolean; managerTelegramId: string; companyId?: string | null } | null;
   userById?: { id: string; managerTelegramId: string | null } | null;
   document?: {
@@ -82,33 +88,46 @@ function createService(opts: Opts = {}) {
 const RETRY_OPTS = expect.objectContaining({ attempts: 5 });
 
 const ACTIVE_MANAGER = { id: 'mgr-1', isActive: true, managerTelegramId: '999', companyId: 'comp-1' };
-const UNASSIGNED_CLIENT = { id: 'cli-1', telegramId: '12345', language: 'ru', assignedManagerId: null };
+const UNASSIGNED_CLIENT = {
+  id: 'cli-1',
+  telegramId: '12345',
+  language: 'ru',
+  assignedManagerId: null,
+  companyId: 'comp-1',
+};
 const ASSIGNED_CLIENT = { ...UNASSIGNED_CLIENT, assignedManagerId: 'mgr-1' };
 
 describe('ConversationsService', () => {
   describe('claimByManagerTelegram', () => {
-    it('assigns an unclaimed client, inherits company to client+docs+messages, notifies', async () => {
-      const { service, updateQb, clientOutQueue, clientsRepo, documents, messagesRepo } =
-        createService({
-          manager: ACTIVE_MANAGER,
-          client: UNASSIGNED_CLIENT,
-          claimAffected: 1,
-        });
+    it('assigns an unclaimed client in the manager company and notifies (no company inheritance)', async () => {
+      const { service, updateQb, clientOutQueue, clientsRepo, documents } = createService({
+        manager: ACTIVE_MANAGER,
+        client: UNASSIGNED_CLIENT,
+        claimAffected: 1,
+      });
       const res = await service.claimByManagerTelegram('cli-1', '999');
       expect(res).toEqual({ clientId: 'cli-1', managerId: 'mgr-1' });
       expect(updateQb.execute).toHaveBeenCalled();
-      // клиент входит в компанию менеджера; его документы/сообщения без компании наследуют её
-      expect(clientsRepo.update).toHaveBeenCalledWith({ id: 'cli-1' }, { companyId: 'comp-1' });
-      expect(documents.assignCompanyToClientDocs).toHaveBeenCalledWith('cli-1', 'comp-1');
-      expect(messagesRepo.update).toHaveBeenCalledWith(
-        expect.objectContaining({ clientId: 'cli-1' }),
-        { companyId: 'comp-1' },
-      );
+      // Клиент уже принадлежит компании бота — claim больше не переносит компанию/документы.
+      expect(clientsRepo.update).not.toHaveBeenCalled();
+      expect(documents.assignCompanyToClientDocs).not.toHaveBeenCalled();
       expect(clientOutQueue.add).toHaveBeenCalledWith(
         'client-message',
         expect.objectContaining({ clientTelegramId: '12345', i18nKey: 'manager-assigned' }),
         RETRY_OPTS,
       );
+    });
+
+    it('throws 403 when the manager belongs to another company', async () => {
+      const { service, updateQb } = createService({
+        manager: { ...ACTIVE_MANAGER, companyId: 'comp-2' },
+        client: UNASSIGNED_CLIENT, // comp-1
+        claimAffected: 1,
+      });
+      await expect(service.claimByManagerTelegram('cli-1', '999')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(updateQb.execute).not.toHaveBeenCalled();
     });
 
     it('is idempotent when already assigned to the same manager (no re-notify)', async () => {
@@ -208,6 +227,7 @@ describe('ConversationsService', () => {
       expect(clientOutQueue.add).toHaveBeenCalledWith(
         'client-message',
         {
+          companyId: 'comp-1',
           clientTelegramId: '12345',
           text: 'Здравствуйте',
           language: 'ru',
@@ -245,6 +265,7 @@ describe('ConversationsService', () => {
       expect(clientOutQueue.add).toHaveBeenCalledWith(
         'client-message',
         {
+          companyId: 'comp-1',
           clientTelegramId: '12345',
           language: 'ru',
           documentId: 'doc-1',

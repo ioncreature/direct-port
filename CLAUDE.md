@@ -97,7 +97,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 - Приём файла: .xlsx/.csv → `POST /intake/documents` (X-Internal-Key) → Document(source=managed, status=INTAKE) **без автозапуска пайплайна**
 - Любой текст/фото/не-таблица → `POST /intake/messages` (релей менеджеру). Каждый xlsx/csv становится отдельным Document, остальное — вложения переписки
 - Воркер `client-bot-outgoing` (BullMQ) → доставка ответов менеджера клиенту
-- Без выбора колонок/уточнения кодов (это берёт на себя AI-парсер + менеджер). Состояние в Redis `client-conv:<chatId>` {telegramUserId, language}, TTL 24ч
+- Без выбора колонок/уточнения кодов (это берёт на себя AI-парсер + менеджер). Состояние в Redis `client-conv:<companyId>:<chatId>` {telegramUserId, language}, TTL 24ч (скоуп по компании бота)
 - **Боты per-company:** не один синглтон-бот, а реестр `BotRegistry` — один `Bot` на компанию плюс дефолтный из env `TELEGRAM_BOT_TOKEN` (= дефолтная компания). При старте грузит токены компаний из `GET /internal/bots`; подписан на Redis `bot-config-events` → динамический подъём/перезапуск/остановка ботов без передеплоя (+ реконсайл каждые 5 мин). `OutgoingHandler` выбирает `Api` по `companyId` из job (fallback — дефолтный бот). Входящий апдейт несёт `ctx.companyId` бота. См. `docs/COMPANY_BOTS.md`
 
 ### apps/manager-bot — Менеджерский бот (managed-флоу)

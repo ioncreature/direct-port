@@ -55,6 +55,8 @@ export class ApiClientService {
 
   async registerTelegramUser(payload: {
     telegramId: number;
+    /** Компания бота, в который написал клиент (резолв по паре company+telegram на api). */
+    companyId: string;
     username?: string;
     firstName?: string;
     lastName?: string;

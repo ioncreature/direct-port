@@ -113,10 +113,13 @@ tenant-leak. Должен фильтровать по `companyId` клиента
    /companies/:id/bots/:kind`, валидация `getMe`, шифрование, статусы); Redis pub/sub
    (`bot-config-events`) → динамический подъём/перезапуск/остановка ботов + периодический
    реконсайл; deep-link менеджера через username manager-бота компании.
-3. ⏳ **Определение компании при входе.** intake/register принимают `companyId` из контекста бота;
-   резолв клиента по паре `(companyId, telegramId)`; claim переводится на «менеджер внутри
-   компании»; Redis-ключ `client-conv` префиксуется компанией. Долги помечены в коде (NB-комментарии
-   в `register` и `conversation-state.service`).
+3. ✅ **Определение компании при входе.** client-bot передаёт `ctx.companyId` в `register`, api
+   резолвит клиента по паре `(companyId, telegram_id)`; claim больше не наследует компанию —
+   только проверяет, что менеджер той же компании, что и клиент (broadcast и так адресован им);
+   Redis-ключ состояния client-bot префиксован компанией (`client-conv:<companyId>:<chatId>`).
+   Минорный остаточный долг: `updateLanguage` обновляет язык по одному `telegram_id` во всех
+   компаниях клиента (NB-комментарий в `language.handler`); метод `assignCompanyToClientDocs` стал
+   неиспользуемым (claim больше не переносит компанию) — отдельная задача на удаление.
 4. ⏳ **Кабинет per-company** (отдельно, если потребуется).
 
 ## Открытые вопросы / долг

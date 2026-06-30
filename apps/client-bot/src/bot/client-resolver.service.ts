@@ -15,20 +15,22 @@ export class ClientResolverService {
   ) {}
 
   async resolveTelegramUserId(ctx: BotContext): Promise<string> {
+    const { companyId } = ctx;
     const chatId = ctx.chat!.id;
-    const existing = (await this.stateService.getState(chatId))?.telegramUserId;
+    const existing = (await this.stateService.getState(companyId, chatId))?.telegramUserId;
     if (existing) return existing;
 
     const from = ctx.from!;
     const language = mapTelegramLocale(from.language_code);
     const tgUser = await this.apiClient.registerTelegramUser({
       telegramId: from.id,
+      companyId,
       username: from.username,
       firstName: from.first_name,
       lastName: from.last_name,
       language,
     });
-    await this.stateService.setState(chatId, { telegramUserId: tgUser.id, language });
+    await this.stateService.setState(companyId, chatId, { telegramUserId: tgUser.id, language });
     return tgUser.id;
   }
 }

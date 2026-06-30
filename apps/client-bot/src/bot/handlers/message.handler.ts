@@ -66,7 +66,7 @@ export class MessageHandler {
 
   /** Подтверждаем только первый контакт в сессии — дальше менеджер отвечает сам. */
   private async ackFirstContact(ctx: BotContext) {
-    if (await this.stateService.markGreetedIfFirst(ctx.chat!.id)) {
+    if (await this.stateService.markGreetedIfFirst(ctx.companyId, ctx.chat!.id)) {
       await ctx.reply(ctx.t('greeting-ack'));
     }
   }

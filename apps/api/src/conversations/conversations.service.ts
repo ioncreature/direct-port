@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
-import { IsNull, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { ErrorCode } from '../common/error-codes';
 import {
   type ConversationAttachmentType,
@@ -163,6 +163,14 @@ export class ConversationsService {
     if (client.assignedManagerId === manager.id) {
       return { clientId, managerId: manager.id };
     }
+    // Клиент уже принадлежит компании бота, в который написал. Закрепить его может только
+    // менеджер той же компании (broadcast адресован только им) — чужой claim отбиваем.
+    if (manager.companyId !== client.companyId) {
+      throw new ForbiddenException({
+        code: ErrorCode.CLIENT_NOT_ASSIGNED,
+        message: 'Client belongs to another company',
+      });
+    }
     const res = await this.clientsRepo
       .createQueryBuilder()
       .update(TelegramUser)
@@ -174,21 +182,6 @@ export class ConversationsService {
         code: ErrorCode.CLIENT_ALREADY_CLAIMED,
         message: 'Client already claimed by another manager',
       });
-    }
-    // Клиент входит в компанию закрепившего менеджера; его уже присланные документы и
-    // сообщения без компании наследуют её (история, привязанная к другой компании, не
-    // трогается). Боты пока общие на платформу, поэтому компания клиента определяется
-    // именно в момент claim.
-    if (manager.companyId) {
-      // Независимые UPDATE'ы разных таблиц — параллельно.
-      await Promise.all([
-        this.clientsRepo.update({ id: clientId }, { companyId: manager.companyId }),
-        this.documents.assignCompanyToClientDocs(clientId, manager.companyId),
-        this.messagesRepo.update(
-          { clientId, companyId: IsNull() },
-          { companyId: manager.companyId },
-        ),
-      ]);
     }
     // Один раз сообщаем клиенту, что менеджер подключился (а не на каждое его сообщение).
     // Best-effort: claim уже состоялся, ронять его из-за недоступной очереди нельзя —

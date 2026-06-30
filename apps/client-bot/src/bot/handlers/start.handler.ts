@@ -26,12 +26,16 @@ export class StartHandler {
     try {
       const tgUser = await this.apiClient.registerTelegramUser({
         telegramId: from.id,
+        companyId: ctx.companyId,
         username: from.username,
         firstName: from.first_name,
         lastName: from.last_name,
         language,
       });
-      await this.stateService.setState(ctx.chat!.id, { telegramUserId: tgUser.id, language });
+      await this.stateService.setState(ctx.companyId, ctx.chat!.id, {
+        telegramUserId: tgUser.id,
+        language,
+      });
       this.logger.log(`Registered client: internalId=${tgUser.id} telegramId=${from.id}`);
       // Fire-and-forget: не задерживаем приветствие на сетевой запрос атрибуции.
       void this.attributeLead(ctx, tgUser.id);

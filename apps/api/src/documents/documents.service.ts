@@ -737,9 +737,12 @@ export class DocumentsService {
   }
 
   /**
-   * Наследование компании managed-документами клиента при claim менеджером: проставляет
-   * company_id только документам клиента без компании (историю уже привязанных к другой
-   * компании документов не трогаем). Вызывается из ConversationsService.
+   * @deprecated Не используется с Фазы 3 «боты для компании»: компания клиента фиксируется при
+   * register, документы наследуют её при создании (createFromFile), claim компанию больше не
+   * переносит. Оставлен под отдельную задачу на удаление. См. docs/COMPANY_BOTS.md.
+   *
+   * Проставляет company_id только документам клиента без компании (историю уже привязанных к
+   * другой компании не трогаем).
    */
   async assignCompanyToClientDocs(telegramUserId: string, companyId: string | null): Promise<void> {
     if (!companyId) return;

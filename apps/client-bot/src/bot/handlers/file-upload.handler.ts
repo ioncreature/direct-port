@@ -55,7 +55,7 @@ export class FileUploadHandler {
         `Intake "${fileName}" (${buffer.length}B) from ${user}: documentId=${result.id}`,
       );
       // file-accepted уже подтверждает приём — помечаем контакт, чтобы текст после файла не дублировал приветствие.
-      await this.stateService.markGreetedIfFirst(ctx.chat!.id);
+      await this.stateService.markGreetedIfFirst(ctx.companyId, ctx.chat!.id);
       await ctx.reply(ctx.t('file-accepted', { fileName }));
     } catch (err) {
       this.logger.error(`Intake failed for "${fileName}" from ${user}: ${(err as Error).message}`);
@@ -74,7 +74,7 @@ export class FileUploadHandler {
         attachmentFileId: fileId,
         telegramMessageId: ctx.message?.message_id,
       });
-      if (await this.stateService.markGreetedIfFirst(ctx.chat!.id)) {
+      if (await this.stateService.markGreetedIfFirst(ctx.companyId, ctx.chat!.id)) {
         await ctx.reply(ctx.t('greeting-ack'));
       }
     } catch (err) {

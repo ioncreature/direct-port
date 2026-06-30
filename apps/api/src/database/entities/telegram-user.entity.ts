@@ -7,19 +7,24 @@ import {
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
+  Unique,
   UpdateDateColumn,
 } from 'typeorm';
 import { BillingAccount } from './billing-account.entity';
 import { Document } from './document.entity';
 import { User } from './user.entity';
 
+// Клиент уникален парой (компания, telegram_id): один человек — независимый клиент в каждой
+// компании. Имя констрейнта совпадает с миграцией AddCompanyBotsFoundation. См. docs/COMPANY_BOTS.md.
 @Entity('telegram_users')
+@Unique('UQ_telegram_users_company_telegram', ['companyId', 'telegramId'])
 export class TelegramUser {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  // @Index (без unique) сохраняем: поиск по telegram_id ещё нужен (админский lookup, резолв).
   @Index()
-  @Column({ type: 'bigint', name: 'telegram_id', unique: true })
+  @Column({ type: 'bigint', name: 'telegram_id' })
   telegramId: string;
 
   @Column({ type: 'varchar', length: 255, nullable: true })

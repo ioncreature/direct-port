@@ -24,25 +24,26 @@ export class ConversationStateService implements OnModuleDestroy {
     this.redis = new Redis(this.config.get<string>('REDIS_URL') ?? 'redis://localhost:6380');
   }
 
-  private key(chatId: number): string {
-    // Фаза 3: при нескольких incoming-ботах префиксовать companyId
-    // (client-conv:<companyId>:<chatId>) — один человек в ботах разных компаний имеет одинаковый
-    // chat.id. Сейчас incoming-бот один (env), коллизии нет. См. docs/COMPANY_BOTS.md.
-    return `client-conv:${chatId}`;
+  /**
+   * Ключ скоупится компанией: один человек в ботах разных компаний имеет одинаковый chat.id,
+   * но это разные клиенты (своя запись TelegramUser/баланс в каждой). См. docs/COMPANY_BOTS.md.
+   */
+  private key(companyId: string, chatId: number): string {
+    return `client-conv:${companyId}:${chatId}`;
   }
 
-  async getState(chatId: number): Promise<ConversationState | null> {
-    const data = await this.redis.get(this.key(chatId));
+  async getState(companyId: string, chatId: number): Promise<ConversationState | null> {
+    const data = await this.redis.get(this.key(companyId, chatId));
     if (!data) return null;
     return JSON.parse(data);
   }
 
-  async setState(chatId: number, state: ConversationState): Promise<void> {
-    await this.redis.set(this.key(chatId), JSON.stringify(state), 'EX', STATE_TTL);
+  async setState(companyId: string, chatId: number, state: ConversationState): Promise<void> {
+    await this.redis.set(this.key(companyId, chatId), JSON.stringify(state), 'EX', STATE_TTL);
   }
 
-  async clearState(chatId: number): Promise<void> {
-    await this.redis.del(this.key(chatId));
+  async clearState(companyId: string, chatId: number): Promise<void> {
+    await this.redis.del(this.key(companyId, chatId));
   }
 
   /**
@@ -50,10 +51,10 @@ export class ConversationStateService implements OnModuleDestroy {
    * Возвращает true только при первом вызове — чтобы не слать подтверждение
    * на каждое сообщение, а лишь на первый контакт.
    */
-  async markGreetedIfFirst(chatId: number): Promise<boolean> {
-    const state = await this.getState(chatId);
+  async markGreetedIfFirst(companyId: string, chatId: number): Promise<boolean> {
+    const state = await this.getState(companyId, chatId);
     if (!state || state.greeted) return false;
-    await this.setState(chatId, { ...state, greeted: true });
+    await this.setState(companyId, chatId, { ...state, greeted: true });
     return true;
   }
 

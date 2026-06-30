@@ -39,15 +39,18 @@ export class LanguageHandler {
 
     const chatId = ctx.chat?.id;
     if (chatId) {
-      const state = await this.stateService.getState(chatId);
+      const state = await this.stateService.getState(ctx.companyId, chatId);
       if (state) {
         state.language = locale;
-        await this.stateService.setState(chatId, state);
+        await this.stateService.setState(ctx.companyId, chatId, state);
       }
     }
 
     const telegramId = ctx.from?.id;
     if (telegramId) {
+      // NB: updateUserLanguage бьёт по одному telegram_id без компании — у клиента нескольких
+      // компаний обновит язык во ВСЕХ его записях. Косметический долг Фазы 3 (язык не критичен,
+      // не биллинг/не скоуп данных). См. docs/COMPANY_BOTS.md.
       this.apiClient.updateUserLanguage(telegramId, locale).catch((err) => {
         this.logger.error(
           `Failed to update language for telegramId=${telegramId}: ${(err as Error).message}`,

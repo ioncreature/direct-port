@@ -26,6 +26,9 @@ export class TelegramUsersService {
 
   async register(dto: RegisterTelegramUserDto): Promise<TelegramUser> {
     const telegramId = String(dto.telegramId);
+    // Компания клиента = компания бота, в который он написал (из контекста бота). Бот может не
+    // прислать (дефолтный env-бот / legacy) — тогда дефолтная компания платформы.
+    const companyId = dto.companyId ?? DEFAULT_COMPANY_ID;
     const mutable = {
       username: dto.username ?? null,
       firstName: dto.firstName ?? null,
@@ -36,24 +39,20 @@ export class TelegramUsersService {
     // обновляем только изменяемые поля. Язык НЕ трогаем: при первом знакомстве он ставится
     // автодетектом локали, дальше им владеет ручной /language (updateLanguage), иначе
     // повторный /start откатывал бы выбор и следующий документ ушёл бы с чужим языком.
-    // NB: резолв по одному telegram_id корректен в Фазе 1 (все клиенты в дефолтной компании,
-    // дублей нет). Фаза 3 (несколько incoming-ботов) переведёт на пару (companyId, telegram_id)
-    // под UNIQUE(company_id, telegram_id) — см. docs/COMPANY_BOTS.md.
-    const existing = await this.repo.findOne({ where: { telegramId } });
+    // Резолв по паре (companyId, telegramId): один человек — независимый клиент в каждой
+    // компании (UNIQUE(company_id, telegram_id)).
+    const existing = await this.repo.findOne({ where: { companyId, telegramId } });
     if (existing) {
-      await this.repo.update({ telegramId }, mutable);
-      return this.repo.findOneByOrFail({ telegramId });
+      await this.repo.update({ id: existing.id }, mutable);
+      return this.repo.findOneByOrFail({ id: existing.id });
     }
 
     // Новый клиент заводится вместе с биллинг-аккаунтом (1:1) в одной транзакции, чтобы у
-    // каждого клиента всегда был владелец баланса. Гонка одновременных первых /start от
-    // одного клиента: один INSERT побеждает, второй падает на unique(telegram_id), и аккаунт
+    // каждого клиента всегда был владелец баланса. Гонка одновременных первых /start от одного
+    // клиента: один INSERT побеждает, второй падает на UNIQUE(company_id, telegram_id), и аккаунт
     // его откатившейся транзакции не остаётся — добираем уже существующего клиента.
     try {
       await this.repo.manager.transaction(async (em) => {
-        // Компания клиента и его биллинг-аккаунта. До Фазы 3 входящий бот один (env) →
-        // дефолтная компания; в Фазе 3 register начнёт принимать companyId из контекста бота.
-        const companyId = DEFAULT_COMPANY_ID;
         const account = await em.save(em.create(BillingAccount, { balance: 0, companyId }));
         await em.insert(TelegramUser, {
           telegramId,
@@ -65,9 +64,9 @@ export class TelegramUsersService {
       });
     } catch (err) {
       if (!isUniqueViolation(err)) throw err;
-      await this.repo.update({ telegramId }, mutable);
+      await this.repo.update({ companyId, telegramId }, mutable);
     }
-    return this.repo.findOneByOrFail({ telegramId });
+    return this.repo.findOneByOrFail({ companyId, telegramId });
   }
 
   async updateLanguage(telegramId: string, language: string): Promise<void> {
@@ -145,6 +144,9 @@ export class TelegramUsersService {
     return user.billingAccountId;
   }
 
+  // NB: при клиенте нескольких компаний telegram_id неоднозначен — вернёт произвольную запись.
+  // Используется админским lookup'ом; точный резолв клиента — по паре (companyId, telegramId).
+  // Долг Фазы 3, см. docs/COMPANY_BOTS.md.
   async findByTelegramId(telegramId: number): Promise<TelegramUser | null> {
     return this.repo.findOne({ where: { telegramId: String(telegramId) } });
   }
