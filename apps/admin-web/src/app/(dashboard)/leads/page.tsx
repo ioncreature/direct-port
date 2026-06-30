@@ -2,6 +2,7 @@
 
 import { Pager } from '@/components/pager';
 import { SortableTh } from '@/components/sortable-th';
+import { useAuth } from '@/hooks/use-auth';
 import { useLeads, type ImportItem } from '@/hooks/use-leads';
 import api from '@/lib/api';
 import { fmtDate, fmtDateTime } from '@/lib/format';
@@ -64,10 +65,15 @@ function parseImportText(text: string): ImportItem[] {
 }
 
 export default function LeadsPage() {
+  const { user } = useAuth();
   const lead = useLeads();
   const [panel, setPanel] = useState<'discover' | 'import' | null>(null);
   const [notice, setNotice] = useState('');
   const [searchDraft, setSearchDraft] = useState('');
+
+  if (user && user.role !== 'super_admin') {
+    return <p>Недостаточно прав для просмотра этого раздела.</p>;
+  }
 
   return (
     <div>

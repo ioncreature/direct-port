@@ -361,7 +361,7 @@ function Pricing() {
       <div className="container">
         <div className="section-head">
           <span className="label">Цена</span>
-          <h2>$1 за позицию.</h2>
+          <h2>$1<sup className="footnote-ref">*</sup> за позицию.</h2>
           <p>
             Без подписок и абонплаты. Платите только за обработанные позиции — сумму
             видно до старта, а на объёме цена за позицию ниже.
@@ -398,6 +398,9 @@ function Pricing() {
             </ul>
           </div>
         </div>
+        <p className="price-footnote">
+          * Цены указаны в долларах США. Оплата в рублях по курсу ЦБ РФ на день оплаты.
+        </p>
       </div>
     </section>
   );

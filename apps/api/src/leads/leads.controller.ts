@@ -25,24 +25,28 @@ import { ReportLeadsDto } from './dto/report-leads.dto';
 import { UpdateLeadDto } from './dto/update-lead.dto';
 import { LeadsService } from './leads.service';
 
+// Лиды — глобальный инструмент роста, доступен только super_admin. admin/customs
+// получают 403 (как и раздел «Компании»). @Internal-маршруты агента (по X-Internal-Key)
+// роль не проверяют, поэтому @Roles навешан по-методно, а не на весь контроллер:
+// контроллер-левел @Roles ломал бы их (RolesGuard без user → false).
 @Controller('leads')
 export class LeadsController {
   constructor(private service: LeadsService) {}
 
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  @Roles(UserRole.SUPER_ADMIN)
   findAll(@Query() query: FindLeadsQueryDto, @CurrentUser() actor: Actor) {
     return this.service.findAll(query, actor);
   }
 
   @Get('status-counts')
-  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  @Roles(UserRole.SUPER_ADMIN)
   statusCounts(@CurrentUser() actor: Actor) {
     return this.service.getStatusCounts(actor);
   }
 
   @Get('searches')
-  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  @Roles(UserRole.SUPER_ADMIN)
   searchHistory(@Query('limit') limit?: string) {
     return this.service.getSearchHistory(Math.min(Number(limit) || 20, 50));
   }
@@ -83,7 +87,7 @@ export class LeadsController {
   }
 
   @Get('export')
-  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  @Roles(UserRole.SUPER_ADMIN)
   async export(@Query() query: FindLeadsQueryDto, @Res() res: Response, @CurrentUser() actor: Actor) {
     const csv = await this.service.exportCsv(query, actor);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -92,31 +96,31 @@ export class LeadsController {
   }
 
   @Post()
-  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  @Roles(UserRole.SUPER_ADMIN)
   create(@Body() dto: CreateLeadDto, @CurrentUser() actor: Actor) {
     return this.service.create(dto, actor);
   }
 
   @Post('discover')
-  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  @Roles(UserRole.SUPER_ADMIN)
   discover(@Body() dto: DiscoverLeadsDto, @CurrentUser() actor: Actor) {
     return this.service.discover(dto, resolveCompanyScope(actor) ?? null);
   }
 
   @Post('import')
-  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  @Roles(UserRole.SUPER_ADMIN)
   import(@Body() dto: ImportLeadsDto, @CurrentUser() actor: Actor) {
     return this.service.import(dto, actor);
   }
 
   @Get(':id')
-  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  @Roles(UserRole.SUPER_ADMIN)
   findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
     return this.service.findOne(id, actor);
   }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  @Roles(UserRole.SUPER_ADMIN)
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateLeadDto,
@@ -126,14 +130,14 @@ export class LeadsController {
   }
 
   @Post(':id/reenrich')
-  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  @Roles(UserRole.SUPER_ADMIN)
   reenrich(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
     return this.service.reenrich(id, actor);
   }
 
   /** Привязать клиента (telegram-пользователя), пришедшего от лида. */
   @Post(':id/link-client')
-  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  @Roles(UserRole.SUPER_ADMIN)
   linkClient(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: LinkClientDto,
@@ -144,7 +148,7 @@ export class LeadsController {
 
   /** Снять привязку клиента. */
   @Delete(':id/link-client')
-  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  @Roles(UserRole.SUPER_ADMIN)
   unlinkClient(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
     return this.service.unlinkClient(id, actor);
   }
@@ -157,7 +161,7 @@ export class LeadsController {
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  @Roles(UserRole.SUPER_ADMIN)
   remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
     return this.service.remove(id, actor);
   }

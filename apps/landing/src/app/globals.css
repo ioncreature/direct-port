@@ -833,6 +833,20 @@ main {
   text-align: center;
 }
 
+/* Сноска под блоком цен: $1 указана в долларах, оплата — в рублях по курсу дня. */
+.price-footnote {
+  margin: 20px auto 0;
+  max-width: 560px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.footnote-ref {
+  color: var(--primary);
+  font-weight: 700;
+}
+
 .price-includes {
   list-style: none;
   padding: 28px 0 0;

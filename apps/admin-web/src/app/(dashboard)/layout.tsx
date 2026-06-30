@@ -15,7 +15,7 @@ const navItems: { href: string; label: string; roles?: string[] }[] = [
   { href: '/telegram-users', label: 'Telegram', roles: ['admin', 'super_admin'] },
   { href: '/documents', label: 'Документы' },
   { href: '/tn-ved', label: 'ТН ВЭД' },
-  { href: '/leads', label: 'Лиды', roles: ['admin', 'super_admin'] },
+  { href: '/leads', label: 'Лиды', roles: ['super_admin'] },
   { href: '/ai-costs', label: 'AI-расходы', roles: ['admin', 'super_admin'] },
   { href: '/companies', label: 'Компании', roles: ['super_admin'] },
   { href: '/settings', label: 'Настройки' },

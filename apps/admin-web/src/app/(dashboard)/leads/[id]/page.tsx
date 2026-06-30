@@ -1,6 +1,7 @@
 'use client';
 
 import { InfoCard } from '@/components/info-card';
+import { useAuth } from '@/hooks/use-auth';
 import { useBotLinks } from '@/hooks/use-bot-links';
 import api from '@/lib/api';
 import { fmtDate, fmtDateTime } from '@/lib/format';
@@ -22,6 +23,7 @@ export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { links } = useBotLinks();
+  const { user } = useAuth();
   const [lead, setLead] = useState<Lead | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -129,6 +131,9 @@ export default function LeadDetailPage() {
     router.push('/leads');
   }
 
+  if (user && user.role !== 'super_admin') {
+    return <p>Недостаточно прав для просмотра этого раздела.</p>;
+  }
   if (loading) return <p style={{ color: 'var(--text-muted)' }}>Загрузка...</p>;
   if (error || !lead) return <p style={{ color: 'var(--danger)' }}>{error || 'Лид не найден'}</p>;
 
