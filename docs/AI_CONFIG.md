@@ -36,7 +36,7 @@ class AiConfig {
 
 ```typescript
 opus   → claude-opus-4-8
-sonnet → claude-sonnet-4-6
+sonnet → claude-sonnet-5
 haiku  → claude-haiku-4-5-20251001
 ```
 
@@ -58,11 +58,11 @@ DTO для PUT (`UpdateAiConfigDto`) — все поля `@IsOptional()`, вал
 `AiConfigService` экспортирует 5 геттеров, возвращающих готовый model ID:
 
 ```typescript
-service.getParserModel()             // → 'claude-sonnet-4-6'
+service.getParserModel()             // → 'claude-sonnet-5'
 service.getQueryFormulationModel()   // → 'claude-haiku-4-5-20251001'
-service.getClassifierModel()         // → 'claude-sonnet-4-6'
-service.getInterpreterModel()        // → 'claude-sonnet-4-6'
-service.getPhotoClassifierModel()    // → 'claude-sonnet-4-6'
+service.getClassifierModel()         // → 'claude-sonnet-5'
+service.getInterpreterModel()        // → 'claude-sonnet-5'
+service.getPhotoClassifierModel()    // → 'claude-sonnet-5'
 ```
 
 Сервисы (AiParser, Classifier для основного и vision-retry проходов, DutyInterpreter, TnVed) должны вызывать соответствующий геттер перед каждым запросом к Claude и использовать возвращённую строку как `model` в `anthropic.messages.create()`.
