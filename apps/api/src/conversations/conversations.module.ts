@@ -1,6 +1,7 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { Company } from '../database/entities/company.entity';
 import { ConversationMessage } from '../database/entities/conversation-message.entity';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
 import { User } from '../database/entities/user.entity';
@@ -14,7 +15,7 @@ import { ManagersAdminController } from './managers-admin.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ConversationMessage, TelegramUser, User]),
+    TypeOrmModule.forFeature([Company, ConversationMessage, TelegramUser, User]),
     BullModule.registerQueue({ name: 'client-bot-outgoing' }),
     DocumentsModule,
     ManagerNotifyModule,

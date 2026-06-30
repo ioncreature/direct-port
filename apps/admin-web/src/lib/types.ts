@@ -27,6 +27,12 @@ export interface Company {
   updatedAt: string;
 }
 
+/** Статус ботов компании (без токенов) — для управления на странице компаний. */
+export interface CompanyBotsStatus {
+  client: { configured: boolean; username: string | null };
+  manager: { configured: boolean; username: string | null };
+}
+
 export interface TelegramUser {
   id: string;
   telegramId: string;

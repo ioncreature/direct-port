@@ -7,9 +7,23 @@ import { Api, Bot } from 'grammy';
  */
 export const DEFAULT_COMPANY_ID = '00000000-0000-0000-0000-000000000001';
 
+/**
+ * Канал Redis pub/sub, на который api публикует изменения токенов ботов компаний (имя совпадает
+ * с BOT_CONFIG_CHANNEL в apps/api). Бот подписан на него для динамического reload. См. docs/COMPANY_BOTS.md.
+ */
+export const BOT_CONFIG_CHANNEL = 'bot-config-events';
+
+export interface BotConfigEvent {
+  companyId: string;
+  kind: 'client' | 'manager';
+  action: 'upsert' | 'remove';
+}
+
 export interface RegisteredBot {
   companyId: string;
   bot: Bot;
+  /** Токен, на котором поднят бот — чтобы reconcile увидел смену токена и пересоздал бот. */
+  token: string;
 }
 
 /**
@@ -28,6 +42,17 @@ export class BotRegistry {
 
   all(): RegisteredBot[] {
     return [...this.bots.values()];
+  }
+
+  get(companyId: string): RegisteredBot | undefined {
+    return this.bots.get(companyId);
+  }
+
+  /** Убирает бот из реестра и возвращает запись (вызывающий останавливает bot). */
+  remove(companyId: string): RegisteredBot | undefined {
+    const entry = this.bots.get(companyId);
+    this.bots.delete(companyId);
+    return entry;
   }
 
   /**

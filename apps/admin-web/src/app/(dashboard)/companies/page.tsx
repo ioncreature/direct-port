@@ -1,12 +1,13 @@
 'use client';
 
+import { CompanyBotsPanel } from '@/components/company-bots-panel';
 import { Pager } from '@/components/pager';
 import { SortableTh } from '@/components/sortable-th';
 import { useAuth } from '@/hooks/use-auth';
 import { useCompanies } from '@/hooks/use-companies';
 import { fmtDate } from '@/lib/format';
 import { btnLink, primaryLink, td, tdEmpty, th } from '@/lib/table-styles';
-import { FormEvent, useState } from 'react';
+import { FormEvent, Fragment, useState } from 'react';
 
 const sortableColumns: { field: string; label: string }[] = [
   { field: 'name', label: 'Название' },
@@ -33,6 +34,7 @@ export default function CompaniesPage() {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   if (user && user.role !== 'super_admin') {
     return <p>Недостаточно прав для просмотра этого раздела.</p>;
@@ -113,24 +115,39 @@ export default function CompaniesPage() {
             </thead>
             <tbody>
               {companies.map((c) => (
-                <tr key={c.id}>
-                  <td style={td}>{c.name}</td>
-                  <td style={td}>{fmtDate(c.createdAt)}</td>
-                  <td style={td}>
-                    <button
-                      onClick={() => handleRename(c.id, c.name)}
-                      style={{ ...btnLink, color: 'var(--accent)', marginRight: 12 }}
-                    >
-                      Переименовать
-                    </button>
-                    <button
-                      onClick={() => handleDelete(c.id)}
-                      style={{ ...btnLink, color: 'var(--danger)' }}
-                    >
-                      Удалить
-                    </button>
-                  </td>
-                </tr>
+                <Fragment key={c.id}>
+                  <tr>
+                    <td style={td}>{c.name}</td>
+                    <td style={td}>{fmtDate(c.createdAt)}</td>
+                    <td style={td}>
+                      <button
+                        onClick={() => setExpandedId(expandedId === c.id ? null : c.id)}
+                        style={{ ...btnLink, color: 'var(--accent)', marginRight: 12 }}
+                      >
+                        {expandedId === c.id ? 'Скрыть ботов' : 'Боты'}
+                      </button>
+                      <button
+                        onClick={() => handleRename(c.id, c.name)}
+                        style={{ ...btnLink, color: 'var(--accent)', marginRight: 12 }}
+                      >
+                        Переименовать
+                      </button>
+                      <button
+                        onClick={() => handleDelete(c.id)}
+                        style={{ ...btnLink, color: 'var(--danger)' }}
+                      >
+                        Удалить
+                      </button>
+                    </td>
+                  </tr>
+                  {expandedId === c.id && (
+                    <tr>
+                      <td style={{ ...td, background: 'var(--bg-muted, #f7f7f7)' }} colSpan={3}>
+                        <CompanyBotsPanel companyId={c.id} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
               {companies.length === 0 && (
                 <tr>
