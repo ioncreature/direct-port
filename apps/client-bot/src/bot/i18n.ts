@@ -5,8 +5,12 @@ import * as path from 'path';
 export const SUPPORTED_LOCALES = ['ru', 'zh', 'en'] as const;
 export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
 
-/** Context extended with i18n flavor (ctx.t, ctx.i18n). */
-export type BotContext = Context & I18nFlavor;
+/**
+ * Context extended with i18n flavor (ctx.t, ctx.i18n) and the tenant company id of the bot that
+ * received the update. `companyId` is set by the first middleware in BotService.configure (so it
+ * is always present in handlers) — see docs/COMPANY_BOTS.md.
+ */
+export type BotContext = Context & I18nFlavor & { companyId: string };
 
 export const i18n = new I18n<BotContext>({
   defaultLocale: 'en',

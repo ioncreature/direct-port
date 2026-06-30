@@ -20,6 +20,27 @@ export class Company {
   @Column({ type: 'varchar', length: 255 })
   name: string;
 
+  /**
+   * Токены и username Telegram-ботов компании (client + manager). Токен хранится зашифрованным
+   * (SecretCipher, AES-256-GCM); username кэшируется при сохранении токена (резолв через getMe)
+   * для ссылок в админке и deep-link менеджера. NULL — у компании нет своего бота, она
+   * обслуживается дефолтным ботом платформы. См. docs/COMPANY_BOTS.md.
+   *
+   * token_enc — select:false: не попадают в обычные findOne/findAll (в т.ч. в ответы API),
+   * читаются только явным addSelect там, где нужен расшифрованный токен (internal bots API).
+   */
+  @Column({ type: 'text', name: 'client_bot_token_enc', nullable: true, select: false })
+  clientBotTokenEnc: string | null;
+
+  @Column({ type: 'varchar', length: 255, name: 'client_bot_username', nullable: true })
+  clientBotUsername: string | null;
+
+  @Column({ type: 'text', name: 'manager_bot_token_enc', nullable: true, select: false })
+  managerBotTokenEnc: string | null;
+
+  @Column({ type: 'varchar', length: 255, name: 'manager_bot_username', nullable: true })
+  managerBotUsername: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

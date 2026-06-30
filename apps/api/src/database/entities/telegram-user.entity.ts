@@ -51,10 +51,12 @@ export class TelegramUser {
   @JoinColumn({ name: 'assigned_manager_id' })
   assignedManager: User | null;
 
-  /** Компания, которой принадлежит клиент. Проставляется при claim (= компания
-   *  закрепившего менеджера). NULL — клиент в общем пуле, ещё не взят. */
-  @Column({ type: 'uuid', name: 'company_id', nullable: true })
-  companyId: string | null;
+  /** Компания, которой принадлежит клиент. NOT NULL: проставляется при регистрации (компания
+   *  бота, через который пришёл клиент; до Фазы 3 входящий бот один — env, поэтому дефолтная
+   *  компания платформы). Клиент уникален в паре (company_id, telegram_id) — один человек может
+   *  быть клиентом нескольких компаний независимо. См. docs/COMPANY_BOTS.md. */
+  @Column({ type: 'uuid', name: 'company_id' })
+  companyId: string;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

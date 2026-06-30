@@ -64,6 +64,7 @@ export class PipelineNotifierService {
     const client = doc.telegramUser;
     if (!client) return;
     const base: ClientOutgoingMessage = {
+      companyId: client.companyId,
       clientTelegramId: client.telegramId,
       language: client.language,
     };

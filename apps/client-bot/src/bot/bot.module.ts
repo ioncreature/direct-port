@@ -2,6 +2,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ApiClientModule } from '../api-client/api-client.module';
+import { BotRegistry } from './bot-registry.service';
 import { BotService } from './bot.service';
 import { ClientResolverService } from './client-resolver.service';
 import { FileUploadHandler } from './handlers/file-upload.handler';
@@ -28,6 +29,7 @@ import { ConversationStateModule } from './state/conversation-state.module';
     ConversationStateModule,
   ],
   providers: [
+    BotRegistry,
     BotService,
     ClientResolverService,
     StartHandler,

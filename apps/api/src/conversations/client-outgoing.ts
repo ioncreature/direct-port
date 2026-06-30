@@ -3,6 +3,11 @@
  * Доставляет клиенту ответ менеджера: текст и/или готовый расчёт (Excel).
  */
 export interface ClientOutgoingMessage {
+  /**
+   * Компания-владелец клиента: client-bot доставляет сообщение через бот ИМЕННО этой
+   * компании (реестр ботов выбирает Api по companyId). См. docs/COMPANY_BOTS.md.
+   */
+  companyId: string;
   clientTelegramId: string; // numeric Telegram ID клиента
   language?: string;
   /** Текст ответа менеджера. Необязателен, если доставляем документ. */

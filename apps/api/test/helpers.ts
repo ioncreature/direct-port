@@ -12,6 +12,7 @@ import * as request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AiParserService } from '../src/ai-parser/ai-parser.service';
 import { CurrencyService } from '../src/currency/currency.service';
+import { DEFAULT_COMPANY_ID } from '../src/common/tenant/actor-context';
 
 // Modules
 import { AuthModule } from '../src/auth/auth.module';
@@ -266,6 +267,14 @@ export async function createTestApp(): Promise<INestApplication> {
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   await app.init();
 
+  // Инвариант системы (в реальной БД создаётся миграцией AddMultiTenancy): дефолтная
+  // компания с фиксированным id. e2e гоняют схему через synchronize без миграций, поэтому
+  // воспроизводим её здесь — иначе register/resolve и сид клиентов падают на NOT NULL / FK
+  // company_id (клиент обязан принадлежать компании). См. docs/COMPANY_BOTS.md.
+  const ds = app.get(DataSource);
+  const companyRepo = ds.getRepository(Company);
+  await companyRepo.save(companyRepo.create({ id: DEFAULT_COMPANY_ID, name: 'По умолчанию' }));
+
   (app as unknown as Record<symbol, string>)[APP_SCHEMA_KEY] = schema;
 
   return app;
@@ -402,11 +411,15 @@ export async function seedTnVed(app: INestApplication) {
   return repo.save(codes.map((c) => repo.create(c)));
 }
 
-export async function seedTelegramUser(app: INestApplication) {
+export async function seedTelegramUser(
+  app: INestApplication,
+  companyId: string = DEFAULT_COMPANY_ID,
+) {
   const ds = app.get(DataSource);
-  // Биллинг-аккаунт обязателен (billing_account_id NOT NULL) — заводим вместе с клиентом.
+  // Клиент обязан принадлежать компании (company_id NOT NULL, FK RESTRICT). Биллинг-аккаунт
+  // тоже обязателен (billing_account_id NOT NULL) — заводим вместе с клиентом в той же компании.
   const accountRepo = ds.getRepository(BillingAccount);
-  const account = await accountRepo.save(accountRepo.create({ balance: 0 }));
+  const account = await accountRepo.save(accountRepo.create({ balance: 0, companyId }));
   const repo = ds.getRepository(TelegramUser);
   return repo.save(
     repo.create({
@@ -414,6 +427,7 @@ export async function seedTelegramUser(app: INestApplication) {
       username: 'testuser',
       firstName: 'Test',
       lastName: 'User',
+      companyId,
       billingAccountId: account.id,
     }),
   );

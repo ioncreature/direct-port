@@ -1,3 +1,4 @@
+import { DEFAULT_COMPANY_ID } from '../common/tenant/actor-context';
 import { DocumentStatus } from '../database/entities/document.entity';
 import { ManagerNotifyService } from './manager-notify.service';
 
@@ -29,6 +30,7 @@ function makeDoc(status: DocumentStatus, assignedManagerId: string | null) {
       lastName: null,
       username: null,
       assignedManagerId,
+      companyId: 'co-1',
     },
   } as never;
 }
@@ -47,6 +49,7 @@ describe('ManagerNotifyService.notifyDocumentEvent', () => {
       'manager-notify',
       expect.objectContaining({
         event: 'pipeline_done',
+        companyId: 'co-1',
         managerTelegramIds: ['999'],
         assigned: true,
         documentId: 'doc-1',
@@ -111,6 +114,7 @@ describe('ManagerNotifyService.notifyLeadsReport', () => {
       'manager-notify',
       expect.objectContaining({
         event: 'leads_report',
+        companyId: DEFAULT_COMPANY_ID,
         managerTelegramIds: ['111', '222'],
         text: 'Найдено 8 лидов, 3 горячих',
       }),

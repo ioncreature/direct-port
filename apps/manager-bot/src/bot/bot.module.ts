@@ -2,6 +2,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ApiClientModule } from '../api-client/api-client.module';
+import { BotRegistry } from './bot-registry.service';
 import { BotService } from './bot.service';
 import { CallbackHandler } from './handlers/callback.handler';
 import { ClientsHandler } from './handlers/clients.handler';
@@ -26,6 +27,7 @@ import { ActiveDialogModule } from './state/active-dialog.module';
     ActiveDialogModule,
   ],
   providers: [
+    BotRegistry,
     BotService,
     StartHandler,
     ClientsHandler,

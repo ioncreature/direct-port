@@ -2,7 +2,8 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job, UnrecoverableError } from 'bullmq';
-import { Api, InlineKeyboard } from 'grammy';
+import { InlineKeyboard } from 'grammy';
+import { BotRegistry } from '../bot-registry.service';
 import { escapeHtml } from '../format';
 import { isPermanentDeliveryError } from '../telegram-errors';
 
@@ -19,6 +20,7 @@ export type ManagerEventType =
 
 export interface ManagerNotification {
   event: ManagerEventType;
+  companyId?: string;
   managerTelegramIds: string[];
   clientId?: string;
   clientName?: string;
@@ -111,25 +113,26 @@ export function buildNotificationKeyboard(
 @Processor('manager-notifications')
 export class NotifyHandler extends WorkerHost {
   private logger = new Logger(NotifyHandler.name);
-  private tgApi: Api | null;
   private adminBase: string;
 
-  constructor(config: ConfigService) {
+  constructor(
+    config: ConfigService,
+    private registry: BotRegistry,
+  ) {
     super();
-    const token = config.get<string>('TELEGRAM_BOT_TOKEN');
-    this.tgApi = token ? new Api(token) : null;
     this.adminBase = config.get<string>('ADMIN_WEB_BASE_URL', 'http://localhost:3000');
   }
 
   async process(job: Job<ManagerNotification>): Promise<void> {
     const n = job.data;
-    if (!this.tgApi) {
+    // Доставляем через manager-bot компании (по companyId); дефолтный — fallback.
+    const api = this.registry.getApi(n.companyId);
+    if (!api) {
       // failed-job виден в Redis — лучше, чем «успешно» проглоченное событие клиента.
-      throw new UnrecoverableError('Bot token not configured, cannot deliver manager notification');
+      throw new UnrecoverableError('No manager bot available to deliver notification');
     }
     const text = buildNotificationText(n);
     const keyboard = buildNotificationKeyboard(n, this.adminBase);
-    const api = this.tgApi;
     // Broadcast параллельно: каждый sendMessage независим, сбой одного адресата
     // не мешает остальным.
     const results = await Promise.allSettled(

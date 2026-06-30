@@ -3,7 +3,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ErrorCode } from '../common/error-codes';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
-import { Actor, assertSameCompany, resolveCompanyScope } from '../common/tenant/actor-context';
+import {
+  Actor,
+  assertSameCompany,
+  DEFAULT_COMPANY_ID,
+  resolveCompanyScope,
+} from '../common/tenant/actor-context';
 import { BillingAccount } from '../database/entities/billing-account.entity';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
 import { FindTelegramUsersQueryDto } from './dto/find-telegram-users-query.dto';
@@ -31,6 +36,9 @@ export class TelegramUsersService {
     // обновляем только изменяемые поля. Язык НЕ трогаем: при первом знакомстве он ставится
     // автодетектом локали, дальше им владеет ручной /language (updateLanguage), иначе
     // повторный /start откатывал бы выбор и следующий документ ушёл бы с чужим языком.
+    // NB: резолв по одному telegram_id корректен в Фазе 1 (все клиенты в дефолтной компании,
+    // дублей нет). Фаза 3 (несколько incoming-ботов) переведёт на пару (companyId, telegram_id)
+    // под UNIQUE(company_id, telegram_id) — см. docs/COMPANY_BOTS.md.
     const existing = await this.repo.findOne({ where: { telegramId } });
     if (existing) {
       await this.repo.update({ telegramId }, mutable);
@@ -43,10 +51,14 @@ export class TelegramUsersService {
     // его откатившейся транзакции не остаётся — добираем уже существующего клиента.
     try {
       await this.repo.manager.transaction(async (em) => {
-        const account = await em.save(em.create(BillingAccount, { balance: 0 }));
+        // Компания клиента и его биллинг-аккаунта. До Фазы 3 входящий бот один (env) →
+        // дефолтная компания; в Фазе 3 register начнёт принимать companyId из контекста бота.
+        const companyId = DEFAULT_COMPANY_ID;
+        const account = await em.save(em.create(BillingAccount, { balance: 0, companyId }));
         await em.insert(TelegramUser, {
           telegramId,
           ...mutable,
+          companyId,
           billingAccountId: account.id,
           ...(dto.language ? { language: dto.language } : {}),
         });

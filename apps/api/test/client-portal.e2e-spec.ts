@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { BillingAccount } from '../src/database/entities/billing-account.entity';
 import { Document, DocumentStatus } from '../src/database/entities/document.entity';
 import { TelegramUser } from '../src/database/entities/telegram-user.entity';
+import { DEFAULT_COMPANY_ID } from '../src/common/tenant/actor-context';
 import {
   closeTestApp,
   createTestApp,
@@ -220,9 +221,15 @@ describe('ClientPortal (e2e)', () => {
       const docRepo = ds.getRepository(Document);
       const tgRepo = ds.getRepository(TelegramUser);
       const accRepo = ds.getRepository(BillingAccount);
-      const account = await accRepo.save(accRepo.create({ balance: 0 }));
+      const account = await accRepo.save(
+        accRepo.create({ balance: 0, companyId: DEFAULT_COMPANY_ID }),
+      );
       const tg = await tgRepo.save(
-        tgRepo.create({ telegramId: '900900900', billingAccountId: account.id }),
+        tgRepo.create({
+          telegramId: '900900900',
+          companyId: DEFAULT_COMPANY_ID,
+          billingAccountId: account.id,
+        }),
       );
       const pending = await docRepo.save(
         docRepo.create({

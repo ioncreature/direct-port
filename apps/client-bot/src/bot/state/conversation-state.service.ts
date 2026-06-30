@@ -25,6 +25,9 @@ export class ConversationStateService implements OnModuleDestroy {
   }
 
   private key(chatId: number): string {
+    // Фаза 3: при нескольких incoming-ботах префиксовать companyId
+    // (client-conv:<companyId>:<chatId>) — один человек в ботах разных компаний имеет одинаковый
+    // chat.id. Сейчас incoming-бот один (env), коллизии нет. См. docs/COMPANY_BOTS.md.
     return `client-conv:${chatId}`;
   }
 

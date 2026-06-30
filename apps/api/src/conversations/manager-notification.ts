@@ -17,7 +17,12 @@ export type ManagerEventType =
 
 export interface ManagerNotification {
   event: ManagerEventType;
-  /** Telegram ID менеджеров-адресатов (resolved: назначенный или broadcast всем привязанным). */
+  /**
+   * Компания, чьи менеджеры адресаты и через чей manager-bot доставляем (реестр ботов
+   * выбирает Api по companyId). Адресаты резолвятся в рамках этой компании. См. docs/COMPANY_BOTS.md.
+   */
+  companyId: string;
+  /** Telegram ID менеджеров-адресатов (resolved: назначенный или broadcast всем привязанным в компании). */
   managerTelegramIds: string[];
   // Поля клиента есть у всех событий, КРОМЕ leads_report (он не про клиента, а про лидген).
   clientId?: string; // TelegramUser.id (uuid)
@@ -76,5 +81,5 @@ export function mapDocStatusToManagerEvent(status: DocumentStatus): ManagerEvent
 
 export type ConversationClient = Pick<
   TelegramUser,
-  'id' | 'telegramId' | 'firstName' | 'lastName' | 'username' | 'assignedManagerId'
+  'id' | 'telegramId' | 'firstName' | 'lastName' | 'username' | 'assignedManagerId' | 'companyId'
 >;

@@ -102,4 +102,13 @@ export class ApiClientService {
   async publishBotIdentity(username: string): Promise<void> {
     await this.client.post('/bot-links/identity', { kind: 'manager', username });
   }
+
+  /**
+   * Список менеджерских ботов компаний (с расшифрованными токенами) для реестра. Дефолтный (env)
+   * бот в ответ не входит — его поднимает сам бот из своего токена. См. docs/COMPANY_BOTS.md.
+   */
+  async listBots(): Promise<Array<{ companyId: string; token: string }>> {
+    const { data } = await this.client.get('/internal/bots', { params: { kind: 'manager' } });
+    return data;
+  }
 }

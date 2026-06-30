@@ -176,10 +176,10 @@ describe('buildNotificationKeyboard', () => {
 
 describe('NotifyHandler.process — ретраи доставки', () => {
   function createHandler(sendMessage: jest.Mock) {
-    const config = { get: jest.fn().mockReturnValue('test-token') };
-    const handler = new NotifyHandler(config as never);
-    (handler as unknown as { tgApi: { sendMessage: jest.Mock } }).tgApi = { sendMessage };
-    return handler;
+    const config = { get: jest.fn().mockReturnValue('https://admin.example') };
+    // Реестр отдаёт Api нужного бота по companyId; для теста ретраев — единственный мок.
+    const registry = { getApi: jest.fn().mockReturnValue({ sendMessage }) };
+    return new NotifyHandler(config as never, registry as never);
   }
 
   const jobWith = (managerTelegramIds: string[]) =>

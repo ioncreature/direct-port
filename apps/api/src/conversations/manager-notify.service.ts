@@ -3,6 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
 import { IsNull, Not, Repository } from 'typeorm';
+import { DEFAULT_COMPANY_ID } from '../common/tenant/actor-context';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { User } from '../database/entities/user.entity';
 import {
@@ -81,16 +82,25 @@ export class ManagerNotifyService {
   }
 
   /**
-   * Текстовый отчёт автономного лидген-агента. Не про клиента — broadcast всем
-   * привязанным менеджерам. Переиспользует очередь и доставку manager-bot.
+   * Текстовый отчёт автономного лидген-агента. Не про клиента — broadcast привязанным
+   * менеджерам компании. Лидген-агент пока один на платформу (дефолтная компания), поэтому
+   * companyId по умолчанию DEFAULT_COMPANY_ID; при втором провайдере контур параметризуется.
    */
-  async notifyLeadsReport(text: string): Promise<{ delivered: boolean }> {
-    const managerTelegramIds = await this.resolveManagers(null);
+  async notifyLeadsReport(
+    text: string,
+    companyId: string = DEFAULT_COMPANY_ID,
+  ): Promise<{ delivered: boolean }> {
+    const managerTelegramIds = await this.resolveManagers(null, companyId);
     if (managerTelegramIds.length === 0) {
       this.logger.warn('No linked managers to notify (leads_report)');
       return { delivered: false };
     }
-    const payload: ManagerNotification = { event: 'leads_report', managerTelegramIds, text };
+    const payload: ManagerNotification = {
+      event: 'leads_report',
+      companyId,
+      managerTelegramIds,
+      text,
+    };
     await this.queue.add('manager-notify', payload, DELIVERY_JOB_OPTS);
     return { delivered: true };
   }
@@ -100,7 +110,10 @@ export class ManagerNotifyService {
     client: ConversationClient,
     extra: Partial<ManagerNotification>,
   ): Promise<void> {
-    const managerTelegramIds = await this.resolveManagers(client.assignedManagerId);
+    const managerTelegramIds = await this.resolveManagers(
+      client.assignedManagerId,
+      client.companyId,
+    );
     if (managerTelegramIds.length === 0) {
       this.logger.warn(
         `No linked managers to notify (event=${event}, client=${client.id})`,
@@ -109,6 +122,7 @@ export class ManagerNotifyService {
     }
     const payload: ManagerNotification = {
       event,
+      companyId: client.companyId,
       managerTelegramIds,
       clientId: client.id,
       clientName: formatClientName(client),
@@ -122,22 +136,30 @@ export class ManagerNotifyService {
     await this.queue.add('manager-notify', payload, DELIVERY_JOB_OPTS);
   }
 
-  /** Назначенный менеджер, иначе все активные привязанные (broadcast). */
-  private async resolveManagers(assignedManagerId: string | null): Promise<string[]> {
+  /**
+   * Адресаты в рамках компании: назначенный менеджер, иначе все активные привязанные менеджеры
+   * этой компании (broadcast). Фильтр по companyId — тенант-изоляция: уведомления клиента видят
+   * только менеджеры его компании (а не вся платформа, как было до ботов per-company).
+   */
+  private async resolveManagers(
+    assignedManagerId: string | null,
+    companyId: string,
+  ): Promise<string[]> {
     if (assignedManagerId) {
       const manager = await this.usersRepo.findOne({
-        where: { id: assignedManagerId, isActive: true },
+        where: { id: assignedManagerId, isActive: true, companyId },
         select: ['managerTelegramId'],
       });
       if (manager?.managerTelegramId) return [manager.managerTelegramId];
-      // Назначенный менеджер отвязан или деактивирован: не теряем событие, а отдаём
-      // его в broadcast остальным (раньше тут возвращался [] и уведомление дропалось).
+      // Назначенный менеджер отвязан/деактивирован/из другой компании: не теряем событие,
+      // отдаём его в broadcast остальным менеджерам компании (раньше тут возвращался [] и
+      // уведомление дропалось).
       this.logger.warn(
-        `Assigned manager ${assignedManagerId} is unlinked or inactive — falling back to broadcast`,
+        `Assigned manager ${assignedManagerId} is unlinked, inactive or cross-company — falling back to broadcast`,
       );
     }
     const managers = await this.usersRepo.find({
-      where: { managerTelegramId: Not(IsNull()), isActive: true },
+      where: { managerTelegramId: Not(IsNull()), isActive: true, companyId },
       select: ['managerTelegramId'],
     });
     return managers

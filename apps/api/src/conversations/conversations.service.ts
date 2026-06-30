@@ -194,6 +194,7 @@ export class ConversationsService {
     // Best-effort: claim уже состоялся, ронять его из-за недоступной очереди нельзя —
     // клиент лишь не увидит «менеджер на связи».
     await this.enqueueClientOutgoing({
+      companyId: client.companyId,
       clientTelegramId: client.telegramId,
       language: client.language,
       i18nKey: 'manager-assigned',
@@ -219,6 +220,7 @@ export class ConversationsService {
       text,
     });
     await this.enqueueClientOutgoing({
+      companyId: client.companyId,
       clientTelegramId: client.telegramId,
       text,
       language: client.language,
@@ -270,6 +272,7 @@ export class ConversationsService {
       documentId: doc.id,
     });
     await this.enqueueClientOutgoing({
+      companyId: client.companyId,
       clientTelegramId: client.telegramId,
       language: client.language,
       documentId: doc.id,

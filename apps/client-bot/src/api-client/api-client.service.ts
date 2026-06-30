@@ -113,6 +113,15 @@ export class ApiClientService {
     await this.client.post('/bot-links/identity', { kind: 'client', username });
   }
 
+  /**
+   * Список клиентских ботов компаний (с расшифрованными токенами) для реестра. Дефолтный (env)
+   * бот в ответ не входит — его поднимает сам бот из своего токена. См. docs/COMPANY_BOTS.md.
+   */
+  async listBots(): Promise<Array<{ companyId: string; token: string }>> {
+    const { data } = await this.client.get('/internal/bots', { params: { kind: 'client' } });
+    return data;
+  }
+
   /** Привязка клиента к лиду по deep-link (?start=lead_<id>). Best-effort атрибуция. */
   async attachLeadClient(
     leadId: string,
