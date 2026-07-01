@@ -32,6 +32,7 @@ export default function CompaniesPage() {
   } = useCompanies();
 
   const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -46,8 +47,9 @@ export default function CompaniesPage() {
     setError('');
     setCreating(true);
     try {
-      await createCompany({ name: name.trim() });
+      await createCompany({ name: name.trim(), slug: slug.trim() || undefined });
       setName('');
+      setSlug('');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Ошибка при создании');
     } finally {
@@ -64,6 +66,19 @@ export default function CompaniesPage() {
       await updateCompany(id, { name: trimmed });
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Ошибка при переименовании');
+    }
+  }
+
+  async function handleEditSlug(id: string, currentSlug: string | null) {
+    // slug кабинета (cabinet/<slug>): lowercase/цифры/дефисы; пустая строка — снять slug.
+    const next = prompt('URL-slug кабинета (пусто — снять)', currentSlug ?? '');
+    if (next == null) return;
+    const trimmed = next.trim();
+    if (trimmed === (currentSlug ?? '')) return;
+    try {
+      await updateCompany(id, { slug: trimmed });
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Ошибка при сохранении slug');
     }
   }
 
@@ -86,6 +101,12 @@ export default function CompaniesPage() {
           onChange={(e) => setName(e.target.value)}
           placeholder="Название новой компании"
           style={{ flex: 1, maxWidth: 360, padding: 8, boxSizing: 'border-box' }}
+        />
+        <input
+          value={slug}
+          onChange={(e) => setSlug(e.target.value)}
+          placeholder="slug кабинета (опц.)"
+          style={{ width: 200, padding: 8, boxSizing: 'border-box' }}
         />
         <button type="submit" disabled={creating || !name.trim()} style={primaryLink}>
           {creating ? 'Создание...' : 'Создать'}
@@ -110,6 +131,7 @@ export default function CompaniesPage() {
                     onToggle={toggleSort}
                   />
                 ))}
+                <th style={th}>Slug</th>
                 <th style={th}></th>
               </tr>
             </thead>
@@ -119,6 +141,7 @@ export default function CompaniesPage() {
                   <tr>
                     <td style={td}>{c.name}</td>
                     <td style={td}>{fmtDate(c.createdAt)}</td>
+                    <td style={td}>{c.slug ?? '—'}</td>
                     <td style={td}>
                       <button
                         onClick={() => setExpandedId(expandedId === c.id ? null : c.id)}
@@ -133,6 +156,12 @@ export default function CompaniesPage() {
                         Переименовать
                       </button>
                       <button
+                        onClick={() => handleEditSlug(c.id, c.slug)}
+                        style={{ ...btnLink, color: 'var(--accent)', marginRight: 12 }}
+                      >
+                        Slug
+                      </button>
+                      <button
                         onClick={() => handleDelete(c.id)}
                         style={{ ...btnLink, color: 'var(--danger)' }}
                       >
@@ -142,7 +171,7 @@ export default function CompaniesPage() {
                   </tr>
                   {expandedId === c.id && (
                     <tr>
-                      <td style={{ ...td, background: 'var(--bg-muted, #f7f7f7)' }} colSpan={3}>
+                      <td style={{ ...td, background: 'var(--bg-muted, #f7f7f7)' }} colSpan={4}>
                         <CompanyBotsPanel companyId={c.id} />
                       </td>
                     </tr>
@@ -151,7 +180,7 @@ export default function CompaniesPage() {
               ))}
               {companies.length === 0 && (
                 <tr>
-                  <td style={tdEmpty} colSpan={3}>
+                  <td style={tdEmpty} colSpan={4}>
                     Компаний пока нет
                   </td>
                 </tr>

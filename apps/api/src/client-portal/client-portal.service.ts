@@ -19,6 +19,7 @@ import { ResolveClientDto } from './dto/resolve-client.dto';
 export interface ResolvedClient {
   telegramUserId: string;
   billingAccountId: string;
+  companyId: string;
   firstName: string | null;
   lastName: string | null;
   username: string | null;
@@ -62,9 +63,10 @@ export class ClientPortalService {
     private excelExport: ExcelExportService,
   ) {}
 
-  /** Upsert клиента по telegramId (заводит BillingAccount, если новый) → identity для JWT. */
+  /** Upsert клиента по паре (companyId, telegramId) → identity для JWT (заводит BillingAccount, если новый). */
   async resolve(dto: ResolveClientDto): Promise<ResolvedClient> {
     const user = await this.telegramUsers.register({
+      companyId: dto.companyId,
       telegramId: dto.telegramId,
       username: dto.username,
       firstName: dto.firstName,
@@ -74,6 +76,7 @@ export class ClientPortalService {
     return {
       telegramUserId: user.id,
       billingAccountId: user.billingAccountId,
+      companyId: user.companyId,
       firstName: user.firstName,
       lastName: user.lastName,
       username: user.username,

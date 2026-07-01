@@ -66,8 +66,12 @@ export class ApiClientService {
     return data;
   }
 
-  async updateUserLanguage(telegramId: number, language: string): Promise<void> {
-    await this.client.patch(`/telegram-users/${telegramId}/language`, { language });
+  async updateUserLanguage(
+    companyId: string,
+    telegramId: number,
+    language: string,
+  ): Promise<void> {
+    await this.client.patch(`/telegram-users/${telegramId}/language`, { language, companyId });
   }
 
   /** Загрузка файла как managed-документа (без автозапуска пайплайна). */

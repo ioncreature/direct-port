@@ -72,8 +72,9 @@ Client-JWT **не открывает** ни одного админского э
 ### Сервисы и домены
 
 - **`apps/client-web`** (Next.js) — фронт кабинета, отдельный домен (напр. `cabinet.directport.ru`).
-- **`apps/client-bff`** (NestJS) — backend-for-frontend: держит client-сессию, верифицирует
-  Telegram Login, скоупит запросы по владельцу баланса. **В БД напрямую не ходит.**
+- **`apps/client-bff`** (NestJS) — backend-for-frontend: держит client-сессию, скоупит запросы
+  по владельцу баланса. Верификацию подписи Telegram Login делегирует api (там токены ботов).
+  **В БД напрямую не ходит и секретов не держит.**
 - **`apps/api`** — единственный владелец БД, биллинга и pipeline. Под кабинет получает
   client-scoped internal-эндпоинты (как `intake/*` для client-bot, `manager/*` для manager-bot).
 
@@ -89,9 +90,9 @@ landing/client-bot=3003, manager-bot=3004 уже заняты → BFF напр. 
 ```
 Браузер ──client-JWT──▶ client-bff ──X-Internal-Key──▶ api ──▶ PostgreSQL / BullMQ
    │                        │                            │
-   │  Telegram Login        │  verify hash,              │  ClientBalanceService,
-   │  Widget                │  выдать/обновить JWT,       │  pipeline, ledger —
-   │                        │  скоуп по accountId         │  единственный владелец
+   │  Telegram Login        │  проксирует verify,        │  verify подписи (токен
+   │  Widget                │  выдать/обновить JWT,       │  бота компании), balance,
+   │                        │  скоуп по accountId         │  pipeline, ledger — владелец
 ```
 
 BFF в основном проксирует + держит сессию; вся доменная логика — в `api`.
@@ -100,20 +101,26 @@ BFF в основном проксирует + держит сессию; вся
 
 ### Telegram Login flow
 
-1. Кабинет показывает **Telegram Login Widget** (привязан к client-bot; домен прописан боту
-   через `@BotFather` → `/setdomain`).
+1. Кабинет показывает **Telegram Login Widget**. При ботах per-company (Ф4) компания берётся из
+   URL-slug (`cabinet.directport.ru/<slug>`, роут `app/[company]`); bare-домен → дефолтная
+   компания. Виджет рендерится под client-бот компании (username из публичного
+   `GET /client/company?slug=`); домен кабинета прописан каждому боту через `@BotFather`
+   → `/setdomain` (все боты whitelist'ят один общий домен).
 2. Клиент подтверждает в Telegram → виджет отдаёт
-   `{id, first_name, last_name, username, photo_url, auth_date, hash}`.
-3. BFF верифицирует подпись: `secret = SHA256(bot_token)`,
-   проверяет `hash == HMAC_SHA256(data_check_string, secret)` и свежесть `auth_date`
-   (≤ N минут — защита от replay).
-4. BFF → `api` (internal): upsert `TelegramUser` по `telegramId`, создать/привязать
-   `BillingAccount`, вернуть `{telegramUserId, billingAccountId}`.
+   `{id, first_name, last_name, username, photo_url, auth_date, hash}`; кабинет добавляет `slug`.
+3. BFF → `api` (`POST /internal/client/verify-telegram`, X-Internal-Key): api резолвит компанию по
+   slug, берёт токен её client-бота (`SecretCipher`; дефолт/без своего токена → env
+   `TELEGRAM_BOT_TOKEN`) и проверяет подпись: `secret = SHA256(bot_token)`,
+   `hash == HMAC_SHA256(data_check_string, secret)` + свежесть `auth_date` (анти-replay).
+   Невалидно → 401. Верификация в api, т.к. bff секретов не держит. Возвращает `companyId`.
+4. BFF → `api` (`/internal/client/resolve` с `companyId`): upsert `TelegramUser` по паре
+   `(companyId, telegramId)`, создать/привязать `BillingAccount`, вернуть
+   `{telegramUserId, billingAccountId, companyId}`.
 5. BFF выдаёт **client-JWT** (`sub = billingAccountId`, короткий TTL + refresh).
 6. Все `/client/*` скоупятся по субъекту из JWT.
 
 Пароли/email не вводятся — identity целиком телеграмная. Тот же `telegramId`, что в боте,
-поэтому кабинет и бот — один и тот же клиент.
+поэтому кабинет и бот — один и тот же клиент (в каждой компании — независимо).
 
 ### Изоляция данных
 
@@ -291,7 +298,9 @@ Self-service-клиент может прийти в кабинет, ни раз
 
 | Метод | Путь | Назначение |
 |---|---|---|
-| POST | `/internal/client/resolve` | upsert по `telegramId` → `{accountId}` (для auth) |
+| GET | `/internal/client/company?slug=` | публичная инфа компании для виджета входа (Ф4) |
+| POST | `/internal/client/verify-telegram` | верификация подписи токеном бота компании → `{companyId}` (Ф4) |
+| POST | `/internal/client/resolve` | upsert по `(companyId, telegramId)` → `{accountId}` (для auth) |
 | GET | `/internal/client/:accountId/balance` | баланс |
 | GET | `/internal/client/:accountId/transactions` | история |
 | GET | `/internal/client/:accountId/documents` | список (скоуп по accountId) |
@@ -323,6 +332,11 @@ Self-service-клиент может прийти в кабинет, ни раз
   (`PipelineNotifierService` → `client-bot-outgoing`: PROCESSED → Excel, иначе нудж `cabinet-doc-issue`).
   **Отложено по согласованию:** онбординг (claim первого касания + free-grant), rate-limit на загрузки
   (anti-abuse) и `CHECK balance>=0`.
+- **Ф4 — кабинет per-company ✅ сделано:** вход per-company по URL-slug (`cabinet.directport.ru/<slug>`,
+  колонка `Company.slug`, роут `app/[company]`; bare-домен → дефолтная компания). Виджет рендерится
+  под client-бот компании; **верификация подписи переехала bff→api** (`TelegramVerifyService`, токен
+  бота компании через `SecretCipher`), bff стал чистой проксёй без секретов. `resolve` — по паре
+  `(companyId, telegramId)`. См. `docs/COMPANY_BOTS.md` (Фаза 4).
 
 Каждая фаза самостоятельно ценна.
 

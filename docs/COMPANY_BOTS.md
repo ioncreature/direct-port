@@ -90,10 +90,11 @@ tenant-leak. Должен фильтровать по `companyId` клиента
 
 ## Затронутые соседи
 
-- **Кабинет (`client-bff` + `client-web`)** — Telegram Login Widget верифицирует подпись токеном
-  `client-bot` (`TelegramAuthService`). Раз `client-bot` теперь per-company, то и виджет/верификация
-  per-company: кабинету нужно знать, от какой компании логинится клиент. **Вынесено за рамки
-  первой итерации** — кабинет временно остаётся на дефолтном боте.
+- **Кабинет (`client-bff` + `client-web`)** — ✅ Фаза 4. Компания берётся из URL-slug
+  (`cabinet.directport.ru/<slug>`, колонка `Company.slug`); bare-домен → дефолтная компания.
+  Виджет рендерится под client-бот компании, а подпись верифицируется **в api**
+  (`TelegramVerifyService`, токеном бота этой компании), а не в bff — bff секретов не держит.
+  Подробнее ниже в «Фазы внедрения».
 - **`manager-link`** — deep-link менеджера строится через глобальный `MANAGER_BOT_USERNAME`;
   станет username manager-бота компании (из `Company`).
 - **bot-links / identity** — per-company username хранится в `Company` (резолвится при вводе
@@ -117,14 +118,24 @@ tenant-leak. Должен фильтровать по `companyId` клиента
    резолвит клиента по паре `(companyId, telegram_id)`; claim больше не наследует компанию —
    только проверяет, что менеджер той же компании, что и клиент (broadcast и так адресован им);
    Redis-ключ состояния client-bot префиксован компанией (`client-conv:<companyId>:<chatId>`).
-   Минорный остаточный долг: `updateLanguage` обновляет язык по одному `telegram_id` во всех
-   компаниях клиента (NB-комментарий в `language.handler`); метод `assignCompanyToClientDocs` стал
-   неиспользуемым (claim больше не переносит компанию) — отдельная задача на удаление.
-4. ⏳ **Кабинет per-company** (отдельно, если потребуется).
+   Остаточные долги закрыты: `updateLanguage`/`findByTelegramId` резолвят по паре
+   `(companyId, telegram_id)` (client-bot шлёт `companyId`; legacy-fallback без него сохранён);
+   неиспользуемый `assignCompanyToClientDocs` удалён.
+4. ✅ **Кабинет per-company (URL-slug).** Колонка `Company.slug` (миграция `AddCompanySlug`,
+   уникальный индекс; nullable — компания без slug обслуживается дефолтным ботом). Кабинет резолвит
+   компанию из пути (`cabinet.directport.ru/<slug>`, роут `app/[company]` в client-web; bare-домен →
+   дефолтная компания). Виджет входа рендерится под client-бот компании (username из
+   `GET /internal/client/company?slug=`). **Верификация подписи переехала bff→api**:
+   `TelegramVerifyService` (`apps/api/src/client-portal`) расшифровывает токен client-бота компании
+   (`SecretCipher`; дефолт/без своего токена → env `TELEGRAM_BOT_TOKEN`) и проверяет HMAC
+   (`POST /internal/client/verify-telegram`); bff стал чистой проксёй без секретов (удалён
+   `TelegramAuthService`, убран `TELEGRAM_BOT_TOKEN` из его env). `resolve` резолвит клиента по паре
+   `(companyId, telegramId)`. Подделать вход в чужую компанию нельзя — корректную подпись ставит
+   только бот этой компании. Заведение slug — в админке на `/companies` (super_admin).
+   Прод-задача: завести `TELEGRAM_BOT_TOKEN` (токен дефолтного client-бота) в env api.
 
 ## Открытые вопросы / долг
 
 - Тенант-скоуп `BillingAccount.companyId` при claim (отмечен как долг в коде entity).
 - Контур discovery-агента лидов параметризовать компанией при втором провайдере
   (см. комментарий к `DEFAULT_COMPANY_ID`).
-- Кабинет per-company (Фаза 4).

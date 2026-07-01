@@ -69,8 +69,14 @@ export class TelegramUsersService {
     return this.repo.findOneByOrFail({ companyId, telegramId });
   }
 
-  async updateLanguage(telegramId: string, language: string): Promise<void> {
-    await this.repo.update({ telegramId }, { language });
+  /**
+   * Обновляет язык клиента. С companyId — точечно по паре (companyId, telegramId); без него
+   * (legacy-вызов) по голому telegram_id, т.е. во всех компаниях этого telegram_id. Язык —
+   * косметика, не биллинг/не скоуп данных, поэтому legacy-ветка допустима. См. docs/COMPANY_BOTS.md.
+   */
+  async updateLanguage(telegramId: string, language: string, companyId?: string): Promise<void> {
+    const where = companyId ? { companyId, telegramId } : { telegramId };
+    await this.repo.update(where, { language });
   }
 
   async findAll(
@@ -144,11 +150,15 @@ export class TelegramUsersService {
     return user.billingAccountId;
   }
 
-  // NB: при клиенте нескольких компаний telegram_id неоднозначен — вернёт произвольную запись.
-  // Используется админским lookup'ом; точный резолв клиента — по паре (companyId, telegramId).
-  // Долг Фазы 3, см. docs/COMPANY_BOTS.md.
-  async findByTelegramId(telegramId: number): Promise<TelegramUser | null> {
-    return this.repo.findOne({ where: { telegramId: String(telegramId) } });
+  /**
+   * Lookup клиента по telegram_id. С companyId — однозначно по паре (companyId, telegramId);
+   * без него (legacy) по голому telegram_id, что при клиенте нескольких компаний вернёт
+   * произвольную запись — вызывающему стоит передавать companyId. См. docs/COMPANY_BOTS.md.
+   */
+  async findByTelegramId(telegramId: number, companyId?: string): Promise<TelegramUser | null> {
+    const tid = String(telegramId);
+    const where = companyId ? { companyId, telegramId: tid } : { telegramId: tid };
+    return this.repo.findOne({ where });
   }
 
   /**

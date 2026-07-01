@@ -8,6 +8,9 @@ import { CreateCompanyDto } from './dto/create-company.dto';
 import { FindCompaniesQueryDto } from './dto/find-companies-query.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 
+/** Slug'и, совпадающие со статическими маршрутами кабинета (client-web) — занимать нельзя. */
+const RESERVED_SLUGS = ['dashboard', 'api', '_next'];
+
 @Injectable()
 export class CompaniesService {
   constructor(
@@ -34,7 +37,8 @@ export class CompaniesService {
     const name = dto.name.trim();
     const exists = await this.companiesRepo.findOne({ where: { name } });
     if (exists) throw new ConflictException('Company name already in use');
-    return this.companiesRepo.save(this.companiesRepo.create({ name }));
+    const slug = await this.normalizeSlug(dto.slug);
+    return this.companiesRepo.save(this.companiesRepo.create({ name, slug }));
   }
 
   async update(id: string, dto: UpdateCompanyDto): Promise<Company> {
@@ -45,7 +49,29 @@ export class CompaniesService {
       if (exists && exists.id !== id) throw new ConflictException('Company name already in use');
       company.name = name;
     }
+    if (dto.slug !== undefined) {
+      company.slug = await this.normalizeSlug(dto.slug, id);
+    }
     return this.companiesRepo.save(company);
+  }
+
+  /**
+   * Нормализует slug (trim + lowercase), пустая строка → null (снять slug). Отбивает
+   * зарезервированные значения (затенили бы статические маршруты кабинета) и дубли (явный
+   * ConflictException поверх unique-индекса — понятное сообщение оператору).
+   */
+  private async normalizeSlug(raw: string | undefined, selfId?: string): Promise<string | null> {
+    if (raw === undefined) return null;
+    const slug = raw.trim().toLowerCase();
+    if (slug === '') return null;
+    if (RESERVED_SLUGS.includes(slug)) {
+      throw new ConflictException(`Slug "${slug}" is reserved`);
+    }
+    const exists = await this.companiesRepo.findOne({ where: { slug } });
+    if (exists && exists.id !== selfId) {
+      throw new ConflictException('Company slug already in use');
+    }
+    return slug;
   }
 
   async remove(id: string): Promise<void> {

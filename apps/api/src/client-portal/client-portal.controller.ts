@@ -23,6 +23,8 @@ import { ClientDocumentsQueryDto } from './dto/client-documents-query.dto';
 import { CreateTopUpDto } from './dto/create-top-up.dto';
 import { ResolveClientDto } from './dto/resolve-client.dto';
 import { UploadClientDocumentDto } from './dto/upload-document.dto';
+import { VerifyTelegramDto } from './dto/verify-telegram.dto';
+import { TelegramVerifyService } from './telegram-verify.service';
 
 /**
  * Client-scoped internal-эндпоинты кабинета (auth ТОЛЬКО по X-Internal-Key, @Internal).
@@ -35,7 +37,22 @@ export class ClientPortalController {
   constructor(
     private service: ClientPortalService,
     private topUp: TopUpService,
+    private telegramVerify: TelegramVerifyService,
   ) {}
+
+  /** Публичная инфа компании по slug (pre-login: для рендера виджета входа). Нет slug → дефолтная. */
+  @Get('company')
+  @Internal()
+  company(@Query('slug') slug?: string) {
+    return this.telegramVerify.resolveCompany(slug);
+  }
+
+  /** Верификация подписи Telegram Login Widget токеном client-bot компании (по slug). */
+  @Post('verify-telegram')
+  @Internal()
+  verifyTelegram(@Body() dto: VerifyTelegramDto) {
+    return this.telegramVerify.verify(dto);
+  }
 
   /** Upsert клиента по Telegram identity → id для выдачи client-JWT. */
   @Post('resolve')

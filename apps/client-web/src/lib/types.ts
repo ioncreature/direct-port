@@ -5,6 +5,13 @@ export interface ClientAuthResponse {
   client: ClientProfile;
 }
 
+/** Публичная инфа компании (BFF /client/company) — для рендера виджета входа per-company. */
+export interface CompanyPublicInfo {
+  companyId: string;
+  name: string;
+  clientBotUsername: string | null;
+}
+
 export interface ClientProfile {
   name: string | null;
   username: string | null;

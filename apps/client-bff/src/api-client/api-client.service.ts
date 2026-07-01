@@ -11,8 +11,16 @@ interface TimedRequestConfig extends InternalAxiosRequestConfig {
 export interface ResolvedClient {
   telegramUserId: string;
   billingAccountId: string;
+  companyId: string;
   firstName: string | null;
   username: string | null;
+}
+
+/** Публичная инфа компании из api `/internal/client/company` (для рендера виджета входа). */
+export interface CompanyPublicInfo {
+  companyId: string;
+  name: string;
+  clientBotUsername: string | null;
 }
 
 export interface PaginatedResult {
@@ -59,8 +67,27 @@ export class ApiClientService {
     );
   }
 
-  /** Upsert клиента по Telegram identity → id для выдачи client-JWT. */
+  /** Публичная инфа компании по slug (нет slug → дефолтная) — для рендера виджета входа. */
+  async getCompany(slug?: string): Promise<CompanyPublicInfo> {
+    const { data } = await this.client.get('/internal/client/company', {
+      params: slug ? { slug } : undefined,
+    });
+    return data;
+  }
+
+  /**
+   * Верификация подписи Telegram Login Widget токеном client-bot компании (по slug).
+   * Токены ботов живут только в api — BFF их не держит. Невалидно → api вернёт 401
+   * (проброс через AxiosExceptionFilter).
+   */
+  async verifyTelegram(payload: Record<string, unknown>): Promise<{ companyId: string }> {
+    const { data } = await this.client.post('/internal/client/verify-telegram', payload);
+    return data;
+  }
+
+  /** Upsert клиента по паре (companyId, telegramId) → id для выдачи client-JWT. */
   async resolveClient(payload: {
+    companyId?: string;
     telegramId: number;
     username?: string;
     firstName?: string;

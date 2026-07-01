@@ -101,13 +101,16 @@ export class TelegramUsersController {
     @Param('telegramId') telegramId: string,
     @Body() dto: UpdateLanguageDto,
   ) {
-    return this.service.updateLanguage(telegramId, dto.language);
+    return this.service.updateLanguage(telegramId, dto.language, dto.companyId);
   }
 
   @Get(':telegramId')
   @Internal()
-  async findByTelegramId(@Param('telegramId', ParseIntPipe) telegramId: number) {
-    const user = await this.service.findByTelegramId(telegramId);
+  async findByTelegramId(
+    @Param('telegramId', ParseIntPipe) telegramId: number,
+    @Query('companyId') companyId?: string,
+  ) {
+    const user = await this.service.findByTelegramId(telegramId, companyId);
     if (!user) throw new NotFoundException('Telegram user not found');
     return user;
   }

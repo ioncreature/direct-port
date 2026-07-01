@@ -23,6 +23,7 @@ export interface AuthResponse {
 export interface Company {
   id: string;
   name: string;
+  slug: string | null;
   createdAt: string;
   updatedAt: string;
 }

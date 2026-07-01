@@ -21,6 +21,15 @@ export class Company {
   name: string;
 
   /**
+   * Человекочитаемый стабильный ключ компании в URL личного кабинета
+   * (`cabinet.directport.ru/<slug>`): по нему кабинет резолвит компанию и подбирает токен бота
+   * для верификации Telegram-логина. NULL — у компании нет slug, вход по bare-домену уходит
+   * в дефолтную компанию. См. docs/COMPANY_BOTS.md (Фаза 4).
+   */
+  @Column({ type: 'varchar', length: 255, nullable: true, unique: true })
+  slug: string | null;
+
+  /**
    * Токены и username Telegram-ботов компании (client + manager). Токен хранится зашифрованным
    * (SecretCipher, AES-256-GCM); username кэшируется при сохранении токена (резолв через getMe)
    * для ссылок в админке и deep-link менеджера. NULL — у компании нет своего бота, она

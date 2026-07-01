@@ -69,7 +69,6 @@ function createService(opts: Opts = {}) {
   const documents = {
     startProcessing: jest.fn().mockResolvedValue({ id: 'doc-1' }),
     findOne: jest.fn().mockResolvedValue(opts.document ?? null),
-    assignCompanyToClientDocs: jest.fn().mockResolvedValue(undefined),
   };
 
   const service = new ConversationsService(
@@ -100,7 +99,7 @@ const ASSIGNED_CLIENT = { ...UNASSIGNED_CLIENT, assignedManagerId: 'mgr-1' };
 describe('ConversationsService', () => {
   describe('claimByManagerTelegram', () => {
     it('assigns an unclaimed client in the manager company and notifies (no company inheritance)', async () => {
-      const { service, updateQb, clientOutQueue, clientsRepo, documents } = createService({
+      const { service, updateQb, clientOutQueue, clientsRepo } = createService({
         manager: ACTIVE_MANAGER,
         client: UNASSIGNED_CLIENT,
         claimAffected: 1,
@@ -110,7 +109,6 @@ describe('ConversationsService', () => {
       expect(updateQb.execute).toHaveBeenCalled();
       // Клиент уже принадлежит компании бота — claim больше не переносит компанию/документы.
       expect(clientsRepo.update).not.toHaveBeenCalled();
-      expect(documents.assignCompanyToClientDocs).not.toHaveBeenCalled();
       expect(clientOutQueue.add).toHaveBeenCalledWith(
         'client-message',
         expect.objectContaining({ clientTelegramId: '12345', i18nKey: 'manager-assigned' }),

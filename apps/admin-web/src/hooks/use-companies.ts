@@ -12,7 +12,7 @@ export function useCompanies() {
   });
 
   const createCompany = useCallback(
-    async (payload: { name: string }) => {
+    async (payload: { name: string; slug?: string }) => {
       await api.post('/companies', payload);
       await list.refetch();
     },
@@ -20,7 +20,7 @@ export function useCompanies() {
   );
 
   const updateCompany = useCallback(
-    async (id: string, payload: { name: string }) => {
+    async (id: string, payload: { name?: string; slug?: string }) => {
       await api.patch(`/companies/${id}`, payload);
       await list.refetch();
     },

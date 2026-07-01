@@ -18,6 +18,7 @@ import { DEFAULT_COMPANY_ID } from '../src/common/tenant/actor-context';
 import { AuthModule } from '../src/auth/auth.module';
 import { CalculationConfigModule } from '../src/calculation-config/calculation-config.module';
 import { ClientPortalModule } from '../src/client-portal/client-portal.module';
+import { CryptoModule } from '../src/common/crypto/crypto.module';
 import { DocumentsModule } from '../src/documents/documents.module';
 import { DocumentsParsingProcessor } from '../src/documents/documents-parsing.processor';
 import { DocumentsProcessor } from '../src/documents/documents.processor';
@@ -229,6 +230,9 @@ export async function createTestApp(): Promise<INestApplication> {
       }),
       BullModule.forRoot({ connection: { host: 'localhost', port: 6380 }, prefix }),
       RedisModule,
+      // Глобальный CryptoModule (в проде даёт SecretCipher всем модулям через AppModule) — нужен
+      // ClientPortalModule.TelegramVerifyService для расшифровки токенов ботов компаний.
+      CryptoModule,
       PipelineAuditModule,
       AuthModule,
       UsersModule,

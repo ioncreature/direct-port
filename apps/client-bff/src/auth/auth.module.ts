@@ -5,7 +5,6 @@ import { ApiClientModule } from '../api-client/api-client.module';
 import { AuthController } from './auth.controller';
 import { ClientAuthGuard } from './client-auth.guard';
 import { ClientTokenService } from './client-token.service';
-import { TelegramAuthService } from './telegram-auth.service';
 
 @Module({
   imports: [
@@ -18,7 +17,7 @@ import { TelegramAuthService } from './telegram-auth.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [TelegramAuthService, ClientTokenService, ClientAuthGuard],
+  providers: [ClientTokenService, ClientAuthGuard],
   exports: [ClientTokenService, ClientAuthGuard],
 })
 export class AuthModule {}

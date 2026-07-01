@@ -2,7 +2,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
-import { FindOptionsWhere, IsNull, Repository } from 'typeorm';
+import { FindOptionsWhere, Repository } from 'typeorm';
 import { ErrorCode } from '../common/error-codes';
 import {
   InvalidFreightError,
@@ -734,19 +734,6 @@ export class DocumentsService {
         message: 'Document not found',
       });
     assertSameCompany(actor, doc.companyId);
-  }
-
-  /**
-   * @deprecated Не используется с Фазы 3 «боты для компании»: компания клиента фиксируется при
-   * register, документы наследуют её при создании (createFromFile), claim компанию больше не
-   * переносит. Оставлен под отдельную задачу на удаление. См. docs/COMPANY_BOTS.md.
-   *
-   * Проставляет company_id только документам клиента без компании (историю уже привязанных к
-   * другой компании не трогаем).
-   */
-  async assignCompanyToClientDocs(telegramUserId: string, companyId: string | null): Promise<void> {
-    if (!companyId) return;
-    await this.repo.update({ telegramUserId, companyId: IsNull() }, { companyId });
   }
 
   /**

@@ -13,9 +13,19 @@ export interface TelegramAuthData {
   hash: string;
 }
 
-/** Логин через данные Telegram Login Widget → выдача и сохранение client-сессии. */
-export async function loginWithTelegram(data: TelegramAuthData): Promise<ClientAuthResponse> {
-  const { data: res } = await api.post<ClientAuthResponse>('/client/auth/telegram', data);
+/**
+ * Логин через данные Telegram Login Widget → выдача и сохранение client-сессии.
+ * `slug` — компания, чьим виджетом залогинился клиент (для входа per-company); без slug
+ * BFF/api резолвят дефолтную компанию.
+ */
+export async function loginWithTelegram(
+  data: TelegramAuthData,
+  slug?: string,
+): Promise<ClientAuthResponse> {
+  const { data: res } = await api.post<ClientAuthResponse>('/client/auth/telegram', {
+    ...data,
+    slug,
+  });
   localStorage.setItem('clientAccessToken', res.accessToken);
   localStorage.setItem('clientRefreshToken', res.refreshToken);
   localStorage.setItem('clientProfile', JSON.stringify(res.client));

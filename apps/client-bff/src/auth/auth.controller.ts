@@ -1,36 +1,35 @@
-import {
-  Body,
-  Controller,
-  HttpCode,
-  HttpStatus,
-  Post,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Query } from '@nestjs/common';
 import { ApiClientService } from '../api-client/api-client.service';
 import { ClientTokenService } from './client-token.service';
 import { RefreshDto } from './dto/refresh.dto';
 import { TelegramLoginDto } from './dto/telegram-login.dto';
-import { TelegramAuthService } from './telegram-auth.service';
 
 /**
- * Вход в кабинет (без гарда — это и есть точка получения сессии).
- * Telegram Login → верификация подписи → резолв клиента в api → выдача client-JWT.
+ * Вход в кабинет (без гарда — это и есть точка получения сессии). Telegram Login → верификация
+ * подписи в api (токеном client-bot компании по slug) → резолв клиента в api → выдача client-JWT.
+ * Сам BFF секретов не держит: и верификация, и резолв — это вызовы api по X-Internal-Key.
  */
-@Controller('client/auth')
+@Controller('client')
 export class AuthController {
   constructor(
-    private telegramAuth: TelegramAuthService,
     private tokens: ClientTokenService,
     private api: ApiClientService,
   ) {}
 
-  @Post('telegram')
+  /** Публичная инфа компании по slug (pre-login: чтобы client-web отрендерил виджет нужного бота). */
+  @Get('company')
+  company(@Query('slug') slug?: string) {
+    return this.api.getCompany(slug);
+  }
+
+  @Post('auth/telegram')
   @HttpCode(HttpStatus.OK)
   async telegram(@Body() dto: TelegramLoginDto) {
-    if (!this.telegramAuth.verify(dto)) {
-      throw new UnauthorizedException('Invalid Telegram login signature');
-    }
+    // api верифицирует подпись токеном бота компании (по slug) и возвращает её companyId;
+    // невалидная подпись → api отдаёт 401 (проброс через AxiosExceptionFilter).
+    const { companyId } = await this.api.verifyTelegram({ ...dto });
     const client = await this.api.resolveClient({
+      companyId,
       telegramId: dto.id,
       username: dto.username,
       firstName: dto.first_name,
@@ -46,7 +45,7 @@ export class AuthController {
     return { ...tokens, client: this.publicProfile(dto, client) };
   }
 
-  @Post('refresh')
+  @Post('auth/refresh')
   @HttpCode(HttpStatus.OK)
   refresh(@Body() dto: RefreshDto) {
     return this.tokens.rotate(dto.refreshToken);

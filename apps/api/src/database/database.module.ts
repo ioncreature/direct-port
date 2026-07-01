@@ -73,6 +73,7 @@ import { AddLeadCompany1779800000000 } from './migrations/1779800000000-AddLeadC
 import { AddBillingAccount1779900000000 } from './migrations/1779900000000-AddBillingAccount';
 import { AddTopUpRequests1780000000000 } from './migrations/1780000000000-AddTopUpRequests';
 import { AddCompanyBotsFoundation1780100000000 } from './migrations/1780100000000-AddCompanyBotsFoundation';
+import { AddCompanySlug1780200000000 } from './migrations/1780200000000-AddCompanySlug';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -158,6 +159,7 @@ import { SeedService } from './seeds/seed.service';
           AddBillingAccount1779900000000,
           AddTopUpRequests1780000000000,
           AddCompanyBotsFoundation1780100000000,
+          AddCompanySlug1780200000000,
         ],
         migrationsRun: true,
         // Каждая миграция в своей транзакции (по умолчанию TypeORM гонит все в одной).
