@@ -1,3 +1,4 @@
+import { FindOperator } from 'typeorm';
 import { DEFAULT_COMPANY_ID } from '../common/tenant/actor-context';
 import { DocumentStatus } from '../database/entities/document.entity';
 import { ManagerNotifyService } from './manager-notify.service';
@@ -86,6 +87,39 @@ describe('ManagerNotifyService.notifyDocumentEvent', () => {
     expect(queue.add).toHaveBeenCalledWith(
       'manager-notify',
       expect.objectContaining({ managerTelegramIds: ['111'] }),
+      RETRY_OPTS,
+    );
+  });
+
+  it('включает глобального менеджера (super_admin, company IS NULL) в broadcast', async () => {
+    // У компании клиента нет своих менеджеров — событие должен получить глобальный super_admin.
+    const { service, usersRepo, queue } = createService({
+      allManagers: [{ managerTelegramId: 'super' }],
+    });
+    await service.notifyDocumentEvent(makeDoc(DocumentStatus.FAILED, null));
+    const where = usersRepo.find.mock.calls[0][0].where;
+    expect(where).toHaveLength(2);
+    expect(where[0].companyId).toBe('co-1'); // компания клиента
+    expect(where[1].companyId).toBeInstanceOf(FindOperator); // IsNull() — глобальные менеджеры
+    expect(queue.add).toHaveBeenCalledWith(
+      'manager-notify',
+      expect.objectContaining({ managerTelegramIds: ['super'] }),
+      RETRY_OPTS,
+    );
+  });
+
+  it('резолвит назначенного глобального менеджера (super_admin, company IS NULL)', async () => {
+    const { service, usersRepo, queue } = createService({
+      assignedManager: { managerTelegramId: 'super' },
+    });
+    await service.notifyDocumentEvent(makeDoc(DocumentStatus.PROCESSED, 'mgr-super'));
+    const where = usersRepo.findOne.mock.calls[0][0].where;
+    expect(where).toHaveLength(2);
+    expect(where[0]).toMatchObject({ id: 'mgr-super', companyId: 'co-1' });
+    expect(where[1].companyId).toBeInstanceOf(FindOperator); // IsNull()
+    expect(queue.add).toHaveBeenCalledWith(
+      'manager-notify',
+      expect.objectContaining({ managerTelegramIds: ['super'], assigned: true }),
       RETRY_OPTS,
     );
   });

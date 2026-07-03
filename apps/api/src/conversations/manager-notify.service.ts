@@ -2,7 +2,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
-import { IsNull, Not, Repository } from 'typeorm';
+import { FindOptionsWhere, IsNull, Not, Repository } from 'typeorm';
 import { DEFAULT_COMPANY_ID } from '../common/tenant/actor-context';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { User } from '../database/entities/user.entity';
@@ -137,29 +137,36 @@ export class ManagerNotifyService {
   }
 
   /**
-   * Адресаты в рамках компании: назначенный менеджер, иначе все активные привязанные менеджеры
-   * этой компании (broadcast). Фильтр по companyId — тенант-изоляция: уведомления клиента видят
-   * только менеджеры его компании (а не вся платформа, как было до ботов per-company).
+   * Адресаты для события клиента: назначенный менеджер, иначе broadcast всем активным привязанным
+   * менеджерам, обслуживающим компанию клиента. Обслуживают её менеджеры этой компании И глобальные
+   * (super_admin, company_id IS NULL) — последние платформенные и покрывают любую компанию (по
+   * CHK_users_company_role компания пуста только у super_admin). Тенант-изоляция сохраняется:
+   * менеджеры ЧУЖОЙ конкретной компании события не видят.
    */
   private async resolveManagers(
     assignedManagerId: string | null,
     companyId: string,
   ): Promise<string[]> {
+    // Менеджер обслуживает клиента, если он той же компании или глобальный (super_admin, NULL).
+    const servesClient = (extra: FindOptionsWhere<User>): FindOptionsWhere<User>[] => [
+      { ...extra, isActive: true, companyId },
+      { ...extra, isActive: true, companyId: IsNull() },
+    ];
     if (assignedManagerId) {
       const manager = await this.usersRepo.findOne({
-        where: { id: assignedManagerId, isActive: true, companyId },
+        where: servesClient({ id: assignedManagerId }),
         select: ['managerTelegramId'],
       });
       if (manager?.managerTelegramId) return [manager.managerTelegramId];
       // Назначенный менеджер отвязан/деактивирован/из другой компании: не теряем событие,
-      // отдаём его в broadcast остальным менеджерам компании (раньше тут возвращался [] и
+      // отдаём его в broadcast остальным подходящим менеджерам (раньше тут возвращался [] и
       // уведомление дропалось).
       this.logger.warn(
         `Assigned manager ${assignedManagerId} is unlinked, inactive or cross-company — falling back to broadcast`,
       );
     }
     const managers = await this.usersRepo.find({
-      where: { managerTelegramId: Not(IsNull()), isActive: true, companyId },
+      where: servesClient({ managerTelegramId: Not(IsNull()) }),
       select: ['managerTelegramId'],
     });
     return managers
