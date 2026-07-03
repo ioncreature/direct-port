@@ -1,5 +1,10 @@
 export const BRAND_NAME = 'DirectPort';
-export const BRAND_MARK = 'DP';
+
+// Визуальный вордмарк — моноширинный direct_port. BRAND_NAME остаётся для
+// schema.org / юридического имени, WORDMARK — для отрисовки в шапке/футере.
+export const WORDMARK_PREFIX = 'direct';
+export const WORDMARK_SEP = '_';
+export const WORDMARK_SUFFIX = 'port';
 
 export const SITE_TITLE = 'DirectPort — таможенный расчёт на весь контейнер за 10 минут';
 
@@ -16,6 +21,8 @@ export const HEADLINE_ACCENT = 'а не за неделю';
 
 export const TAGLINE = 'Таможенный расчёт для логистических компаний';
 
-export const BRAND_PRIMARY = '#1a56db';
-export const BRAND_ACCENT = '#6366f1';
-export const BRAND_GRADIENT = `linear-gradient(135deg, ${BRAND_PRIMARY} 0%, ${BRAND_ACCENT} 100%)`;
+// Палитра «Глубокая вода»
+export const BRAND_INK = '#0B2536';
+export const BRAND_PETROL = '#0F6E7C';
+export const BRAND_ORANGE = '#E8622A';
+export const BRAND_PAPER = '#F6F4EF';

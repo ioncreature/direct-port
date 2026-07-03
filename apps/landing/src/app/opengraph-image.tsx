@@ -1,9 +1,8 @@
 import { ImageResponse } from 'next/og';
 import {
-  BRAND_GRADIENT,
-  BRAND_MARK,
-  BRAND_NAME,
-  BRAND_PRIMARY,
+  BRAND_INK,
+  BRAND_ORANGE,
+  BRAND_PETROL,
   HEADLINE_ACCENT,
   HEADLINE_PRIMARY,
   SITE_TITLE,
@@ -13,6 +12,17 @@ import {
 export const alt = SITE_TITLE;
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
+
+const MARK =
+  'data:image/svg+xml,' +
+  encodeURIComponent(
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>" +
+      "<rect width='64' height='64' rx='14' fill='#0B2536'/>" +
+      "<circle cx='24.5' cy='37' r='9.5' fill='none' stroke='#F6F4EF' stroke-width='7'/>" +
+      "<rect x='33' y='14' width='7' height='36' rx='3.5' fill='#F6F4EF'/>" +
+      "<rect x='47' y='14' width='9' height='36' rx='2.5' fill='#E8622A'/>" +
+      '</svg>',
+  );
 
 export default function OgImage() {
   return new ImageResponse(
@@ -25,41 +35,18 @@ export default function OgImage() {
           flexDirection: 'column',
           justifyContent: 'space-between',
           padding: 80,
-          backgroundColor: '#ffffff',
+          backgroundColor: '#fbfaf6',
           backgroundImage:
-            'radial-gradient(circle at 100% 0%, #dbe4ff 0%, transparent 45%), radial-gradient(circle at 0% 100%, #e9e4ff 0%, transparent 45%), linear-gradient(180deg, #f5f8ff 0%, #ffffff 100%)',
-          fontFamily: 'system-ui, -apple-system, sans-serif',
+            'radial-gradient(circle at 100% 0%, rgba(15,110,124,0.10) 0%, transparent 42%), radial-gradient(circle at 0% 100%, rgba(232,98,42,0.10) 0%, transparent 42%)',
+          fontFamily: 'sans-serif',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
-          <div
-            style={{
-              width: 72,
-              height: 72,
-              borderRadius: 16,
-              backgroundImage: BRAND_GRADIENT,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#ffffff',
-              fontSize: 32,
-              fontWeight: 800,
-              letterSpacing: '-0.04em',
-              boxShadow: '0 12px 24px -8px rgba(26, 86, 219, 0.5)',
-            }}
-          >
-            {BRAND_MARK}
-          </div>
-          <div
-            style={{
-              fontSize: 40,
-              fontWeight: 800,
-              color: '#0f172a',
-              letterSpacing: '-0.02em',
-              display: 'flex',
-            }}
-          >
-            {BRAND_NAME}
+          <img src={MARK} width={72} height={72} alt="" />
+          <div style={{ display: 'flex', fontSize: 40, fontWeight: 700, letterSpacing: '-0.02em' }}>
+            <span style={{ color: BRAND_INK }}>direct</span>
+            <span style={{ color: BRAND_ORANGE }}>_</span>
+            <span style={{ color: BRAND_PETROL }}>port</span>
           </div>
         </div>
 
@@ -70,9 +57,9 @@ export default function OgImage() {
               alignSelf: 'flex-start',
               alignItems: 'center',
               padding: '10px 22px',
-              backgroundColor: 'rgba(26, 86, 219, 0.1)',
-              color: BRAND_PRIMARY,
-              borderRadius: 999,
+              backgroundColor: 'rgba(15,110,124,0.1)',
+              color: BRAND_PETROL,
+              borderRadius: 10,
               fontSize: 24,
               fontWeight: 600,
               marginBottom: 28,
@@ -85,53 +72,36 @@ export default function OgImage() {
             style={{
               display: 'flex',
               flexDirection: 'column',
-              fontSize: 86,
+              fontSize: 82,
               fontWeight: 800,
-              color: '#0f172a',
+              color: BRAND_INK,
               letterSpacing: '-0.03em',
-              lineHeight: 1.05,
+              lineHeight: 1.06,
             }}
           >
             <div style={{ display: 'flex' }}>{HEADLINE_PRIMARY}</div>
-            <div
-              style={{
-                display: 'flex',
-                backgroundImage: BRAND_GRADIENT,
-                backgroundClip: 'text',
-                color: 'transparent',
-              }}
-            >
-              {HEADLINE_ACCENT}
-            </div>
+            <div style={{ display: 'flex', color: BRAND_ORANGE }}>{HEADLINE_ACCENT}</div>
           </div>
 
           <div
             style={{
               display: 'flex',
               fontSize: 28,
-              color: '#475569',
+              color: '#33454f',
               lineHeight: 1.4,
               marginTop: 28,
               maxWidth: 980,
             }}
           >
-            Загрузите прайс — получите готовый Excel с пошлинами, НДС, акцизами и логистикой по каждой позиции.
+            Пришлите прайс — получите готовый Excel с пошлинами, НДС, акцизами и логистикой по каждой позиции.
           </div>
         </div>
 
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 28,
-            fontSize: 22,
-            color: '#475569',
-          }}
-        >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 20, fontSize: 22, color: '#33454f' }}>
           <Pill>Claude AI</Pill>
           <Pill>Справочник ФТС</Pill>
           <Pill>Курсы ЦБ РФ</Pill>
-          <Pill>ru / zh / en</Pill>
+          <Pill>ru · zh · en</Pill>
         </div>
       </div>
     ),
@@ -148,19 +118,12 @@ function Pill({ children }: { children: React.ReactNode }) {
         gap: 10,
         padding: '8px 18px',
         backgroundColor: '#ffffff',
-        border: '1px solid #e5e7eb',
+        border: '1px solid #e2ddd2',
         borderRadius: 999,
         fontWeight: 600,
       }}
     >
-      <div
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: 999,
-          backgroundColor: BRAND_PRIMARY,
-        }}
-      />
+      <div style={{ width: 8, height: 8, borderRadius: 999, backgroundColor: BRAND_ORANGE }} />
       {children}
     </div>
   );

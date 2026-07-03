@@ -1,5 +1,4 @@
 import {
-  BRAND_MARK,
   BRAND_NAME,
   HEADLINE_ACCENT,
   HEADLINE_PRIMARY,
@@ -93,9 +92,9 @@ function Header() {
   return (
     <header className="header">
       <div className="container header-inner">
-        <a href="#top" className="logo">
-          <span className="logo-mark">{BRAND_MARK}</span>
-          <span>{BRAND_NAME}</span>
+        <a href="#top" className="logo" aria-label={BRAND_NAME}>
+          <LogoMark />
+          <Wordmark />
         </a>
         <nav className="nav-links" aria-label="Основная навигация">
           <a href="#how">Как работает</a>
@@ -147,6 +146,7 @@ function Hero() {
           </span>
           <h1>
             {HEADLINE_PRIMARY} <span className="accent">{HEADLINE_ACCENT}</span>
+            <span className="cur" aria-hidden="true" />
           </h1>
           <p className="lede">
             Оформление одной позиции у брокера — час-полтора, а контейнер на десятки
@@ -178,55 +178,56 @@ function Hero() {
             <span><IconCheck /> коды ТН ВЭД из справочника ФТС</span>
           </div>
         </div>
-        <div className="preview-wrap fade-up delay-2" aria-hidden="true">
-          <div className="preview">
-            <div className="preview-header">
+        <div className="fade-up delay-2" aria-hidden="true">
+          <div className="term">
+            <div className="term-bar">
               <span className="dot dot-r" />
               <span className="dot dot-y" />
               <span className="dot dot-g" />
-              <span className="preview-title">расчёт-пошлин.xlsx</span>
+              <span className="term-title">расчёт-пошлин.xlsx</span>
             </div>
-            <table className="preview-table">
-              <thead>
-                <tr>
-                  <th>Товар</th>
-                  <th>ТН ВЭД</th>
-                  <th>Пошлина</th>
-                  <th style={{ textAlign: 'right' }}>Итого, ₽</th>
-                  <th>Статус</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Светильник LED 12W</td>
-                  <td className="code">9405 41</td>
-                  <td>5%</td>
-                  <td className="num">119 400</td>
-                  <td><span className="tag tag-green">Точно</span></td>
-                </tr>
-                <tr>
-                  <td>Кружка керамическая</td>
-                  <td className="code">6911 10</td>
-                  <td>12%</td>
-                  <td className="num">56 600</td>
-                  <td><span className="tag tag-green">Точно</span></td>
-                </tr>
-                <tr>
-                  <td>Кроссовки беговые</td>
-                  <td className="code">6403 99</td>
-                  <td>15% / 1.4€/пара</td>
-                  <td className="num">482 100</td>
-                  <td><span className="tag tag-yellow">Проверить</span></td>
-                </tr>
-                <tr>
-                  <td>Косметика для лица</td>
-                  <td className="code">3304 99</td>
-                  <td>6.5%</td>
-                  <td className="num">208 750</td>
-                  <td><span className="tag tag-green">Точно</span></td>
-                </tr>
-              </tbody>
-            </table>
+            <div className="term-body">
+              <div className="ln">
+                <span className="g">01</span>
+                <span className="code">9405 41</span>
+                <span className="desc">Светильник LED 12W</span>
+                <span className="rate">5%</span>
+                <span className="sum">119 400 ₽</span>
+                <span className="st">ok</span>
+              </div>
+              <div className="ln">
+                <span className="g">02</span>
+                <span className="code">6911 10</span>
+                <span className="desc">Кружка керамическая</span>
+                <span className="rate">12%</span>
+                <span className="sum">56 600 ₽</span>
+                <span className="st">ok</span>
+              </div>
+              <div className="ln">
+                <span className="g">03</span>
+                <span className="code">6403 99</span>
+                <span className="desc">Кроссовки беговые</span>
+                <span className="rate">15%/1.4€</span>
+                <span className="sum">482 100 ₽</span>
+                <span className="st st-w">chk</span>
+              </div>
+              <div className="ln">
+                <span className="g">04</span>
+                <span className="code">3304 99</span>
+                <span className="desc">Косметика для лица</span>
+                <span className="rate">6.5%</span>
+                <span className="sum">208 750 ₽</span>
+                <span className="st">ok</span>
+              </div>
+              <div className="ln ln-total">
+                <span className="g">~</span>
+                <span className="code">итого</span>
+                <span className="desc">4 позиции · 10 мин</span>
+                <span className="rate" />
+                <span className="sum">866 850 ₽</span>
+                <span className="st" />
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -633,7 +634,10 @@ function Footer() {
   return (
     <footer className="footer">
       <div className="container footer-inner">
-        <span>{BRAND_NAME} &copy; {new Date().getFullYear()}</span>
+        <div className="footer-brand">
+          <LogoMark />
+          <span className="footer-copy">{BRAND_NAME} &copy; {new Date().getFullYear()}</span>
+        </div>
         <div className="footer-links">
           <a href={CONTACT_PHONE_HREF}>{CONTACT_PHONE}</a>
           <a href={CONTACT_EMAIL_HREF}>{CONTACT_EMAIL}</a>
@@ -641,6 +645,34 @@ function Footer() {
         </div>
       </div>
     </footer>
+  );
+}
+
+function LogoMark() {
+  return (
+    <svg
+      className="logo-mark"
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 64 64"
+      width="32"
+      height="32"
+      aria-hidden="true"
+    >
+      <rect width="64" height="64" rx="14" fill="#0B2536" />
+      <circle cx="24.5" cy="37" r="9.5" fill="none" stroke="#F6F4EF" strokeWidth="7" />
+      <rect x="33" y="14" width="7" height="36" rx="3.5" fill="#F6F4EF" />
+      <rect x="47" y="14" width="9" height="36" rx="2.5" fill="#E8622A" />
+    </svg>
+  );
+}
+
+function Wordmark() {
+  return (
+    <span className="wm">
+      <span className="wm-d">direct</span>
+      <span className="wm-u">_</span>
+      <span className="wm-p">port</span>
+    </span>
   );
 }
 
