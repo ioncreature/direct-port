@@ -10,6 +10,6 @@ export class UpdateLanguageDto {
    * обновляется по голому telegram_id (legacy). Клиент уникален парой (company_id, telegram_id).
    */
   @IsOptional()
-  @IsUUID()
+  @IsUUID('loose')
   companyId?: string;
 }

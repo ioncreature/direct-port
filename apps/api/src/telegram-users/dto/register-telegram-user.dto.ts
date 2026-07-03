@@ -10,7 +10,7 @@ export class RegisterTelegramUserDto {
    * Клиент уникален парой (company_id, telegram_id). См. docs/COMPANY_BOTS.md.
    */
   @IsOptional()
-  @IsUUID()
+  @IsUUID('loose')
   companyId?: string;
 
   @IsOptional()

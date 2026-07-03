@@ -29,6 +29,6 @@ export class UpdateUserDto {
 
   /** Сменить компанию пользователя. Учитывается только для super_admin (admin/customs). */
   @IsOptional()
-  @IsUUID()
+  @IsUUID('loose')
   companyId?: string;
 }

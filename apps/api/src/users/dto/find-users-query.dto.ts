@@ -9,7 +9,7 @@ export class FindUsersQueryDto extends PaginationQueryDto {
 
   /** Фильтр по компании — учитывается только для super_admin. */
   @IsOptional()
-  @IsUUID()
+  @IsUUID('loose')
   companyId?: string;
 
   @IsOptional()

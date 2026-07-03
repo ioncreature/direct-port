@@ -15,6 +15,6 @@ export class CreateUserDto {
   /** Компания пользователя. Учитывается только когда создаёт super_admin; admin компании
    *  создаёт пользователей в своей компании, и это поле игнорируется. */
   @IsOptional()
-  @IsUUID()
+  @IsUUID('loose')
   companyId?: string;
 }
