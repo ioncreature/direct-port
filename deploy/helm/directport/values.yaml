@@ -22,6 +22,9 @@ api:
     # Максимальное число товарных позиций (строк таблицы) в загружаемом файле.
     # Переопределяется через GitHub Environment variable MAX_PRODUCT_ROWS_PER_FILE в deploy-workflow.
     MAX_PRODUCT_ROWS_PER_FILE: '700'
+    # Макс. возраст auth_date Telegram Login Widget (сек, анти-replay). Читает api при
+    # верификации входа в кабинет (TelegramVerifyService). В коде есть дефолт 86400.
+    TELEGRAM_AUTH_MAX_AGE_SECONDS: '86400'
 
 adminWeb:
   replicaCount: 1
@@ -164,6 +167,10 @@ secrets:
   managerBotTelegramToken: ''
   # Username менеджерского бота без @ (для deep-link привязки в админке, читает API)
   managerBotUsername: ''
+  # Ключ шифрования токенов Telegram-ботов компаний (AES-256-GCM, см. docs/COMPANY_BOTS.md).
+  # Произвольная строка → SHA-256 → 32 байта. Без него заведение ботов компаний в админке → 400.
+  # На проде (create=false) приходит из Vault/ESO; это значение — только для stage/local (create=true).
+  botTokenEncKey: ''
 
 migration:
   enabled: true
