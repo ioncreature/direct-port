@@ -1,3 +1,8 @@
+// Языконезависимые константы бренда. Весь копирайтинг (заголовки, описания,
+// секции, FAQ, SEO-тексты) вынесен в i18n/dictionaries/*.ts — здесь остаётся
+// только то, что одинаково на всех языках: имя бренда, вордмарк, палитра,
+// контакты и ссылки.
+
 export const BRAND_NAME = 'DirectPort';
 
 // Визуальный вордмарк — моноширинный direct_port. BRAND_NAME остаётся для
@@ -6,20 +11,15 @@ export const WORDMARK_PREFIX = 'direct';
 export const WORDMARK_SEP = '_';
 export const WORDMARK_SUFFIX = 'port';
 
-export const SITE_TITLE = 'DirectPort — таможенный расчёт на весь контейнер за 10 минут';
-
 export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://directport.ru';
 
-export const SITE_DESCRIPTION =
-  'Расчёт таможенных пошлин, НДС и акцизов по всему прайс-листу за 10 минут — хоть 500 позиций в одном файле. Для логистических компаний и импортёров. $1 за позицию, классификация ТН ВЭД по справочнику ФТС.';
-
-export const SITE_DESCRIPTION_OG =
-  'Расчёт таможенных пошлин на весь контейнер за 10 минут. До 500 позиций в файле, $1 за позицию, классификация ТН ВЭД по справочнику ФТС.';
-
-export const HEADLINE_PRIMARY = 'Весь контейнер — за 10 минут,';
-export const HEADLINE_ACCENT = 'а не за неделю';
-
-export const TAGLINE = 'Таможенный расчёт для логистических компаний';
+// Контакты (одни и те же на всех языках)
+export const TELEGRAM_BOT_URL =
+  process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL || 'https://t.me/direct_port_bot';
+export const CONTACT_EMAIL = 'hello@directport.ru';
+export const CONTACT_EMAIL_HREF = `mailto:${CONTACT_EMAIL}`;
+export const CONTACT_PHONE = '+7 909 760 7380';
+export const CONTACT_PHONE_HREF = `tel:${CONTACT_PHONE.replace(/[^+\d]/g, '')}`;
 
 // Палитра «Глубокая вода»
 export const BRAND_INK = '#0B2536';

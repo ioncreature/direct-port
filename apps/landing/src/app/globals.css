@@ -158,6 +158,12 @@ main {
   color: var(--petrol);
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
 .header-cta {
   display: flex;
   gap: 10px;
@@ -166,6 +172,67 @@ main {
 @media (max-width: 860px) {
   .nav-links {
     display: none;
+  }
+}
+
+/* ===== Language switch (segmented control) ===== */
+.lang-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--card);
+  flex: none;
+}
+
+.lang-opt {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--muted);
+  padding: 6px 9px;
+  border-radius: 6px;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.lang-opt:hover {
+  color: var(--petrol);
+}
+
+.lang-opt-active,
+.lang-opt-active:hover {
+  color: #fff;
+  background: var(--ink);
+}
+
+@media (max-width: 860px) {
+  .header-right {
+    gap: 12px;
+  }
+}
+
+@media (max-width: 640px) {
+  .header-right {
+    gap: 10px;
+  }
+
+  .header-cta {
+    gap: 6px;
+  }
+
+  .lang-switch {
+    gap: 1px;
+    padding: 2px;
+  }
+
+  .lang-opt {
+    padding: 5px 6px;
+    font-size: 12px;
   }
 }
 

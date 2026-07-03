@@ -1,15 +1,15 @@
 import { ImageResponse } from 'next/og';
-import {
-  BRAND_INK,
-  BRAND_ORANGE,
-  BRAND_PETROL,
-  HEADLINE_ACCENT,
-  HEADLINE_PRIMARY,
-  SITE_TITLE,
-  TAGLINE,
-} from './_brand';
+import { BRAND_INK, BRAND_ORANGE, BRAND_PETROL } from './_brand';
+import { ru } from './i18n/dictionaries/ru';
 
-export const alt = SITE_TITLE;
+// Общая OG-картинка на дефолтной локали (ru): Satori не имеет фолбэка на
+// системные шрифты, поэтому CJK-глифы в изображении не рендерятся. Заголовок,
+// описание и meta HTML-страниц локализованы отдельно (см. [lang]/layout).
+const HEADLINE_PRIMARY = ru.hero.headlinePrimary;
+const HEADLINE_ACCENT = ru.hero.headlineAccent;
+const TAGLINE = ru.hero.tagline;
+
+export const alt = ru.meta.title;
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -93,15 +93,14 @@ export default function OgImage() {
               maxWidth: 980,
             }}
           >
-            Пришлите прайс — получите готовый Excel с пошлинами, НДС, акцизами и логистикой по каждой позиции.
+            {ru.meta.ogSubtitle}
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 20, fontSize: 22, color: '#33454f' }}>
-          <Pill>Claude AI</Pill>
-          <Pill>Справочник ФТС</Pill>
-          <Pill>Курсы ЦБ РФ</Pill>
-          <Pill>ru · zh · en</Pill>
+          {ru.meta.ogPills.map((pill) => (
+            <Pill key={pill}>{pill}</Pill>
+          ))}
         </div>
       </div>
     ),
