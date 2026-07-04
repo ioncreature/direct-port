@@ -33,6 +33,11 @@ import { RejectDocumentDto } from './dto/reject-document.dto';
 import { ReviewDocumentDto } from './dto/review-document.dto';
 import { PipelineNotifierService } from './pipeline-notifier.service';
 import { PhotoStorageService } from '../photo-storage/photo-storage.service';
+import {
+  buildShipmentChecklist,
+  type ChecklistRowInput,
+  type ShipmentChecklist,
+} from './shipment-checklist';
 
 /**
  * Ретраи парсинга на уровне BullMQ: транзиентный сбой Anthropic (529/таймаут) не должен
@@ -745,6 +750,35 @@ export class DocumentsService {
         message: 'Document not found',
       });
     assertSameCompany(actor, doc.companyId);
+  }
+
+  /**
+   * Чек-лист «Документы к поставке». Генерируется на лету из resultData и полей
+   * документа (страна, Инкотермс, фрахт, язык) — нигде не хранится, поэтому
+   * recalculate автоматически даёт актуальный чек-лист без отдельной перегенерации.
+   */
+  async getChecklist(
+    id: string,
+    actor?: Actor,
+  ): Promise<ShipmentChecklist & { documentId: string; status: DocumentStatus }> {
+    const doc = await this.findOne(id, actor);
+    const rows = Array.isArray(doc.resultData)
+      ? (doc.resultData as unknown as ChecklistRowInput[])
+      : [];
+    if (rows.length === 0) {
+      throw new BadRequestException({
+        code: ErrorCode.CHECKLIST_NOT_AVAILABLE,
+        message: 'Checklist is available only for documents with calculation results',
+      });
+    }
+    const checklist = buildShipmentChecklist({
+      rows,
+      docCountryOfOrigin: doc.countryOfOrigin,
+      incoterms: doc.incoterms,
+      freightCost: doc.freightCost,
+      language: doc.language,
+    });
+    return { documentId: doc.id, status: doc.status, ...checklist };
   }
 
   /**

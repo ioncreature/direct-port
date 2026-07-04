@@ -9,6 +9,14 @@ import type { RegulatoryReport } from '../regulatory/interfaces';
 import { formatRegulatoryReportLong } from '../regulatory/regulatory-format';
 import { OKSMT_BY_CODE } from '../countries/oksmt.data';
 import { buildDtProject, type DtProject } from './dt-project';
+import {
+  buildShipmentChecklist,
+  CONFIDENCE_LABELS,
+  TIMING_LABELS,
+  TIMING_ORDER,
+  type ShipmentChecklist,
+} from './shipment-checklist';
+import type { ChecklistConfidence } from '../regulatory/curated/interfaces';
 
 interface ResultRow {
   description: string;
@@ -104,6 +112,18 @@ function csvSafe(value: unknown): unknown {
 const LOCALIZED_NOTES_HEADERS: Record<string, string> = {
   zh: '备注（翻译）',
   en: 'Notes (translated)',
+};
+
+const LOCALIZED_TITLE_HEADERS: Record<string, string> = {
+  zh: '文件（翻译）',
+  en: 'Document (translated)',
+};
+
+/** Статус расчёта, чьи заливка/шрифт переиспользуются для уверенности чек-листа. */
+const CONFIDENCE_STATUS: Record<ChecklistConfidence, CalculationStatus> = {
+  confirmed: 'exact',
+  probable: 'partial',
+  check: 'needs_info',
 };
 
 function buildColumns(
@@ -333,14 +353,7 @@ export class ExcelExportService {
       key: col.key,
       width: col.width,
     }));
-
-    const headerRow = sheet.getRow(1);
-    headerRow.eachCell((cell) => {
-      cell.fill = HEADER_FILL;
-      cell.font = HEADER_FONT;
-      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-    });
-    headerRow.height = 30;
+    this.styleHeaderRow(sheet);
 
     const numFmtColumns = COLUMNS.map((col, i) => ({ index: i + 1, numFmt: col.numFmt })).filter(
       (c) => c.numFmt,
@@ -460,7 +473,27 @@ export class ExcelExportService {
       this.addDtProjectSheet(workbook, dtProject, currency);
     }
 
+    const checklist = buildShipmentChecklist({
+      rows: data,
+      docCountryOfOrigin: doc.countryOfOrigin,
+      incoterms: doc.incoterms,
+      freightCost: doc.freightCost,
+      language,
+    });
+    this.addShipmentChecklistSheet(workbook, checklist, language);
+
     return workbook.xlsx.writeBuffer();
+  }
+
+  /** Общая стилизация строки заголовков листа (синяя шапка, перенос, высота). */
+  private styleHeaderRow(sheet: ExcelJS.Worksheet): void {
+    const headerRow = sheet.getRow(1);
+    headerRow.eachCell((cell) => {
+      cell.fill = HEADER_FILL;
+      cell.font = HEADER_FONT;
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    });
+    headerRow.height = 30;
   }
 
   /**
@@ -496,13 +529,7 @@ export class ExcelExportService {
     ];
 
     sheet.columns = columns.map((c) => ({ header: c.header, key: c.key, width: c.width }));
-    const headerRow = sheet.getRow(1);
-    headerRow.eachCell((cell) => {
-      cell.fill = HEADER_FILL;
-      cell.font = HEADER_FONT;
-      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-    });
-    headerRow.height = 30;
+    this.styleHeaderRow(sheet);
 
     const numFmtColumns = columns
       .map((col, i) => ({ index: i + 1, numFmt: col.numFmt }))
@@ -590,6 +617,110 @@ export class ExcelExportService {
       row.getCell(labelColIdx).alignment = { wrapText: true, vertical: 'top' };
       row.getCell(labelColIdx).font = { italic: true };
     }
+
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+  }
+
+  /**
+   * Лист «Документы к поставке»: чек-лист документов, сгруппированный по моменту
+   * получения (до заказа → к отгрузке → к подаче ДТ → на случай запроса), с кодами
+   * графы 44, основанием и статусом уверенности. Источник — buildShipmentChecklist
+   * (базовый пакет ст. 108 + меры TKS по строкам + curated-слой).
+   */
+  private addShipmentChecklistSheet(
+    workbook: ExcelJS.Workbook,
+    checklist: ShipmentChecklist,
+    language: string | null,
+  ): void {
+    const sheet = workbook.addWorksheet('Документы к поставке');
+    const hasLocalized =
+      language != null && language !== 'ru' && checklist.items.some((i) => i.titleLocalized);
+
+    const columns: ColumnDef[] = [
+      { header: 'Документ', key: 'title', width: 46 },
+      ...(hasLocalized
+        ? [
+            {
+              header: LOCALIZED_TITLE_HEADERS[language] ?? LOCALIZED_TITLE_HEADERS.en,
+              key: 'titleLocalized',
+              width: 42,
+            } as ColumnDef,
+          ]
+        : []),
+      { header: 'Код гр. 44', key: 'g44Code', width: 12 },
+      { header: 'Статус', key: 'confidence', width: 18 },
+      { header: 'Строки', key: 'rows', width: 14 },
+      { header: 'Основание', key: 'basis', width: 42 },
+      { header: 'Пояснение', key: 'details', width: 80 },
+    ];
+
+    sheet.columns = columns.map((c) => ({ header: c.header, key: c.key, width: c.width }));
+    this.styleHeaderRow(sheet);
+
+    const sectionFill: ExcelJS.Fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFF2F2F2' },
+    };
+    const confidenceColIdx = columns.findIndex((c) => c.key === 'confidence') + 1;
+    const wrapIdx = columns.flatMap((c, i) =>
+      ['title', 'titleLocalized', 'basis', 'details'].includes(c.key) ? [i + 1] : [],
+    );
+
+    for (const warning of checklist.warnings) {
+      const row = sheet.addRow({ title: csvSafe(`⚠ ${warning}`) });
+      row.getCell(1).font = { bold: true, color: { argb: STATUS_FONT_COLORS.error } };
+      row.getCell(1).alignment = { wrapText: true, vertical: 'top' };
+    }
+    if (checklist.warnings.length > 0) sheet.addRow([]);
+
+    for (const timing of TIMING_ORDER) {
+      const items = checklist.items.filter((i) => i.timing === timing);
+      if (items.length === 0) continue;
+
+      const section = sheet.addRow({ title: TIMING_LABELS[timing] });
+      for (let col = 1; col <= columns.length; col++) section.getCell(col).fill = sectionFill;
+      section.getCell(1).font = { bold: true, size: 11 };
+
+      for (const item of items) {
+        const rowData: Record<string, unknown> = {
+          title: item.title,
+          ...(hasLocalized ? { titleLocalized: item.titleLocalized ?? '' } : {}),
+          g44Code: item.g44Code ?? '—',
+          confidence: CONFIDENCE_LABELS[item.confidence],
+          rows: item.scope === 'rows' ? item.rowNumbers.join(', ') : 'вся поставка',
+          basis: item.basis,
+          details: item.details ?? '',
+        };
+        for (const key of Object.keys(rowData)) rowData[key] = csvSafe(rowData[key]);
+        const excelRow = sheet.addRow(rowData);
+
+        const status = CONFIDENCE_STATUS[item.confidence];
+        const confidenceCell = excelRow.getCell(confidenceColIdx);
+        confidenceCell.fill = STATUS_FILLS[status];
+        confidenceCell.font = { bold: true, color: { argb: STATUS_FONT_COLORS[status] } };
+        confidenceCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+        for (const idx of wrapIdx) {
+          excelRow.getCell(idx).alignment = { wrapText: true, vertical: 'top' };
+        }
+        // Пояснения длинные: высота из расчёта ~85 символов на строку колонки.
+        const detailsLines = Math.ceil((item.details ?? '').length / 85);
+        if (detailsLines > 1) excelRow.height = ROW_HEIGHT_PER_LINE * detailsLines + ROW_HEIGHT_PADDING;
+      }
+    }
+
+    sheet.addRow([]);
+    const disclaimer = sheet.addRow({
+      title: csvSafe(
+        'Чек-лист носит информационный характер и не заменяет консультацию таможенного ' +
+          'представителя. Пункты со статусом «Проверьте» зависят от свойств товара — ' +
+          'уточните применимость по описанию. Основания указаны в колонке «Основание»; ' +
+          'даты и перечни выверены на дату формирования расчёта.',
+      ),
+    });
+    disclaimer.getCell(1).font = { italic: true };
+    disclaimer.getCell(1).alignment = { wrapText: true, vertical: 'top' };
 
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
   }

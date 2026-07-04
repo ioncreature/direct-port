@@ -89,14 +89,15 @@ describe('ExcelExportService', () => {
   });
 
   describe('базовая генерация', () => {
-    it('создаёт лист "Результат" + лист "Проект ДТ" для строк с кодами', async () => {
+    it('создаёт листы "Результат" + "Проект ДТ" + "Документы к поставке" для строк с кодами', async () => {
       const doc = makeDocument({ resultData: [makeResultRow()] });
       const buffer = await service.generate(doc);
       const wb = await readWorkbook(buffer as ArrayBuffer);
 
       expect(wb.getWorksheet('Результат')).toBeDefined();
       expect(wb.getWorksheet('Проект ДТ')).toBeDefined();
-      expect(wb.worksheets).toHaveLength(2);
+      expect(wb.getWorksheet('Документы к поставке')).toBeDefined();
+      expect(wb.worksheets).toHaveLength(3);
     });
 
     it('creator = DirectPort', async () => {
@@ -802,6 +803,128 @@ describe('ExcelExportService', () => {
       const sheet = wb.getWorksheet('Результат')!;
 
       expect(getRowValues(sheet, 2)).toEqual(['Товар', '0201100001', 100, 5, 1]);
+    });
+  });
+
+  describe('лист «Документы к поставке»', () => {
+    function sheetText(sheet: ExcelJS.Worksheet): string {
+      const parts: string[] = [];
+      sheet.eachRow((row) => {
+        row.eachCell({ includeEmpty: false }, (cell) => parts.push(String(cell.value ?? '')));
+      });
+      return parts.join('\n');
+    }
+
+    it('лист добавляется при наличии resultData', async () => {
+      const doc = makeDocument({ resultData: [makeResultRow()] });
+      const wb = await readWorkbook((await service.generate(doc)) as ArrayBuffer);
+      const sheet = wb.getWorksheet('Документы к поставке');
+      expect(sheet).toBeDefined();
+      expect(getHeaders(sheet!)).toEqual([
+        'Документ',
+        'Код гр. 44',
+        'Статус',
+        'Строки',
+        'Основание',
+        'Пояснение',
+      ]);
+    });
+
+    it('для parsedData без результатов лист не создаётся', async () => {
+      const doc = makeDocument({
+        resultData: null,
+        parsedData: [{ description: 'Товар', price: 100, weight: 5, quantity: 1 }],
+      });
+      const wb = await readWorkbook((await service.generate(doc)) as ArrayBuffer);
+      expect(wb.getWorksheet('Документы к поставке')).toBeUndefined();
+    });
+
+    it('содержит секции по времени и базовый пакет с кодами гр. 44', async () => {
+      const doc = makeDocument({ resultData: [makeResultRow()] });
+      const wb = await readWorkbook((await service.generate(doc)) as ArrayBuffer);
+      const text = sheetText(wb.getWorksheet('Документы к поставке')!);
+
+      expect(text).toContain('До заказа / производства');
+      expect(text).toContain('К отгрузке');
+      expect(text).toContain('На случай запроса таможни');
+      expect(text).toContain('Внешнеторговый контракт');
+      expect(text).toContain('03011');
+      expect(text).toContain('04021');
+      expect(text).toContain('Прайс-лист производителя');
+      expect(text).toContain('Экспортная таможенная декларация');
+      expect(text).toContain('информационный характер');
+    });
+
+    it('меры строк попадают в чек-лист с номерами строк', async () => {
+      const doc = makeDocument({
+        resultData: [
+          makeResultRow(),
+          makeResultRow({
+            regulatoryReport: {
+              certifications: [
+                {
+                  id: 'r1',
+                  category: 'certification',
+                  priznak: 11,
+                  title: 'Сертификация',
+                  summary: '',
+                  regulation: 'ТР ТС 004/2011',
+                  regulationTitle: null,
+                  form: 'certificate',
+                  authority: null,
+                  documentRef: null,
+                  validFrom: null,
+                  validTo: null,
+                  matchPrecision: 'exact',
+                  codeRange: { min: '85', max: null },
+                  countryCode: null,
+                  countryName: null,
+                  values: { min: null, max: null, unit: null },
+                  rawNote: '',
+                },
+              ],
+              permits: [],
+              licenses: [],
+              marking: [],
+              traceability: [],
+              utilizationFee: [],
+              strategicAndDualUse: [],
+              countryRestrictions: [],
+              other: [],
+              totalCount: 1,
+            },
+          }),
+        ],
+      });
+      const wb = await readWorkbook((await service.generate(doc)) as ArrayBuffer);
+      const sheet = wb.getWorksheet('Документы к поставке')!;
+      const text = sheetText(sheet);
+
+      expect(text).toContain('Сертификат соответствия ТР ТС 004/2011');
+      expect(text).toContain('01401');
+      // Пункт относится ко второй строке листа «Результат».
+      const rowWithCert = [...Array(sheet.rowCount).keys()]
+        .map((i) => sheet.getRow(i + 1))
+        .find((r) => String(r.getCell(1).value ?? '').includes('ТР ТС 004/2011'));
+      expect(rowWithCert!.getCell(4).value).toBe('2');
+    });
+
+    it('при language=zh добавляется локализованная колонка', async () => {
+      const doc = makeDocument({ language: 'zh', resultData: [makeResultRow()] });
+      const wb = await readWorkbook((await service.generate(doc)) as ArrayBuffer);
+      const headers = getHeaders(wb.getWorksheet('Документы к поставке')!);
+      expect(headers).toContain('文件（翻译）');
+      expect(sheetText(wb.getWorksheet('Документы к поставке')!)).toContain('商业发票');
+    });
+
+    it('маркировка «Честный знак» по коду обуви даёт curated-пункт с датой волны', async () => {
+      const doc = makeDocument({
+        resultData: [makeResultRow({ tnVedCode: '6403911100' })],
+      });
+      const wb = await readWorkbook((await service.generate(doc)) as ArrayBuffer);
+      const text = sheetText(wb.getWorksheet('Документы к поставке')!);
+      expect(text).toContain('Маркировка «Честный знак» — Обувь');
+      expect(text).toContain('01.07.2020');
     });
   });
 });

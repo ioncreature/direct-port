@@ -298,11 +298,12 @@ describe('buildDtProject', () => {
   });
 
   describe('графа 44 и предупреждения из regulatoryReport', () => {
-    it('коды документов: 01401/01402/09999', () => {
+    it('коды документов: 01401/01402/10064/10052', () => {
       const report = makeReport({
         certifications: [
           makeItem({ form: 'certificate', regulation: 'ТР ТС 010/2011' }),
           makeItem({ form: 'declaration', regulation: 'ТР ТС 020/2011' }),
+          makeItem({ form: 'notification' }),
         ],
         utilizationFee: [makeItem({ category: 'utilization', priznak: 29, form: 'fee' })],
       });
@@ -314,7 +315,8 @@ describe('buildDtProject', () => {
       const hints = project.goods[0].documentHints;
       expect(hints).toContain('01401 — сертификат соответствия ТР ТС 010/2011');
       expect(hints).toContain('01402 — декларация о соответствии ТР ТС 020/2011');
-      expect(hints).toContain('09999 — расчёт утилизационного сбора');
+      expect(hints).toContain('10064 — расчёт утилизационного сбора');
+      expect(hints).toContain('10052 — нотификация (сведения из реестра ЕАЭС)');
     });
 
     it('маркировка «Честный знак» → предупреждение про графу 31', () => {

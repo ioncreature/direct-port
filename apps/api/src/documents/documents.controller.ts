@@ -239,6 +239,13 @@ export class DocumentsController {
     return this.calculationLogs.findByDocumentId(id);
   }
 
+  /** Чек-лист «Документы к поставке»: генерируется на лету из resultData. */
+  @Get(':id/checklist')
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  checklist(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
+    return this.service.getChecklist(id, actor);
+  }
+
   @Get(':id/stage-runs')
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   async stageRuns(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {

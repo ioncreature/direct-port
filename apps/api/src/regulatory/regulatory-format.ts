@@ -77,6 +77,19 @@ function itemHeadline(item: RegulatoryItem): string {
   return item.matchPrecision === 'broad' ? `${base} ⚠ широкое применение` : base;
 }
 
+/**
+ * Текст предупреждения о страновом запрете/ограничении ввоза — общий для листа
+ * «Проект ДТ» и чек-листа «Документы к поставке». Фильтрация по стране товара
+ * остаётся на вызывающей стороне.
+ */
+export function formatCountryBanWarning(item: RegulatoryItem): string {
+  const country = item.countryName ?? item.countryCode;
+  return (
+    `Запрет/ограничение ввоза${country ? ` (${country})` : ''}: ${item.title}` +
+    (item.matchPrecision === 'broad' ? ' ⚠ широкое применение — проверьте вручную' : '')
+  );
+}
+
 function itemDetails(item: RegulatoryItem): string[] {
   const lines: string[] = [];
   if (item.regulationTitle) lines.push(item.regulationTitle);

@@ -3,8 +3,14 @@ import { roundMoney } from '../common/money';
 import { round4 } from '../common/numbers';
 import { normalizeOksmtCode } from '../common/oksmt';
 import type { ProductAttributeKey, ProductAttributes } from '../common/product-attributes';
-import type { ProductNote } from '../common/product-notes';
+import { hasAntidumpingNote, type ProductNote } from '../common/product-notes';
 import type { RegulatoryItem, RegulatoryReport } from '../regulatory/interfaces';
+import { formatCountryBanWarning } from '../regulatory/regulatory-format';
+import {
+  G44_CONFORMITY_CODES,
+  G44_IMPORT_LICENSE,
+  G44_UTILIZATION_FEE,
+} from '../regulatory/curated/g44-codes';
 import { estimateCustomsFeeRub } from './customs-fee';
 
 /**
@@ -175,23 +181,19 @@ function buildDocumentHints(report: RegulatoryReport | null | undefined): string
   const label = (item: RegulatoryItem, fallback: string): string =>
     item.regulation ? `${fallback} ${item.regulation}` : fallback;
 
+  // Код вида документа — из общего словаря G44 (одна точка правды с чек-листом).
+  const withCode = (code: string | undefined, text: string): string =>
+    code ? `${code} — ${text}` : text;
+
+  const FORM_HINT_LABELS: Record<string, string> = {
+    certificate: 'сертификат соответствия',
+    declaration: 'декларация о соответствии',
+    state_registration: 'свидетельство о государственной регистрации (СГР)',
+    notification: 'нотификация (сведения из реестра ЕАЭС)',
+  };
   for (const item of report.certifications ?? []) {
-    switch (item.form) {
-      case 'certificate':
-        hints.push(`01401 — ${label(item, 'сертификат соответствия')}`);
-        break;
-      case 'declaration':
-        hints.push(`01402 — ${label(item, 'декларация о соответствии')}`);
-        break;
-      case 'state_registration':
-        hints.push(label(item, 'свидетельство о государственной регистрации (СГР)'));
-        break;
-      case 'notification':
-        hints.push(label(item, 'нотификация'));
-        break;
-      default:
-        hints.push(label(item, 'подтверждение соответствия'));
-    }
+    const text = label(item, FORM_HINT_LABELS[item.form] ?? 'подтверждение соответствия');
+    hints.push(withCode(G44_CONFORMITY_CODES[item.form], text));
   }
   for (const item of report.permits ?? []) {
     if (item.category !== 'permit_import') continue;
@@ -199,10 +201,12 @@ function buildDocumentHints(report: RegulatoryReport | null | undefined): string
   }
   for (const item of report.licenses ?? []) {
     if (item.category !== 'license_import') continue;
-    hints.push(`лицензия на ввоз${item.authority ? ` (${item.authority})` : ''}`);
+    hints.push(
+      withCode(G44_IMPORT_LICENSE, `лицензия на ввоз${item.authority ? ` (${item.authority})` : ''}`),
+    );
   }
   if ((report.utilizationFee ?? []).length > 0) {
-    hints.push('09999 — расчёт утилизационного сбора');
+    hints.push(withCode(G44_UTILIZATION_FEE, 'расчёт утилизационного сбора'));
   }
   return uniqueInOrder(hints);
 }
@@ -221,15 +225,10 @@ function buildGoodWarnings(rows: DtRowInput[], good: DtGood): string[] {
   for (const item of report?.countryRestrictions ?? []) {
     if (item.category !== 'country_import_ban') continue;
     if (good.countryCode && item.countryCode && item.countryCode !== good.countryCode) continue;
-    warnings.push(
-      `Запрет/ограничение ввоза${item.countryName ? ` (${item.countryName})` : ''}: ${item.title}` +
-        (item.matchPrecision === 'broad' ? ' ⚠ широкое применение — проверьте вручную' : ''),
-    );
+    warnings.push(formatCountryBanWarning(item));
   }
 
-  const hasAntidumping = rows.some((r) =>
-    (r.notes ?? []).some((n) => n.field === 'antidumping' || n.field === 'compensatory'),
-  );
+  const hasAntidumping = rows.some((r) => hasAntidumpingNote(r.notes));
   if (hasAntidumping) {
     warnings.push(
       'Антидемпинговая/компенсационная пошлина: страну происхождения потребуется подтвердить ' +

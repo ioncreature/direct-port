@@ -10,7 +10,7 @@
  * - severity='info' — нейтральная подсказка, не влияет на корректность
  */
 
-import { INCOTERMS_FREIGHT_IN_PRICE } from '../database/entities/document.entity';
+import { sellerPaysCarriage } from '../database/entities/document.entity';
 
 export type ProductNoteStage = 'parse' | 'classify' | 'verify' | 'interpret' | 'calculate';
 
@@ -60,6 +60,11 @@ export function isIncompleteCalculationStatus(status: unknown): boolean {
   return status === 'error' || status === 'needs_info';
 }
 
+/** По строке применена антидемпинговая/компенсационная мера (сигнал этапа расчёта). */
+export function hasAntidumpingNote(notes: ProductNote[] | undefined): boolean {
+  return (notes ?? []).some((n) => n.field === 'antidumping' || n.field === 'compensatory');
+}
+
 /**
  * Контроль структуры таможенной стоимости по условиям поставки Инкотермс:
  * - INCOTERMS_FREIGHT_IN_PRICE (CFR…DDP): перевозка оплачена продавцом и обычно уже
@@ -73,12 +78,10 @@ export function incotermsFreightNote(doc: {
   freightCost: number | null;
 }): ProductNote | null {
   if (!doc.incoterms) return null;
-  const sellerPaysCarriage = (INCOTERMS_FREIGHT_IN_PRICE as readonly string[]).includes(
-    doc.incoterms,
-  );
+  const freightInPrice = sellerPaysCarriage(doc.incoterms);
   const hasFreight = doc.freightCost != null && doc.freightCost > 0;
 
-  if (sellerPaysCarriage && hasFreight) {
+  if (freightInPrice && hasFreight) {
     return {
       stage: 'calculate',
       severity: 'warning',
@@ -89,7 +92,7 @@ export function incotermsFreightNote(doc: {
         `счёта в таможенной стоимости. Лишний фрахт сбрасывается пересчётом с freightCost = 0.`,
     };
   }
-  if (!sellerPaysCarriage && !hasFreight) {
+  if (!freightInPrice && !hasFreight) {
     return {
       stage: 'calculate',
       severity: 'warning',

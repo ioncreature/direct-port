@@ -529,6 +529,53 @@ describe('DocumentsService', () => {
     });
   });
 
+  describe('getChecklist', () => {
+    it('строит чек-лист из resultData: базовый пакет + меры строк', async () => {
+      const doc = makeDoc({
+        status: DocumentStatus.PROCESSED,
+        resultData: [
+          {
+            tnVedCode: '6403911100',
+            regulatoryReport: {
+              certifications: [],
+              permits: [],
+              licenses: [],
+              marking: [],
+              traceability: [],
+              utilizationFee: [],
+              strategicAndDualUse: [],
+              countryRestrictions: [],
+              other: [],
+              totalCount: 0,
+            },
+          },
+        ],
+      });
+      const { service } = createService({ doc });
+      const checklist = await service.getChecklist('doc-1');
+
+      expect(checklist.documentId).toBe('doc-1');
+      expect(checklist.status).toBe(DocumentStatus.PROCESSED);
+      expect(checklist.items.some((i) => i.title.includes('Внешнеторговый контракт'))).toBe(true);
+      // Код обуви ловит curated-волну маркировки даже при молчании TKS.
+      expect(checklist.items.some((i) => i.title.includes('Честный знак'))).toBe(true);
+      expect(Array.isArray(checklist.warnings)).toBe(true);
+    });
+
+    it('документ без resultData → 400 CHECKLIST_NOT_AVAILABLE', async () => {
+      const doc = makeDoc({ resultData: null });
+      const { service } = createService({ doc });
+      await expect(service.getChecklist('doc-1')).rejects.toMatchObject({
+        response: { code: ErrorCode.CHECKLIST_NOT_AVAILABLE },
+      });
+    });
+
+    it('несуществующий документ → 404', async () => {
+      const { service } = createService({ doc: null });
+      await expect(service.getChecklist('missing')).rejects.toThrow(NotFoundException);
+    });
+  });
+
   describe('getStatusCounts', () => {
     it('returns a status → count map from a groupBy query', async () => {
       const { service, queryBuilder } = createService();

@@ -91,6 +91,11 @@ export const INCOTERMS_FREIGHT_IN_PRICE: readonly Incoterms[] = [
   'DDP',
 ];
 
+/** Перевозка до границы оплачена продавцом по условиям поставки (CFR…DDP). */
+export function sellerPaysCarriage(incoterms: string): boolean {
+  return (INCOTERMS_FREIGHT_IN_PRICE as readonly string[]).includes(incoterms);
+}
+
 const nullableDecimalTransformer = {
   to: (value: number | null | undefined) => value ?? null,
   from: (value: string | null) => (value === null ? null : parseFloat(value)),
