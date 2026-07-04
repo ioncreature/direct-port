@@ -12,6 +12,7 @@ import { countryOriginSourceLabels, downloadDocument, statusColors, statusLabels
 import { calcAiCostFromMap, calcAiCostFromStages, fmt, fmtCost, fmtDateTimeLocale, fmtTokens, modelLabel, stageLabel } from '@/lib/format';
 import { btnDangerOutline, btnOutline, btnPrimary, btnSuccess, btnWarning } from '@/lib/table-styles';
 import { getDocumentUploaderName } from '@/lib/telegram';
+import { INCOTERMS } from '@/lib/types';
 import type { CalculationStatus, CodeCandidate, DocumentResultRow, DocumentStatus, ParsedDataRow, ProductNoteSeverity } from '@/lib/types';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -226,10 +227,12 @@ export default function DocumentDetailPage() {
   const [countryDraft, setCountryDraft] = useState<string>('');
   const [freightCostDraft, setFreightCostDraft] = useState<string>('');
   const [freightCurrencyDraft, setFreightCurrencyDraft] = useState<'USD' | 'CNY' | 'RUB' | 'EUR'>('USD');
+  const [incotermsDraft, setIncotermsDraft] = useState<string>('');
   // Polling каждые 3с обновляет doc — без отслеживания last-synced серверного значения
   // ввод оператора затирался бы при каждом опросе.
   const lastSyncedCountry = useRef<string | null | undefined>(undefined);
   const lastSyncedFreight = useRef<string | undefined>(undefined);
+  const lastSyncedIncoterms = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
     const server = doc?.countryOfOrigin ?? null;
@@ -250,6 +253,14 @@ export default function DocumentDetailPage() {
     }
   }, [doc?.freightCost, doc?.freightCurrency]);
 
+  useEffect(() => {
+    const server = doc?.incoterms ?? null;
+    if (lastSyncedIncoterms.current !== server) {
+      setIncotermsDraft(server ?? '');
+      lastSyncedIncoterms.current = server;
+    }
+  }, [doc?.incoterms]);
+
   const handleRecalculate = useCallback(async () => {
     setRecalculating(true);
     try {
@@ -260,6 +271,7 @@ export default function DocumentDetailPage() {
         countryOfOrigin?: string;
         freightCost?: number;
         freightCurrency?: 'USD' | 'CNY' | 'RUB' | 'EUR';
+        incoterms?: string;
       } = {};
       if (countryDraft) params.countryOfOrigin = countryDraft;
       // Отправляем freight только если поле редактировалось пользователем
@@ -272,13 +284,16 @@ export default function DocumentDetailPage() {
         params.freightCost = draftCost;
         if (draftCost > 0) params.freightCurrency = freightCurrencyDraft;
       }
+      if (incotermsDraft !== (doc?.incoterms ?? '')) {
+        params.incoterms = incotermsDraft; // '' — сброс условий
+      }
       await recalculate(params);
     } catch {
       /* error выставлен в хуке */
     } finally {
       setRecalculating(false);
     }
-  }, [recalculate, countryDraft, freightCostDraft, freightCurrencyDraft, doc?.freightCost, doc?.freightCurrency]);
+  }, [recalculate, countryDraft, freightCostDraft, freightCurrencyDraft, incotermsDraft, doc?.freightCost, doc?.freightCurrency, doc?.incoterms]);
 
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const toggleRow = useCallback(
@@ -607,6 +622,7 @@ export default function DocumentDetailPage() {
             value={`${fmt(doc.freightCost)} ${doc.freightCurrency}`}
           />
         )}
+        {doc.incoterms && <InfoCard label="Условия поставки" value={doc.incoterms} />}
         <InfoCard label="Пользователь" value={getDocumentUploaderName(doc)} />
         <InfoCard label="Создан" value={fmtDateTimeLocale(doc.createdAt)} />
         <InfoCard label="Обновлён" value={fmtDateTimeLocale(doc.updatedAt)} />
@@ -855,7 +871,9 @@ export default function DocumentDetailPage() {
         const freightChanged =
           parsedFreight !== currentCost ||
           (parsedFreight > 0 && freightCurrencyDraft !== currentCurrency);
-        const recalculateDisabled = recalculating || (!countryChanged && !freightChanged);
+        const incotermsChanged = incotermsDraft !== (doc.incoterms ?? '');
+        const recalculateDisabled =
+          recalculating || (!countryChanged && !freightChanged && !incotermsChanged);
         return (
           <div
             style={{
@@ -936,6 +954,28 @@ export default function DocumentDetailPage() {
               <div style={{ fontSize: 11, color: 'var(--text-subtle)', marginTop: 4 }}>
                 Введите 0 или очистите поле, чтобы сбросить фрахт.
               </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Инкотермс</div>
+              <select
+                aria-label="Условия поставки (Инкотермс)"
+                value={incotermsDraft}
+                onChange={(e) => setIncotermsDraft(e.target.value)}
+                style={{
+                  padding: '6px 10px',
+                  fontSize: 14,
+                  borderRadius: 4,
+                  border: '1px solid var(--border)',
+                  background: '#fff',
+                }}
+              >
+                <option value="">— не указаны —</option>
+                {INCOTERMS.map((term) => (
+                  <option key={term} value={term}>
+                    {term}
+                  </option>
+                ))}
+              </select>
             </div>
             <div style={{ flex: 1, minWidth: 200, fontSize: 12, color: 'var(--text-muted)' }}>
               {doc.countryOriginSource && (

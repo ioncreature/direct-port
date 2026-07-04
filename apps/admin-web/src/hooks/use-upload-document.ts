@@ -1,7 +1,7 @@
 'use client';
 
 import api from '@/lib/api';
-import type { Document } from '@/lib/types';
+import type { Document, Incoterms } from '@/lib/types';
 import { useCallback, useState } from 'react';
 
 const MAX_FILE_SIZE = 40 * 1024 * 1024; // 40 МБ — совпадает с лимитом API
@@ -13,6 +13,7 @@ export type FreightCurrency = 'USD' | 'CNY' | 'RUB' | 'EUR';
 export interface UploadOptions {
   freightCost?: number;
   freightCurrency?: FreightCurrency;
+  incoterms?: Incoterms;
 }
 
 export function useUploadDocument() {
@@ -38,6 +39,9 @@ export function useUploadDocument() {
       if (options.freightCost != null && options.freightCost > 0 && options.freightCurrency) {
         formData.append('freightCost', String(options.freightCost));
         formData.append('freightCurrency', options.freightCurrency);
+      }
+      if (options.incoterms) {
+        formData.append('incoterms', options.incoterms);
       }
       const { data } = await api.post<Document>('/documents/upload-admin', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },

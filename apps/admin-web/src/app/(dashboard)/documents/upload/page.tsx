@@ -2,6 +2,7 @@
 
 import { useUploadDocument, type FreightCurrency } from '@/hooks/use-upload-document';
 import { fmtFileSize } from '@/lib/format';
+import { INCOTERMS, type Incoterms } from '@/lib/types';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
 
@@ -13,6 +14,7 @@ export default function UploadDocumentPage() {
   const [file, setFile] = useState<File | null>(null);
   const [freightCost, setFreightCost] = useState('');
   const [freightCurrency, setFreightCurrency] = useState<FreightCurrency>('USD');
+  const [incoterms, setIncoterms] = useState<Incoterms | ''>('');
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -22,6 +24,7 @@ export default function UploadDocumentPage() {
       const doc = await upload(file, {
         freightCost: cost > 0 ? cost : undefined,
         freightCurrency: cost > 0 ? freightCurrency : undefined,
+        incoterms: incoterms || undefined,
       });
       router.push(`/documents/${doc.id}`);
     } catch {
@@ -85,6 +88,29 @@ export default function UploadDocumentPage() {
             Распределится по позициям пропорционально весу (брутто, либо нетто, если
             брутто не указан) и войдёт в таможенную стоимость для пошлины и НДС.
             Оставьте пустым, если фрахт неизвестен.
+          </p>
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label htmlFor="incoterms" style={{ display: 'block', marginBottom: 4 }}>
+            Условия поставки (Инкотермс)
+          </label>
+          <select
+            id="incoterms"
+            value={incoterms}
+            onChange={(e) => setIncoterms(e.target.value as Incoterms | '')}
+            style={{ width: '100%', padding: 8, boxSizing: 'border-box' }}
+          >
+            <option value="">— не указаны —</option>
+            {INCOTERMS.map((term) => (
+              <option key={term} value={term}>
+                {term}
+              </option>
+            ))}
+          </select>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, marginBottom: 0 }}>
+            При CFR/CIF/CPT/CIP/DAP/DPU/DDP перевозка обычно уже включена в цену — расчёт
+            предупредит о возможном двойном счёте фрахта; при EXW/FCA/FAS/FOB без фрахта
+            таможенная стоимость будет занижена.
           </p>
         </div>
         {error && <p style={{ color: 'red', marginBottom: 16 }}>{error}</p>}

@@ -63,6 +63,34 @@ export const DEFAULT_COUNTRY_OF_ORIGIN = '156'; // Китай (OKSMT)
 export type FreightCurrency = 'USD' | 'CNY' | 'RUB' | 'EUR';
 export const FREIGHT_CURRENCIES: readonly FreightCurrency[] = ['USD', 'CNY', 'RUB', 'EUR'];
 
+/** Условия поставки Инкотермс 2020. Определяют, кто оплачивает перевозку до границы —
+ *  без этого структура таможенной стоимости неоднозначна (риск двойного счёта фрахта). */
+export const INCOTERMS = [
+  'EXW',
+  'FCA',
+  'FAS',
+  'FOB',
+  'CFR',
+  'CIF',
+  'CPT',
+  'CIP',
+  'DAP',
+  'DPU',
+  'DDP',
+] as const;
+export type Incoterms = (typeof INCOTERMS)[number];
+
+/** Термины, при которых основная перевозка оплачена продавцом — фрахт обычно уже в цене. */
+export const INCOTERMS_FREIGHT_IN_PRICE: readonly Incoterms[] = [
+  'CFR',
+  'CIF',
+  'CPT',
+  'CIP',
+  'DAP',
+  'DPU',
+  'DDP',
+];
+
 const nullableDecimalTransformer = {
   to: (value: number | null | undefined) => value ?? null,
   from: (value: string | null) => (value === null ? null : parseFloat(value)),
@@ -134,6 +162,10 @@ export class Document {
   /** Валюта freightCost (USD/CNY/RUB/EUR). Конвертируется в валюту документа по курсу ЦБ РФ. */
   @Column({ type: 'varchar', length: 3, name: 'freight_currency', nullable: true })
   freightCurrency: FreightCurrency | null;
+
+  /** Условия поставки Инкотермс 2020 (задаёт оператор). null — не указаны. */
+  @Column({ type: 'varchar', length: 3, nullable: true })
+  incoterms: Incoterms | null;
 
   @Column({ type: 'jsonb', name: 'parsed_data', nullable: true })
   parsedData: Record<string, unknown>[] | null;

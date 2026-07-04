@@ -1,6 +1,11 @@
 import { Type } from 'class-transformer';
 import { IsIn, IsNumber, IsOptional, IsString, Length, Matches, Min } from 'class-validator';
-import { FREIGHT_CURRENCIES, type FreightCurrency } from '../../database/entities/document.entity';
+import {
+  FREIGHT_CURRENCIES,
+  INCOTERMS,
+  type FreightCurrency,
+  type Incoterms,
+} from '../../database/entities/document.entity';
 
 export class RecalculateDocumentDto {
   /** OKSMT-код страны происхождения (3 цифры). Если не указан — пересчёт с текущей. */
@@ -22,4 +27,10 @@ export class RecalculateDocumentDto {
   @IsString()
   @IsIn(FREIGHT_CURRENCIES as readonly string[])
   freightCurrency?: FreightCurrency;
+
+  /** Условия поставки Инкотермс. Пустая строка — сбросить (симметрично freightCost=0). */
+  @IsOptional()
+  @IsString()
+  @IsIn([...INCOTERMS, ''] as readonly string[])
+  incoterms?: Incoterms | '';
 }

@@ -18,6 +18,7 @@ import { errMsg } from '../common/errors';
 import { computeWeightDenominator, resolveFreightTotalInDocCurrency } from '../common/freight';
 import { KNOWN_CURRENCIES } from '../common/normalize-impedi';
 import { toPositiveNumber } from '../common/numbers';
+import { normalizeOksmtCode } from '../common/oksmt';
 import { normalizeProductAttributes } from '../common/product-attributes';
 import { isIncompleteCalculationStatus, type ProductNote } from '../common/product-notes';
 import {
@@ -281,6 +282,9 @@ export class ManualCodeService {
 
     const rowWeightGross = toPositiveNumber(oldRow.weightGross ?? parsedRow.weightGross);
     const rowAttributes = normalizeProductAttributes(oldRow.attributes ?? parsedRow.attributes);
+    const rowCountry = normalizeOksmtCode(
+      (oldRow.countryOfOrigin ?? parsedRow.countryOfOrigin) as string | null,
+    );
     const productRow: ProductRow = {
       description: String(parsedRow.description ?? oldRow.description ?? ''),
       quantity: Number(oldRow.quantity ?? parsedRow.quantity ?? 1) || 1,
@@ -294,6 +298,7 @@ export class ManualCodeService {
         typeof parsedRow.rawContext === 'string' ? parsedRow.rawContext : undefined,
         trimmedNote,
       ),
+      ...(rowCountry ? { countryOfOrigin: rowCountry } : {}),
       ...(rowAttributes ? { attributes: rowAttributes } : {}),
     };
 
@@ -535,12 +540,14 @@ export class ManualCodeService {
   ): ClassifiedProduct {
     const description = String(oldRow.description ?? '');
     const weightGross = toPositiveNumber(oldRow.weightGross);
+    const rowCountry = normalizeOksmtCode(oldRow.countryOfOrigin as string | null);
     return {
       description,
       quantity: Number(oldRow.quantity) || 1,
       price: Number(oldRow.price) || 0,
       weight: Number(oldRow.weight) || 0,
       ...(weightGross ? { weightGross } : {}),
+      ...(rowCountry ? { countryOfOrigin: rowCountry } : {}),
       dimensions: (oldRow.dimensions as Dimension[] | null) ?? undefined,
       // Единый источник rate-полей (включая supplementaryUnit) с pipeline-сборкой.
       ...buildRateFields(tnved),

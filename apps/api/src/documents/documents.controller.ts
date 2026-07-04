@@ -87,7 +87,11 @@ export class DocumentsController {
       file.buffer,
       file.originalname,
       { uploadedByUserId: user.id, companyId: user.companyId },
-      { freightCost: dto.freightCost, freightCurrency: dto.freightCurrency },
+      {
+        freightCost: dto.freightCost,
+        freightCurrency: dto.freightCurrency,
+        incoterms: dto.incoterms,
+      },
     );
   }
 

@@ -42,6 +42,7 @@ export function buildResultRow(opts: {
     exciseRate: item.exciseRate,
     supplementaryUnit: item.supplementaryUnit ?? null,
     supplementaryQuantity: item.supplementaryQuantity ?? null,
+    countryOfOrigin: item.countryOfOrigin ?? null,
     matched: item.matched,
     suggestedCode: item.suggestedCode,
     dutyInterpretation,

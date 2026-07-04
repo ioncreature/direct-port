@@ -1,11 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import * as ExcelJS from 'exceljs';
 import { normalizePer } from '../calculator/calculator.service';
+import type { ProductAttributes } from '../common/product-attributes';
 import type { CalculationStatus, ProductNote } from '../common/product-notes';
 import { Document } from '../database/entities/document.entity';
 import type { Dimension } from '../duty-interpreter/interfaces';
 import type { RegulatoryReport } from '../regulatory/interfaces';
 import { formatRegulatoryReportLong } from '../regulatory/regulatory-format';
+import { OKSMT_BY_CODE } from '../countries/oksmt.data';
+import { buildDtProject, type DtProject } from './dt-project';
 
 interface ResultRow {
   description: string;
@@ -13,6 +16,8 @@ interface ResultRow {
   price: number;
   weight: number;
   weightGross?: number | null;
+  attributes?: ProductAttributes | null;
+  countryOfOrigin?: string | null;
   dimensions?: Dimension[] | null;
   tnVedCode: string;
   tnVedDescription: string;
@@ -109,8 +114,15 @@ function buildColumns(
   language?: string | null,
   hasGrossWeight = false,
   hasSupplementary = false,
+  hasDtNumbers = false,
+  hasRowCountry = false,
 ): ColumnDef[] {
   const columns: ColumnDef[] = [
+    // «№ товара ДТ» — первая колонка: декларантское ПО (Контур/Альта/СТМ) группирует
+    // строки в товары декларации по этому номеру при импорте xlsx.
+    ...(hasDtNumbers
+      ? [{ header: '№ товара ДТ', key: 'dtGoodNumber', width: 10, numFmt: '0' } as ColumnDef]
+      : []),
     { header: 'Наименование', key: 'description', width: 40 },
     { header: 'Количество', key: 'quantity', width: 12, numFmt: '#,##0.####' },
     { header: `Цена (${currency})`, key: 'price', width: 14, numFmt: '#,##0.00' },
@@ -130,6 +142,9 @@ function buildColumns(
       : []),
     { header: 'Код ТН ВЭД', key: 'tnVedCode', width: 16 },
     { header: 'Описание ТН ВЭД', key: 'tnVedDescription', width: 35 },
+    ...(hasRowCountry
+      ? [{ header: 'Страна происх.', key: 'countryDisplay', width: 18 } as ColumnDef]
+      : []),
     ...(hasSupplementary
       ? [{ header: 'Доп. единица (гр. 41 ДТ)', key: 'supplementaryDisplay', width: 20 } as ColumnDef]
       : []),
@@ -189,16 +204,24 @@ function resolveStatus(row: ResultRow): CalculationStatus {
   return row.verificationStatus === 'exact' ? 'exact' : 'partial';
 }
 
-/** Текст колонки «Доп. единица»: «1200 пар», либо «нет данных (л)» когда код
- *  требует единицу, а количества в ней нет. Пусто — доп. единица не требуется. */
-function formatSupplementary(row: ResultRow): string {
-  if (!row.supplementaryUnit) return '';
-  const qty = toNumber(row.supplementaryQuantity);
+/** «156 КИТАЙ» для строк со своей страной происхождения; пусто, если страны нет. */
+function formatCountry(code: string | null | undefined): string {
+  if (!code) return '';
+  const name = OKSMT_BY_CODE.get(code)?.nameRu;
+  return name ? `${code} ${name}` : code;
+}
+
+/** Текст «Доп. единицы» (гр. 41): «1200 пар», либо «нет данных (л)» когда код
+ *  требует единицу, а количества в ней нет. Пусто — доп. единица не требуется.
+ *  Общий формат построчного листа и листа «Проект ДТ». */
+function formatSupplementary(unit: string | null | undefined, quantity: unknown): string {
+  if (!unit) return '';
+  const qty = toNumber(quantity);
   if (qty != null) {
     const formatted = String(Math.round(qty * 10000) / 10000);
-    return `${formatted} ${row.supplementaryUnit}`;
+    return `${formatted} ${unit}`;
   }
-  return `нет данных (${row.supplementaryUnit})`;
+  return `нет данных (${unit})`;
 }
 
 function formatNotes(notes: ProductNote[] | undefined, localized = false): string {
@@ -274,6 +297,24 @@ export class ExcelExportService {
     });
     const hasSupplementary = data.some((r) => !!r.supplementaryUnit);
     const language = doc.language || null;
+
+    // «Проект ДТ»: группировка строк в товары декларации (второй лист) + номера
+    // товаров для построчного листа.
+    const dtProject = buildDtProject({
+      rows: data,
+      docCountryOfOrigin: doc.countryOfOrigin,
+      currency,
+      exchangeRates: doc.exchangeRates,
+    });
+    const rowToGood = new Map<number, number>();
+    for (const good of dtProject.goods) {
+      for (const rowNumber of good.rowNumbers) rowToGood.set(rowNumber, good.goodNumber);
+    }
+    const hasDtNumbers = dtProject.goods.length > 0;
+    // Колонка страны — только когда в строках есть собственная страна происхождения
+    // (сборные инвойсы); для обычных документов страна одна на документ.
+    const hasRowCountry = data.some((r) => !!r.countryOfOrigin);
+
     const COLUMNS = buildColumns(
       currency,
       hasRub,
@@ -282,6 +323,8 @@ export class ExcelExportService {
       language,
       hasGrossWeight,
       hasSupplementary,
+      hasDtNumbers,
+      hasRowCountry,
     );
     const hasLocalizedNotes = language != null && language !== 'ru';
 
@@ -316,6 +359,7 @@ export class ExcelExportService {
       const volumePerUnit = volumesPerUnit[rowIdx];
       const quantityNum = toNumber(row.quantity);
       const rowData: Record<string, unknown> = {
+        ...(hasDtNumbers ? { dtGoodNumber: rowToGood.get(rowIdx + 1) ?? null } : {}),
         description: row.description,
         quantity: quantityNum,
         price: toNumber(row.price),
@@ -331,7 +375,15 @@ export class ExcelExportService {
           : {}),
         tnVedCode: row.tnVedCode || '—',
         tnVedDescription: row.tnVedDescription || '—',
-        ...(hasSupplementary ? { supplementaryDisplay: formatSupplementary(row) } : {}),
+        ...(hasRowCountry ? { countryDisplay: formatCountry(row.countryOfOrigin) } : {}),
+        ...(hasSupplementary
+          ? {
+              supplementaryDisplay: formatSupplementary(
+                row.supplementaryUnit,
+                row.supplementaryQuantity,
+              ),
+            }
+          : {}),
         dutyRateDisplay: row.dutyRateDisplay ?? (row.dutyRate ? `${row.dutyRate}%` : '—'),
         vatRate: toNumber(row.vatRate),
         totalPrice: toNumber(row.totalPrice),
@@ -404,7 +456,142 @@ export class ExcelExportService {
 
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
 
+    if (hasDtNumbers) {
+      this.addDtProjectSheet(workbook, dtProject, currency);
+    }
+
     return workbook.xlsx.writeBuffer();
+  }
+
+  /**
+   * Лист «Проект ДТ»: строки листа «Результат», сгруппированные в товары декларации
+   * (код ТН ВЭД + страна происхождения) с агрегатами в терминах граф ДТ. Черновик
+   * для переноса в декларантское ПО — данные обязан проверить декларант.
+   */
+  private addDtProjectSheet(
+    workbook: ExcelJS.Workbook,
+    project: DtProject,
+    currency: string,
+  ): void {
+    const sheet = workbook.addWorksheet('Проект ДТ');
+
+    const columns: ColumnDef[] = [
+      { header: '№ товара', key: 'goodNumber', width: 10, numFmt: '0' },
+      { header: 'Код ТН ВЭД (гр. 33)', key: 'tnVedCode', width: 16 },
+      { header: 'Описание — черновик (гр. 31)', key: 'descriptionDraft', width: 55 },
+      { header: 'Страна происх. (гр. 34)', key: 'country', width: 18 },
+      { header: 'Брутто, кг (гр. 35)', key: 'grossWeightKg', width: 14, numFmt: '#,##0.000' },
+      { header: 'Нетто, кг (гр. 38)', key: 'netWeightKg', width: 14, numFmt: '#,##0.000' },
+      { header: 'Доп. единица (гр. 41)', key: 'supplementary', width: 16 },
+      { header: `Цена товара (гр. 42), ${currency}`, key: 'invoiceValue', width: 18, numFmt: '#,##0.00' },
+      { header: 'Таможенная стоимость (гр. 45), RUB', key: 'customsValueRub', width: 20, numFmt: '#,##0.00' },
+      { header: 'Статистическая стоимость (гр. 46), USD', key: 'statisticalValueUsd', width: 20, numFmt: '#,##0.00' },
+      { header: 'Пошлина (гр. 47), RUB', key: 'dutyRub', width: 16, numFmt: '#,##0.00' },
+      { header: 'Акциз (гр. 47), RUB', key: 'exciseRub', width: 14, numFmt: '#,##0.00' },
+      { header: 'НДС (гр. 47), RUB', key: 'vatRub', width: 16, numFmt: '#,##0.00' },
+      { header: 'ИТС, $/кг нетто', key: 'itcUsdPerKg', width: 14, numFmt: '#,##0.00' },
+      { header: 'Документы (гр. 44)', key: 'documentHints', width: 45 },
+      { header: 'Строки листа «Результат»', key: 'rowNumbers', width: 20 },
+      { header: 'Предупреждения', key: 'warnings', width: 55 },
+    ];
+
+    sheet.columns = columns.map((c) => ({ header: c.header, key: c.key, width: c.width }));
+    const headerRow = sheet.getRow(1);
+    headerRow.eachCell((cell) => {
+      cell.fill = HEADER_FILL;
+      cell.font = HEADER_FONT;
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    });
+    headerRow.height = 30;
+
+    const numFmtColumns = columns
+      .map((col, i) => ({ index: i + 1, numFmt: col.numFmt }))
+      .filter((c) => c.numFmt);
+    const wrapKeys = new Set(['descriptionDraft', 'documentHints', 'warnings']);
+    const wrapIdx = columns.flatMap((c, i) => (wrapKeys.has(c.key) ? [i + 1] : []));
+
+    for (const good of project.goods) {
+      const rowData: Record<string, unknown> = {
+        goodNumber: good.goodNumber,
+        tnVedCode: good.tnVedCode,
+        descriptionDraft: good.descriptionDraft,
+        country: good.countryCode ? formatCountry(good.countryCode) : '—',
+        grossWeightKg: good.grossWeightKg,
+        netWeightKg: good.netWeightKg,
+        supplementary: formatSupplementary(good.supplementaryUnit, good.supplementaryQuantity),
+        invoiceValue: good.invoiceValue,
+        customsValueRub: good.customsValueRub,
+        statisticalValueUsd: good.statisticalValueUsd,
+        dutyRub: good.dutyRub,
+        exciseRub: good.exciseRub,
+        vatRub: good.vatRub,
+        itcUsdPerKg: good.itcUsdPerKg,
+        documentHints: good.documentHints.join('\n'),
+        rowNumbers: good.rowNumbers.join(', '),
+        warnings: good.warnings.join('\n'),
+      };
+      for (const key of Object.keys(rowData)) rowData[key] = csvSafe(rowData[key]);
+      const excelRow = sheet.addRow(rowData);
+      for (const col of numFmtColumns) excelRow.getCell(col.index).numFmt = col.numFmt!;
+      for (const idx of wrapIdx) {
+        excelRow.getCell(idx).alignment = { wrapText: true, vertical: 'top' };
+      }
+      const lines = Math.max(
+        good.descriptionDraft.split('\n').length,
+        good.documentHints.length,
+        good.warnings.length,
+        1,
+      );
+      if (lines > 1) excelRow.height = ROW_HEIGHT_PER_LINE * lines + ROW_HEIGHT_PADDING;
+    }
+
+    // Итоговый блок: label в колонке «Описание», значение — в стоимостной колонке.
+    const labelColIdx = columns.findIndex((c) => c.key === 'descriptionDraft') + 1;
+    const valueColIdx = columns.findIndex((c) => c.key === 'customsValueRub') + 1;
+    const summary: Array<[string, unknown]> = [
+      [
+        'ИТОГО таможенная стоимость (гр. 45), RUB',
+        project.totals.customsValueRub ?? 'не рассчитана (нет курса ЦБ)',
+      ],
+      [
+        'ИТОГО статистическая стоимость (гр. 46), USD',
+        project.totals.statisticalValueUsd ?? 'не рассчитана (нет курса USD)',
+      ],
+      [
+        'Сбор за таможенные операции (код 1010), RUB',
+        project.totals.customsFeeRub ?? 'не рассчитан',
+      ],
+      [
+        'ДТС-1',
+        project.totals.needsDts1 == null
+          ? '—'
+          : project.totals.needsDts1
+            ? 'ТРЕБУЕТСЯ (стоимость партии > эквивалента $10 000)'
+            : 'не требуется (партия ≤ $10 000; кроме многоразовых/повторяющихся поставок)',
+      ],
+    ];
+    sheet.addRow([]);
+    for (const [label, value] of summary) {
+      const row = sheet.addRow({ descriptionDraft: label, customsValueRub: csvSafe(value) });
+      row.getCell(labelColIdx).font = { bold: true };
+      if (typeof value === 'number') row.getCell(valueColIdx).numFmt = '#,##0.00';
+    }
+
+    sheet.addRow([]);
+    const notes = [
+      ...project.warnings,
+      'ИТС ($/кг нетто) ниже профиля риска ФТС по коду ТН ВЭД — типичный триггер запроса документов ' +
+        'и КТС: проверьте позиции с минимальными значениями и подготовьте подтверждение стоимости.',
+      'Черновик для переноса в декларантское ПО (Контур.Декларант / Альта-ГТД / ВЭД-Декларант). ' +
+        'Не является декларацией — сведения проверяет и дополняет декларант.',
+    ];
+    for (const note of notes) {
+      const row = sheet.addRow({ descriptionDraft: csvSafe(note) });
+      row.getCell(labelColIdx).alignment = { wrapText: true, vertical: 'top' };
+      row.getCell(labelColIdx).font = { italic: true };
+    }
+
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
   }
 
   private async generateRaw(

@@ -343,6 +343,22 @@ export type CountryOriginSource =
   | 'manual'
   | 'default';
 
+/** Условия поставки Инкотермс 2020 — совпадает с INCOTERMS в API. */
+export const INCOTERMS = [
+  'EXW',
+  'FCA',
+  'FAS',
+  'FOB',
+  'CFR',
+  'CIF',
+  'CPT',
+  'CIP',
+  'DAP',
+  'DPU',
+  'DDP',
+] as const;
+export type Incoterms = (typeof INCOTERMS)[number];
+
 export interface Document {
   id: string;
   telegramUser: TelegramUser | null;
@@ -363,10 +379,12 @@ export interface Document {
   countryOfOrigin: string | null;
   countryOriginSource: CountryOriginSource | null;
   countryDetectionReason: string | null;
-  /** Стоимость доставки до границы (общая для документа). Распределяется на позиции пропорционально весу нетто. */
+  /** Стоимость доставки до границы (общая для документа). Распределяется на позиции пропорционально весу брутто (fallback — нетто). */
   freightCost: number | null;
   /** Валюта freightCost. */
   freightCurrency: 'USD' | 'CNY' | 'RUB' | 'EUR' | null;
+  /** Условия поставки Инкотермс 2020. null — не указаны. */
+  incoterms: Incoterms | null;
   createdAt: string;
   updatedAt: string;
 }

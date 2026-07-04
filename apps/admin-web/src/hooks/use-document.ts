@@ -60,12 +60,15 @@ export function useDocument(id: string) {
       countryOfOrigin?: string;
       freightCost?: number;
       freightCurrency?: 'USD' | 'CNY' | 'RUB' | 'EUR';
+      /** Пустая строка — сбросить условия поставки. */
+      incoterms?: string;
     } = {}) => {
       try {
         const body: Record<string, unknown> = {};
         if (params.countryOfOrigin) body.countryOfOrigin = params.countryOfOrigin;
         if (params.freightCost !== undefined) body.freightCost = params.freightCost;
         if (params.freightCurrency !== undefined) body.freightCurrency = params.freightCurrency;
+        if (params.incoterms !== undefined) body.incoterms = params.incoterms;
         await api.post(`/documents/${id}/recalculate`, body);
         await fetch();
       } catch {

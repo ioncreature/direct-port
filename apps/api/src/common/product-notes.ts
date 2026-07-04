@@ -10,6 +10,8 @@
  * - severity='info' — нейтральная подсказка, не влияет на корректность
  */
 
+import { INCOTERMS_FREIGHT_IN_PRICE } from '../database/entities/document.entity';
+
 export type ProductNoteStage = 'parse' | 'classify' | 'verify' | 'interpret' | 'calculate';
 
 export type ProductNoteSeverity = 'info' | 'warning' | 'blocker';
@@ -56,6 +58,49 @@ export function freightIgnoredWarningNote(cost: number, currency: string): Produ
  */
 export function isIncompleteCalculationStatus(status: unknown): boolean {
   return status === 'error' || status === 'needs_info';
+}
+
+/**
+ * Контроль структуры таможенной стоимости по условиям поставки Инкотермс:
+ * - INCOTERMS_FREIGHT_IN_PRICE (CFR…DDP): перевозка оплачена продавцом и обычно уже
+ *   в цене — дополнительно заданный фрахт задваивает таможенную стоимость;
+ * - остальные (EXW/FCA/FAS/FOB): перевозка до границы НЕ в цене — без заданного
+ *   фрахта таможенная стоимость и налоги занижены.
+ * null — условий нет или комбинация корректна (заметка не нужна).
+ */
+export function incotermsFreightNote(doc: {
+  incoterms: string | null;
+  freightCost: number | null;
+}): ProductNote | null {
+  if (!doc.incoterms) return null;
+  const sellerPaysCarriage = (INCOTERMS_FREIGHT_IN_PRICE as readonly string[]).includes(
+    doc.incoterms,
+  );
+  const hasFreight = doc.freightCost != null && doc.freightCost > 0;
+
+  if (sellerPaysCarriage && hasFreight) {
+    return {
+      stage: 'calculate',
+      severity: 'warning',
+      field: 'freight',
+      message:
+        `Условия поставки ${doc.incoterms}: перевозка оплачена продавцом и обычно уже включена ` +
+        `в цену товара, а у документа дополнительно задан фрахт — проверьте, нет ли двойного ` +
+        `счёта в таможенной стоимости. Лишний фрахт сбрасывается пересчётом с freightCost = 0.`,
+    };
+  }
+  if (!sellerPaysCarriage && !hasFreight) {
+    return {
+      stage: 'calculate',
+      severity: 'warning',
+      field: 'freight',
+      message:
+        `Условия поставки ${doc.incoterms}: доставка до границы ЕАЭС не входит в цену товара, ` +
+        `а фрахт у документа не задан — таможенная стоимость, пошлина и НДС занижены. ` +
+        `Укажите фрахт и нажмите «Пересчитать».`,
+    };
+  }
+  return null;
 }
 
 export function defaultCountryWarningNote(): ProductNote {

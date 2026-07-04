@@ -168,7 +168,7 @@ BullMQ очереди: `document-parsing` → `document-processing`. Уведо�
 
 Переобработка: `POST /documents/:id/reprocess` — если есть parsedData → document-processing, если нет (но есть fileBuffer) → document-parsing, если нет ни того ни другого → 400.
 
-Пересчёт: `POST /documents/:id/recalculate` — повторно прогнать классификатор/калькулятор с новыми параметрами (страна происхождения, стоимость фрахта), не парся файл заново. Body: `countryOfOrigin?`, `freightCost?`, `freightCurrency?` (USD/CNY/RUB/EUR). Если поле не передано — берётся сохранённое значение из документа.
+Пересчёт: `POST /documents/:id/recalculate` — повторно прогнать классификатор/калькулятор с новыми параметрами (страна происхождения, стоимость фрахта, Инкотермс), не парся файл заново. Body: `countryOfOrigin?`, `freightCost?`, `freightCurrency?` (USD/CNY/RUB/EUR), `incoterms?` (Инкотермс 2020; пустая строка — сброс). Если поле не передано — берётся сохранённое значение из документа.
 
 ### Статусы документа (`DocumentStatus`)
 
@@ -190,7 +190,7 @@ BullMQ очереди: `document-parsing` → `document-processing`. Уведо�
 |---|---|---|---|
 | POST | `/` | — | Создать документ из готового parsedData (служебный) |
 | POST | `/upload` | X-Internal-Key | Загрузка из Telegram-бота |
-| POST | `/upload-admin` | ADMIN, CUSTOMS | Загрузка из админки (multipart: file + опц. `freightCost` + `freightCurrency`) |
+| POST | `/upload-admin` | ADMIN, CUSTOMS | Загрузка из админки (multipart: file + опц. `freightCost` + `freightCurrency` + `incoterms`) |
 | GET | `/` | ADMIN, CUSTOMS | Список с пагинацией/фильтром/сортировкой |
 | GET | `/status-counts` | ADMIN, CUSTOMS | Счётчики по статусам (для бейджей в UI) |
 | GET | `/token-stats` | ADMIN | Сводка AI-токенов (today/week/month/total + by user + recent) |
@@ -228,6 +228,7 @@ interface ProductRow {
   price: number; // цена в исходной валюте документа
   weight: number; // вес НЕТТО за единицу в кг
   weightGross?: number; // вес БРУТТО за единицу в кг (если в файле есть отдельная колонка)
+  countryOfOrigin?: string; // OKSMT-код страны СТРОКИ (перекрывает страну документа в Calculator)
   attributes?: ProductAttributes; // material/purpose/brand/article/model/manufacturer (common/product-attributes)
 }
 ```
@@ -253,7 +254,9 @@ interface ProductRow {
 - Расчёты: сумма товара, пошлина, НДС, акциз, комиссия доставки, итого
 - Все стоимости указываются как в исходной валюте, так и в рублях
 - Статус проверки: зелёный (точное) / жёлтый (ручная проверка)
-- Колонка «Разрешительные документы» — компактная сводка из `regulatoryReport` (например, `ТР ТС 020/2011 декл.; Утильсбор 32 874 ₽`; маркировка/страновые запреты в Excel сознательно не выводятся — см. regulatory-format.ts)
+- Колонка «Разрешительные документы» — компактная сводка из `regulatoryReport` (например, `ТР ТС 020/2011 декл.; Утильсбор 32 874 ₽`; маркировка/страновые запреты в Excel сознательно не выводятся — см. regulatory-format.ts; маркировка ЧЗ и запреты по стране показываются на листе «Проект ДТ» в предупреждениях)
+- Первая колонка «№ товара ДТ» — номер товара декларации (по нему декларантское ПО Контур/Альта/СТМ группирует строки при импорте xlsx)
+- **Второй лист «Проект ДТ»** (`dt-project.ts` + `addDtProjectSheet`): строки сгруппированы в товары ДТ по ключу (код ТН ВЭД + страна происхождения строки), агрегаты в терминах граф: 31 (черновик описания из наименований + attributes), 33/34, 35/38 (брутто/нетто, 3 знака), 41 (доп. единица), 42 (цена в валюте), 45 (таможенная стоимость ₽), 46 (статистическая стоимость USD), 47 (пошлина/акциз/НДС ₽), ИТС $/кг нетто, подсказки по документам графы 44 (01401/01402/09999 из regulatoryReport), предупреждения (маркировка ЧЗ, антидемпинг → сертификат происхождения, запреты по стране). Итоги: общая ТС, сбор за таможенные операции (лестница 2026 из ПП № 1637/1638 — `customs-fee.ts`), порог ДТС-1 ($10 000, Решение ЕЭК № 160)
 - Стилизация: синий заголовок, автофильтр, заморозка строки заголовка
 - При document.language≠ru: доп. колонка «Notes (translated)» / «备注（翻译）» с локализованными замечаниями
 
@@ -276,6 +279,8 @@ totalCost      = totalPrice + freightShare + dutyAmount + vatAmount + exciseAmou
 verificationStatus = matched AND matchConfidence >= 0.7 ? 'exact' : 'review'
 
 **Где задаётся фрахт:** форма загрузки в админке `/documents/upload` (поля «Стоимость фрахта» + валюта USD/CNY/RUB/EUR, по умолчанию USD) и модалка `Пересчитать` на странице деталей документа. client-bot фрахт не запрашивает — для managed-документов из бота `freightShare = 0` и формула эквивалентна legacy. Чтобы сбросить ранее заданный фрахт через recalculate, передайте `freightCost = 0`.
+
+**Инкотермс (Document.incoterms):** опциональные условия поставки (EXW…DDP, форма загрузки/пересчёт в админке). Контроль структуры таможенной стоимости — `incotermsFreightNote` (common/product-notes): CFR/CIF/CPT/CIP/DAP/DPU/DDP + заданный фрахт → warning о возможном двойном счёте; EXW/FCA/FAS/FOB без фрахта → warning о занижении ТС. Страна происхождения может задаваться и per-строка (колонка в файле → `parsedData[].countryOfOrigin`) — она перекрывает страну документа при фильтрации страновых ставок и в группировке «Проекта ДТ».
 
 **Распределение в processor.ts:** общий объём `freightInDocCurrency = freightCost × курсCБ(freightCurrency → documentCurrency)`. Если курс недоступен или общий вес нетто = 0 — фрахт игнорируется с warning-логом, расчёт идёт без него (документ не падает).
 

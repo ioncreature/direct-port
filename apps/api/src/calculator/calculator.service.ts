@@ -425,7 +425,19 @@ export class CalculatorService {
     if (droppedVatCharges.length > 0) {
       notes.push(this.buildDuplicateVatNote(droppedVatCharges, p.vatRate, language));
     }
-    const charges = this.filterChargesByCountry(rawCharges, countryOfOrigin, notes);
+    // Страна строки (из файла) перекрывает страну документа: антидемпинг и
+    // преференции — страновые, в сборных инвойсах позиции бывают разного происхождения.
+    const rowCountry = normalizeOksmtCode(p.countryOfOrigin);
+    const effectiveCountry = rowCountry ?? countryOfOrigin;
+    if (rowCountry && normalizeOksmtCode(countryOfOrigin) !== rowCountry) {
+      notes.push({
+        stage: 'calculate',
+        severity: 'info',
+        field: 'country',
+        message: `Для строки применена страна происхождения ${rowCountry} (из файла) вместо страны документа.`,
+      });
+    }
+    const charges = this.filterChargesByCountry(rawCharges, effectiveCountry, notes);
 
     let dutyAmount = 0;
     let exciseAmount = 0;

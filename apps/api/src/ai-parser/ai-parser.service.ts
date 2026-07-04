@@ -10,7 +10,7 @@ import {
   formatRejectionReason,
 } from '../common/rejection-reasons';
 import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage } from '../common/token-usage';
-import { toPositiveNumber } from '../common/numbers';
+import { round4, toPositiveNumber } from '../common/numbers';
 import {
   normalizeProductAttributes,
   type ProductAttributes,
@@ -32,6 +32,8 @@ export interface ParsedProduct {
   quantity: number;
   dimensions?: Dimension[];
   hsCode?: string;
+  /** OKSMT-код страны происхождения ЭТОЙ строки (если в файле есть колонка страны по позициям). */
+  countryOfOrigin?: string;
   rawContext?: string;
   /** Структурированные атрибуты (материал, бренд, артикул…) — см. common/product-attributes. */
   attributes?: ProductAttributes;
@@ -116,8 +118,6 @@ const VALID_CURRENCIES = new Set([
   'GEL',
 ]);
 
-const round4 = (v: number) => Math.round(v * 10000) / 10000;
-
 const MAX_ROWS_DEFAULT = 700;
 
 function readMaxRowsFromEnv(): number {
@@ -194,6 +194,7 @@ const SYSTEM_PROMPT = `Ты — эксперт по парсингу комме�
 14. Числовые значения (вес, цена, количество) округляй до 4 знаков после запятой
 15. Если в таблице есть колонка с кодами ТН ВЭД / HS (海关编码, HS编码, код ТН ВЭД, HS code — 6-10 цифр) — извлеки код в поле hsCode (только цифры, без точек и пробелов). Если такой колонки нет — не включай поле
 16. Извлеки структурированные атрибуты товара в объект attributes, если они ЯВНО присутствуют в строке (в наименовании или дополнительных колонках): material (основной материал), purpose (назначение), brand (бренд/товарный знак), article (артикул/SKU), model (модель), manufacturer (производитель). Значения — краткие строки. НЕ выдумывай: если данных нет — не включай ключ
+17. Если в таблице есть колонка страны происхождения ПО СТРОКАМ (страна, origin, country, 产地, made in) — извлеки OKSMT-код страны строки в countryOfOrigin (3 цифры: 156=Китай, 704=Вьетнам, 356=Индия, 764=Таиланд, 792=Турция, 410=Корея, 392=Япония, 840=США, 276=Германия). Если колонки нет или значение пустое — не включай поле
 
 `;
 
@@ -349,6 +350,11 @@ const PRODUCT_ITEMS_SCHEMA: Anthropic.Messages.Tool['input_schema'] = {
     hsCode: {
       type: 'string',
       description: 'Код ТН ВЭД / HS code если указан автором (6-10 цифр, только цифры). Пропусти если нет',
+    },
+    countryOfOrigin: {
+      type: 'string',
+      description:
+        'OKSMT-код страны происхождения ЭТОЙ строки (3 цифры, например 156=Китай) — только если в таблице есть колонка страны по позициям. Пропусти если нет',
     },
     attributes: {
       type: 'object',
@@ -1489,6 +1495,8 @@ ${tsv}
       if (!Number.isFinite(price) || !Number.isFinite(quantity)) continue;
 
       const hsCodeRaw = typeof p.hsCode === 'string' ? p.hsCode.replace(/\D/g, '') : undefined;
+      const rowCountry =
+        typeof p.countryOfOrigin === 'string' ? normalizeOksmtCode(p.countryOfOrigin) : null;
       const dimensions = this.normalizeDimensions(p.dimensions);
       const attributes = normalizeProductAttributes(p.attributes);
 
@@ -1500,6 +1508,7 @@ ${tsv}
         ...(weightGross && weightGross >= weight ? { weightGross: round4(cap(weightGross)) } : {}),
         quantity: cap(quantity, 1),
         ...(hsCodeRaw && hsCodeRaw.length >= 6 ? { hsCode: hsCodeRaw } : {}),
+        ...(rowCountry ? { countryOfOrigin: rowCountry } : {}),
         ...(dimensions.length > 0 ? { dimensions } : {}),
         ...(attributes ? { attributes } : {}),
       });

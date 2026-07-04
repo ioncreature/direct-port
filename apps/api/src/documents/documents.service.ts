@@ -20,6 +20,7 @@ import {
   DocumentStatus,
   type DocumentSource,
   type FreightCurrency,
+  type Incoterms,
 } from '../database/entities/document.entity';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
 import { PipelineAuditService } from '../pipeline-audit/pipeline-audit.service';
@@ -116,6 +117,8 @@ export class DocumentsService {
     options: {
       freightCost?: number;
       freightCurrency?: FreightCurrency;
+      /** Условия поставки Инкотермс 2020 (контроль структуры таможенной стоимости). */
+      incoterms?: Incoterms;
       /** Источник документа. По умолчанию self_service (текущее поведение). */
       documentSource?: DocumentSource;
       /** Запускать ли пайплайн сразу. По умолчанию true. Для managed-intake — false. */
@@ -152,6 +155,7 @@ export class DocumentsService {
       source: documentSource,
       freightCost: freight.freightCost,
       freightCurrency: freight.freightCurrency,
+      incoterms: options.incoterms ?? null,
       // managed-документ ждёт ручного запуска менеджером (INTAKE), self_service парсится сразу.
       status: autoStart ? DocumentStatus.PARSING : DocumentStatus.INTAKE,
     });
@@ -236,6 +240,8 @@ export class DocumentsService {
       countryOfOrigin?: string;
       freightCost?: number;
       freightCurrency?: FreightCurrency;
+      /** Пустая строка — сбросить условия поставки. */
+      incoterms?: Incoterms | '';
     },
     actor?: Actor,
   ): Promise<Document> {
@@ -295,6 +301,10 @@ export class DocumentsService {
       doc.freightCurrency = freight.freightCurrency;
     }
 
+    if (dto.incoterms !== undefined) {
+      doc.incoterms = dto.incoterms === '' ? null : dto.incoterms;
+    }
+
     // Атомарный переход из исходного статуса — симметрично reprocess: двойной клик
     // «Пересчитать» ставил два job'а (второй прогон поверх результатов первого).
     const res = await this.repo.update(
@@ -307,6 +317,7 @@ export class DocumentsService {
         countryDetectionReason: doc.countryDetectionReason,
         freightCost: doc.freightCost,
         freightCurrency: doc.freightCurrency,
+        incoterms: doc.incoterms,
       },
     );
     if (!res.affected) {

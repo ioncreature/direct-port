@@ -53,6 +53,8 @@ export interface ProductRow {
   dimensions?: Dimension[];
   notes?: ProductNote[];
   hsCode?: string;
+  /** OKSMT-код страны происхождения ЭТОЙ строки (перекрывает страну документа в Calculator). */
+  countryOfOrigin?: string | null;
   rawContext?: string;
   /** Структурированные атрибуты (материал, бренд, артикул…) от парсера. */
   attributes?: ProductAttributes;

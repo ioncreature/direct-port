@@ -15,10 +15,12 @@ import { computeWeightDenominator, resolveFreightTotalInDocCurrency } from '../c
 import {
   defaultCountryWarningNote,
   freightIgnoredWarningNote,
+  incotermsFreightNote,
   isIncompleteCalculationStatus,
   type ProductNote,
 } from '../common/product-notes';
 import { toPositiveNumber } from '../common/numbers';
+import { normalizeOksmtCode } from '../common/oksmt';
 import { normalizeProductAttributes } from '../common/product-attributes';
 import {
   type RejectionReasonData,
@@ -135,6 +137,9 @@ export class DocumentsProcessor extends WorkerHost {
         };
         const weightGross = toPositiveNumber(row.weightGross);
         const attributes = normalizeProductAttributes(row.attributes);
+        const rowCountry = normalizeOksmtCode(
+          typeof row.countryOfOrigin === 'string' ? row.countryOfOrigin : null,
+        );
         return {
           description: String(row.description ?? ''),
           quantity: num('quantity', 1),
@@ -144,6 +149,7 @@ export class DocumentsProcessor extends WorkerHost {
           dimensions: this.extractDimensions(row),
           notes,
           ...(typeof row.hsCode === 'string' && row.hsCode ? { hsCode: row.hsCode } : {}),
+          ...(rowCountry ? { countryOfOrigin: rowCountry } : {}),
           ...(typeof row.rawContext === 'string' && row.rawContext ? { rawContext: row.rawContext } : {}),
           ...(attributes ? { attributes } : {}),
         };
@@ -231,9 +237,7 @@ export class DocumentsProcessor extends WorkerHost {
         doc.countryOriginSource = 'default';
         doc.countryDetectionReason = 'Страна происхождения не определена, применён Китай по умолчанию';
       }
-      if (doc.countryOriginSource === 'default') {
-        for (const p of interpreted) p.notes.push(defaultCountryWarningNote());
-      }
+      this.pushDocumentLevelNotes(doc, interpreted);
 
       const freight = this.buildFreightOption(doc, interpreted, currencyToDoc);
       currentStageRunId = await this.audit.startStageRun({
@@ -468,6 +472,7 @@ export class DocumentsProcessor extends WorkerHost {
           vatRate: Number(row.vatRate) || 0,
           exciseRate: Number(row.exciseRate) || 0,
           supplementaryUnit: (row.supplementaryUnit as string | null) ?? null,
+          countryOfOrigin: (row.countryOfOrigin as string | null) ?? null,
           matchConfidence: Number(row.matchConfidence) || 0,
           matched: Boolean(row.matched ?? true),
           // legacy resultData без поля verified считаем проверенным (см. rowNeedsCodeReview):
@@ -480,9 +485,7 @@ export class DocumentsProcessor extends WorkerHost {
         };
       });
 
-      if (doc.countryOriginSource === 'default') {
-        for (const p of inputs) p.notes.push(defaultCountryWarningNote());
-      }
+      this.pushDocumentLevelNotes(doc, inputs);
 
       const freight = this.buildFreightOption(doc, inputs, currencyToDoc);
       const summary = this.calculator.calculate(inputs, commission, {
@@ -606,6 +609,26 @@ export class DocumentsProcessor extends WorkerHost {
         }
       }),
     );
+  }
+
+  /**
+   * Документ-уровневые заметки, дублируемые на каждую строку: дефолтная страна
+   * происхождения и контроль фрахт/Инкотермс. Единая точка для process() и
+   * recalculate() — набор заметок не должен расходиться между полным прогоном
+   * и пересчётом.
+   */
+  private pushDocumentLevelNotes(
+    doc: Document,
+    products: ReadonlyArray<{ notes: ProductNote[] }>,
+  ): void {
+    if (doc.countryOriginSource === 'default') {
+      for (const p of products) p.notes.push(defaultCountryWarningNote());
+    }
+    if (incotermsFreightNote(doc)) {
+      // Каждой строке — свой объект заметки: resultData-строки не должны делить
+      // одну мутабельную ссылку.
+      for (const p of products) p.notes.push(incotermsFreightNote(doc)!);
+    }
   }
 
   /**

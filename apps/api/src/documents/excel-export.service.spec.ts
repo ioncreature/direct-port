@@ -89,14 +89,14 @@ describe('ExcelExportService', () => {
   });
 
   describe('базовая генерация', () => {
-    it('создаёт workbook с одним листом "Результат"', async () => {
+    it('создаёт лист "Результат" + лист "Проект ДТ" для строк с кодами', async () => {
       const doc = makeDocument({ resultData: [makeResultRow()] });
       const buffer = await service.generate(doc);
       const wb = await readWorkbook(buffer as ArrayBuffer);
 
-      const sheet = wb.getWorksheet('Результат');
-      expect(sheet).toBeDefined();
-      expect(wb.worksheets).toHaveLength(1);
+      expect(wb.getWorksheet('Результат')).toBeDefined();
+      expect(wb.getWorksheet('Проект ДТ')).toBeDefined();
+      expect(wb.worksheets).toHaveLength(2);
     });
 
     it('creator = DirectPort', async () => {
@@ -189,6 +189,46 @@ describe('ExcelExportService', () => {
       const buffer = await service.generate(doc);
       const headers = getHeaders((await readWorkbook(buffer as ArrayBuffer)).getWorksheet('Результат')!);
       expect(headers).not.toContain('Доп. единица (гр. 41 ДТ)');
+    });
+  });
+
+  describe('лист «Проект ДТ»', () => {
+    it('строки одного кода группируются в товар; на основном листе — «№ товара ДТ»', async () => {
+      const doc = makeDocument({
+        countryOfOrigin: '156',
+        exchangeRates: { USD: 90 },
+        resultData: [
+          makeResultRow({ totalPriceRub: 90000, freightShareRub: 0 }),
+          makeResultRow({ description: 'Товар 2', totalPriceRub: 90000, freightShareRub: 0 }),
+          makeResultRow({ description: 'Другой код', tnVedCode: '8516101000', totalPriceRub: 45000, freightShareRub: 0 }),
+        ],
+      });
+      const wb = await readWorkbook((await service.generate(doc)) as ArrayBuffer);
+
+      const main = wb.getWorksheet('Результат')!;
+      const mainHeaders = getHeaders(main);
+      expect(mainHeaders[0]).toBe('№ товара ДТ');
+      expect(main.getRow(2).getCell(1).value).toBe(1);
+      expect(main.getRow(3).getCell(1).value).toBe(1);
+      expect(main.getRow(4).getCell(1).value).toBe(2);
+
+      const dt = wb.getWorksheet('Проект ДТ')!;
+      expect(dt).toBeDefined();
+      const dtHeaders = getHeaders(dt);
+      expect(dtHeaders).toContain('Код ТН ВЭД (гр. 33)');
+      expect(dtHeaders).toContain('Таможенная стоимость (гр. 45), RUB');
+      // товар 1: две строки 0201100001
+      expect(dt.getRow(2).getCell(2).value).toBe('0201100001');
+      expect(dt.getRow(2).getCell(9).value).toBe(180000);
+      // страна из документа
+      expect(dt.getRow(2).getCell(4).value).toContain('КИТАЙ');
+    });
+
+    it('без resultData с кодами лист «Проект ДТ» не создаётся', async () => {
+      const doc = makeDocument({ resultData: [makeResultRow({ tnVedCode: '' })] });
+      const wb = await readWorkbook((await service.generate(doc)) as ArrayBuffer);
+      expect(wb.getWorksheet('Проект ДТ')).toBeUndefined();
+      expect(getHeaders(wb.getWorksheet('Результат')!)).not.toContain('№ товара ДТ');
     });
 
     it('при currency=RUB нет колонки курса и дополнительных RUB-конвертаций', async () => {

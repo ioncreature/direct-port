@@ -952,6 +952,29 @@ describe('CalculatorService', () => {
       expect(result.items[0].dutyAmount).toBe(50);
     });
 
+    it('страна строки перекрывает страну документа (сборный инвойс)', () => {
+      const products = [
+        makeProduct({
+          dutyInterpretation: { tnvedCode: '8708705009', charges: baseCharges(), reasoning: '' },
+        }),
+        makeProduct({
+          countryOfOrigin: '792', // Турция — своя страна у строки
+          dutyInterpretation: { tnvedCode: '8708705009', charges: baseCharges(), reasoning: '' },
+        }),
+      ];
+      const result = service.calculate(products, ZERO_COMMISSION, { countryOfOrigin: '156' });
+
+      // строка 1 — страна документа (Китай): 5% + 33.69%
+      expect(result.items[0].dutyAmount).toBeCloseTo(386.9);
+      // строка 2 — Турция: 5% + 35.29% = 402.9, плюс info-note о перекрытии
+      expect(result.items[1].dutyAmount).toBeCloseTo(402.9);
+      const note = result.items[1].notes.find(
+        (n) => n.field === 'country' && n.severity === 'info',
+      );
+      expect(note).toBeDefined();
+      expect(note!.message).toContain('792');
+    });
+
     it('код страны с ведущим нулём нормализуется (12 → "012")', () => {
       const charges: DutyChargeRule[] = [
         {
