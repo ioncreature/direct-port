@@ -1176,6 +1176,46 @@ describe('CalculatorService', () => {
     });
   });
 
+  describe('Доп. единица измерения (supplementaryQuantity, графа 41 ДТ)', () => {
+    it('шт/пары: количество берётся из quantity', () => {
+      const product = makeProduct({ quantity: 24, supplementaryUnit: 'пар' });
+      const result = service.calculate([product], ZERO_COMMISSION);
+      expect(result.items[0].supplementaryQuantity).toBe(24);
+    });
+
+    it('литры: количество берётся из dimensions × quantity', () => {
+      const product = makeProduct({
+        quantity: 10,
+        supplementaryUnit: 'л',
+        dimensions: [{ name: 'объём', value: 0.5, unit: 'l' }],
+      });
+      const result = service.calculate([product], ZERO_COMMISSION);
+      expect(result.items[0].supplementaryQuantity).toBeCloseTo(5, 5);
+    });
+
+    it('нет данных для доп. единицы → null + warning-note (не blocker)', () => {
+      const product = makeProduct({ quantity: 10, supplementaryUnit: 'л' });
+      const result = service.calculate([product], ZERO_COMMISSION);
+      const item = result.items[0];
+      expect(item.supplementaryQuantity).toBeNull();
+      const note = item.notes.find((n) => n.field === 'supplementary_unit');
+      expect(note).toBeDefined();
+      expect(note!.severity).toBe('warning');
+      expect(note!.message).toContain('графа 41 ДТ');
+      // Warning не блокирует расчёт: суммы посчитаны, статус partial
+      expect(item.calculationStatus).toBe('partial');
+      expect(item.dutyAmount).toBeGreaterThan(0);
+    });
+
+    it('код без доп. единицы: supplementaryQuantity=null и никаких заметок', () => {
+      const result = service.calculate([makeProduct()], ZERO_COMMISSION);
+      const item = result.items[0];
+      expect(item.supplementaryQuantity).toBeNull();
+      expect(item.notes.find((n) => n.field === 'supplementary_unit')).toBeUndefined();
+      expect(item.calculationStatus).toBe('exact');
+    });
+  });
+
   describe('CalculationStatus', () => {
     it('exact без заметок', () => {
       const result = service.calculate([makeProduct()], ZERO_COMMISSION);
@@ -1267,6 +1307,33 @@ describe('CalculatorService', () => {
       expect(result.items[0].freightShare).toBeCloseTo(300, 5);
       expect(result.items[1].freightShare).toBeCloseTo(200, 5);
       expect(result.totalFreight).toBeCloseTo(500, 5);
+    });
+
+    it('при наличии weightGross фрахт распределяется по брутто (Решение ЕЭК № 83)', () => {
+      const products = [
+        makeProduct({ price: 1000, quantity: 1, weight: 2, weightGross: 3, dutyRate: 0, vatRate: 0 }),
+        makeProduct({ price: 1000, quantity: 2, weight: 0.5, weightGross: 1, dutyRate: 0, vatRate: 0 }),
+      ];
+      // брутто × qty: 3 и 2, знаменатель=5; всего фрахта=500 → 300 и 200
+      // (по нетто было бы 2 и 1 → 333.33 и 166.67).
+      const result = service.calculate(products, ZERO_COMMISSION, {
+        freight: { totalInDocCurrency: 500, weightDenominator: 5 },
+      });
+      expect(result.items[0].freightShare).toBeCloseTo(300, 5);
+      expect(result.items[1].freightShare).toBeCloseTo(200, 5);
+    });
+
+    it('строка без weightGross участвует в распределении по нетто (смешанный документ)', () => {
+      const products = [
+        makeProduct({ price: 1000, quantity: 1, weight: 2, weightGross: 3, dutyRate: 0, vatRate: 0 }),
+        makeProduct({ price: 1000, quantity: 1, weight: 2, dutyRate: 0, vatRate: 0 }),
+      ];
+      // базисы: 3 (брутто) и 2 (нетто), знаменатель=5 → 300 и 200.
+      const result = service.calculate(products, ZERO_COMMISSION, {
+        freight: { totalInDocCurrency: 500, weightDenominator: 5 },
+      });
+      expect(result.items[0].freightShare).toBeCloseTo(300, 5);
+      expect(result.items[1].freightShare).toBeCloseTo(200, 5);
     });
 
     it('weightDenominator=0 → нули по всем строкам (защита от деления на ноль)', () => {

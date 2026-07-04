@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { ClassifiedProduct } from '../classifier/classifier.service';
 import { DEFAULT_CONFIDENCE_THRESHOLD } from '../common/confidence';
+import { freightWeightBasis } from '../common/freight';
 import { roundMoney } from '../common/money';
 import { extractCurrency, isFlatCurrencyUnit, isSpecificDutyUnit } from '../common/normalize-impedi';
 import { normalizeOksmtCode } from '../common/oksmt';
@@ -30,8 +31,16 @@ export type CalculatorInput = ClassifiedProduct & {
 export interface CalculatedProduct extends ClassifiedProduct {
   totalPrice: number;
   /** Доля общей стоимости фрахта до границы, приходящаяся на эту позицию (в валюте документа).
-   *  Распределяется пропорционально (weight × quantity). 0, если у документа фрахт не задан. */
+   *  Распределяется пропорционально весу брутто × количество (Решение ЕЭК № 83);
+   *  при отсутствии брутто — по нетто. 0, если у документа фрахт не задан. */
   freightShare: number;
+  /**
+   * Количество в дополнительной единице измерения кода ТН ВЭД (графа 41 ДТ),
+   * когда supplementaryUnit задан и данных хватило (шт/пары — из quantity,
+   * литры/м² — из dimensions). null — доп. единица не требуется или данных нет
+   * (тогда на строке warning-note).
+   */
+  supplementaryQuantity?: number | null;
   dutyAmount: number;
   /** true если dutyAmount — неполная оценка (например, применена только адвалорная часть комбинированной ставки) */
   dutyAmountIsEstimate: boolean;
@@ -270,7 +279,8 @@ export class CalculatorService {
   }
 
   /**
-   * Распределение фрахта по позициям пропорционально (weight × quantity).
+   * Распределение фрахта по позициям пропорционально весу брутто × количество
+   * (Решение ЕЭК № 83; при отсутствии брутто — по нетто, см. freightWeightBasis).
    * Защита от мусорных входов: NaN/Infinity/<=0 totalInDocCurrency, отсутствующий
    * или некорректный weightDenominator → нули по всем строкам с warning-логом (чтобы
    * регрессия не прошла молча, как было в первой версии).
@@ -294,12 +304,12 @@ export class CalculatorService {
       );
       return zeros();
     }
+    // freightWeightBasis: Infinity/NaN в весе-количестве даёт 0 — такие строки
+    // фрахт не получают (симметрично их исключению из знаменателя).
     return products.map((p) => {
-      const net = (p.weight || 0) * (p.quantity || 0);
-      // isFinite: Infinity в весе/количестве дало бы Infinity-долю, а NaN — NaN
-      // во всех суммах строки; такие строки фрахт не получают.
-      if (!Number.isFinite(net) || net <= 0) return 0;
-      return (totalInDocCurrency * net) / weightDenominator;
+      const basis = freightWeightBasis(p);
+      if (basis <= 0) return 0;
+      return (totalInDocCurrency * basis) / weightDenominator;
     });
   }
 
@@ -357,6 +367,7 @@ export class CalculatorService {
       ...p,
       totalPrice: 0,
       freightShare: 0,
+      supplementaryQuantity: null,
       dutyAmount: 0,
       dutyAmountIsEstimate: false,
       dutyFormula: null,
@@ -477,6 +488,27 @@ export class CalculatorService {
       }
     }
 
+    // Количество в доп. единице кода ТН ВЭД (графа 41 ДТ). Не влияет на суммы,
+    // но без него результат не превратить в декларацию: помечаем нехватку данных.
+    let supplementaryQuantity: number | null = null;
+    if (p.supplementaryUnit) {
+      const per = normalizePer(p.supplementaryUnit);
+      const resolved = this.resolveQuantity(per, p);
+      if (resolved.found) {
+        supplementaryQuantity = Math.round(resolved.qty * 10000) / 10000;
+      } else {
+        notes.push({
+          stage: 'calculate',
+          severity: 'warning',
+          field: 'supplementary_unit',
+          message:
+            `Код ТН ВЭД предусматривает дополнительную единицу измерения «${humanizeUnit(per)}» ` +
+            `(графа 41 ДТ), но в данных нет ${describeQuantity(per)}. ` +
+            `Для декларации количество в этой единице придётся указать вручную.`,
+        });
+      }
+    }
+
     const logisticsCommission = roundMoney(
       totalPrice * (commission.pricePercent / 100) +
         p.weight * p.quantity * commission.weightRate +
@@ -503,6 +535,7 @@ export class CalculatorService {
       ...p,
       totalPrice,
       freightShare: roundedFreight,
+      supplementaryQuantity,
       dutyAmount,
       dutyAmountIsEstimate,
       dutyFormula,

@@ -12,6 +12,7 @@ interface ResultRow {
   quantity: number;
   price: number;
   weight: number;
+  weightGross?: number | null;
   dimensions?: Dimension[] | null;
   tnVedCode: string;
   tnVedDescription: string;
@@ -19,6 +20,8 @@ interface ResultRow {
   dutyRateDisplay?: string;
   vatRate: number;
   exciseRate: number;
+  supplementaryUnit?: string | null;
+  supplementaryQuantity?: number | null;
   totalPrice: number;
   freightShare?: number;
   dutyAmount: number;
@@ -104,17 +107,32 @@ function buildColumns(
   hasVolume: boolean,
   hasFreight: boolean,
   language?: string | null,
+  hasGrossWeight = false,
+  hasSupplementary = false,
 ): ColumnDef[] {
   const columns: ColumnDef[] = [
     { header: 'Наименование', key: 'description', width: 40 },
     { header: 'Количество', key: 'quantity', width: 12, numFmt: '#,##0.####' },
     { header: `Цена (${currency})`, key: 'price', width: 14, numFmt: '#,##0.00' },
-    { header: 'Вес (кг)', key: 'weight', width: 12, numFmt: '#,##0.00' },
+    // «Вес нетто» вместо «Вес» только при наличии брутто: для legacy-документов
+    // с одной колонкой веса заголовок не меняем.
+    {
+      header: hasGrossWeight ? 'Вес нетто (кг)' : 'Вес (кг)',
+      key: 'weight',
+      width: 12,
+      numFmt: '#,##0.00',
+    },
+    ...(hasGrossWeight
+      ? [{ header: 'Вес брутто (кг)', key: 'weightGross', width: 14, numFmt: '#,##0.00' } as ColumnDef]
+      : []),
     ...(hasVolume
       ? [{ header: 'Объём (л)', key: 'volume', width: 14, numFmt: '#,##0.0000' } as ColumnDef]
       : []),
     { header: 'Код ТН ВЭД', key: 'tnVedCode', width: 16 },
     { header: 'Описание ТН ВЭД', key: 'tnVedDescription', width: 35 },
+    ...(hasSupplementary
+      ? [{ header: 'Доп. единица (гр. 41 ДТ)', key: 'supplementaryDisplay', width: 20 } as ColumnDef]
+      : []),
     { header: 'Ставка пошлины', key: 'dutyRateDisplay', width: 20 },
     { header: 'Ставка НДС (%)', key: 'vatRate', width: 16, numFmt: '0.00' },
     { header: `Сумма (${currency})`, key: 'totalPrice', width: 16, numFmt: '#,##0.00' },
@@ -169,6 +187,18 @@ function resolveStatus(row: ResultRow): CalculationStatus {
   if (row.calculationStatus) return row.calculationStatus;
   // Обратная совместимость: старые resultData без calculationStatus
   return row.verificationStatus === 'exact' ? 'exact' : 'partial';
+}
+
+/** Текст колонки «Доп. единица»: «1200 пар», либо «нет данных (л)» когда код
+ *  требует единицу, а количества в ней нет. Пусто — доп. единица не требуется. */
+function formatSupplementary(row: ResultRow): string {
+  if (!row.supplementaryUnit) return '';
+  const qty = toNumber(row.supplementaryQuantity);
+  if (qty != null) {
+    const formatted = String(Math.round(qty * 10000) / 10000);
+    return `${formatted} ${row.supplementaryUnit}`;
+  }
+  return `нет данных (${row.supplementaryUnit})`;
 }
 
 function formatNotes(notes: ProductNote[] | undefined, localized = false): string {
@@ -238,8 +268,21 @@ export class ExcelExportService {
       const v = toNumber(r.freightShare);
       return v != null && v > 0;
     });
+    const hasGrossWeight = data.some((r) => {
+      const v = toNumber(r.weightGross);
+      return v != null && v > 0;
+    });
+    const hasSupplementary = data.some((r) => !!r.supplementaryUnit);
     const language = doc.language || null;
-    const COLUMNS = buildColumns(currency, hasRub, hasVolume, hasFreight, language);
+    const COLUMNS = buildColumns(
+      currency,
+      hasRub,
+      hasVolume,
+      hasFreight,
+      language,
+      hasGrossWeight,
+      hasSupplementary,
+    );
     const hasLocalizedNotes = language != null && language !== 'ru';
 
     sheet.columns = COLUMNS.map((col) => ({
@@ -277,6 +320,7 @@ export class ExcelExportService {
         quantity: quantityNum,
         price: toNumber(row.price),
         weight: toNumber(row.weight),
+        ...(hasGrossWeight ? { weightGross: toNumber(row.weightGross) } : {}),
         ...(hasVolume
           ? {
               volume:
@@ -287,6 +331,7 @@ export class ExcelExportService {
           : {}),
         tnVedCode: row.tnVedCode || '—',
         tnVedDescription: row.tnVedDescription || '—',
+        ...(hasSupplementary ? { supplementaryDisplay: formatSupplementary(row) } : {}),
         dutyRateDisplay: row.dutyRateDisplay ?? (row.dutyRate ? `${row.dutyRate}%` : '—'),
         vatRate: toNumber(row.vatRate),
         totalPrice: toNumber(row.totalPrice),

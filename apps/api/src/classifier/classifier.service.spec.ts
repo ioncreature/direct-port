@@ -46,6 +46,8 @@ function makeClaudeSelection(overrides: Record<string, any> = {}) {
 function createService(opts: {
   searchResults?: Record<string, { data: any[]; hm: number }>;
   tnvedCodes?: Record<string, TnvedCode>;
+  /** Полный список валидных кодов для prefix-кандидатов. По умолчанию — ключи tnvedCodes. */
+  tnvedCodeList?: string[];
   claudeResponse?: any[];
   /** Ответ classify_products при retry-вызове (отличаем по CLASSIFIER_RETRY_PROMPT_INTRO в user prompt). */
   claudeRetryResponse?: any[];
@@ -69,6 +71,9 @@ function createService(opts: {
       if (!tnved) return Promise.reject(new Error(`TNVED ${code} not found`));
       return Promise.resolve(tnved);
     }),
+    getTnvedCodeList: jest
+      .fn()
+      .mockImplementation(() => Promise.resolve(opts.tnvedCodeList ?? Object.keys(tnvedCodes))),
   };
 
   const anthropic = claudeEnabled
@@ -444,6 +449,30 @@ describe('ClassifierService', () => {
       expect(p.dutyMin).toBeNull();
       expect(p.vatRate).toBe(22);
     });
+
+    it('извлекает EDI2 как supplementaryUnit (доп. единица графы 41)', async () => {
+      const { service } = createService({
+        searchResults: { 'Ботинки': makeSearchResult('6402999100', 'Обувь') },
+        tnvedCodes: {
+          '6402999100': makeTnvedCode('6402999100', { EDI2: '715' } as any),
+        },
+        claudeResponse: [makeClaudeSelection({ tnVedCode: '6402999100' })],
+      });
+
+      const result = await service.classify([makeProduct('Ботинки')]);
+      expect(result.products[0].supplementaryUnit).toBe('пар');
+    });
+
+    it('supplementaryUnit = null, когда у кода нет EDI2/EDI3', async () => {
+      const { service } = createService({
+        searchResults: { 'Чайник': makeSearchResult('8516101000', 'Чайники') },
+        tnvedCodes: { '8516101000': makeTnvedCode('8516101000') },
+        claudeResponse: [makeClaudeSelection({ tnVedCode: '8516101000' })],
+      });
+
+      const result = await service.classify([makeProduct('Чайник')]);
+      expect(result.products[0].supplementaryUnit).toBeNull();
+    });
   });
 
   describe('Fallback на лучший TKS-кандидат без Claude', () => {
@@ -651,9 +680,10 @@ describe('ClassifierService', () => {
       expect(classificationCallCount(anthropic!)).toBe(2);
     });
 
-    it('не делает retry если у товара нет TKS-кандидатов', async () => {
+    it('не делает retry если нет ни TKS-кандидатов, ни соседей по префиксу в списке кодов', async () => {
       const { service, anthropic } = createService({
         searchResults: { 'Совсем неизвестный': { data: [], hm: 0 } },
+        tnvedCodeList: [],
         claudeResponse: [
           makeClaudeSelection({
             tnVedCode: '9999999999',
@@ -667,6 +697,53 @@ describe('ClassifierService', () => {
       expect(result.products[0].matched).toBe(false);
       // Только один classify-вызов: retry не имеет смысла без кандидатов
       expect(classificationCallCount(anthropic!)).toBe(1);
+    });
+
+    it('0 кандидатов + код вне справочника: берёт соседей по префиксу из списка кодов и делает retry', async () => {
+      const { service, anthropic, tksApi } = createService({
+        searchResults: { 'Неизвестный прибор': { data: [], hm: 0 } },
+        tnvedCodes: {
+          '9031201000': makeTnvedCode('9031201000', { IMP: 3, NDS: 22 }),
+          '9031209000': makeTnvedCode('9031209000'),
+        },
+        tnvedCodeList: ['9031201000', '9031209000', '8516101000'],
+        claudeResponse: [
+          makeClaudeSelection({
+            tnVedCode: '9031200000', // валидно выглядит, но в справочнике нет
+            confidence: 0.6,
+            fromCandidates: false,
+          }),
+        ],
+        claudeRetryResponse: [
+          makeClaudeSelection({ tnVedCode: '9031201000', confidence: 0.72, fromCandidates: true }),
+        ],
+      });
+
+      const result = await service.classify([makeProduct('Неизвестный прибор')]);
+      const p = result.products[0];
+
+      expect(tksApi.getTnvedCodeList).toHaveBeenCalled();
+      expect(classificationCallCount(anthropic!)).toBe(2);
+      expect(p.matched).toBe(true);
+      expect(p.tnVedCode).toBe('9031201000');
+      expect(p.dutyRate).toBe(3);
+      expect(p.matchConfidence).toBeCloseTo(0.72);
+    });
+
+    it('0 кандидатов + retry по префиксу не удался: позиция остаётся unmatched', async () => {
+      const { service, anthropic } = createService({
+        searchResults: { 'Неизвестный прибор': { data: [], hm: 0 } },
+        tnvedCodes: { '9031201000': makeTnvedCode('9031201000') },
+        tnvedCodeList: ['9031201000'],
+        claudeResponse: [
+          makeClaudeSelection({ tnVedCode: '9031200000', confidence: 0.6, fromCandidates: false }),
+        ],
+        claudeRetryResponse: [],
+      });
+
+      const result = await service.classify([makeProduct('Неизвестный прибор')]);
+      expect(result.products[0].matched).toBe(false);
+      expect(classificationCallCount(anthropic!)).toBe(2);
     });
 
     it('если retry вернул пусто, остаётся unmatched', async () => {
@@ -1183,6 +1260,12 @@ describe('ClassifierService', () => {
 
       expect(result.products[0].tnVedCode).toBe('1111111111');
       expect(result.products[0].matchConfidence).toBeCloseTo(0.6);
+      // Отброшенное vision-исправление оставляет след для оператора
+      const visionNote = result.products[0].notes.find(
+        (n) => n.severity === 'warning' && n.message.includes('9999999999'),
+      );
+      expect(visionNote).toBeDefined();
+      expect(visionNote!.message).toContain('нет в справочнике');
     });
 
     it('кэширует vision-результат по hash+code+language', async () => {

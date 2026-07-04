@@ -1,6 +1,7 @@
 import {
   InvalidFreightError,
   computeWeightDenominator,
+  freightWeightBasis,
   normalizeFreightInput,
   resolveFreightTotalInDocCurrency,
 } from './freight';
@@ -145,5 +146,31 @@ describe('computeWeightDenominator', () => {
         { weight: 2, quantity: 10 },
       ]),
     ).toBe(20);
+  });
+
+  it('использует weightGross вместо weight, когда брутто задано (Решение ЕЭК № 83)', () => {
+    expect(
+      computeWeightDenominator([
+        { weight: 2, weightGross: 3, quantity: 10 }, // 30 по брутто
+        { weight: 1, quantity: 5 }, // 5 по нетто (брутто нет)
+      ]),
+    ).toBe(35);
+  });
+});
+
+describe('freightWeightBasis', () => {
+  it('брутто приоритетнее нетто', () => {
+    expect(freightWeightBasis({ weight: 2, weightGross: 3, quantity: 10 })).toBe(30);
+  });
+
+  it('fallback на нетто без брутто или при брутто ≤ 0', () => {
+    expect(freightWeightBasis({ weight: 2, quantity: 10 })).toBe(20);
+    expect(freightWeightBasis({ weight: 2, weightGross: 0, quantity: 10 })).toBe(20);
+    expect(freightWeightBasis({ weight: 2, weightGross: null, quantity: 10 })).toBe(20);
+  });
+
+  it('нечисловой/бесконечный базис → 0', () => {
+    expect(freightWeightBasis({ weight: Infinity, quantity: 1 })).toBe(0);
+    expect(freightWeightBasis({ weight: 2, quantity: 0 })).toBe(0);
   });
 });

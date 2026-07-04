@@ -101,6 +101,50 @@ describe('SpreadsheetReaderService', () => {
       expect(result.rows).toHaveLength(0);
       expect(result.columnCount).toBe(0);
     });
+
+    it('несколько листов с данными: обрабатывается первый, остальные попадают в skippedSheets', async () => {
+      const workbook = new ExcelJS.Workbook();
+      const s1 = workbook.addWorksheet('Товары');
+      s1.addRow(['Name', 'Price']);
+      s1.addRow(['Widget', 100]);
+      const s2 = workbook.addWorksheet('Ещё товары');
+      s2.addRow(['Name', 'Price']);
+      s2.addRow(['Gadget', 200]);
+      s2.addRow(['Gizmo', 300]);
+      const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+
+      const result = await service.read(buffer, 'test.xlsx');
+      expect(result.sheetName).toBe('Товары');
+      expect(result.rows).toHaveLength(2);
+      expect(result.skippedSheets).toEqual([{ name: 'Ещё товары', rows: 3 }]);
+    });
+
+    it('пустой первый лист пропускается — данные берутся с первого непустого', async () => {
+      const workbook = new ExcelJS.Workbook();
+      workbook.addWorksheet('Титульный');
+      const s2 = workbook.addWorksheet('Данные');
+      s2.addRow(['Name', 'Price']);
+      s2.addRow(['Widget', 100]);
+      const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+
+      const result = await service.read(buffer, 'test.xlsx');
+      expect(result.sheetName).toBe('Данные');
+      expect(result.rows).toHaveLength(2);
+      expect(result.skippedSheets).toBeUndefined();
+    });
+
+    it('лист из одной строки не считается пропущенными данными (титульник)', async () => {
+      const workbook = new ExcelJS.Workbook();
+      const s1 = workbook.addWorksheet('Товары');
+      s1.addRow(['Name', 'Price']);
+      s1.addRow(['Widget', 100]);
+      const s2 = workbook.addWorksheet('Note');
+      s2.addRow(['Спасибо за заказ!']);
+      const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+
+      const result = await service.read(buffer, 'test.xlsx');
+      expect(result.skippedSheets).toBeUndefined();
+    });
   });
 
   describe('Определение формата по расширению', () => {

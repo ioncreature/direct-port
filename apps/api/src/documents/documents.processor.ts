@@ -18,6 +18,8 @@ import {
   isIncompleteCalculationStatus,
   type ProductNote,
 } from '../common/product-notes';
+import { toPositiveNumber } from '../common/numbers';
+import { normalizeProductAttributes } from '../common/product-attributes';
 import {
   type RejectionReasonData,
   buildLowConfidenceReasonData,
@@ -131,15 +133,19 @@ export class DocumentsProcessor extends WorkerHost {
           }
           return n || fallback;
         };
+        const weightGross = toPositiveNumber(row.weightGross);
+        const attributes = normalizeProductAttributes(row.attributes);
         return {
           description: String(row.description ?? ''),
           quantity: num('quantity', 1),
           price: num('price', 0),
           weight: num('weight', 0),
+          ...(weightGross ? { weightGross } : {}),
           dimensions: this.extractDimensions(row),
           notes,
           ...(typeof row.hsCode === 'string' && row.hsCode ? { hsCode: row.hsCode } : {}),
           ...(typeof row.rawContext === 'string' && row.rawContext ? { rawContext: row.rawContext } : {}),
+          ...(attributes ? { attributes } : {}),
         };
       });
 
@@ -444,11 +450,13 @@ export class DocumentsProcessor extends WorkerHost {
         const notes = Array.isArray(row.notes)
           ? (row.notes as ProductNote[]).filter((n) => n.stage !== 'calculate')
           : [];
+        const weightGross = toPositiveNumber(row.weightGross);
         return {
           description: String(row.description ?? ''),
           quantity: Number(row.quantity) || 1,
           price: Number(row.price) || 0,
           weight: Number(row.weight) || 0,
+          ...(weightGross ? { weightGross } : {}),
           dimensions: (row.dimensions as Dimension[] | null) ?? undefined,
           tnVedCode: String(row.tnVedCode ?? ''),
           tnVedDescription: String(row.tnVedDescription ?? ''),
@@ -459,6 +467,7 @@ export class DocumentsProcessor extends WorkerHost {
           dutyMinUnit: (row.dutyMinUnit as string | null) ?? null,
           vatRate: Number(row.vatRate) || 0,
           exciseRate: Number(row.exciseRate) || 0,
+          supplementaryUnit: (row.supplementaryUnit as string | null) ?? null,
           matchConfidence: Number(row.matchConfidence) || 0,
           matched: Boolean(row.matched ?? true),
           // legacy resultData без поля verified считаем проверенным (см. rowNeedsCodeReview):
@@ -498,6 +507,7 @@ export class DocumentsProcessor extends WorkerHost {
           dutyRateDisplay: item.dutyRateDisplay,
           totalPrice: item.totalPrice,
           freightShare: item.freightShare,
+          supplementaryQuantity: item.supplementaryQuantity ?? null,
           dutyAmount: item.dutyAmount,
           dutyAmountIsEstimate: item.dutyAmountIsEstimate,
           dutyFormula: item.dutyFormula,
@@ -608,7 +618,12 @@ export class DocumentsProcessor extends WorkerHost {
    */
   private buildFreightOption(
     doc: Document,
-    products: ReadonlyArray<{ weight: number; quantity: number; notes: ProductNote[] }>,
+    products: ReadonlyArray<{
+      weight: number;
+      weightGross?: number;
+      quantity: number;
+      notes: ProductNote[];
+    }>,
     currencyToDoc: Record<string, number>,
   ): { totalInDocCurrency: number; weightDenominator: number } | undefined {
     const total = resolveFreightTotalInDocCurrency(doc, currencyToDoc);

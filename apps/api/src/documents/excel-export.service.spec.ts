@@ -140,6 +140,57 @@ describe('ExcelExportService', () => {
       expect(headers).toContain('Цена (USD)');
     });
 
+    it('без weightGross в данных — одна колонка «Вес (кг)», без брутто', async () => {
+      const doc = makeDocument({ resultData: [makeResultRow()] });
+      const buffer = await service.generate(doc);
+      const headers = getHeaders((await readWorkbook(buffer as ArrayBuffer)).getWorksheet('Результат')!);
+
+      expect(headers).toContain('Вес (кг)');
+      expect(headers).not.toContain('Вес нетто (кг)');
+      expect(headers).not.toContain('Вес брутто (кг)');
+    });
+
+    it('при наличии weightGross — колонки «Вес нетто (кг)» и «Вес брутто (кг)»', async () => {
+      const doc = makeDocument({
+        resultData: [makeResultRow({ weight: 2, weightGross: 2.4 })],
+      });
+      const buffer = await service.generate(doc);
+      const sheet = (await readWorkbook(buffer as ArrayBuffer)).getWorksheet('Результат')!;
+      const headers = getHeaders(sheet);
+
+      expect(headers).toContain('Вес нетто (кг)');
+      expect(headers).toContain('Вес брутто (кг)');
+      expect(headers).not.toContain('Вес (кг)');
+      const grossIdx = headers.indexOf('Вес брутто (кг)') + 1;
+      expect(sheet.getRow(2).getCell(grossIdx).value).toBe(2.4);
+    });
+
+    it('доп. единица (гр. 41): колонка появляется и показывает количество или нехватку данных', async () => {
+      const doc = makeDocument({
+        resultData: [
+          makeResultRow({ supplementaryUnit: 'пар', supplementaryQuantity: 24 }),
+          makeResultRow({ supplementaryUnit: 'л', supplementaryQuantity: null }),
+          makeResultRow(),
+        ],
+      });
+      const buffer = await service.generate(doc);
+      const sheet = (await readWorkbook(buffer as ArrayBuffer)).getWorksheet('Результат')!;
+      const headers = getHeaders(sheet);
+
+      expect(headers).toContain('Доп. единица (гр. 41 ДТ)');
+      const colIdx = headers.indexOf('Доп. единица (гр. 41 ДТ)') + 1;
+      expect(sheet.getRow(2).getCell(colIdx).value).toBe('24 пар');
+      expect(sheet.getRow(3).getCell(colIdx).value).toBe('нет данных (л)');
+      expect([null, undefined, '']).toContain(sheet.getRow(4).getCell(colIdx).value);
+    });
+
+    it('без supplementaryUnit колонка доп. единицы не добавляется', async () => {
+      const doc = makeDocument({ resultData: [makeResultRow()] });
+      const buffer = await service.generate(doc);
+      const headers = getHeaders((await readWorkbook(buffer as ArrayBuffer)).getWorksheet('Результат')!);
+      expect(headers).not.toContain('Доп. единица (гр. 41 ДТ)');
+    });
+
     it('при currency=RUB нет колонки курса и дополнительных RUB-конвертаций', async () => {
       const doc = makeDocument({ currency: 'RUB', resultData: [makeResultRow()] });
       const buffer = await service.generate(doc);

@@ -10,6 +10,11 @@ import {
   formatRejectionReason,
 } from '../common/rejection-reasons';
 import { type TokenUsageMap, emptyTokenUsageMap, mergeTokenUsage } from '../common/token-usage';
+import { toPositiveNumber } from '../common/numbers';
+import {
+  normalizeProductAttributes,
+  type ProductAttributes,
+} from '../common/product-attributes';
 import type { Dimension } from '../duty-interpreter/interfaces';
 import type { AiCallPurpose } from '../database/entities/ai-call.entity';
 import { PipelineAuditService, type AuditContext } from '../pipeline-audit/pipeline-audit.service';
@@ -20,11 +25,16 @@ export interface ParsedProduct {
   description: string;
   descriptionOriginal?: string;
   price: number;
+  /** Вес НЕТТО за единицу, кг (если в файле одна колонка веса — она считается нетто). */
   weight: number;
+  /** Вес БРУТТО за единицу, кг. Заполняется только когда в файле есть отдельная колонка брутто. */
+  weightGross?: number;
   quantity: number;
   dimensions?: Dimension[];
   hsCode?: string;
   rawContext?: string;
+  /** Структурированные атрибуты (материал, бренд, артикул…) — см. common/product-attributes. */
+  attributes?: ProductAttributes;
   [key: string]: unknown;
 }
 
@@ -65,6 +75,12 @@ export interface AiParseResult {
    * к индексу товара в parsedData.
    */
   photoBundle?: { photos: ProductPhotoInput[]; dataRowIndices: number[] };
+  /**
+   * Индексы строк файла, реально попавшие в products. Отличается от structure.dataRows,
+   * когда chunked-парсинг потерял блоки: без этого фото привязывались бы к строкам
+   * со сдвигом (photoBundle мапит dataRowIndices[i] → products[i]).
+   */
+  effectiveDataRows?: number[];
 }
 
 type RawParseResult = Omit<
@@ -161,6 +177,7 @@ const SYSTEM_PROMPT = `Ты — эксперт по парсингу комме�
    - «вес коробки / gross weight per carton / 单毛重 / 单净重» при наличии колонок «кол-во коробок» + «штук в коробке» — это вес УПАКОВКИ, раздели на штук в коробке (например, коробка 8.625 кг × 24 банки → 0.3594 кг/банка)
    - «общий вес / total weight / 总毛重 / 总净重» — раздели на итоговое количество штук
    Всегда сверяй результат с другими видимыми колонками: итоговое количество × вес за единицу должно примерно совпадать с колонкой общего веса (расхождение >5% — скорее всего перепутана единица)
+5а. Нетто и брутто — разные графы таможенной декларации. Если в таблице есть ОТДЕЛЬНЫЕ колонки веса нетто и брутто (net/gross weight, 净重/毛重) — заполни weight весом НЕТТО за единицу, а weightGross — весом БРУТТО за единицу (те же правила пересчёта на единицу, что в п. 5). Если колонка веса одна — заполни только weight и НЕ выдумывай weightGross
 6. Цена должна быть за одну единицу товара в исходной валюте. Та же проверка: итоговое количество × цена должно примерно совпадать с колонкой общей суммы
 7. Пропусти итоговые/суммарные строки (ИТОГО, 合计, Total и т.п.)
 8. Пропусти пустые строки и строки без наименования товара
@@ -176,6 +193,7 @@ const SYSTEM_PROMPT = `Ты — эксперт по парсингу комме�
 13. Каждая строка таблицы — отдельная товарная позиция. НЕ объединяй и НЕ дедуплицируй строки, даже если они имеют одинаковое наименование, цену или другие параметры. Количество извлечённых товаров должно точно совпадать с количеством товарных строк в таблице
 14. Числовые значения (вес, цена, количество) округляй до 4 знаков после запятой
 15. Если в таблице есть колонка с кодами ТН ВЭД / HS (海关编码, HS编码, код ТН ВЭД, HS code — 6-10 цифр) — извлеки код в поле hsCode (только цифры, без точек и пробелов). Если такой колонки нет — не включай поле
+16. Извлеки структурированные атрибуты товара в объект attributes, если они ЯВНО присутствуют в строке (в наименовании или дополнительных колонках): material (основной материал), purpose (назначение), brand (бренд/товарный знак), article (артикул/SKU), model (модель), manufacturer (производитель). Значения — краткие строки. НЕ выдумывай: если данных нет — не включай ключ
 
 `;
 
@@ -223,6 +241,9 @@ const STRUCTURE_ANALYSIS_PROMPT = `Ты — эксперт по анализу �
      - 'per_box' — за упаковочную коробку (надо делить на штук в коробке)
      - 'total' — общий вес всей позиции (надо делить на итоговое количество)
      Эвристика: если видишь триаду колонок «кол-во коробок / штук в коробке / общее количество», а рядом с «кол-во коробок» стоит колонка «вес» (包装重量, gross/net weight per carton, 单毛重, 单净重) — это почти всегда per_box. Не путай с «общим весом позиции» (обычно стоит рядом с общей суммой).
+   - Если есть ОТДЕЛЬНЫЕ колонки нетто и брутто (净重/毛重, net/gross): weight = колонка НЕТТО, weightGross = колонка БРУТТО (той же семантики per_unit/per_box/total).
+   - totalPrice: колонка с ОБЩЕЙ суммой позиции (цена × количество), если есть — используется для сверки.
+   - totalWeight: колонка с ОБЩИМ весом позиции, если есть — используется для сверки.
 4. Валюту: по символам (¥/$€/₽) или контексту.
 5. Предполагаемую страну происхождения товара (опционально, countrySuggestion):
    - Код в формате OKSMT (3 цифры): 156=Китай, 792=Турция, 392=Япония, 764=Таиланд, 458=Малайзия, 410=Корея, 704=Вьетнам, 356=Индия, 840=США, 276=Германия и т.п.
@@ -251,8 +272,20 @@ const ANALYZE_STRUCTURE_TOOL: Anthropic.Messages.Tool = {
         properties: {
           description: { type: 'number', description: 'Колонка с наименованием товара' },
           price: { type: 'number', description: 'Колонка с ценой за единицу' },
-          weight: { type: 'number', description: 'Колонка с весом' },
+          weight: { type: 'number', description: 'Колонка с весом (нетто, если есть обе)' },
+          weightGross: {
+            type: 'number',
+            description: 'Колонка с весом БРУТТО — только если в таблице есть отдельные колонки нетто и брутто',
+          },
           quantity: { type: 'number', description: 'Колонка с итоговым количеством' },
+          totalPrice: {
+            type: 'number',
+            description: 'Колонка с общей суммой позиции (цена × количество), если есть',
+          },
+          totalWeight: {
+            type: 'number',
+            description: 'Колонка с общим весом позиции, если есть',
+          },
         },
         required: ['description', 'price', 'weight', 'quantity'],
       },
@@ -294,7 +327,12 @@ const PRODUCT_ITEMS_SCHEMA: Anthropic.Messages.Tool['input_schema'] = {
   properties: {
     description: { type: 'string', description: 'Наименование товара на русском' },
     price: { type: 'number', description: 'Цена за единицу' },
-    weight: { type: 'number', description: 'Вес за единицу в кг' },
+    weight: { type: 'number', description: 'Вес (нетто) за единицу в кг' },
+    weightGross: {
+      type: 'number',
+      description:
+        'Вес БРУТТО за единицу в кг — только если в таблице есть отдельная колонка брутто. Пропусти, если колонки нет',
+    },
     quantity: { type: 'number', description: 'Общее количество' },
     dimensions: {
       type: 'array',
@@ -311,6 +349,19 @@ const PRODUCT_ITEMS_SCHEMA: Anthropic.Messages.Tool['input_schema'] = {
     hsCode: {
       type: 'string',
       description: 'Код ТН ВЭД / HS code если указан автором (6-10 цифр, только цифры). Пропусти если нет',
+    },
+    attributes: {
+      type: 'object',
+      description:
+        'Структурированные атрибуты товара — только те, что ЯВНО есть в строке. Не выдумывай значения',
+      properties: {
+        material: { type: 'string', description: 'Основной материал (пластик, сталь, хлопок…)' },
+        purpose: { type: 'string', description: 'Назначение товара' },
+        brand: { type: 'string', description: 'Бренд / товарный знак' },
+        article: { type: 'string', description: 'Артикул / SKU' },
+        model: { type: 'string', description: 'Модель' },
+        manufacturer: { type: 'string', description: 'Производитель' },
+      },
     },
   },
   required: ['description', 'price', 'weight', 'quantity'],
@@ -437,12 +488,33 @@ export class AiParserService {
     result.tokenUsage = mergeTokenUsage(analysisUsage, result.tokenUsage);
     // Страна определяется из структуры, не зависит от успеха построчного парсинга.
     result.countrySuggestion = structure?.countrySuggestion ?? null;
-    // Без структуры (rejected) фото не к чему привязывать.
-    if (data.images.length > 0 && structure?.dataRows && structure.dataRows.length > 0) {
-      result.photoBundle = {
-        photos: data.images.map(({ rowIndex, bytes }) => ({ rowIndex, bytes })),
-        dataRowIndices: structure.dataRows,
-      };
+
+    // Файл с несколькими листами данных обрабатывается только по одному листу —
+    // без явного предупреждения потеря товаров с других листов прошла бы молча.
+    if (data.skippedSheets && data.skippedSheets.length > 0 && result.feasibility !== 'rejected') {
+      const list = data.skippedSheets.map((s) => `«${s.name}» (${s.rows} строк)`).join(', ');
+      const sheetIssue =
+        `Файл содержит несколько листов с данными: обработан только лист «${data.sheetName}», ` +
+        `пропущены ${list}. Если товары есть и на других листах — загрузите их отдельным файлом.`;
+      result.feasibility = 'review';
+      result.rejectionReasons = [sheetIssue, ...result.rejectionReasons];
+    }
+
+    // Без структуры (rejected) фото не к чему привязывать. При потере chunks строки
+    // берём из effectiveDataRows. Несовпадение количества товаров и строк → фото
+    // привязались бы со сдвигом к чужим строкам, лучше пропустить.
+    const dataRowIndices = result.effectiveDataRows ?? structure?.dataRows;
+    if (data.images.length > 0 && dataRowIndices && dataRowIndices.length > 0) {
+      if (result.products.length === dataRowIndices.length) {
+        result.photoBundle = {
+          photos: data.images.map(({ rowIndex, bytes }) => ({ rowIndex, bytes })),
+          dataRowIndices,
+        };
+      } else {
+        this.logger.warn(
+          `Photo bundle skipped: ${result.products.length} products vs ${dataRowIndices.length} data rows — attachment would misalign`,
+        );
+      }
     }
     return result;
   }
@@ -486,6 +558,16 @@ export class AiParserService {
       }
 
       const detIssues = this.checkDeterministic(result, data, expectedCount);
+      if (structure) {
+        detIssues.push(
+          ...this.checkRowConsistency(
+            lastResult.products,
+            structure.dataRows.map((i) => data.rows[i] ?? []),
+            structure.columnMapping,
+            structure.dataRows,
+          ),
+        );
+      }
       if (detIssues.length > 0) {
         this.logger.warn(`Attempt ${attempt}: deterministic issues: ${detIssues.join('; ')}`);
         lastIssues = detIssues;
@@ -587,6 +669,16 @@ export class AiParserService {
         { rows: chunks[0], columnCount: data.columnCount, images: [] },
         expectedChunkCount,
       );
+      if (structure) {
+        issues.push(
+          ...this.checkRowConsistency(
+            firstResult.products,
+            chunks[0],
+            structure.columnMapping,
+            structure.dataRows.slice(0, chunks[0].length),
+          ),
+        );
+      }
       if (issues.length === 0) break;
 
       lastIssues = issues;
@@ -603,60 +695,119 @@ export class AiParserService {
       };
     }
 
-    const allProducts = [...firstResult.products];
     const { currency, columnMapping } = firstResult;
 
     const remainingChunks = chunks.slice(1);
-    let failedChunks = 0;
+    // Результаты по индексу chunk'а: порядок товаров в parsedData обязан совпадать
+    // с порядком строк файла (иначе фото и rawContext привяжутся к чужим строкам),
+    // поэтому нельзя дописывать успешные chunks по мере готовности.
+    const chunkResults: (ParsedProduct[] | null)[] = new Array(remainingChunks.length).fill(null);
+    const headerRowsForEnrich = structure
+      ? structure.headerRows.map((i) => data.rows[i] ?? [])
+      : [];
 
-    for (let g = 0; g < remainingChunks.length; g += CHUNK_CONCURRENCY) {
-      const group = remainingChunks.slice(g, g + CHUNK_CONCURRENCY);
-      const results = await Promise.all(
-        group.map((chunk) => {
-          const chunkWithHeader = [headerRow, ...chunk];
-          const chunkTsv = this.formatAsTsv(chunkWithHeader);
-          return this.callClaudeChunk(chunkTsv, currency, columnMapping, auditContext).catch((err) => {
-            this.logger.error('Chunk parsing failed', err);
-            return null;
-          });
-        }),
+    const runChunk = async (chunkIdx: number): Promise<void> => {
+      const chunk = remainingChunks[chunkIdx];
+      const chunkTsv = this.formatAsTsv([headerRow, ...chunk]);
+      const r = await this.callClaudeChunk(chunkTsv, currency, columnMapping, auditContext);
+      totalUsage = mergeTokenUsage(totalUsage, r.tokenUsage);
+      chunkResults[chunkIdx] = this.enrichRawContext(
+        r.products,
+        chunk,
+        columnMapping,
+        headerRowsForEnrich,
       );
+      this.logger.log(`Chunk ${chunkIdx + 1}: parsed ${r.products.length} products`);
+    };
 
-      for (let j = 0; j < results.length; j++) {
-        const r = results[j];
-        if (r) {
-          totalUsage = mergeTokenUsage(totalUsage, r.tokenUsage);
-          const chunk = group[j];
-          const headerRowsForEnrich = structure
-            ? structure.headerRows.map((i) => data.rows[i] ?? [])
-            : [];
-          const enriched = this.enrichRawContext(
-            r.products,
-            chunk,
-            columnMapping,
-            headerRowsForEnrich,
-          );
-          allProducts.push(...enriched);
-          this.logger.log(`Chunk ${g + j + 1}: parsed ${r.products.length} products`);
-        } else {
-          failedChunks++;
-        }
+    const runChunkGroups = async (indices: number[]): Promise<void> => {
+      for (let g = 0; g < indices.length; g += CHUNK_CONCURRENCY) {
+        const group = indices.slice(g, g + CHUNK_CONCURRENCY);
+        await Promise.all(
+          group.map((idx) =>
+            runChunk(idx).catch((err) => {
+              this.logger.error(`Chunk ${idx + 1} parsing failed`, err);
+            }),
+          ),
+        );
+      }
+    };
+
+    await runChunkGroups(remainingChunks.map((_, i) => i));
+
+    // Одна повторная попытка для упавших chunks: транзиентная ошибка Claude не должна
+    // молча терять до CHUNK_SIZE позиций.
+    const failedIdx = chunkResults.flatMap((r, i) => (r === null ? [i] : []));
+    if (failedIdx.length > 0) {
+      this.logger.warn(`Retrying ${failedIdx.length} failed chunks: ${failedIdx.map((i) => i + 1).join(', ')}`);
+      await runChunkGroups(failedIdx);
+    }
+
+    const lostIdx = chunkResults.flatMap((r, i) => (r === null ? [i] : []));
+    const allProducts = [...firstResult.products];
+    for (const r of chunkResults) {
+      if (r) allProducts.push(...r);
+    }
+
+    // Строки файла, реально попавшие в allProducts (chunk k покрывает parseRows
+    // [k×CHUNK_SIZE, k×CHUNK_SIZE + len)). Нужны для привязки фото при потерях.
+    const chunkDataRows = (globalChunkIdx: number): number[] => {
+      if (!structure) return [];
+      const start = globalChunkIdx * CHUNK_SIZE;
+      return structure.dataRows.slice(start, start + chunks[globalChunkIdx].length);
+    };
+    let effectiveDataRows: number[] | undefined;
+    if (structure && lostIdx.length > 0) {
+      effectiveDataRows = [...chunkDataRows(0)];
+      for (let i = 0; i < remainingChunks.length; i++) {
+        if (chunkResults[i]) effectiveDataRows.push(...chunkDataRows(i + 1));
       }
     }
 
-    const fullResult: RawParseResult = { products: allProducts, currency, columnMapping };
+    const fullResult: RawParseResult = {
+      products: allProducts,
+      currency,
+      columnMapping,
+      ...(effectiveDataRows ? { effectiveDataRows } : {}),
+    };
     const issues: string[] = [];
 
-    if (failedChunks > 0) {
+    if (lostIdx.length > 0) {
+      const lostParts = lostIdx.map((i) => {
+        const globalIdx = i + 1;
+        const rows = chunkDataRows(globalIdx);
+        if (rows.length > 0) {
+          return `строки файла ${rows[0] + 1}–${rows[rows.length - 1] + 1}`;
+        }
+        const start = globalIdx * CHUNK_SIZE;
+        return `позиции ${start + 1}–${start + chunks[globalIdx].length}`;
+      });
       issues.push(
-        `Не удалось обработать ${failedChunks} из ${chunks.length - 1} блоков данных, данные могут быть неполными.`,
+        `Не удалось обработать ${lostIdx.length} из ${chunks.length - 1} блоков данных даже после повторной попытки — потеряны ${lostParts.join(', ')}. Результат неполный.`,
       );
     }
 
-    if (expectedTotal !== undefined && allProducts.length !== expectedTotal) {
+    if (expectedTotal !== undefined && allProducts.length !== expectedTotal && lostIdx.length === 0) {
       issues.push(
         `Ожидалось ${expectedTotal} товаров (по структуре), получено ${allProducts.length}`,
       );
+    }
+
+    // Построчная сверка всего результата с колонками общих сумм/весов (если они
+    // определены структурой): ошибки в товарах за пределами первых SAMPLE_ROWS
+    // AI-валидация не видит, а эта проверка — детерминистическая и покрывает всё.
+    if (structure) {
+      const coveredRows = effectiveDataRows ?? structure.dataRows;
+      if (allProducts.length === coveredRows.length) {
+        issues.push(
+          ...this.checkRowConsistency(
+            allProducts,
+            coveredRows.map((i) => data.rows[i] ?? []),
+            structure.columnMapping,
+            coveredRows,
+          ),
+        );
+      }
     }
 
     const { tokenUsage: valUsage, ...validation } = await this.validateWithAi(
@@ -924,6 +1075,90 @@ export class AiParserService {
     return issues;
   }
 
+  /**
+   * Числовое значение из ячейки исходной таблицы: отбрасывает валютные символы и
+   * пробелы, поддерживает запятую как десятичный и как тысячный разделитель.
+   * null — ячейка пуста или нечитаема.
+   */
+  private parseNumericCell(raw: string | undefined): number | null {
+    if (!raw) return null;
+    let s = raw.replace(/[^\d.,-]/g, '');
+    if (!s) return null;
+    if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(s) || (s.includes(',') && s.includes('.'))) {
+      // Запятые — разделители тысяч: строгий формат "1,234" (без точки) либо
+      // одновременное присутствие запятой и точки ("1,234,567.8").
+      s = s.replace(/,/g, '');
+    } else {
+      s = s.replace(',', '.');
+    }
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  /**
+   * Детерминистическая построчная сверка ВСЕХ извлечённых товаров с колонками
+   * общих сумм/весов исходной таблицы (если structure analysis их определил).
+   * AI-валидация смотрит только первые SAMPLE_ROWS строк — ошибка веса/цены в
+   * строке 50 без этой проверки уходила в PROCESSED незамеченной.
+   * `products` и `sourceRows` должны быть выровнены 1-к-1.
+   */
+  private checkRowConsistency(
+    products: ParsedProduct[],
+    sourceRows: string[][],
+    columnMapping: Record<string, number>,
+    sourceRowNumbers?: number[],
+  ): string[] {
+    if (products.length !== sourceRows.length) return [];
+    const totalPriceCol = columnMapping.totalPrice;
+    const totalWeightCol = columnMapping.totalWeight;
+    if (typeof totalPriceCol !== 'number' && typeof totalWeightCol !== 'number') return [];
+
+    // Допуск 5% (как в промпте) + абсолютный порог от копеечных дробей.
+    const mismatch = (actual: number, expected: number) =>
+      Math.abs(actual - expected) > Math.max(expected * 0.05, 0.01);
+    const rowLabel = (i: number) =>
+      sourceRowNumbers?.[i] != null ? `строка файла ${sourceRowNumbers[i] + 1}` : `товар ${i + 1}`;
+
+    const priceIssues: string[] = [];
+    const weightIssues: string[] = [];
+    for (let i = 0; i < products.length; i++) {
+      const p = products[i];
+      const row = sourceRows[i] ?? [];
+      if (typeof totalPriceCol === 'number') {
+        const total = this.parseNumericCell(row[totalPriceCol]);
+        if (total != null && total > 0 && p.price > 0 && mismatch(p.price * p.quantity, total)) {
+          priceIssues.push(
+            `${rowLabel(i)}: цена ${p.price} × кол-во ${p.quantity} = ${round4(p.price * p.quantity)}, а общая сумма в таблице ${total}`,
+          );
+        }
+      }
+      if (typeof totalWeightCol === 'number') {
+        const total = this.parseNumericCell(row[totalWeightCol]);
+        if (total != null && total > 0 && p.weight > 0) {
+          const netOk = !mismatch(p.weight * p.quantity, total);
+          const grossOk =
+            p.weightGross != null && p.weightGross > 0 && !mismatch(p.weightGross * p.quantity, total);
+          if (!netOk && !grossOk) {
+            weightIssues.push(
+              `${rowLabel(i)}: вес ${p.weight} × кол-во ${p.quantity} = ${round4(p.weight * p.quantity)}, а общий вес в таблице ${total}`,
+            );
+          }
+        }
+      }
+    }
+
+    const issues: string[] = [];
+    const summarize = (arr: string[], label: string) => {
+      if (arr.length === 0) return;
+      const shown = arr.slice(0, 5).join('; ');
+      const more = arr.length > 5 ? ` (и ещё ${arr.length - 5} строк)` : '';
+      issues.push(`Построчная сверка ${label} не сходится (допуск 5%): ${shown}${more}`);
+    };
+    summarize(priceIssues, 'цены (цена × количество против общей суммы)');
+    summarize(weightIssues, 'веса (вес × количество против общего веса)');
+    return issues;
+  }
+
   private async validateWithAi(
     data: SpreadsheetData,
     result: RawParseResult,
@@ -951,7 +1186,7 @@ export class AiParserService {
     }
 
     const sampleProducts = result.products.slice(0, SAMPLE_ROWS).map(
-      ({ hsCode, rawContext, ...core }) => core,
+      ({ hsCode, rawContext, attributes, ...core }) => core,
     );
 
     const sourceTsv = sampleSourceRows
@@ -1045,7 +1280,17 @@ ${mappingInfo}
     }
 
     const mainCols = new Set<number>();
-    for (const key of ['description', 'price', 'weight', 'quantity'] as const) {
+    // totalPrice/totalWeight — производные колонки (сумма/вес позиции), в rawContext
+    // они только шумят; weightGross уже лежит отдельным полем товара.
+    for (const key of [
+      'description',
+      'price',
+      'weight',
+      'weightGross',
+      'quantity',
+      'totalPrice',
+      'totalWeight',
+    ] as const) {
       const idx = columnMapping[key];
       if (typeof idx === 'number') mainCols.add(idx);
     }
@@ -1116,12 +1361,25 @@ ${tsv}
           ? `Товарные строки: ${structure.dataRows.join(', ')} (ровно ${expectedCount} товаров)`
           : `${expectedCount} товарных строк`;
 
+      const grossInfo =
+        typeof structure.columnMapping.weightGross === 'number'
+          ? `, вес брутто=${structure.columnMapping.weightGross}`
+          : '';
+      const totalsInfo = [
+        typeof structure.columnMapping.totalPrice === 'number'
+          ? `общая сумма=${structure.columnMapping.totalPrice}`
+          : null,
+        typeof structure.columnMapping.totalWeight === 'number'
+          ? `общий вес=${structure.columnMapping.totalWeight}`
+          : null,
+      ].filter(Boolean);
+
       prompt += `\n\nВАЖНО — структура документа определена:
 - Строки-заголовки: ${structure.headerRows.join(', ')} (НЕ извлекай как товары)
 - ${dataRowsInfo}
 - Валюта: ${structure.currency}
-- Маппинг колонок (0-indexed): наименование=${structure.columnMapping.description}, цена=${structure.columnMapping.price}, вес=${structure.columnMapping.weight}, количество=${structure.columnMapping.quantity}
-- Вес в таблице: ${weightDesc}
+- Маппинг колонок (0-indexed): наименование=${structure.columnMapping.description}, цена=${structure.columnMapping.price}, вес=${structure.columnMapping.weight}${grossInfo}, количество=${structure.columnMapping.quantity}
+- Вес в таблице: ${weightDesc}${totalsInfo.length > 0 ? `\n- Колонки итогов позиции (для сверки, НЕ извлекай как цену/вес за единицу): ${totalsInfo.join(', ')}` : ''}
 
 Извлеки ровно ${expectedCount} товаров — каждая товарная строка = один товар. Не больше и не меньше.`;
     }
@@ -1151,8 +1409,8 @@ ${tsv}
 </spreadsheet_data>
 
 Первая строка — заголовок таблицы (для справки). Извлеки товары из остальных строк.
-Правила те же: переведи наименования на русский, пропусти итоги и пустые строки, цена за единицу, вес за единицу в кг.
-Поле dimensions — необязательное. Добавляй только если в таблице есть соответствующие колонки.`;
+Правила те же: переведи наименования на русский, пропусти итоги и пустые строки, цена за единицу, вес (нетто) за единицу в кг; при отдельной колонке брутто — weightGross за единицу.
+Поля dimensions и attributes — необязательные. Добавляй только если данные явно есть в таблице.`;
   }
 
   private async callClaudeChunk(
@@ -1223,6 +1481,7 @@ ${tsv}
 
       const price = Number(p.price);
       const weight = Number(p.weight);
+      const weightGross = toPositiveNumber(p.weightGross);
       const quantity = Number(p.quantity);
 
       // #6: Number.isFinite (а не isNaN) отсекает и NaN, и Infinity (например "1e999"),
@@ -1231,14 +1490,18 @@ ${tsv}
 
       const hsCodeRaw = typeof p.hsCode === 'string' ? p.hsCode.replace(/\D/g, '') : undefined;
       const dimensions = this.normalizeDimensions(p.dimensions);
+      const attributes = normalizeProductAttributes(p.attributes);
 
       products.push({
         description,
         price: round4(cap(price)),
         weight: round4(cap(weight)),
+        // Брутто меньше нетто — явный мусор (перепутаны колонки), не сохраняем.
+        ...(weightGross && weightGross >= weight ? { weightGross: round4(cap(weightGross)) } : {}),
         quantity: cap(quantity, 1),
         ...(hsCodeRaw && hsCodeRaw.length >= 6 ? { hsCode: hsCodeRaw } : {}),
         ...(dimensions.length > 0 ? { dimensions } : {}),
+        ...(attributes ? { attributes } : {}),
       });
     }
 

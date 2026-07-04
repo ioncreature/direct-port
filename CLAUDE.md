@@ -157,6 +157,8 @@ BullMQ очереди: `document-parsing` → `document-processing`. Уведо�
 
 **Надёжность pipeline:**
 - parse-job ставится с `attempts: 3` (exponential backoff 30s) — транзиентные сбои Anthropic ретраятся, FAILED только на последней попытке; `fileBuffer` при FAILED сохраняется (для reprocess). processing-job — `attempts: 1` осознанно (воркер не идемпотентен: CalculationLog, уведомления)
+- Chunked-парсинг (>100 строк): упавшие блоки повторяются один раз; при окончательном сбое документ уходит в review с явными диапазонами потерянных строк файла, а фото привязываются только к реально распарсенным строкам (`effectiveDataRows`). Многолистовой xlsx: обрабатывается первый непустой лист, остальные непустые листы дают предупреждение → REQUIRES_REVIEW
+- Детерминистическая построчная сверка всех строк (не только выборки AI-валидатора): если structure analysis нашёл колонки «общая сумма» / «общий вес», проверяется цена×кол-во и вес×кол-во (нетто или брутто) с допуском 5% — расхождения идут в retry-промпт и в причины review
 - Оба воркера на входе проверяют статус документа (parse: PARSING, processing/recalculate: PENDING) — stalled-повторы и двойные клики не задваивают прогон
 - Переходы статусов в `startProcessing`/`reprocess` атомарные (`UPDATE ... WHERE status = :expected`) — конкурентный запуск получает 400
 - `StuckDocumentsWatchdog` (каждые 10 мин): документы в PARSING/PENDING/PROCESSING без записи > 60 мин → FAILED «обработка прервана» → оператор перезапускает reprocess'ом
@@ -224,41 +226,44 @@ interface ProductRow {
   description: string; // наименование товара (переведённое на русский)
   quantity: number;
   price: number; // цена в исходной валюте документа
-  weight: number; // вес за единицу в кг
+  weight: number; // вес НЕТТО за единицу в кг
+  weightGross?: number; // вес БРУТТО за единицу в кг (если в файле есть отдельная колонка)
+  attributes?: ProductAttributes; // material/purpose/brand/article/model/manufacturer (common/product-attributes)
 }
 ```
 
 **После классификации+верификации** (`ClassifiedProduct` / `VerifiedProduct` — алиасы):
 
-- Добавляются: tnVedCode, tnVedDescription, dutyRate, dutySign, dutyMin, dutyMinUnit, vatRate, exciseRate, matchConfidence, matched, verified, suggestedCode, verificationComment
+- Добавляются: tnVedCode, tnVedDescription, dutyRate, dutySign, dutyMin, dutyMinUnit, vatRate, exciseRate, supplementaryUnit (доп. единица кода ТН ВЭД из TKS EDI2/EDI3 — «пар», «шт», «л»; графа 41 ДТ), matchConfidence, matched, verified, suggestedCode, verificationComment
 - TKS search батчи по 5, Claude classify+verify батчи по 10
+- Если Claude предложил код вне справочника: при наличии кандидатов — retry по ним; при 0 кандидатов — кандидаты добираются по общему префиксу (8→6→4 знака) из полного списка кодов `getTnvedCodeList`, затем retry
 - При language≠ru: Claude возвращает comment_localized → попадает в ProductNote.messageLocalized
 
 **После расчёта** (`CalculatedProduct`):
 
-- Добавляются: totalPrice, dutyAmount, vatAmount, exciseAmount, logisticsCommission, totalCost, verificationStatus ('exact'|'review')
+- Добавляются: totalPrice, freightShare, supplementaryQuantity (количество в доп. единице; null + warning-note, если данных нет), dutyAmount, vatAmount, exciseAmount, logisticsCommission, totalCost, verificationStatus ('exact'|'review')
 - Все суммы рассчитываются в исходной валюте и конвертируются в RUB по актуальному курсу
 
 **resultData** (JSONB в Document): массив `CalculatedProduct[]`
 
 **Выходной Excel** (лист "Результат", 14+ колонок):
 
-- Исходные данные: наименование, количество, цена, вес
-- Классификация: код ТН ВЭД, описание ТН ВЭД, ставки пошлины/НДС
+- Исходные данные: наименование, количество, цена, вес (при наличии брутто — раздельные колонки «Вес нетто (кг)» / «Вес брутто (кг)»)
+- Классификация: код ТН ВЭД, описание ТН ВЭД, ставки пошлины/НДС; при наличии — колонка «Доп. единица (гр. 41 ДТ)» («24 пар» или «нет данных (л)»)
 - Расчёты: сумма товара, пошлина, НДС, акциз, комиссия доставки, итого
 - Все стоимости указываются как в исходной валюте, так и в рублях
 - Статус проверки: зелёный (точное) / жёлтый (ручная проверка)
-- Колонка «Разрешительные документы» — компактная сводка из `regulatoryReport` (например, `ТР ТС 020/2011 декл.; Маркировка с 01.05.2026; Утильсбор 32 874 ₽`)
+- Колонка «Разрешительные документы» — компактная сводка из `regulatoryReport` (например, `ТР ТС 020/2011 декл.; Утильсбор 32 874 ₽`; маркировка/страновые запреты в Excel сознательно не выводятся — см. regulatory-format.ts)
 - Стилизация: синий заголовок, автофильтр, заморозка строки заголовка
 - При document.language≠ru: доп. колонка «Notes (translated)» / «备注（翻译）» с локализованными замечаниями
 
 ### Формула расчёта
 
-Если у документа задан фрахт до границы (`Document.freightCost` + `freightCurrency`), он конвертируется в валюту документа по курсу ЦБ РФ и распределяется по позициям пропорционально весу × количеству. Бизнес ожидает вес брутто; если в parsedData есть только нетто — используется он (предполагается, что парсер AiParser положит туда лучшее доступное значение). Доля попадает в **таможенную стоимость** и через неё — в базу пошлины, акциза и НДС (ТК ЕАЭС).
+Если у документа задан фрахт до границы (`Document.freightCost` + `freightCurrency`), он конвертируется в валюту документа по курсу ЦБ РФ и распределяется по позициям пропорционально весу БРУТТО × количество (Решение Коллегии ЕЭК № 83; парсер извлекает `weightGross` при наличии отдельной колонки, иначе базис — нетто `weight`; см. `freightWeightBasis` в common/freight.ts). Доля попадает в **таможенную стоимость** и через неё — в базу пошлины, акциза и НДС (ТК ЕАЭС).
 
 ```
 totalPrice     = price × quantity
-freightShare   = freightInDocCurrency × (weight × quantity) / Σ(weight × quantity)   // 0 для legacy-документов без фрахта
+freightShare   = freightInDocCurrency × (weightBasis × quantity) / Σ(weightBasis × quantity)   // weightBasis = брутто, если есть, иначе нетто; 0 для legacy-документов без фрахта
 customsValue   = totalPrice + freightShare
 dutyAmount     = customsValue × (dutyRate / 100)
                  // для комбинированных ставок (dutySign='>'): max(dutyAmount, dutyMin × weight × quantity)

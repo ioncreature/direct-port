@@ -20,6 +20,11 @@ export interface SpreadsheetData {
   columnCount: number;
   /** Встроенные картинки из xlsx, привязанные к строкам через twoCellAnchor.from.row. Пусто для CSV. */
   images: SpreadsheetImage[];
+  /** Имя обработанного листа xlsx. undefined для CSV. */
+  sheetName?: string;
+  /** Непустые листы xlsx, которые НЕ обработаны (читается один лист).
+   *  Парсер превращает их в предупреждение → документ уходит на review. */
+  skippedSheets?: { name: string; rows: number }[];
 }
 
 interface ExcelJsImageAnchor {
@@ -107,7 +112,11 @@ export class SpreadsheetReaderService {
       this.logger.error(`Failed to load XLSX (${buffer.length} bytes)`, err);
       throw err;
     }
-    const sheet = workbook.worksheets[0];
+    // Обрабатывается ОДИН лист — первый непустой (титульные/пустые листы в начале
+    // книги пропускаем). Остальные непустые листы возвращаем списком: парсер
+    // добавит предупреждение, чтобы потеря данных не прошла молча.
+    const sheet =
+      workbook.worksheets.find((s) => (s.actualRowCount ?? 0) > 0) ?? workbook.worksheets[0];
     if (!sheet) {
       this.logger.warn('XLSX has no worksheets');
       return { rows: [], columnCount: 0, images: [] };
@@ -128,10 +137,22 @@ export class SpreadsheetReaderService {
 
     const images = this.extractXlsxImages(workbook, sheet);
 
+    // Лист из одной строки — почти наверняка титульник/примечание, не таблица.
+    const skippedSheets = workbook.worksheets
+      .filter((s) => s !== sheet && (s.actualRowCount ?? 0) >= 2)
+      .map((s) => ({ name: s.name, rows: s.actualRowCount ?? 0 }));
+
     this.logger.log(
-      `Read XLSX: ${rows.length} rows, ${columnCount} columns, ${images.length} images`,
+      `Read XLSX: sheet "${sheet.name}", ${rows.length} rows, ${columnCount} columns, ` +
+        `${images.length} images${skippedSheets.length > 0 ? `, skipped sheets: ${skippedSheets.map((s) => s.name).join(', ')}` : ''}`,
     );
-    return { rows, columnCount, images };
+    return {
+      rows,
+      columnCount,
+      images,
+      sheetName: sheet.name,
+      ...(skippedSheets.length > 0 ? { skippedSheets } : {}),
+    };
   }
 
   /**

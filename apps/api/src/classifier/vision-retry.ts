@@ -6,6 +6,7 @@ import { extractToolInput } from '../common/claude';
 import { callClaudeTool } from '../common/claude-tool-call';
 import { errMsg } from '../common/errors';
 import { localizedLanguageName } from '../common/i18n';
+import { formatProductAttributes } from '../common/product-attributes';
 import type { ProductNote } from '../common/product-notes';
 import {
   emptyTokenUsageMap,
@@ -204,6 +205,32 @@ export class VisionRetry {
         else corrected++;
       } else if (r.result.tnVedCode && r.result.tnVedCode !== before.tnVedCode) {
         codesNotInTks++;
+        // Фото опровергло текстовый код, но предложенный не найден в справочнике —
+        // без заметки оператор не узнал бы, что текущий код визуально сомнителен.
+        const suggested = r.result.tnVedCode;
+        const keptLabel = before.tnVedCode ? ` ${before.tnVedCode}` : '';
+        assembled[r.task.index] = {
+          ...before,
+          notes: [
+            ...before.notes,
+            {
+              stage: 'classify',
+              severity: 'warning',
+              field: 'code',
+              message:
+                `По фото товар соответствует коду ${suggested}, но его нет в справочнике TKS — ` +
+                `оставлен код по тексту${keptLabel}. Проверьте код вручную. ${r.result.comment}`,
+              ...(r.result.commentLocalized
+                ? {
+                    messageLocalized:
+                      `Based on the photo the product matches code ${suggested}, which is missing ` +
+                      `from the TKS reference — the text-based code${keptLabel} was kept. ` +
+                      `Please verify manually. ${r.result.commentLocalized}`,
+                  }
+                : {}),
+            },
+          ],
+        };
       }
     }
 
@@ -227,9 +254,11 @@ export class VisionRetry {
       language && language !== 'ru'
         ? `\nДополнительно: верни comment_localized на ${localizedLanguageName(language)}.`
         : '';
+    const attributesLine = formatProductAttributes(product.attributes);
     const userText =
       `Подтверди или скорректируй код ТН ВЭД для товара по фотографии.\n\n` +
       `Текущее описание: ${product.description}\n` +
+      (attributesLine ? `Атрибуты: ${attributesLine}\n` : '') +
       (product.rawContext ? `Контекст: ${product.rawContext}\n` : '') +
       `Текущий код: ${product.tnVedCode || '(не определён)'} — ${product.tnVedDescription}\n` +
       `Текущая уверенность: ${product.matchConfidence.toFixed(2)}\n\n` +

@@ -11,11 +11,14 @@ import {
   type ClassifiedProduct,
   type ProductRow,
 } from '../classifier/classifier.service';
+import { buildRateFields } from '../classifier/classification-assembler';
 import { rowNeedsCodeReview } from '../common/confidence';
 import { ErrorCode } from '../common/error-codes';
 import { errMsg } from '../common/errors';
 import { computeWeightDenominator, resolveFreightTotalInDocCurrency } from '../common/freight';
-import { KNOWN_CURRENCIES, normalizeImpediUnit } from '../common/normalize-impedi';
+import { KNOWN_CURRENCIES } from '../common/normalize-impedi';
+import { toPositiveNumber } from '../common/numbers';
+import { normalizeProductAttributes } from '../common/product-attributes';
 import { isIncompleteCalculationStatus, type ProductNote } from '../common/product-notes';
 import {
   type RejectionReasonData,
@@ -29,7 +32,6 @@ import { DutyInterpreterService } from '../duty-interpreter/duty-interpreter.ser
 import type { Dimension } from '../duty-interpreter/interfaces';
 import { RegulatoryRequirementsService } from '../regulatory/regulatory-requirements.service';
 import { PipelineNotifierService } from './pipeline-notifier.service';
-import { DEFAULT_VAT_RATE } from '../common/vat';
 import { buildResultRow } from './result-row.helper';
 
 interface ResultTotals {
@@ -277,11 +279,14 @@ export class ManualCodeService {
     // подхватил его и админка видела источник правки.
     const updatedParsedRow = { ...parsedRow, userClarification: trimmedNote };
 
+    const rowWeightGross = toPositiveNumber(oldRow.weightGross ?? parsedRow.weightGross);
+    const rowAttributes = normalizeProductAttributes(oldRow.attributes ?? parsedRow.attributes);
     const productRow: ProductRow = {
       description: String(parsedRow.description ?? oldRow.description ?? ''),
       quantity: Number(oldRow.quantity ?? parsedRow.quantity ?? 1) || 1,
       price: Number(oldRow.price ?? parsedRow.price ?? 0) || 0,
       weight: Number(oldRow.weight ?? parsedRow.weight ?? 0) || 0,
+      ...(rowWeightGross ? { weightGross: rowWeightGross } : {}),
       dimensions:
         ((oldRow.dimensions ?? parsedRow.dimensions) as Dimension[] | null | undefined) ?? undefined,
       hsCode: typeof parsedRow.hsCode === 'string' ? parsedRow.hsCode : undefined,
@@ -289,6 +294,7 @@ export class ManualCodeService {
         typeof parsedRow.rawContext === 'string' ? parsedRow.rawContext : undefined,
         trimmedNote,
       ),
+      ...(rowAttributes ? { attributes: rowAttributes } : {}),
     };
 
     // auditContext=null отключает vision-retry: у нас уже есть свободный текст, фото добавит токенов без выгоды.
@@ -527,23 +533,17 @@ export class ManualCodeService {
     oldRow: Record<string, unknown>,
     tnved: TnvedCode,
   ): ClassifiedProduct {
-    const rates = tnved.TNVED ?? {};
     const description = String(oldRow.description ?? '');
+    const weightGross = toPositiveNumber(oldRow.weightGross);
     return {
       description,
       quantity: Number(oldRow.quantity) || 1,
       price: Number(oldRow.price) || 0,
       weight: Number(oldRow.weight) || 0,
+      ...(weightGross ? { weightGross } : {}),
       dimensions: (oldRow.dimensions as Dimension[] | null) ?? undefined,
-      tnVedCode: tnved.CODE,
-      tnVedDescription: tnved.KR_NAIM,
-      dutyRate: rates.IMP ?? 0,
-      dutyRateUnit: normalizeImpediUnit(rates.IMPEDI),
-      dutySign: rates.IMPSIGN ?? null,
-      dutyMin: rates.IMP2 ?? null,
-      dutyMinUnit: normalizeImpediUnit(rates.IMPEDI2),
-      vatRate: rates.NDS ?? DEFAULT_VAT_RATE,
-      exciseRate: rates.AKC ?? 0,
+      // Единый источник rate-полей (включая supplementaryUnit) с pipeline-сборкой.
+      ...buildRateFields(tnved),
       // Ручной выбор оператора = полная уверенность для целей расчёта/статуса.
       matchConfidence: 1,
       matched: true,

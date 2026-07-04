@@ -1,6 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
 import { AiParserService } from './ai-parser.service';
 
+/** Sentinel: на этом месте последовательности create() отклоняется с ошибкой API. */
+const CLAUDE_CALL_FAILS = { __reject: true } as const;
+
 function createMockClaude(responses: unknown[]) {
   let callIdx = 0;
   return {
@@ -8,6 +11,9 @@ function createMockClaude(responses: unknown[]) {
       create: jest.fn().mockImplementation(() => {
         const resp = responses[callIdx] ?? responses[responses.length - 1];
         callIdx++;
+        if (resp && (resp as { __reject?: boolean }).__reject) {
+          return Promise.reject(new Error('mock Claude API error'));
+        }
         return Promise.resolve({
           content: [{ type: 'tool_use', id: 'toolu_mock', name: 'mock_tool', input: resp }],
           usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
@@ -19,7 +25,13 @@ function createMockClaude(responses: unknown[]) {
 
 function createService(opts: {
   claudeResponses?: unknown[];
-  spreadsheetData?: { rows: string[][]; columnCount: number; images?: unknown[] };
+  spreadsheetData?: {
+    rows: string[][];
+    columnCount: number;
+    images?: unknown[];
+    sheetName?: string;
+    skippedSheets?: { name: string; rows: number }[];
+  };
   claudeEnabled?: boolean;
 } = {}) {
   const claudeEnabled = opts.claudeEnabled ?? true;
@@ -136,6 +148,22 @@ describe('AiParserService', () => {
       expect(result.currency).toBe('CNY');
       expect(result.rejectionReasons).toHaveLength(0);
     });
+
+    it('пропущенные листы xlsx: ok деградирует до review с предупреждением', async () => {
+      const { service } = createService({
+        spreadsheetData: {
+          ...makeSpreadsheetData(4),
+          sheetName: 'Товары',
+          skippedSheets: [{ name: 'Лист2', rows: 15 }],
+        },
+        claudeResponses: [STRUCTURE_FALLBACK, makeClaudeParseResponse(4), VALIDATION_OK],
+      });
+
+      const result = await service.parse(Buffer.from(''), 'test.xlsx');
+      expect(result.feasibility).toBe('review');
+      expect(result.rejectionReasons[0]).toContain('обработан только лист «Товары»');
+      expect(result.rejectionReasons[0]).toContain('«Лист2» (15 строк)');
+    });
   });
 
   describe('validateSchema: нормализация данных от Claude', () => {
@@ -186,6 +214,58 @@ describe('AiParserService', () => {
       expect(bad.price).toBe(0);
       expect(bad.weight).toBe(0);
       expect(bad.quantity).toBe(1);
+    });
+
+    it('weightGross: сохраняется валидное брутто, отбрасывается брутто меньше нетто', async () => {
+      const { service } = createService({
+        spreadsheetData: makeSpreadsheetData(3),
+        claudeResponses: [
+          STRUCTURE_FALLBACK,
+          {
+            currency: 'USD',
+            columnMapping: {},
+            products: [
+              { description: 'С брутто', price: 100, weight: 1, weightGross: 1.2, quantity: 5 },
+              { description: 'Брутто меньше нетто', price: 100, weight: 2, weightGross: 1, quantity: 5 },
+              { description: 'Без брутто', price: 100, weight: 1, quantity: 5 },
+            ],
+          },
+          VALIDATION_OK,
+        ],
+      });
+
+      const result = await service.parse(Buffer.from(''), 'test.xlsx');
+      expect(result.products[0].weightGross).toBe(1.2);
+      expect(result.products[1].weightGross).toBeUndefined();
+      expect(result.products[2].weightGross).toBeUndefined();
+    });
+
+    it('attributes: известные ключи сохраняются, мусор отбрасывается', async () => {
+      const { service } = createService({
+        spreadsheetData: makeSpreadsheetData(2),
+        claudeResponses: [
+          STRUCTURE_FALLBACK,
+          {
+            currency: 'USD',
+            columnMapping: {},
+            products: [
+              {
+                description: 'Ботинки',
+                price: 100,
+                weight: 1,
+                quantity: 5,
+                attributes: { material: ' кожа ', brand: 'Acme', bogus: 'x', purpose: '' },
+              },
+              { description: 'Без атрибутов', price: 100, weight: 1, quantity: 5, attributes: {} },
+            ],
+          },
+          VALIDATION_OK,
+        ],
+      });
+
+      const result = await service.parse(Buffer.from(''), 'test.xlsx');
+      expect(result.products[0].attributes).toEqual({ material: 'кожа', brand: 'Acme' });
+      expect(result.products[1].attributes).toBeUndefined();
     });
 
     it('неизвестная валюта → fallback на USD', async () => {
@@ -260,6 +340,150 @@ describe('AiParserService', () => {
       expect(anthropic!.messages.create).toHaveBeenCalledTimes(3);
       // assessFeasibility — не rejected (1 товар с ценой), но review
       expect(result.feasibility).toBe('review');
+    });
+
+    it('построчная сверка с колонкой общей суммы ловит расхождение в любой строке', async () => {
+      const spreadsheetData = {
+        rows: [
+          ['Наименование', 'Цена', 'Вес', 'Кол-во', 'Сумма'],
+          ['Товар 1', '100', '1', '10', '1000'], // сходится: 100 × 10 = 1000
+          ['Товар 2', '200', '1', '10', '9999'], // НЕ сходится: 200 × 10 = 2000
+        ],
+        columnCount: 5,
+      };
+      const structureOk = {
+        headerRows: [0],
+        dataRows: [1, 2],
+        columnMapping: { description: 0, price: 1, weight: 2, quantity: 3, totalPrice: 4 },
+        currency: 'USD',
+        weightNote: 'per_unit',
+      };
+      const parseResponse = {
+        currency: 'USD',
+        columnMapping: { description: 0, price: 1, weight: 2, quantity: 3 },
+        products: [
+          { description: 'Товар 1', price: 100, weight: 1, quantity: 10 },
+          { description: 'Товар 2', price: 200, weight: 1, quantity: 10 },
+        ],
+      };
+
+      const { service, anthropic } = createService({
+        spreadsheetData,
+        claudeResponses: [structureOk, parseResponse, parseResponse],
+      });
+
+      const result = await service.parse(Buffer.from(''), 'test.xlsx');
+      // structure + 2 попытки: сверка детерминистическая, AI-валидация не зовётся
+      expect(anthropic!.messages.create).toHaveBeenCalledTimes(3);
+      expect(result.feasibility).toBe('review');
+      const issue = result.rejectionReasons.find((r) => r.includes('Построчная сверка цены'));
+      expect(issue).toBeDefined();
+      expect(issue).toContain('строка файла 3');
+      expect(issue).not.toContain('строка файла 2');
+    });
+
+    it('построчная сверка веса принимает совпадение по брутто', async () => {
+      const spreadsheetData = {
+        rows: [
+          ['Наименование', 'Цена', 'Нетто', 'Кол-во', 'Общий вес'],
+          ['Товар 1', '100', '1', '10', '12'], // нетто×кол-во=10 ≠ 12, но брутто 1.2×10 = 12
+        ],
+        columnCount: 5,
+      };
+      const structureOk = {
+        headerRows: [0],
+        dataRows: [1],
+        columnMapping: { description: 0, price: 1, weight: 2, quantity: 3, totalWeight: 4 },
+        currency: 'USD',
+        weightNote: 'per_unit',
+      };
+      const parseResponse = {
+        currency: 'USD',
+        columnMapping: { description: 0, price: 1, weight: 2, quantity: 3 },
+        products: [
+          { description: 'Товар 1', price: 100, weight: 1, weightGross: 1.2, quantity: 10 },
+        ],
+      };
+
+      const { service } = createService({
+        spreadsheetData,
+        claudeResponses: [structureOk, parseResponse, VALIDATION_OK],
+      });
+
+      const result = await service.parse(Buffer.from(''), 'test.xlsx');
+      expect(result.feasibility).toBe('ok');
+    });
+  });
+
+  describe('Chunked-парсинг: повтор упавших блоков', () => {
+    /** header + 150 товарных строк → chunk0 (100) + chunk1 (50). */
+    function makeChunkedFixture() {
+      const rows: string[][] = [
+        ['Наименование', 'Цена', 'Вес', 'Кол-во'],
+        ...Array.from({ length: 150 }, (_, i) => [`Товар ${i + 1}`, '100', '1', '10']),
+      ];
+      const structure = {
+        headerRows: [0],
+        dataRows: Array.from({ length: 150 }, (_, i) => i + 1),
+        columnMapping: { description: 0, price: 1, weight: 2, quantity: 3 },
+        currency: 'USD',
+        weightNote: 'per_unit',
+      };
+      const makeProducts = (from: number, count: number) => ({
+        currency: 'USD',
+        columnMapping: { description: 0, price: 1, weight: 2, quantity: 3 },
+        products: Array.from({ length: count }, (_, i) => ({
+          description: `Товар ${from + i + 1}`,
+          price: 100,
+          weight: 1,
+          quantity: 10,
+        })),
+      });
+      return { spreadsheetData: { rows, columnCount: 4 }, structure, makeProducts };
+    }
+
+    it('упавший chunk повторяется и результат остаётся полным', async () => {
+      const { spreadsheetData, structure, makeProducts } = makeChunkedFixture();
+      const { service, anthropic } = createService({
+        spreadsheetData,
+        claudeResponses: [
+          structure,
+          makeProducts(0, 100), // chunk 0
+          CLAUDE_CALL_FAILS, // chunk 1: первый проход падает
+          makeProducts(100, 50), // chunk 1: повторная попытка
+          VALIDATION_OK,
+        ],
+      });
+
+      const result = await service.parse(Buffer.from(''), 'test.xlsx');
+      expect(anthropic!.messages.create).toHaveBeenCalledTimes(5);
+      expect(result.feasibility).toBe('ok');
+      expect(result.products).toHaveLength(150);
+      expect(result.effectiveDataRows).toBeUndefined();
+    });
+
+    it('chunk упал дважды: review с диапазоном потерянных строк и effectiveDataRows', async () => {
+      const { spreadsheetData, structure, makeProducts } = makeChunkedFixture();
+      const { service } = createService({
+        spreadsheetData,
+        claudeResponses: [
+          structure,
+          makeProducts(0, 100), // chunk 0
+          CLAUDE_CALL_FAILS, // chunk 1: первый проход
+          CLAUDE_CALL_FAILS, // chunk 1: повтор тоже падает
+          VALIDATION_OK,
+        ],
+      });
+
+      const result = await service.parse(Buffer.from(''), 'test.xlsx');
+      expect(result.feasibility).toBe('review');
+      expect(result.products).toHaveLength(100);
+      const lost = result.rejectionReasons.find((r) => r.includes('потеряны'));
+      expect(lost).toBeDefined();
+      // dataRows[100..149] = строки файла 101..150 (0-based) → 102–151 в 1-based нумерации
+      expect(lost).toContain('строки файла 102–151');
+      // Строки, реально попавшие в products, — для корректной привязки фото
+      expect(result.effectiveDataRows).toHaveLength(100);
     });
   });
 

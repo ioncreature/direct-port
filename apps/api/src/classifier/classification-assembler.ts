@@ -1,5 +1,5 @@
 import type { TnvedCode } from '@direct-port/tks-api';
-import { normalizeImpediUnit } from '../common/normalize-impedi';
+import { normalizeImpediUnit, normalizeOkeiUnit } from '../common/normalize-impedi';
 import { DEFAULT_VAT_RATE } from '../common/vat';
 import { getStaticNoteTranslation } from '../common/note-translations';
 import type { ProductNote } from '../common/product-notes';
@@ -26,6 +26,16 @@ export const MISSING_DATA_CATEGORIES = [
 ] as const;
 
 export type MissingDataCategory = (typeof MISSING_DATA_CATEGORIES)[number];
+
+/**
+ * Дополнительная единица измерения кода ТН ВЭД (графа 41 ДТ) из блока ставок TKS:
+ * EDI2 — основная доп. единица, EDI3 — редкий второй вариант. null — код требует
+ * только килограммы (граф 35/38 достаточно).
+ */
+export function resolveSupplementaryUnit(tnved: TnvedCode): string | null {
+  const rates = tnved.TNVED;
+  return normalizeOkeiUnit(rates?.EDI2) ?? normalizeOkeiUnit(rates?.EDI3);
+}
 
 export function assembleResults(
   products: ProductRow[],
@@ -124,6 +134,7 @@ export function assembleResults(
       dutyMinUnit: normalizeImpediUnit(rates.IMPEDI2),
       vatRate: rates.NDS ?? DEFAULT_VAT_RATE,
       exciseRate: rates.AKC ?? 0,
+      supplementaryUnit: resolveSupplementaryUnit(tnved),
       matchConfidence: confidence,
       matched: true,
       tnvedRaw: tnved,
@@ -147,6 +158,7 @@ export function buildRateFields(tnved: TnvedCode): {
   dutyMinUnit: string | null;
   vatRate: number;
   exciseRate: number;
+  supplementaryUnit: string | null;
 } {
   const rates = tnved.TNVED;
   return {
@@ -159,6 +171,7 @@ export function buildRateFields(tnved: TnvedCode): {
     dutyMinUnit: normalizeImpediUnit(rates?.IMPEDI2),
     vatRate: rates?.NDS ?? DEFAULT_VAT_RATE,
     exciseRate: rates?.AKC ?? 0,
+    supplementaryUnit: resolveSupplementaryUnit(tnved),
   };
 }
 
@@ -190,6 +203,7 @@ function unmatched(
     dutyMinUnit: null,
     vatRate: DEFAULT_VAT_RATE,
     exciseRate: 0,
+    supplementaryUnit: null,
     matchConfidence: 0,
     matched: false,
     tnvedRaw: undefined,

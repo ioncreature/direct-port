@@ -14,6 +14,10 @@ import { errMsg, TksUnavailableError } from '../common/errors';
 import { localizedLanguageName } from '../common/i18n';
 import type { ProductNote } from '../common/product-notes';
 import {
+  formatProductAttributes,
+  type ProductAttributes,
+} from '../common/product-attributes';
+import {
   emptyTokenUsageMap,
   mergeTokenUsage,
   type TokenUsageMap,
@@ -42,11 +46,16 @@ export interface ProductRow {
   description: string;
   quantity: number;
   price: number;
+  /** Вес НЕТТО за единицу, кг. */
   weight: number;
+  /** Вес БРУТТО за единицу, кг (если парсер извлёк отдельную колонку). */
+  weightGross?: number;
   dimensions?: Dimension[];
   notes?: ProductNote[];
   hsCode?: string;
   rawContext?: string;
+  /** Структурированные атрибуты (материал, бренд, артикул…) от парсера. */
+  attributes?: ProductAttributes;
 }
 
 export interface ClassifiedProduct extends ProductRow {
@@ -66,6 +75,12 @@ export interface ClassifiedProduct extends ProductRow {
   verified: boolean;
   suggestedCode: string | null;
   verificationComment: string;
+  /**
+   * Дополнительная единица измерения кода ТН ВЭД (графа 41 ДТ): «пар», «шт», «л»…
+   * null — код не требует доп. единицы. Количество в ней считает Calculator
+   * (supplementaryQuantity), которому известны quantity/dimensions строки.
+   */
+  supplementaryUnit?: string | null;
   notes: ProductNote[];
   /**
    * Топ-3 кодов, которые Claude рассматривал во время классификации (выбранный + до 2 альтернатив).
@@ -150,6 +165,7 @@ interface ClassifyItem {
   description: string;
   candidates: TksCandidate[];
   rawContext?: string;
+  attributes?: ProductAttributes;
   hsCode?: string;
   hsCodeValid?: boolean;
   /** Заполняется только в retry-вызове: код, который выбрал Claude в первой попытке и которого не оказалось в TKS. */
@@ -180,6 +196,8 @@ const SYSTEM_PROMPT = `Ты — эксперт по таможенной кла�
 Для каждого товара тебе предоставлены описание, контекст (rawContext: материал, характеристики и т.д.) и кандидаты из справочника TKS с оценкой релевантности.
 
 rawContext — это набор именованных пар "имя_колонки=значение", разделённых "; ". Имена колонок — заголовки исходного файла (могут быть на разных языках, например "品名 / наименование товара=...; 材质 / материал=塑料"). Если в rawContext встречается альтернативное наименование товара (часто на китайском или английском, в колонках типа 品名/name) — учитывай его наравне с основным описанием: оно может уточнить тип товара, особенно когда основное описание короткое или неточное.
+
+attributes — структурированные атрибуты, извлечённые из исходного файла: material (материал), purpose (назначение), brand (бренд), article (артикул), model (модель), manufacturer (производитель). Это самые надёжные данные о товаре: material из attributes имеет приоритет над догадками из описания при выборе группы ТН ВЭД.
 
 Задача — выбрать наиболее подходящий 10-значный код ТН ВЭД.
 
@@ -530,20 +548,41 @@ export class ClassifierService {
         candidates: TksCandidate[];
         failedCode: string;
       }[] = [];
+      const noCandidateItems: { uniqueIdx: number; failedCode: string }[] = [];
       for (let i = 0; i < uniqueProducts.length; i++) {
         const sel = uniqueSelections[i];
         const candidates = uniqueCandidates[i];
-        if (
-          sel &&
-          sel.tnVedCode &&
-          !tnvedByCode.has(sel.tnVedCode) &&
-          candidates.length > 0
-        ) {
+        if (!sel || !sel.tnVedCode || tnvedByCode.has(sel.tnVedCode)) continue;
+        if (candidates.length > 0) {
           retryItems.push({
             uniqueIdx: i,
             product: uniqueProducts[i],
             candidates,
             failedCode: sel.tnVedCode,
+          });
+        } else {
+          noCandidateItems.push({ uniqueIdx: i, failedCode: sel.tnVedCode });
+        }
+      }
+
+      // Поиск TKS не дал кандидатов, а Claude предложил несуществующий код — раньше
+      // такая позиция уходила в unmatched без второй попытки. Достаём валидные коды
+      // с общим префиксом из полного списка ТН ВЭД и даём Claude выбрать из них.
+      if (noCandidateItems.length > 0) {
+        const prefix = await this.buildPrefixCandidates(noCandidateItems);
+        for (const [code, tnved] of prefix.loaded) {
+          if (!tnvedByCode.has(code)) tnvedByCode.set(code, tnved);
+        }
+        for (const item of noCandidateItems) {
+          const cands = prefix.byIdx.get(item.uniqueIdx);
+          if (!cands || cands.length === 0) continue;
+          // Мутируем существующий массив: candidatesByProduct/audit ссылаются на него.
+          uniqueCandidates[item.uniqueIdx].push(...cands);
+          retryItems.push({
+            uniqueIdx: item.uniqueIdx,
+            product: uniqueProducts[item.uniqueIdx],
+            candidates: uniqueCandidates[item.uniqueIdx],
+            failedCode: item.failedCode,
           });
         }
       }
@@ -655,6 +694,8 @@ export class ClassifierService {
     const parts = [
       p.description.trim().toLowerCase(),
       p.rawContext?.trim().toLowerCase() ?? '',
+      // Одинаковое описание с разными материалами/брендами — разные товары.
+      formatProductAttributes(p.attributes).toLowerCase(),
       p.hsCode ?? '',
     ];
     if (model) parts.push(model, language ?? 'ru', String(confidenceThreshold ?? ''));
@@ -698,11 +739,18 @@ export class ClassifierService {
     }
 
     type FormulateItem = { index: number; description: string; context?: string };
-    const allItems: FormulateItem[] = products.map((p, i) => ({
-      index: i,
-      description: p.description,
-      ...(p.rawContext ? { context: p.rawContext } : {}),
-    }));
+    const allItems: FormulateItem[] = products.map((p, i) => {
+      // Атрибуты (материал!) — впереди rawContext: промпт формулирования требует
+      // запрос с материалом, а в хвосте длинного rawContext он терялся.
+      const context = [formatProductAttributes(p.attributes), p.rawContext ?? '']
+        .filter(Boolean)
+        .join('; ');
+      return {
+        index: i,
+        description: p.description,
+        ...(context ? { context } : {}),
+      };
+    });
 
     const batches: FormulateItem[][] = [];
     for (let i = 0; i < allItems.length; i += CLAUDE_BATCH_SIZE) {
@@ -889,6 +937,7 @@ export class ClassifierService {
           description: products[j].description,
           candidates: candidatesByProduct[j] ?? [],
           ...(products[j].rawContext ? { rawContext: products[j].rawContext } : {}),
+          ...(products[j].attributes ? { attributes: products[j].attributes } : {}),
           ...(hsCode ? { hsCode } : {}),
           ...(hsCode && validatedHsCodes.has(hsCode) ? { hsCodeValid: true } : {}),
         });
@@ -970,6 +1019,7 @@ export class ClassifierService {
           description: b.product.description,
           candidates: b.candidates,
           ...(b.product.rawContext ? { rawContext: b.product.rawContext } : {}),
+          ...(b.product.attributes ? { attributes: b.product.attributes } : {}),
           previousCode: b.failedCode,
         }));
         const { selections, tokenUsage } = await this.callClaude(
@@ -1055,6 +1105,80 @@ export class ClassifierService {
       return { selections: [], tokenUsage };
     }
     return { selections, tokenUsage };
+  }
+
+  /**
+   * Кандидаты «по префиксу» для позиций, где TKS-поиск не дал ничего, а Claude
+   * предложил код вне справочника. Полный список валидных кодов ТН ВЭД
+   * (getTnvedCodeList — кэшируется TKS-клиентом) фильтруется по самому длинному
+   * общему префиксу (8 → 6 → 4 знака) с предложенным кодом: «теоретически верный»,
+   * но несуществующий код превращается в реальных соседей по товарной позиции.
+   */
+  private async buildPrefixCandidates(
+    items: { uniqueIdx: number; failedCode: string }[],
+  ): Promise<{ byIdx: Map<number, TksCandidate[]>; loaded: Map<string, TnvedCode> }> {
+    const byIdx = new Map<number, TksCandidate[]>();
+    let codeList: string[];
+    try {
+      codeList = await this.tksApi.getTnvedCodeList();
+    } catch (err) {
+      this.logger.warn(`Prefix candidates skipped: getTnvedCodeList failed: ${errMsg(err)}`);
+      return { byIdx, loaded: new Map() };
+    }
+
+    const matchesByIdx = new Map<number, string[]>();
+    const codesToLoad = new Set<string>();
+    for (const { uniqueIdx, failedCode } of items) {
+      const matches = this.prefixMatches(codeList, failedCode);
+      if (matches.length === 0) continue;
+      matchesByIdx.set(uniqueIdx, matches);
+      for (const code of matches) codesToLoad.add(code);
+    }
+    if (codesToLoad.size === 0) return { byIdx, loaded: new Map() };
+
+    const loaded = await this.loadTnvedRates([...codesToLoad]);
+    for (const [uniqueIdx, matches] of matchesByIdx) {
+      const cands: TksCandidate[] = [];
+      for (const code of matches) {
+        const tnved = loaded.get(code);
+        // confidence 0 — это не поисковая частотность, а «сосед по префиксу»;
+        // финальную уверенность выставит Claude в retry-вызове.
+        if (tnved) cands.push({ code: tnved.CODE, name: tnved.KR_NAIM, confidence: 0 });
+      }
+      if (cands.length > 0) byIdx.set(uniqueIdx, cands);
+    }
+    this.logger.log(
+      `Prefix candidates: ${byIdx.size}/${items.length} products got candidates from the code list`,
+    );
+    return { byIdx, loaded };
+  }
+
+  /**
+   * Один проход по списку кодов (~20k) вместо трёх filter'ов: каждый код попадает
+   * в bucket самого длинного совпавшего префикса (8 → 6 → 4), возвращается самый
+   * специфичный непустой. Если bucket длиннейшего префикса набрал MAX_CANDIDATES —
+   * остаток списка сканировать незачем.
+   */
+  private prefixMatches(codeList: string[], failedCode: string): string[] {
+    const prefixes = [...new Set([8, 6, 4].map((len) => failedCode.slice(0, len)))].filter(
+      (p) => p.length >= 4,
+    );
+    if (prefixes.length === 0) return [];
+    const buckets = new Map(prefixes.map((p) => [p, [] as string[]]));
+    for (const code of codeList) {
+      for (const prefix of prefixes) {
+        if (!code.startsWith(prefix)) continue;
+        const bucket = buckets.get(prefix)!;
+        if (bucket.length < MAX_CANDIDATES) bucket.push(code);
+        break; // код учитывается только по самому длинному совпавшему префиксу
+      }
+      if (buckets.get(prefixes[0])!.length >= MAX_CANDIDATES) break;
+    }
+    for (const prefix of prefixes) {
+      const bucket = buckets.get(prefix)!;
+      if (bucket.length > 0) return bucket;
+    }
+    return [];
   }
 
   // --- Phase 3: Load TNVED Rates ---

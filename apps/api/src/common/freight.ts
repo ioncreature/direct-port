@@ -53,17 +53,30 @@ export function resolveFreightTotalInDocCurrency(
   return doc.freightCost * rate;
 }
 
-/** Знаменатель для распределения фрахта: суммарный вес × количество по всем строкам.
- *  Пользователь предпочитает брутто; если в parsedData брутто отсутствует, парсер
- *  должен класть нетто (тогда распределение чуть точнее по объёму) — обе схемы
- *  здесь равнозначны, helper'у важно только число. */
+/**
+ * Вес-базис распределения фрахта одной строки: (вес за единицу × количество).
+ * По Решению Коллегии ЕЭК № 83 перевозка распределяется пропорционально весу
+ * БРУТТО — используем weightGross, когда парсер его извлёк; иначе fallback на
+ * нетто (weight). Числитель и знаменатель распределения обязаны считаться этой
+ * же функцией, иначе доли не сложатся в общий фрахт.
+ */
+export function freightWeightBasis(row: {
+  weight?: number | null;
+  weightGross?: number | null;
+  quantity?: number | null;
+}): number {
+  const gross = Number(row.weightGross);
+  const perUnit = Number.isFinite(gross) && gross > 0 ? gross : Number(row.weight) || 0;
+  const total = perUnit * (Number(row.quantity) || 0);
+  // Строки с нечисловым/бесконечным весом не получают долю фрахта в Calculator —
+  // не включаем их и в знаменатель, иначе часть фрахта «испарится» из распределения.
+  return Number.isFinite(total) && total > 0 ? total : 0;
+}
+
+/** Знаменатель для распределения фрахта: суммарный вес-базис (брутто, где есть)
+ *  × количество по всем строкам. См. freightWeightBasis. */
 export function computeWeightDenominator(
-  rows: ReadonlyArray<{ weight?: number | null; quantity?: number | null }>,
+  rows: ReadonlyArray<{ weight?: number | null; weightGross?: number | null; quantity?: number | null }>,
 ): number {
-  return rows.reduce((s, r) => {
-    const net = (Number(r.weight) || 0) * (Number(r.quantity) || 0);
-    // Строки с нечисловым/бесконечным весом не получают долю фрахта в Calculator —
-    // не включаем их и в знаменатель, иначе часть фрахта «испарится» из распределения.
-    return Number.isFinite(net) && net > 0 ? s + net : s;
-  }, 0);
+  return rows.reduce((s, r) => s + freightWeightBasis(r), 0);
 }

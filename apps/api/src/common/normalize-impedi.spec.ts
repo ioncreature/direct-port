@@ -3,7 +3,29 @@ import {
   isFlatCurrencyUnit,
   isSpecificDutyUnit,
   normalizeImpediUnit,
+  normalizeOkeiUnit,
 } from './normalize-impedi';
+
+describe('normalizeOkeiUnit', () => {
+  it('маппит ОКЕИ-код доп. единицы (EDI2/EDI3) в человекочитаемую единицу', () => {
+    expect(normalizeOkeiUnit('715')).toBe('пар');
+    expect(normalizeOkeiUnit('796')).toBe('шт');
+    expect(normalizeOkeiUnit('112')).toBe('л');
+    expect(normalizeOkeiUnit('055')).toBe('м²');
+  });
+
+  it('null для пустых значений и кодов чистой валюты', () => {
+    expect(normalizeOkeiUnit(null)).toBeNull();
+    expect(normalizeOkeiUnit(undefined)).toBeNull();
+    expect(normalizeOkeiUnit('')).toBeNull();
+    expect(normalizeOkeiUnit('643')).toBeNull(); // RUB — валюта, не единица
+    expect(normalizeOkeiUnit('500')).toBeNull(); // «просто валюта без знаменателя»
+  });
+
+  it('нераспознанный код возвращается как есть', () => {
+    expect(normalizeOkeiUnit('пар')).toBe('пар');
+  });
+});
 
 describe('normalizeImpediUnit', () => {
   it('возвращает null для пустых значений', () => {

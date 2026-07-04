@@ -88,6 +88,23 @@ function parseCode(trimmed: string): { currency: string; unit: string } | null {
   return unit !== undefined ? { currency, unit } : null;
 }
 
+/**
+ * Дополнительная единица измерения кода ТН ВЭД (TNVED.EDI2/EDI3, графа 41 ДТ) —
+ * чистый ОКЕИ-код без валютной составляющей: '715' → 'пар', '796' → 'шт'.
+ * Возвращает null для пустых значений и кодов чистой валюты; нераспознанный
+ * код возвращается как есть (мог прийти уже человекочитаемым).
+ */
+export function normalizeOkeiUnit(raw: string | undefined | null): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const padded = padToKnown(trimmed);
+  if (OKEI_CURRENCY_ONLY[padded] !== undefined) return null;
+  const unit = OKEI_BASE_TO_UNIT[padded];
+  if (unit !== undefined) return unit || null;
+  return trimmed;
+}
+
 export function normalizeImpediUnit(raw: string | undefined | null): string | null {
   if (!raw) return null;
   const trimmed = raw.trim();
