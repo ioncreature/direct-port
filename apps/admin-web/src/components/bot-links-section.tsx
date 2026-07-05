@@ -10,7 +10,7 @@ export function BotLinksSection({ style }: { style?: CSSProperties }) {
   return (
     <div style={style}>
       <h3 style={{ marginBottom: 12 }}>Telegram-боты</h3>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
         <BotLinkCard label="Клиентский бот" link={links?.client ?? null} loading={loading} />
         <BotLinkCard label="Менеджерский бот" link={links?.manager ?? null} loading={loading} />
       </div>
@@ -28,7 +28,7 @@ function BotLinkCard({
   loading: boolean;
 }) {
   return (
-    <div style={{ ...cardSurface, padding: 20 }}>
+    <div className="dp-card-hover" style={{ ...cardSurface, padding: 20, minWidth: 0 }}>
       <div style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 8 }}>{label}</div>
       {loading ? (
         <div style={{ color: 'var(--text-subtle)' }}>...</div>
@@ -38,7 +38,13 @@ function BotLinkCard({
             href={link.url}
             target="_blank"
             rel="noopener noreferrer"
-            style={{ fontSize: 20, fontWeight: 700, color: 'var(--accent)', textDecoration: 'none' }}
+            style={{
+              fontSize: 20,
+              fontWeight: 700,
+              color: 'var(--accent)',
+              textDecoration: 'none',
+              wordBreak: 'break-all',
+            }}
           >
             @{link.username}
           </a>

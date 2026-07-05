@@ -148,7 +148,7 @@ export default function DashboardPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, ...fade }}>
         <div>
           <h3 style={{ marginBottom: 12 }}>Последние документы</h3>
-          <div style={{ ...cardSurface, padding: '8px 18px' }}>
+          <div className="dp-card-hover" style={{ ...cardSurface, padding: '8px 18px' }}>
             {stats.recentDocuments.length === 0 && (
               <p style={{ color: 'var(--text-subtle)' }}>Документов пока нет</p>
             )}
@@ -243,7 +243,7 @@ function StatCard({
 }) {
   const content = (
     <div
-      className={href ? 'dp-card-hover' : undefined}
+      className="dp-card-hover"
       style={{ ...cardSurface, padding: '16px 20px', height: '100%', boxSizing: 'border-box' }}
     >
       <div style={{ ...statValue, letterSpacing: '-0.02em', color: color || 'var(--text)' }}>
@@ -393,7 +393,7 @@ function SeriesChart({
   );
 
   return (
-    <div style={{ ...cardSurface, padding: 20 }}>
+    <div className="dp-card-hover" style={{ ...cardSurface, padding: 20 }}>
       <div
         style={{
           display: 'flex',

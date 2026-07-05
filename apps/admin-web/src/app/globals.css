@@ -290,7 +290,7 @@ tbody tr:hover {
   text-decoration: none;
 }
 
-/* Карточка с hover-подъёмом — для кликабельных плиток (StatCard и т. п.) */
+/* Карточка с hover-подъёмом — единое поведение для всех карточек дашборда */
 .dp-card-hover {
   transition: box-shadow 0.16s ease, transform 0.16s ease, border-color 0.16s ease;
 }
