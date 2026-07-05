@@ -25,7 +25,7 @@ const navItems: { href: string; label: string; roles?: readonly string[] }[] = [
 ];
 
 const SIDEBAR_WIDTH = 232;
-const CONTENT_MAX_WIDTH = 1360;
+const CONTENT_MAX_WIDTH = 1500;
 // Весь shell (меню + контент) центрируем на широких мониторах, чтобы он не
 // прилипал к левому краю. Макс. ширина = сайдбар + его правый бордер (1px) +
 // горизонтальные паддинги <main> (32×2) + макс. ширина контента.
