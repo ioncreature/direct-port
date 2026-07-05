@@ -299,6 +299,8 @@ export interface DocumentResultRow {
   quantity: number;
   price: number;
   weight: number;
+  /** OKSMT-код страны происхождения строки (перекрывает страну документа). */
+  countryOfOrigin?: string | null;
   tnVedCode: string;
   tnVedDescription: string;
   dutyRate: number;

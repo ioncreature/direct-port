@@ -95,6 +95,13 @@ export const cardSurface: React.CSSProperties = {
   boxShadow: 'var(--shadow-sm)',
 };
 
+/** Крупное число статистической карточки (дашборд, AI-расходы).
+ *  Спред + переопределение color/letterSpacing по месту. */
+export const statValue: React.CSSProperties = {
+  fontSize: 26,
+  fontWeight: 650,
+};
+
 /** Primary-кнопка в виде ссылки (Link «Загрузить» / «Создать»). */
 export const primaryLink: React.CSSProperties = {
   ...btnPrimary,

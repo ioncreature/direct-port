@@ -1,6 +1,5 @@
 'use client';
 
-import { InfoCard } from '@/components/info-card';
 import { InfoTooltip } from '@/components/info-tooltip';
 import { TabsNav } from '@/components/tabs-nav';
 import { useCalculationHistory } from '@/hooks/use-calculation-history';
@@ -8,12 +7,12 @@ import { useCountries } from '@/hooks/use-countries';
 import { useDocument } from '@/hooks/use-document';
 import { useDocumentPhotos } from '@/hooks/use-document-photos';
 import { useDocumentRegulatoryExplanations } from '@/hooks/use-document-regulatory-explanations';
-import { RegulatoryRequirementsSection } from '../../tn-ved/regulatory-section';
+import { RegulatoryRequirementsSection, type OriginCountry } from '../../tn-ved/regulatory-section';
 import { DiagnosticsPanel } from './diagnostics-panel';
 import { PhotoLightbox, PhotoThumb } from './photos';
 import { countryOriginSourceLabels, downloadDocument, statusColors, statusLabels } from '@/lib/documents';
-import { calcAiCostFromMap, calcAiCostFromStages, fmt, fmtCost, fmtDateTimeLocale, fmtTokens, modelLabel, stageLabel } from '@/lib/format';
-import { btnDangerOutline, btnOutline, btnPrimary, btnSuccess, btnWarning } from '@/lib/table-styles';
+import { fmt, fmtDateTimeLocale } from '@/lib/format';
+import { btnDangerOutline, btnOutline, btnPrimary, btnSuccess, btnWarning, cardSurface } from '@/lib/table-styles';
 import { getDocumentUploaderName } from '@/lib/telegram';
 import { INCOTERMS } from '@/lib/types';
 import type { CalculationStatus, CodeCandidate, DocumentPhotoRow, DocumentResultRow, DocumentStatus, ParsedDataRow, ProductNoteSeverity } from '@/lib/types';
@@ -122,19 +121,11 @@ function buildStepperStages(status: DocumentStatus): { stages: StepperStage[]; h
   }
 }
 
-function DocumentStatusStepper({ status }: { status: DocumentStatus }) {
+function DocumentStatusStepper({ status, meta }: { status: DocumentStatus; meta?: React.ReactNode }) {
   const { stages, hint } = buildStepperStages(status);
 
   return (
-    <div
-      style={{
-        marginBottom: 24,
-        border: '1px solid var(--border)',
-        borderRadius: 8,
-        padding: '16px 20px',
-        background: '#fff',
-      }}
-    >
+    <div style={{ ...cardSurface, marginBottom: 24, padding: '16px 20px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         {stages.map((stage, i) => {
           const colors = STAGE_COLORS[stage.state];
@@ -215,6 +206,43 @@ function DocumentStatusStepper({ status }: { status: DocumentStatus }) {
         })}
       </div>
       <div style={{ marginTop: 10, fontSize: 13, color: 'var(--text-muted)', paddingLeft: 34 }}>{hint}</div>
+      {meta && (
+        <div
+          style={{
+            marginTop: 14,
+            paddingTop: 14,
+            borderTop: '1px solid var(--border-subtle)',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '10px 32px',
+          }}
+        >
+          {meta}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Пара «подпись → значение» в мета-строке карточки статуса. */
+function MetaItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          textTransform: 'uppercase',
+          letterSpacing: '0.04em',
+          color: 'var(--text-muted)',
+          marginBottom: 2,
+        }}
+      >
+        {label}
+      </div>
+      <div title={value} style={{ fontSize: 13, fontWeight: 500, overflowWrap: 'anywhere' }}>
+        {value}
+      </div>
     </div>
   );
 }
@@ -377,6 +405,23 @@ export default function DocumentDetailPage() {
   }, [doc?.parsedData, doc?.currency]);
 
   const rows = useMemo(() => doc?.resultData ?? [], [doc?.resultData]);
+  // Страна происхождения каждой строки (строчная перекрывает страну документа) —
+  // для фильтрации страновых мер в регуляторном блоке. Мемо сохраняет ссылки
+  // стабильными, чтобы не ломать memo() у ResultRow.
+  const countryNameByCode = useMemo(
+    () => new Map(countries.map((c) => [c.code, c.nameRu])),
+    [countries],
+  );
+  const docCountry = doc?.countryOfOrigin ?? null;
+  const rowOrigins = useMemo(
+    () =>
+      rows.map((row) => {
+        const code = row.countryOfOrigin ?? docCountry;
+        if (!code) return null;
+        return { code, name: countryNameByCode.get(code) ?? code };
+      }),
+    [rows, docCountry, countryNameByCode],
+  );
   const totals = useMemo(
     () =>
       rows.reduce(
@@ -470,8 +515,24 @@ export default function DocumentDetailPage() {
           marginBottom: 24,
         }}
       >
-        <h1 style={{ margin: 0 }}>{doc.originalFileName}</h1>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flexWrap: 'wrap' }}>
+          <h1 style={{ margin: 0 }}>{doc.originalFileName}</h1>
+          <span
+            style={{
+              flexShrink: 0,
+              padding: '3px 10px',
+              borderRadius: 'var(--radius-pill)',
+              border: `1px solid ${statusColors[doc.status]}`,
+              color: statusColors[doc.status],
+              fontSize: 12,
+              fontWeight: 600,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {statusLabels[doc.status]}
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
           {isIntake && (
             <button
               onClick={async () => {
@@ -539,7 +600,25 @@ export default function DocumentDetailPage() {
         </div>
       </div>
 
-      <DocumentStatusStepper status={doc.status} />
+      <DocumentStatusStepper
+        status={doc.status}
+        meta={
+          <>
+            <MetaItem label="Строк" value={String(doc.rowCount)} />
+            {doc.currency && <MetaItem label="Валюта" value={doc.currency} />}
+            {doc.freightCost != null && doc.freightCost > 0 && doc.freightCurrency && (
+              <MetaItem
+                label="Фрахт до границы"
+                value={`${fmt(doc.freightCost)} ${doc.freightCurrency}`}
+              />
+            )}
+            {doc.incoterms && <MetaItem label="Условия поставки" value={doc.incoterms} />}
+            <MetaItem label="Пользователь" value={getDocumentUploaderName(doc)} />
+            <MetaItem label="Создан" value={fmtDateTimeLocale(doc.createdAt)} />
+            <MetaItem label="Обновлён" value={fmtDateTimeLocale(doc.updatedAt)} />
+          </>
+        }
+      />
 
       <TabsNav
         tabs={['main', 'diagnostics'] as const}
@@ -549,7 +628,7 @@ export default function DocumentDetailPage() {
       />
 
       {activeTab === 'diagnostics' ? (
-        <DiagnosticsPanel documentId={id} />
+        <DiagnosticsPanel documentId={id} tokenUsage={doc.tokenUsage} />
       ) : (
         <>
 
@@ -614,60 +693,6 @@ export default function DocumentDetailPage() {
           >
             Отмена
           </button>
-        </div>
-      )}
-
-      {/* Info cards */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-          gap: 12,
-          marginBottom: 24,
-        }}
-      >
-        <InfoCard
-          label="Статус"
-          value={statusLabels[doc.status]}
-          color={statusColors[doc.status]}
-        />
-        <InfoCard label="Строк" value={String(doc.rowCount)} />
-        {doc.currency && <InfoCard label="Валюта" value={doc.currency} />}
-        {doc.freightCost != null && doc.freightCost > 0 && doc.freightCurrency && (
-          <InfoCard
-            label="Фрахт до границы"
-            value={`${fmt(doc.freightCost)} ${doc.freightCurrency}`}
-          />
-        )}
-        {doc.incoterms && <InfoCard label="Условия поставки" value={doc.incoterms} />}
-        <InfoCard label="Пользователь" value={getDocumentUploaderName(doc)} />
-        <InfoCard label="Создан" value={fmtDateTimeLocale(doc.createdAt)} />
-        <InfoCard label="Обновлён" value={fmtDateTimeLocale(doc.updatedAt)} />
-      </div>
-
-      {/* Token usage */}
-      {doc.tokenUsage && Object.keys(doc.tokenUsage).length > 0 && (
-        <div style={{ marginBottom: 24, border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <h3 style={{ margin: 0 }}>AI-расходы</h3>
-            <span style={{ fontSize: 20, fontWeight: 700 }}>{fmtCost(calcAiCostFromStages(doc.tokenUsage))}</span>
-          </div>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-            {Object.entries(doc.tokenUsage).map(([stage, models]) => {
-              const stageCost = calcAiCostFromMap(models);
-              return (
-                <div key={stage} style={{ flex: '1 1 180px', padding: 12, background: 'var(--bg-subtle)', borderRadius: 6 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{stageLabel(stage)}</div>
-                  <div style={{ fontSize: 15, fontWeight: 700 }}>{fmtCost(stageCost)}</div>
-                  {Object.entries(models).map(([model, usage]) => (
-                    <div key={model} style={{ fontSize: 12, color: 'var(--text-subtle)', marginTop: 4 }}>
-                      {modelLabel(model)}: {fmtTokens(usage.inputTokens)} in / {fmtTokens(usage.outputTokens)} out
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
-          </div>
         </div>
       )}
 
@@ -1092,6 +1117,7 @@ export default function DocumentDetailPage() {
                     explanations={explanationsState}
                     photo={photosByRow.get(i)}
                     onOpenPhoto={setLightboxPhoto}
+                    originCountry={rowOrigins[i]}
                   />
                 ))}
               </tbody>
@@ -1166,6 +1192,7 @@ const ResultRow = memo(function ResultRow({
   explanations,
   photo,
   onOpenPhoto,
+  originCountry,
 }: {
   row: DocumentResultRow;
   index: number;
@@ -1177,6 +1204,7 @@ const ResultRow = memo(function ResultRow({
   explanations: import('@/hooks/use-regulatory-explanations').RegulatoryExplanationsState;
   photo?: DocumentPhotoRow;
   onOpenPhoto: (photo: DocumentPhotoRow) => void;
+  originCountry: OriginCountry | null;
 }) {
   const [hovered, setHovered] = useState(false);
   const status = resolveStatus(row);
@@ -1242,6 +1270,7 @@ const ResultRow = memo(function ResultRow({
           explanations={explanations}
           photo={photo}
           onOpenPhoto={onOpenPhoto}
+          originCountry={originCountry}
         />
       )}
     </>
@@ -1257,6 +1286,7 @@ function ResultDetail({
   explanations,
   photo,
   onOpenPhoto,
+  originCountry,
 }: {
   row: DocumentResultRow;
   rowIndex: number;
@@ -1266,6 +1296,7 @@ function ResultDetail({
   explanations: import('@/hooks/use-regulatory-explanations').RegulatoryExplanationsState;
   photo?: DocumentPhotoRow;
   onOpenPhoto: (photo: DocumentPhotoRow) => void;
+  originCountry: OriginCountry | null;
 }) {
   const notes = row.notes ?? [];
   const sortedNotes = [...notes].sort(
@@ -1403,6 +1434,7 @@ function ResultDetail({
             <RegulatoryRequirementsSection
               report={row.regulatoryReport}
               explanations={explanations}
+              originCountry={originCountry}
             />
           </div>
         ) : (

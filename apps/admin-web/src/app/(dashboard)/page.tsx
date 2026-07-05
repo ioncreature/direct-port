@@ -7,7 +7,7 @@ import { useDashboardStats } from '@/hooks/use-dashboard-stats';
 import { statusColors, statusLabels } from '@/lib/documents';
 import { calcAiCostFromMap, fmtCost, niceCeil } from '@/lib/format';
 import { isAdminRole, isSuperAdmin } from '@/lib/roles';
-import { btnOutline, cardSurface, CHART_HEIGHT_PX } from '@/lib/table-styles';
+import { btnOutline, cardSurface, statValue } from '@/lib/table-styles';
 import type { DashboardPeriod, DashboardSeriesPoint } from '@/lib/types';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -42,6 +42,8 @@ export default function DashboardPage() {
     (byStatus.pending ?? 0) +
     (byStatus.processing ?? 0);
   const review = (byStatus.requires_review ?? 0) + (byStatus.code_review_required ?? 0);
+  const partialDocs = byStatus.processed_with_errors ?? 0;
+  const failedDocs = byStatus.failed ?? 0;
   const aiCost = stats.ai ? calcAiCostFromMap(stats.ai.models) : null;
   const leadCost = stats.ai?.leads ? calcAiCostFromMap(stats.ai.leads) : null;
   const suffix = periodSuffix[period];
@@ -71,40 +73,34 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <SectionTitle>Документы {suffix}</SectionTitle>
+      <SectionTitle>Документы и позиции {suffix}</SectionTitle>
       <div style={{ ...cardsGrid, ...fade }}>
-        <StatCard label="Загружено" value={fmtInt(stats.documents.total)} href="/documents" />
         <StatCard
-          label="Обработано"
+          label="Загружено документов"
+          value={fmtInt(stats.documents.total)}
+          href="/documents"
+          sub={joinDot([
+            inWork > 0 && <>в работе: {fmtInt(inWork)}</>,
+            review > 0 && (
+              <span style={{ color: 'var(--warning-strong)' }}>на проверке: {fmtInt(review)}</span>
+            ),
+          ])}
+        />
+        <StatCard
+          label="Успешно обработано"
           value={fmtInt(byStatus.processed ?? 0)}
-          color="var(--success)"
+          color={(byStatus.processed ?? 0) > 0 ? 'var(--success)' : undefined}
+          sub={joinDot([
+            partialDocs > 0 && (
+              <span style={{ color: 'var(--warning-strong)' }}>частично: {fmtInt(partialDocs)}</span>
+            ),
+            failedDocs > 0 && <span style={{ color: 'var(--danger)' }}>сбои: {fmtInt(failedDocs)}</span>,
+          ])}
         />
-        <StatCard
-          label="Частично"
-          value={fmtInt(byStatus.processed_with_errors ?? 0)}
-          color="var(--warning)"
-        />
-        <StatCard label="Сбои" value={fmtInt(byStatus.failed ?? 0)} color="var(--danger)" />
-        <StatCard label="В работе" value={fmtInt(inWork)} />
-        <StatCard
-          label="На проверке"
-          value={fmtInt(review)}
-          color={review > 0 ? 'var(--warning)' : undefined}
-        />
-      </div>
-
-      <SectionTitle>Позиции {suffix}</SectionTitle>
-      <div style={{ ...cardsGrid, ...fade }}>
         <StatCard
           label="Обработано позиций"
           value={fmtInt(stats.positions.total)}
           sub={`успешно рассчитано: ${fmtInt(stats.positions.successful)}`}
-          color="var(--success)"
-        />
-        <StatCard
-          label="Таможенные платежи"
-          value={fmtRub(stats.positions.customsPaymentsRub)}
-          sub="пошлина + НДС + акциз"
         />
         {isAdmin && aiCost != null && (
           <StatCard label="AI-расходы" value={fmtCost(aiCost)} href="/ai-costs" color="var(--violet)" />
@@ -123,15 +119,10 @@ export default function DashboardPage() {
       <SectionTitle>Клиенты и баланс</SectionTitle>
       <div style={{ ...cardsGrid, ...fade }}>
         <StatCard
-          label="Клиенты"
-          value={fmtInt(stats.clients.total)}
-          sub={`новых ${suffix}: ${fmtInt(stats.clients.new)}`}
-          href="/telegram-users"
-        />
-        <StatCard
           label="Активные клиенты"
           value={fmtInt(stats.clients.active)}
-          sub={`с документами ${suffix}`}
+          sub={`с документами ${suffix} · новых: ${fmtInt(stats.clients.new)} · всего: ${fmtInt(stats.clients.total)}`}
+          href="/telegram-users"
         />
         <StatCard
           label="Баланс клиентов"
@@ -142,18 +133,12 @@ export default function DashboardPage() {
           label="Пополнения"
           value={`+${fmtInt(stats.billing.topUpPositions)}`}
           sub={`позиций ${suffix}`}
-          color="var(--success)"
+          color={stats.billing.topUpPositions > 0 ? 'var(--success)' : undefined}
         />
         <StatCard
           label="Списания"
           value={`−${fmtInt(stats.billing.chargedPositions)}`}
           sub={`позиций за обработку ${suffix}`}
-        />
-        <StatCard
-          label="Заявки на пополнение"
-          value={fmtInt(stats.billing.pendingTopUps)}
-          sub="ожидают подтверждения"
-          color={stats.billing.pendingTopUps > 0 ? 'var(--warning)' : undefined}
         />
         {isAdmin && stats.users != null && (
           <StatCard label="Пользователи" value={fmtInt(stats.users)} href="/users" />
@@ -227,11 +212,16 @@ function fmtInt(n: number): string {
   return n.toLocaleString('ru');
 }
 
-/** Компактные рубли для карточки: большие суммы — в млн/млрд, иначе целыми. */
-function fmtRub(v: number): string {
-  if (v >= 1e9) return `${(v / 1e9).toLocaleString('ru', { maximumFractionDigits: 1 })} млрд ₽`;
-  if (v >= 1e6) return `${(v / 1e6).toLocaleString('ru', { maximumFractionDigits: 1 })} млн ₽`;
-  return `${Math.round(v).toLocaleString('ru')} ₽`;
+/** Склеивает непустые части подписи карточки разделителем « · ». undefined — если частей нет. */
+function joinDot(parts: React.ReactNode[]): React.ReactNode {
+  const shown = parts.filter(Boolean);
+  if (shown.length === 0) return undefined;
+  return shown.map((part, i) => (
+    <span key={i}>
+      {i > 0 && ' · '}
+      {part}
+    </span>
+  ));
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
@@ -247,21 +237,19 @@ function StatCard({
 }: {
   label: string;
   value: number | string;
-  sub?: string;
+  sub?: React.ReactNode;
   href?: string;
   color?: string;
 }) {
   const content = (
     <div
       className={href ? 'dp-card-hover' : undefined}
-      style={{ ...cardSurface, padding: 20, height: '100%', boxSizing: 'border-box' }}
+      style={{ ...cardSurface, padding: '16px 20px', height: '100%', boxSizing: 'border-box' }}
     >
-      <div
-        style={{ fontSize: 30, fontWeight: 700, letterSpacing: '-0.02em', color: color || 'var(--text)' }}
-      >
+      <div style={{ ...statValue, letterSpacing: '-0.02em', color: color || 'var(--text)' }}>
         {value}
       </div>
-      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-muted)', marginTop: 6 }}>
+      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-muted)', marginTop: 4 }}>
         {label}
       </div>
       {sub && (
@@ -283,7 +271,22 @@ function StatCard({
   return content;
 }
 
-/** Бары обработанных позиций по дням (неделя/месяц) или месяцам (год). */
+/** Высоты полос графика: основная — позиции, компактная — документы. */
+const POSITIONS_BAND_PX = 104;
+const DOCUMENTS_BAND_PX = 44;
+
+/* Цвета серий: две светлоты фирменного петроля. Серии живут в отдельных
+   подписанных полосах, поэтому идентичность несут подписи, а не оттенок. */
+const SERIES_COLORS = {
+  positions: { base: '#4d949e', active: '#3a7a83' },
+  documents: { base: 'var(--petrol)', active: '#0b535e' },
+} as const;
+
+/**
+ * Обработка по дням (неделя/месяц) или месяцам (год): две синхронные полосы
+ * баров с общей осью X — позиции и документы, у каждой своя шкала.
+ * Общий hover: наведение в любой полосе подсвечивает всю колонку даты.
+ */
 function SeriesChart({
   data,
   granularity,
@@ -291,7 +294,8 @@ function SeriesChart({
   data: DashboardSeriesPoint[];
   granularity: 'day' | 'month';
 }) {
-  const axisMax = niceCeil(Math.max(...data.map((d) => d.positions), 0));
+  const positionsMax = niceCeil(Math.max(...data.map((d) => d.positions), 0));
+  const documentsMax = niceCeil(Math.max(...data.map((d) => d.documents), 0));
   const totalPositions = data.reduce((s, d) => s + d.positions, 0);
   const totalDocs = data.reduce((s, d) => s + d.documents, 0);
   const currentKey = new Date().toISOString().slice(0, granularity === 'day' ? 10 : 7);
@@ -299,98 +303,116 @@ function SeriesChart({
   // Для года метка — целиком YYYY-MM, для дней достаточно MM-DD.
   const shortLabel = (date: string) => (granularity === 'day' ? date.slice(5) : date);
 
+  const band = (
+    series: 'positions' | 'documents',
+    axisMax: number,
+    bandHeight: number,
+    withTooltip: boolean,
+  ) => (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'flex-end',
+        gap: 2,
+        height: bandHeight,
+        position: 'relative',
+        borderBottom: '1px solid var(--border-subtle)',
+      }}
+    >
+      {data.map((d, i) => {
+        const value = d[series];
+        const heightPx = value > 0 ? Math.max((value / axisMax) * bandHeight, 2) : 0;
+        const colors = SERIES_COLORS[series];
+        const isActive = activeIdx === i;
+        return (
+          <div
+            key={d.date}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'flex-end',
+              alignSelf: 'stretch',
+              position: 'relative',
+              cursor: 'pointer',
+              background: isActive ? 'var(--bg-subtle)' : undefined,
+            }}
+            onMouseEnter={() => setActiveIdx(i)}
+            onClick={() => setActiveIdx((prev) => (prev === i ? null : i))}
+          >
+            <div
+              style={{
+                width: '100%',
+                maxWidth: 24,
+                height: heightPx,
+                background: d.date === currentKey
+                  ? 'var(--orange)'
+                  : isActive
+                    ? colors.active
+                    : colors.base,
+                borderRadius: '3px 3px 0 0',
+                transition: 'height 0.3s, background 0.15s',
+              }}
+            />
+            {withTooltip && isActive && (
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: 'calc(100% + 6px)',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  background: 'var(--ink)',
+                  color: '#fff',
+                  padding: '6px 10px',
+                  borderRadius: 6,
+                  fontSize: 12,
+                  whiteSpace: 'nowrap',
+                  pointerEvents: 'none',
+                  zIndex: 10,
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                }}
+              >
+                <div style={{ fontWeight: 600 }}>{d.date}</div>
+                <div style={{ marginTop: 2 }}>{fmtInt(d.positions)} позиций</div>
+                <div style={{ marginTop: 2, color: '#b3c0c8' }}>
+                  документов: {fmtInt(d.documents)}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  const bandLabel = (text: string, scaleMax: number, marginTop: number) => (
+    <div style={{ fontSize: 11, color: 'var(--text-subtle)', margin: `${marginTop}px 0 4px` }}>
+      {text} <span>· 0–{fmtInt(scaleMax)}</span>
+    </div>
+  );
+
   return (
     <div style={{ ...cardSurface, padding: 20 }}>
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
-          marginBottom: 12,
+          marginBottom: 4,
           fontSize: 13,
           color: 'var(--text-muted)',
         }}
       >
-        <span>
-          Обработанные позиции {granularity === 'day' ? 'по дням' : 'по месяцам'}{' '}
-          <span style={{ color: 'var(--text-subtle)' }}>· шкала 0 – {fmtInt(axisMax)}</span>
-        </span>
+        <span>Обработка {granularity === 'day' ? 'по дням' : 'по месяцам'}</span>
         <span style={{ fontWeight: 600 }}>
           Итого: {fmtInt(totalPositions)} поз. · {fmtInt(totalDocs)} док.
         </span>
       </div>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          gap: 2,
-          height: CHART_HEIGHT_PX,
-          position: 'relative',
-        }}
-        onMouseLeave={() => setActiveIdx(null)}
-      >
-        {data.map((d, i) => {
-          // Высота в px: проценты от неопределённой высоты parent давали 0.
-          const heightPx = d.positions > 0 ? Math.max((d.positions / axisMax) * CHART_HEIGHT_PX, 2) : 0;
-          const isCurrent = d.date === currentKey;
-          const isActive = activeIdx === i;
-          return (
-            <div
-              key={d.date}
-              style={{
-                flex: 1,
-                minWidth: 0,
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'flex-end',
-                alignSelf: 'stretch',
-                position: 'relative',
-                cursor: 'pointer',
-              }}
-              onMouseEnter={() => setActiveIdx(i)}
-              onClick={() => setActiveIdx((prev) => (prev === i ? null : i))}
-            >
-              <div
-                style={{
-                  width: '100%',
-                  maxWidth: 24,
-                  height: heightPx,
-                  background: isCurrent
-                    ? 'var(--orange)'
-                    : isActive
-                      ? '#4d949e'
-                      : 'var(--petrol-light)',
-                  borderRadius: '3px 3px 0 0',
-                  transition: 'height 0.3s, background 0.15s',
-                }}
-              />
-              {isActive && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    bottom: 'calc(100% + 6px)',
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    background: 'var(--ink)',
-                    color: '#fff',
-                    padding: '6px 10px',
-                    borderRadius: 6,
-                    fontSize: 12,
-                    whiteSpace: 'nowrap',
-                    pointerEvents: 'none',
-                    zIndex: 10,
-                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-                  }}
-                >
-                  <div style={{ fontWeight: 600 }}>{d.date}</div>
-                  <div style={{ marginTop: 2 }}>{fmtInt(d.positions)} позиций</div>
-                  <div style={{ marginTop: 2, color: '#b3c0c8' }}>
-                    документов: {fmtInt(d.documents)}
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
+      <div onMouseLeave={() => setActiveIdx(null)}>
+        {bandLabel('Позиции', positionsMax, 0)}
+        {band('positions', positionsMax, POSITIONS_BAND_PX, true)}
+        {bandLabel('Документы', documentsMax, 10)}
+        {band('documents', documentsMax, DOCUMENTS_BAND_PX, false)}
       </div>
       {data.length <= 14 ? (
         <div style={{ display: 'flex', gap: 2, marginTop: 4 }}>

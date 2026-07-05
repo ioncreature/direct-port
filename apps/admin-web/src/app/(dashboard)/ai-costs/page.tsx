@@ -1,6 +1,7 @@
 'use client';
 
 import { CompanySelect } from '@/components/company-select';
+import { ModelBreakdown } from '@/components/model-breakdown';
 import { useAuth } from '@/hooks/use-auth';
 import api from '@/lib/api';
 import {
@@ -14,7 +15,7 @@ import {
   totalTokensFromMap,
   totalTokensFromStages,
 } from '@/lib/format';
-import { th, td, btnOutline, CHART_HEIGHT_PX } from '@/lib/table-styles';
+import { th, td, btnOutline, cardSurface, statValue, CHART_HEIGHT_PX } from '@/lib/table-styles';
 import type { DailyTokenStats, TokenStats, TokenStatsPeriod, TokenUsageMap } from '@/lib/types';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
@@ -121,7 +122,7 @@ export default function AiCostsPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, opacity: loading ? 0.5 : 1, transition: 'opacity 0.15s' }}>
         <div>
           <h3 style={{ marginBottom: 12 }}>Расходы по пользователям</h3>
-          <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'auto' }}>
+          <div style={{ ...cardSurface, overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
@@ -164,7 +165,7 @@ export default function AiCostsPage() {
 
         <div>
           <h3 style={{ marginBottom: 12 }}>Последние документы</h3>
-          <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'auto' }}>
+          <div style={{ ...cardSurface, overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
@@ -216,19 +217,6 @@ export default function AiCostsPage() {
   );
 }
 
-/** Разбивка токенов по семействам моделей («модель: in / out») — общий футер карточек. */
-function ModelBreakdown({ models }: { models: TokenUsageMap }) {
-  return (
-    <>
-      {Object.entries(models).map(([model, usage]) => (
-        <div key={model} style={{ fontSize: 12, color: 'var(--text-subtle)', marginTop: 4 }}>
-          {modelLabel(model)}: {fmtTokens(usage.inputTokens)} in / {fmtTokens(usage.outputTokens)} out
-        </div>
-      ))}
-    </>
-  );
-}
-
 /** Отдельная карточка платформенного расхода на автопоиск лидов (discovery +
  *  обогащение). Не входит в периодный грид: лиды не привязаны к документам/
  *  пользователям, поэтому показываем накопленный итог отдельной выноской. */
@@ -237,11 +225,11 @@ function LeadsCard({ models }: { models: TokenUsageMap }) {
   const tokens = totalTokensFromMap(models);
 
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 20, maxWidth: 360 }}>
+    <div style={{ ...cardSurface, padding: 20, maxWidth: 360 }}>
       <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>
         Поиск лидов <span style={{ color: 'var(--text-subtle)' }}>· всего</span>
       </div>
-      <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--violet)' }}>{fmtCost(cost)}</div>
+      <div style={{ ...statValue, color: 'var(--violet)' }}>{fmtCost(cost)}</div>
       <div style={{ fontSize: 13, color: 'var(--text-subtle)', marginTop: 8 }}>
         {fmtTokens(tokens)} токенов · discovery + обогащение
       </div>
@@ -254,9 +242,9 @@ function PeriodCard({ label, period }: { label: string; period: TokenStatsPeriod
   const cost = calcAiCostFromMap(period.models);
 
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 20 }}>
+    <div style={{ ...cardSurface, padding: 20 }}>
       <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 28, fontWeight: 700 }}>{fmtCost(cost)}</div>
+      <div style={statValue}>{fmtCost(cost)}</div>
       <div style={{ fontSize: 13, color: 'var(--text-subtle)', marginTop: 8 }}>{period.documentCount} документов</div>
       <ModelBreakdown models={period.models} />
     </div>
@@ -272,7 +260,7 @@ function DailyChart({ data }: { data: DailyTokenStats[] }) {
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
 
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 20 }}>
+    <div style={{ ...cardSurface, padding: 20 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, fontSize: 13, color: 'var(--text-muted)' }}>
         <span>
           Последние {data.length} дней{' '}

@@ -1,18 +1,21 @@
 'use client';
 
+import { ModelBreakdown } from '@/components/model-breakdown';
 import { useDiagnostics } from '@/hooks/use-diagnostics';
 import api from '@/lib/api';
 import {
   calcAiCostFromMap,
+  calcAiCostFromStages,
   fmt,
   fmtCost,
   fmtDateTime,
   fmtDuration,
   fmtTokens,
   modelLabel,
+  stageLabel,
   totalTokensFromMap,
 } from '@/lib/format';
-import { btnLink, btnOutline, td, th } from '@/lib/table-styles';
+import { btnLink, btnOutline, cardSurface, td, th } from '@/lib/table-styles';
 import type {
   AiCall,
   AiCallLite,
@@ -25,6 +28,7 @@ import type {
   PipelineStage,
   PipelineStageRun,
   PipelineStageStatus,
+  TokenUsageByStage,
 } from '@/lib/types';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -71,7 +75,13 @@ const ACTOR_LABELS: Record<DocumentVersionActorType, string> = {
   telegram: 'Telegram',
 };
 
-export function DiagnosticsPanel({ documentId }: { documentId: string }) {
+export function DiagnosticsPanel({
+  documentId,
+  tokenUsage,
+}: {
+  documentId: string;
+  tokenUsage?: TokenUsageByStage | null;
+}) {
   const { stageRuns, versions, loading, error, load } = useDiagnostics(documentId);
   const [selectedAiCallId, setSelectedAiCallId] = useState<string | null>(null);
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
@@ -96,6 +106,38 @@ export function DiagnosticsPanel({ documentId }: { documentId: string }) {
 
   return (
     <div>
+      {tokenUsage && Object.keys(tokenUsage).length > 0 && (
+        <section style={{ marginBottom: 32 }}>
+          <div style={{ ...cardSurface, padding: 16 }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 12,
+              }}
+            >
+              <h3 style={{ margin: 0 }}>AI-расходы</h3>
+              <span style={{ fontSize: 20, fontWeight: 650 }}>
+                {fmtCost(calcAiCostFromStages(tokenUsage))}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+              {Object.entries(tokenUsage).map(([stage, models]) => (
+                <div
+                  key={stage}
+                  style={{ flex: '1 1 180px', padding: 12, background: 'var(--bg-subtle)', borderRadius: 6 }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{stageLabel(stage)}</div>
+                  <div style={{ fontSize: 15, fontWeight: 700 }}>{fmtCost(calcAiCostFromMap(models))}</div>
+                  <ModelBreakdown models={models} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       <section style={{ marginBottom: 32 }}>
         <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>Этапы обработки</h2>
         {stageRuns && stageRuns.length > 0 ? (
