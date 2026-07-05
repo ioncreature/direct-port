@@ -8,6 +8,7 @@ import {
 } from '../photo-storage/photo-storage.service';
 import type { ProductAttributes } from '../common/product-attributes';
 import type { CalculationStatus, ProductNote } from '../common/product-notes';
+import { incotermsCustomsValueSummary, incotermsGrafa20Label } from '../common/incoterms-info';
 import { Document } from '../database/entities/document.entity';
 import type { Dimension } from '../duty-interpreter/interfaces';
 import type { RegulatoryReport } from '../regulatory/interfaces';
@@ -511,8 +512,9 @@ export class ExcelExportService {
 
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
 
+    const docHasFreight = doc.freightCost != null && Number(doc.freightCost) > 0;
     if (hasDtNumbers) {
-      this.addDtProjectSheet(workbook, dtProject, currency);
+      this.addDtProjectSheet(workbook, dtProject, currency, doc.incoterms, docHasFreight);
     }
 
     const checklist = buildShipmentChecklist({
@@ -564,6 +566,8 @@ export class ExcelExportService {
     workbook: ExcelJS.Workbook,
     project: DtProject,
     currency: string,
+    incoterms: string | null,
+    hasFreight: boolean,
   ): void {
     const sheet = workbook.addWorksheet('Проект ДТ');
 
@@ -656,11 +660,30 @@ export class ExcelExportService {
             : 'не требуется (партия ≤ $10 000; кроме многоразовых/повторяющихся поставок)',
       ],
     ];
+    const grafa20 = incotermsGrafa20Label(incoterms);
+    if (grafa20) summary.unshift(['Условия поставки (гр. 20)', grafa20]);
     sheet.addRow([]);
     for (const [label, value] of summary) {
       const row = sheet.addRow({ descriptionDraft: label, customsValueRub: csvSafe(value) });
       row.getCell(labelColIdx).font = { bold: true };
       if (typeof value === 'number') row.getCell(valueColIdx).numFmt = '#,##0.00';
+    }
+
+    const impact = incotermsCustomsValueSummary(incoterms, hasFreight);
+    if (impact.length > 0) {
+      sheet.addRow([]);
+      const head = sheet.addRow({
+        descriptionDraft: csvSafe(
+          `Условия поставки ${grafa20 ?? incoterms}: как влияет на таможенную стоимость этого документа`,
+        ),
+      });
+      head.getCell(labelColIdx).font = { bold: true };
+      head.getCell(labelColIdx).alignment = { wrapText: true, vertical: 'top' };
+      for (const line of impact) {
+        const row = sheet.addRow({ descriptionDraft: csvSafe(line) });
+        row.getCell(labelColIdx).alignment = { wrapText: true, vertical: 'top' };
+        row.getCell(labelColIdx).font = { italic: true };
+      }
     }
 
     sheet.addRow([]);

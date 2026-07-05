@@ -10,7 +10,7 @@
  * - severity='info' — нейтральная подсказка, не влияет на корректность
  */
 
-import { sellerPaysCarriage } from '../database/entities/document.entity';
+import { deliversInCountry, sellerPaysCarriage } from '../database/entities/document.entity';
 
 export type ProductNoteStage = 'parse' | 'classify' | 'verify' | 'interpret' | 'calculate';
 
@@ -70,10 +70,13 @@ export function hasAntidumpingNote(notes: ProductNote[] | undefined): boolean {
 
 /**
  * Контроль структуры таможенной стоимости по условиям поставки Инкотермс:
- * - INCOTERMS_FREIGHT_IN_PRICE (CFR…DDP): перевозка оплачена продавцом и обычно уже
- *   в цене — дополнительно заданный фрахт задваивает таможенную стоимость;
- * - остальные (EXW/FCA/FAS/FOB): перевозка до границы НЕ в цене — без заданного
- *   фрахта таможенная стоимость и налоги занижены.
+ * - CFR/CIF/CPT/CIP: перевозка оплачена продавцом и обычно уже в цене — дополнительно
+ *   заданный фрахт задваивает таможенную стоимость;
+ * - EXW/FCA/FAS/FOB: перевозка до границы НЕ в цене — без заданного фрахта таможенная
+ *   стоимость и налоги занижены;
+ * - DAP/DPU/DDP без фрахта: цена включает перевозку по РФ после границы (а у DDP — ещё
+ *   ввозные пошлины/НДС), которые в ТС не входят и инструментом не вычитаются — стоимость
+ *   завышена.
  * null — условий нет или комбинация корректна (заметка не нужна).
  */
 export function incotermsFreightNote(doc: {
@@ -104,6 +107,21 @@ export function incotermsFreightNote(doc: {
         `Условия поставки ${doc.incoterms}: доставка до границы ЕАЭС не входит в цену товара, ` +
         `а фрахт у документа не задан — таможенная стоимость, пошлина и НДС занижены. ` +
         `Укажите фрахт и нажмите «Пересчитать».`,
+    };
+  }
+  if (freightInPrice && !hasFreight && deliversInCountry(doc.incoterms)) {
+    const isDdp = doc.incoterms === 'DDP';
+    return {
+      stage: 'calculate',
+      severity: 'warning',
+      field: 'freight',
+      message:
+        `Условия поставки ${doc.incoterms}: цена включает доставку по территории РФ после ` +
+        `границы` +
+        (isDdp ? ', а также ввозные пошлины и налоги (в т. ч. НДС)' : '') +
+        `. Эти суммы в таможенную стоимость не входят (п. 2 ст. 40 ТК ЕАЭС), но здесь она ` +
+        `взята равной цене — таможенная стоимость, пошлина и НДС завышены. Вычтите их вручную ` +
+        `при документальном подтверждении.`,
     };
   }
   return null;

@@ -23,10 +23,27 @@ describe('incotermsFreightNote', () => {
     expect(note!.message).toContain('занижены');
   });
 
+  it.each(['DAP', 'DPU', 'DDP'])(
+    '%s без фрахта → warning о завышении стоимости (плечо по РФ / пошлины)',
+    (incoterms) => {
+      const note = incotermsFreightNote({ incoterms, freightCost: null });
+      expect(note).not.toBeNull();
+      expect(note!.severity).toBe('warning');
+      expect(note!.field).toBe('freight');
+      expect(note!.message).toContain('завышены');
+    },
+  );
+
+  it('DDP без фрахта — предупреждение упоминает ввозные пошлины', () => {
+    const note = incotermsFreightNote({ incoterms: 'DDP', freightCost: 0 });
+    expect(note).not.toBeNull();
+    expect(note!.message).toContain('пошлины');
+  });
+
   it('корректные комбинации — без заметок', () => {
-    // Продавец оплатил перевозку, фрахт не задан — стоимость уже полная.
+    // Чистый C-термин без фрахта: продавец оплатил перевозку до границы, стоимость уже полная.
     expect(incotermsFreightNote({ incoterms: 'CIF', freightCost: null })).toBeNull();
-    expect(incotermsFreightNote({ incoterms: 'DDP', freightCost: 0 })).toBeNull();
+    expect(incotermsFreightNote({ incoterms: 'CPT', freightCost: null })).toBeNull();
     // Покупатель платит за перевозку и фрахт задан — как и должно быть.
     expect(incotermsFreightNote({ incoterms: 'FOB', freightCost: 800 })).toBeNull();
     expect(incotermsFreightNote({ incoterms: 'EXW', freightCost: 1200 })).toBeNull();

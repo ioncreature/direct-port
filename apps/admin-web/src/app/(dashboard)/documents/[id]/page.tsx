@@ -1,6 +1,7 @@
 'use client';
 
 import { InfoTooltip } from '@/components/info-tooltip';
+import { IncotermsHelp } from '@/components/incoterms-help';
 import { TabsNav } from '@/components/tabs-nav';
 import { useCalculationHistory } from '@/hooks/use-calculation-history';
 import { useCountries } from '@/hooks/use-countries';
@@ -15,7 +16,8 @@ import { fmt, fmtDateTimeLocale } from '@/lib/format';
 import { btnDangerOutline, btnOutline, btnPrimary, btnSuccess, btnWarning, cardSurface } from '@/lib/table-styles';
 import { getDocumentUploaderName } from '@/lib/telegram';
 import { INCOTERMS } from '@/lib/types';
-import type { CalculationStatus, CodeCandidate, DocumentPhotoRow, DocumentResultRow, DocumentStatus, ParsedDataRow, ProductNoteSeverity } from '@/lib/types';
+import { incotermsFreightPlaceholder, incotermsOptionLabel } from '@/lib/incoterms';
+import type { CalculationStatus, CodeCandidate, DocumentPhotoRow, DocumentResultRow, DocumentStatus, Incoterms, ParsedDataRow, ProductNoteSeverity } from '@/lib/types';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -978,7 +980,7 @@ export default function DocumentDetailPage() {
                     inputMode="decimal"
                     step="0.01"
                     min="0"
-                    placeholder="0"
+                    placeholder={incotermsFreightPlaceholder(incotermsDraft as Incoterms | '')}
                     value={freightCostDraft}
                     onChange={(e) => setFreightCostDraft(e.target.value)}
                     style={{ ...recalcControl, width: 140 }}
@@ -1005,12 +1007,12 @@ export default function DocumentDetailPage() {
                   aria-label="Условия поставки (Инкотермс)"
                   value={incotermsDraft}
                   onChange={(e) => setIncotermsDraft(e.target.value)}
-                  style={recalcControl}
+                  style={{ ...recalcControl, minWidth: 240 }}
                 >
                   <option value="">— не указаны —</option>
                   {INCOTERMS.map((term) => (
                     <option key={term} value={term}>
-                      {term}
+                      {incotermsOptionLabel(term)}
                     </option>
                   ))}
                 </select>
@@ -1052,6 +1054,9 @@ export default function DocumentDetailPage() {
                   </span>
                 )}
               </div>
+            )}
+            {incotermsDraft && (
+              <IncotermsHelp term={incotermsDraft as Incoterms} hasFreight={parsedFreight > 0} />
             )}
           </div>
         );

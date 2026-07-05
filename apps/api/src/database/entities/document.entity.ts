@@ -96,6 +96,15 @@ export function sellerPaysCarriage(incoterms: string): boolean {
   return (INCOTERMS_FREIGHT_IN_PRICE as readonly string[]).includes(incoterms);
 }
 
+/** D-термины: место назначения обычно внутри страны импортёра, поэтому в цену входит и плечо
+ *  перевозки по территории ЕАЭС после границы (а у DDP — ещё ввозные пошлины/НДС). */
+export const INCOTERMS_DELIVERED_IN_COUNTRY: readonly Incoterms[] = ['DAP', 'DPU', 'DDP'];
+
+/** Поставка идёт вглубь страны импортёра (DAP/DPU/DDP) — часть цены относится к пост-граничному плечу. */
+export function deliversInCountry(incoterms: string): boolean {
+  return (INCOTERMS_DELIVERED_IN_COUNTRY as readonly string[]).includes(incoterms);
+}
+
 const nullableDecimalTransformer = {
   to: (value: number | null | undefined) => value ?? null,
   from: (value: string | null) => (value === null ? null : parseFloat(value)),
