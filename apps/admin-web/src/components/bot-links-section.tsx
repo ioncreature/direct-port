@@ -1,6 +1,7 @@
 'use client';
 
 import { type BotLink, useBotLinks } from '@/hooks/use-bot-links';
+import { cardSurface } from '@/lib/table-styles';
 import type { CSSProperties } from 'react';
 
 /** Блок «Telegram-боты» со ссылками. Сам грузит данные, не блокирует страницу. */
@@ -27,7 +28,7 @@ function BotLinkCard({
   loading: boolean;
 }) {
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 20 }}>
+    <div style={{ ...cardSurface, padding: 20 }}>
       <div style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 8 }}>{label}</div>
       {loading ? (
         <div style={{ color: 'var(--text-subtle)' }}>...</div>
