@@ -54,10 +54,13 @@ export function freightIgnoredWarningNote(cost: number, currency: string): Produ
  * Строка с таким calculationStatus посчитана не полностью (нет кода — error,
  * не хватило данных для точной пошлины — needs_info). Документ с такими строками
  * должен получать PROCESSED_WITH_ERRORS, а не «чистый» PROCESSED: итоговая сумма
- * в Excel занижена относительно реальной декларации.
+ * в Excel занижена относительно реальной декларации. Единый источник для
+ * биллинга (списание за успешные позиции) и SQL-агрегаций дашборда.
  */
+export const INCOMPLETE_CALCULATION_STATUSES = ['error', 'needs_info'] as const;
+
 export function isIncompleteCalculationStatus(status: unknown): boolean {
-  return status === 'error' || status === 'needs_info';
+  return (INCOMPLETE_CALCULATION_STATUSES as readonly unknown[]).includes(status);
 }
 
 /** По строке применена антидемпинговая/компенсационная мера (сигнал этапа расчёта). */

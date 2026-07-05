@@ -608,16 +608,23 @@ export class DocumentsService {
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
 
-    const [modelsRows, countRow, leadRows] = await Promise.all([
-      this.tokensByModel(startOfMonth, undefined, companyId),
+    const [summary, countRow] = await Promise.all([
+      this.getAiTokensSummary(startOfMonth, companyId),
       this.tokenDocCount(startOfMonth, undefined, companyId),
-      // Лиды — платформенный расход (company_id NULL): считаем только в общем разрезе.
-      companyId ? Promise.resolve([]) : this.leadTokens(startOfMonth),
+    ]);
+    return { ...summary, documentCount: Number(countRow?.count) || 0 };
+  }
+
+  /** Сводка AI-токенов за произвольный период (для дашборда): по семействам моделей
+   *  (documents.token_usage + ai_usage_log) и платформенные лиды. Лиды — расход без
+   *  company_id, поэтому в скоупе конкретной компании они не считаются (null). */
+  async getAiTokensSummary(since: Date, companyId?: string) {
+    const [modelsRows, leadRows] = await Promise.all([
+      this.tokensByModel(since, undefined, companyId),
+      companyId ? Promise.resolve([]) : this.leadTokens(since),
     ]);
     return {
       models: this.toModelsMap(modelsRows),
-      documentCount: Number(countRow?.count) || 0,
-      // Расход на автопоиск лидов за месяц для карточки на дашборде; null в скоупе компании.
       leads: companyId ? null : this.toModelsMap(leadRows),
     };
   }
@@ -707,13 +714,14 @@ export class DocumentsService {
     return result;
   }
 
-  async getStatusCounts(companyId?: string): Promise<Record<string, number>> {
+  async getStatusCounts(companyId?: string, since?: Date): Promise<Record<string, number>> {
     const qb = this.repo
       .createQueryBuilder('doc')
       .select('doc.status', 'status')
       .addSelect('COUNT(*)', 'count')
       .groupBy('doc.status');
     if (companyId) qb.andWhere('doc.company_id = :companyId', { companyId });
+    if (since) qb.andWhere('doc.created_at >= :since', { since });
     const rows: Array<{ status: string; count: string }> = await qb.getRawMany();
 
     const counts: Record<string, number> = {};

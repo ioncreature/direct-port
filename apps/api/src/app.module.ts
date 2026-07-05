@@ -14,6 +14,7 @@ import { ClientPortalModule } from './client-portal/client-portal.module';
 import { CompaniesModule } from './companies/companies.module';
 import { CryptoModule } from './common/crypto/crypto.module';
 import { ConversationsModule } from './conversations/conversations.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { CountriesModule } from './countries/countries.module';
 import { DatabaseModule } from './database/database.module';
 import { RedisModule } from './redis/redis.module';
@@ -55,6 +56,7 @@ import { UsersModule } from './users/users.module';
     TnVedModule,
     TelegramUsersModule,
     DocumentsModule,
+    DashboardModule,
     ConversationsModule,
     CalculationConfigModule,
     AiConfigModule,

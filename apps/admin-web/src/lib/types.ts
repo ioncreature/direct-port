@@ -621,3 +621,34 @@ export interface Lead {
   createdAt: string;
   updatedAt: string;
 }
+
+// ---------- Дашборд ----------
+
+/** Окно статистики дашборда: последние 7/30/365 дней. */
+export type DashboardPeriod = 'week' | 'month' | 'year';
+
+export interface DashboardSeriesPoint {
+  /** YYYY-MM-DD (granularity=day) или YYYY-MM (granularity=month). */
+  date: string;
+  documents: number;
+  positions: number;
+}
+
+/** Ответ GET /dashboard/stats. users/ai — null для роли customs. */
+export interface DashboardStats {
+  period: DashboardPeriod;
+  granularity: 'day' | 'month';
+  documents: { total: number; byStatus: Partial<Record<DocumentStatus, number>> };
+  positions: { total: number; successful: number; customsPaymentsRub: number };
+  clients: { total: number; new: number; active: number };
+  billing: {
+    totalBalance: number;
+    topUpPositions: number;
+    chargedPositions: number;
+    pendingTopUps: number;
+  };
+  users: number | null;
+  ai: { models: TokenUsageMap; leads: TokenUsageMap | null } | null;
+  series: DashboardSeriesPoint[];
+  recentDocuments: Array<Pick<Document, 'id' | 'originalFileName' | 'status' | 'createdAt'>>;
+}

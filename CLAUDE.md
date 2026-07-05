@@ -39,11 +39,12 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 - JWT-авторизация (access + refresh tokens)
 - Роли: admin, customs
 - Глобальные guards: JwtAuthGuard (пропускает X-Internal-Key), RolesGuard
-- Модули верхнего уровня (app.module.ts): Auth, Users, Companies, TnVed, TelegramUsers, Documents, Conversations, CalculationConfig, AiConfig, Countries, Regulatory, BotLinks, Bots, TopUp, ClientPortal (+ глобальный CryptoModule — шифрование секретов)
+- Модули верхнего уровня (app.module.ts): Auth, Users, Companies, TnVed, TelegramUsers, Documents, Dashboard, Conversations, CalculationConfig, AiConfig, Countries, Regulatory, BotLinks, Bots, TopUp, ClientPortal (+ глобальный CryptoModule — шифрование секретов)
   - Auth, Users — авторизация и управление пользователями
   - TnVed — справочник ТН ВЭД: поиск по TKS API (searchGoodsGrouped + getTnvedCode), перевод запросов через Claude, обогащение ставками + блок `regulatoryReport` в `codeDetail` (Regulatory)
   - TelegramUsers — регистрация пользователей Telegram, детальный просмотр по UUID, PATCH :telegramId/language
   - Documents — загрузка (Telegram + админка), обработка, переобработка, скачивание, token-stats. Зонтичный модуль: агрегирует внутри AiParser/Classifier/Calculator/DutyInterpreter/Currency/CalculationLogs/Tks, они не импортируются на верхнем уровне
+  - Dashboard — сводная статистика админ-дашборда: `GET /dashboard/stats?period=week|month|year&companyId=` (ADMIN+CUSTOMS). Окно — последние 7/30/365 дней по `created_at`. Отдаёт: документы по статусам, позиции (всего/успешно посчитанные/сумма таможенных платежей ₽ из resultData), клиенты (всего/новые/активные), биллинг (суммарный баланс депозитов через telegram_users-скоуп, пополнения topup, чистые списания charge−возвраты, pending-заявки), series по дням (год — по месяцам, UTC), последние документы. `companyId` — только super_admin (resolveCompanyScope); `users`/`ai` (AI-токены за период, `DocumentsService.getAiTokensSummary`) — null для роли customs
   - CalculationConfig — настройки порога уверенности классификатора (CRUD)
   - AiConfig — CRUD для выбора моделей Claude (opus/sonnet/haiku) для 4 сценариев AI. См. `docs/AI_CONFIG.md`
   - Countries — справочник стран (OKSMT), используется для страны происхождения товара
@@ -71,7 +72,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 ### apps/admin-web — Админ-панель (Next.js)
 
 - Страница логина, JWT-сессия
-- Дашборд: статистика, последние документы
+- Дашборд: сводка `GET /dashboard/stats` с фильтром периода (7 дней / 30 дней / год, по умолчанию 30) — документы по статусам, обработанные позиции + таможенные платежи, клиенты, баланс депозитов (пополнения/списания/заявки), AI-расходы за период, бар-график позиций по дням (год — по месяцам), последние документы (ссылки на детали), блок «Telegram-боты». super_admin видит селект «Все компании / конкретная»; admin/customs — только свою компанию, customs — без AI и числа пользователей
 - Пользователи: список с пагинацией/фильтром по роли/сортировкой, создание, редактирование, удаление
 - Документы: список с пагинацией/фильтром по статусу/сортировкой, загрузка .xlsx/.csv, детали с таблицей результатов, скачивание Excel, переобработка failed-документов, ручная проверка requires_review (редактирование parsedData, подтверждение/отклонение/одобрение), пересчёт с другой страной (POST :id/recalculate), история расчётов. Фото товаров: миниатюры в таблицах результатов/исходных данных/review (один запрос `GET :id/photos`, hook `useDocumentPhotos`), клик — полноразмерный просмотр в лайтбоксе (`photos.tsx`, blob через api-клиент, листание при нескольких фото строки)
 - Вкладка «Диагностика» на странице деталей документа: этапы pipeline (parse/classify/interpret/calculate) с таймингами, ошибками и токенами; список AI-вызовов Claude per stage (модалка с полными request/response по клику); версии parsedData (модалка со snapshot). Ленивая загрузка — данные запрашиваются только при переходе на вкладку

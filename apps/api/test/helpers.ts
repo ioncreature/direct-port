@@ -19,6 +19,7 @@ import { AuthModule } from '../src/auth/auth.module';
 import { CalculationConfigModule } from '../src/calculation-config/calculation-config.module';
 import { ClientPortalModule } from '../src/client-portal/client-portal.module';
 import { CryptoModule } from '../src/common/crypto/crypto.module';
+import { DashboardModule } from '../src/dashboard/dashboard.module';
 import { DocumentsModule } from '../src/documents/documents.module';
 import { DocumentsParsingProcessor } from '../src/documents/documents-parsing.processor';
 import { DocumentsProcessor } from '../src/documents/documents.processor';
@@ -35,6 +36,7 @@ import { RolesGuard } from '../src/auth/guards/roles.guard';
 // Entities
 import { AiCall } from '../src/database/entities/ai-call.entity';
 import { AiConfig } from '../src/database/entities/ai-config.entity';
+import { AiUsageLog } from '../src/database/entities/ai-usage-log.entity';
 import { BillingAccount } from '../src/database/entities/billing-account.entity';
 import { CalculationConfig } from '../src/database/entities/calculation-config.entity';
 import { CalculationLog } from '../src/database/entities/calculation-log.entity';
@@ -208,8 +210,13 @@ export async function createTestApp(): Promise<INestApplication> {
         type: 'postgres',
         url: TEST_DB_URL,
         schema,
+        // Raw-SQL сервисов (manager.query: token-stats, dashboard) TypeORM схемой не
+        // квалифицирует — направляем search_path соединений в схему suite'а, иначе
+        // такие запросы бьют в public и видят чужие/несуществующие таблицы.
+        extra: { options: `-c search_path=${schema},public` },
         entities: [
           AiConfig,
+          AiUsageLog,
           User,
           Company,
           RefreshToken,
@@ -241,6 +248,7 @@ export async function createTestApp(): Promise<INestApplication> {
       TnVedModule,
       TelegramUsersModule,
       DocumentsModule,
+      DashboardModule,
       CalculationConfigModule,
       ClientPortalModule,
     ],
@@ -280,6 +288,21 @@ export async function createTestApp(): Promise<INestApplication> {
   const ds = app.get(DataSource);
   const companyRepo = ds.getRepository(Company);
   await companyRepo.save(companyRepo.create({ id: DEFAULT_COMPANY_ID, name: 'По умолчанию' }));
+
+  // SQL-функция model_family в реальной БД создаётся миграцией AddModelFamilyFunction;
+  // e2e-схемы поднимаются через synchronize без миграций — воспроизводим её (нужна
+  // агрегациям token-stats и дашборда). Создаётся в схеме теста через search_path.
+  await ds.query(`
+    CREATE OR REPLACE FUNCTION model_family(m text) RETURNS text AS $$
+      SELECT CASE
+        WHEN m IS NULL THEN NULL
+        WHEN m ILIKE '%haiku%' THEN 'haiku'
+        WHEN m ILIKE '%sonnet%' THEN 'sonnet'
+        WHEN m ILIKE '%opus%' THEN 'opus'
+        ELSE m
+      END
+    $$ LANGUAGE SQL IMMUTABLE;
+  `);
 
   (app as unknown as Record<symbol, string>)[APP_SCHEMA_KEY] = schema;
 

@@ -10,10 +10,11 @@ import {
   fmtDateTime,
   fmtTokens,
   modelLabel,
+  niceCeil,
   totalTokensFromMap,
   totalTokensFromStages,
 } from '@/lib/format';
-import { th, td, btnOutline } from '@/lib/table-styles';
+import { th, td, btnOutline, CHART_HEIGHT_PX } from '@/lib/table-styles';
 import type { DailyTokenStats, TokenStats, TokenStatsPeriod, TokenUsageMap } from '@/lib/types';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
@@ -260,19 +261,6 @@ function PeriodCard({ label, period }: { label: string; period: TokenStatsPeriod
       <ModelBreakdown models={period.models} />
     </div>
   );
-}
-
-const CHART_HEIGHT_PX = 120;
-
-/** Округляет maxCost вверх до «красивого» шага (1, 2, 5 × 10ⁿ), чтобы верхняя
- *  граница диапазона читалась (вместо $8.43 → $10.00). saneMax ≥ raw. */
-function niceCeil(raw: number): number {
-  if (raw <= 0) return 1;
-  const exp = Math.floor(Math.log10(raw));
-  const pow = Math.pow(10, exp);
-  const norm = raw / pow;
-  const step = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
-  return step * pow;
 }
 
 function DailyChart({ data }: { data: DailyTokenStats[] }) {

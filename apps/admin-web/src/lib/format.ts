@@ -93,6 +93,17 @@ export function fmtCost(usd: number): string {
   return '$' + usd.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** Округляет максимум оси графика вверх до «красивого» шага (1, 2, 5 × 10ⁿ),
+ *  чтобы верхняя граница диапазона читалась (вместо $8.43 → $10.00). Результат ≥ raw. */
+export function niceCeil(raw: number): number {
+  if (raw <= 0) return 1;
+  const exp = Math.floor(Math.log10(raw));
+  const pow = Math.pow(10, exp);
+  const norm = raw / pow;
+  const step = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+  return step * pow;
+}
+
 export function fmtTokens(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
   if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';

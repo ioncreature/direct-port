@@ -83,6 +83,9 @@ export const btnDangerOutline: React.CSSProperties = {
   cursor: 'pointer',
 };
 
+/** Высота области баров у страничных бар-чартов (дашборд, /ai-costs). */
+export const CHART_HEIGHT_PX = 120;
+
 /** Базовая «поверхность-карточка»: фон, граница, радиус, мягкая тень.
  *  Спред + переопределение padding/height по месту. */
 export const cardSurface: React.CSSProperties = {
