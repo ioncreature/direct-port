@@ -2,9 +2,12 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { DEFAULT_COMPANY_THEME } from '../../common/tenant/company-theme';
+import { CompanyDomain } from './company-domain.entity';
 
 /**
  * Компания (тенант). «Проект» в терминах админки: к компании привязаны пользователи,
@@ -49,6 +52,17 @@ export class Company {
 
   @Column({ type: 'varchar', length: 255, name: 'manager_bot_username', nullable: true })
   managerBotUsername: string | null;
+
+  /**
+   * Тема оформления админки под тенанта (см. common/tenant/company-theme.ts). admin-web выбирает
+   * палитру по этому полю через домен запроса. Дефолт — базовая тема платформы.
+   */
+  @Column({ type: 'varchar', length: 32, default: DEFAULT_COMPANY_THEME })
+  theme: string;
+
+  /** Домены тенанта (0..N). По ним резолвится компания для темизации и гейтинга входа. */
+  @OneToMany(() => CompanyDomain, (domain) => domain.company)
+  domains: CompanyDomain[];
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

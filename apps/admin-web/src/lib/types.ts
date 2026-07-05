@@ -20,10 +20,18 @@ export interface AuthResponse {
   user: Pick<User, 'id' | 'email' | 'role' | 'companyId'>;
 }
 
+/** Темы оформления админки под тенанта — синхронно с бэком (common/tenant/company-theme.ts). */
+export const COMPANY_THEMES = ['default', 'sky'] as const;
+export type CompanyTheme = (typeof COMPANY_THEMES)[number];
+
 export interface Company {
   id: string;
   name: string;
   slug: string | null;
+  /** Тема оформления админки под тенанта. */
+  theme: CompanyTheme;
+  /** Домены тенанта (нормализованные host'ы). */
+  domains: string[];
   createdAt: string;
   updatedAt: string;
 }

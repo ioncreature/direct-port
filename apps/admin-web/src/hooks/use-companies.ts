@@ -1,9 +1,16 @@
 'use client';
 
 import api from '@/lib/api';
-import type { Company } from '@/lib/types';
+import type { Company, CompanyTheme } from '@/lib/types';
 import { useCallback } from 'react';
 import { useServerPaginatedList } from './use-server-paginated-list';
+
+export interface CompanyUpdatePayload {
+  name?: string;
+  slug?: string;
+  theme?: CompanyTheme;
+  domains?: string[];
+}
 
 export function useCompanies() {
   const list = useServerPaginatedList<Company>('/companies', {
@@ -20,7 +27,7 @@ export function useCompanies() {
   );
 
   const updateCompany = useCallback(
-    async (id: string, payload: { name?: string; slug?: string }) => {
+    async (id: string, payload: CompanyUpdatePayload) => {
       await api.patch(`/companies/${id}`, payload);
       await list.refetch();
     },

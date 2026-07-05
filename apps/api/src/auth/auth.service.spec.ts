@@ -9,12 +9,15 @@ const HASHED_VALID_REFRESH = bcrypt.hashSync('valid-refresh-token', 10);
 const HASHED_OTHER_TOKEN = bcrypt.hashSync('other-token', 10);
 const HASHED_MY_REFRESH = bcrypt.hashSync('my-refresh-token', 10);
 
+const COMPANY_ID = 'company-uuid-1';
+
 function makeUser(overrides: Record<string, any> = {}) {
   return {
     id: 'user-uuid-1',
     email: 'admin@directport.ru',
     passwordHash: HASHED_PASSWORD,
     role: UserRole.ADMIN,
+    companyId: COMPANY_ID,
     isActive: true,
     ...overrides,
   };
@@ -37,6 +40,8 @@ function createService(
   opts: {
     user?: ReturnType<typeof makeUser> | null;
     refreshTokens?: any[];
+    /** Компания, в которую резолвится домен входа (по умолчанию — компания пользователя). */
+    domainCompanyId?: string;
   } = {},
 ) {
   const user = opts.user !== undefined ? opts.user : makeUser();
@@ -60,14 +65,19 @@ function createService(
     get: jest.fn().mockReturnValue('15m'),
   };
 
+  const companiesService = {
+    resolveCompanyIdByDomain: jest.fn().mockResolvedValue(opts.domainCompanyId ?? COMPANY_ID),
+  };
+
   const service = new AuthService(
     usersRepo as any,
     refreshRepo as any,
     jwtService as any,
     config as any,
+    companiesService as any,
   );
 
-  return { service, usersRepo, refreshRepo, jwtService };
+  return { service, usersRepo, refreshRepo, jwtService, companiesService };
 }
 
 describe('AuthService', () => {
@@ -121,15 +131,44 @@ describe('AuthService', () => {
       );
     });
 
-    it('JWT payload содержит sub, email и role', async () => {
+    it('JWT payload содержит sub, email, role и companyId', async () => {
       const { service, jwtService } = createService();
 
       await service.login('admin@directport.ru', 'correct-password');
 
       expect(jwtService.sign).toHaveBeenCalledWith(
-        { sub: 'user-uuid-1', email: 'admin@directport.ru', role: UserRole.ADMIN },
+        { sub: 'user-uuid-1', email: 'admin@directport.ru', role: UserRole.ADMIN, companyId: COMPANY_ID },
         { expiresIn: '15m' },
       );
+    });
+
+    it('отклоняет вход, если домен принадлежит другой компании', async () => {
+      const { service } = createService({ domainCompanyId: 'other-company' });
+
+      await expect(
+        service.login('admin@directport.ru', 'correct-password', 'other-tenant.ru'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('пропускает вход, когда компания пользователя совпадает с компанией домена', async () => {
+      const { service, companiesService } = createService({ domainCompanyId: COMPANY_ID });
+
+      const result = await service.login('admin@directport.ru', 'correct-password', 'acme.ru');
+
+      expect(result.accessToken).toBe('mock-access-token');
+      expect(companiesService.resolveCompanyIdByDomain).toHaveBeenCalledWith('acme.ru');
+    });
+
+    it('super_admin входит с любого домена (тенант-гейт не применяется)', async () => {
+      const { service, companiesService } = createService({
+        user: makeUser({ role: UserRole.SUPER_ADMIN, companyId: null }),
+        domainCompanyId: 'any-company',
+      });
+
+      const result = await service.login('root@directport.ru', 'correct-password', 'whatever.ru');
+
+      expect(result.accessToken).toBe('mock-access-token');
+      expect(companiesService.resolveCompanyIdByDomain).not.toHaveBeenCalled();
     });
   });
 

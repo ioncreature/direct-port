@@ -8,6 +8,7 @@ import { BillingAccount } from './entities/billing-account.entity';
 import { CalculationConfig } from './entities/calculation-config.entity';
 import { CalculationLog } from './entities/calculation-log.entity';
 import { Company } from './entities/company.entity';
+import { CompanyDomain } from './entities/company-domain.entity';
 import { ConversationMessage } from './entities/conversation-message.entity';
 import { DepositTransaction } from './entities/deposit-transaction.entity';
 import { Document } from './entities/document.entity';
@@ -33,6 +34,7 @@ export default new DataSource({
   entities: [
     User,
     Company,
+    CompanyDomain,
     RefreshToken,
     TnVedCode,
     CalculationLog,

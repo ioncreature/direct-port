@@ -8,6 +8,7 @@ import { BillingAccount } from './entities/billing-account.entity';
 import { CalculationConfig } from './entities/calculation-config.entity';
 import { CalculationLog } from './entities/calculation-log.entity';
 import { Company } from './entities/company.entity';
+import { CompanyDomain } from './entities/company-domain.entity';
 import { ConversationMessage } from './entities/conversation-message.entity';
 import { DepositTransaction } from './entities/deposit-transaction.entity';
 import { Document } from './entities/document.entity';
@@ -77,6 +78,7 @@ import { AddCompanySlug1780200000000 } from './migrations/1780200000000-AddCompa
 import { AddDocumentIncoterms1780300000000 } from './migrations/1780300000000-AddDocumentIncoterms';
 import { DropSendResultFile1780400000000 } from './migrations/1780400000000-DropSendResultFile';
 import { DropCommissionColumns1780500000000 } from './migrations/1780500000000-DropCommissionColumns';
+import { AddCompanyDomainsAndTheme1780600000000 } from './migrations/1780600000000-AddCompanyDomainsAndTheme';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -89,6 +91,7 @@ import { SeedService } from './seeds/seed.service';
         entities: [
           User,
           Company,
+          CompanyDomain,
           BillingAccount,
           RefreshToken,
           TnVedCode,
@@ -166,6 +169,7 @@ import { SeedService } from './seeds/seed.service';
           AddDocumentIncoterms1780300000000,
           DropSendResultFile1780400000000,
           DropCommissionColumns1780500000000,
+          AddCompanyDomainsAndTheme1780600000000,
         ],
         migrationsRun: true,
         // Каждая миграция в своей транзакции (по умолчанию TypeORM гонит все в одной).

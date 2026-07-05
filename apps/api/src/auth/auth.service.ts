@@ -5,8 +5,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import { MoreThan, Repository } from 'typeorm';
+import { CompaniesService } from '../companies/companies.service';
 import { RefreshToken } from '../database/entities/refresh-token.entity';
-import { User } from '../database/entities/user.entity';
+import { User, UserRole } from '../database/entities/user.entity';
 
 @Injectable()
 export class AuthService {
@@ -15,9 +16,15 @@ export class AuthService {
     @InjectRepository(RefreshToken) private refreshRepo: Repository<RefreshToken>,
     private jwtService: JwtService,
     private config: ConfigService,
+    private companiesService: CompaniesService,
   ) {}
 
-  async login(email: string, password: string) {
+  /**
+   * @param domain — хост, с которого выполняется вход (заголовок x-tenant-host от admin-web-прокси).
+   *   Используется тенант-гейтом: пользователь не-super_admin должен принадлежать компании этого
+   *   домена. Неизвестный/пустой домен резолвится в дефолтную компанию (вход по bare-домену/localhost).
+   */
+  async login(email: string, password: string, domain?: string) {
     const user = await this.usersRepo.findOne({ where: { email } });
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Invalid credentials');
@@ -26,6 +33,19 @@ export class AuthService {
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // Тенант-гейт: если запрос несёт домен (admin-web всегда проставляет x-tenant-host), пользователь
+    // не-super_admin должен принадлежать компании этого домена. super_admin входит с любого домена
+    // (глобальная роль, company_id = NULL). Без домена (прямой вызов API/тесты) гейтить не против чего —
+    // изоляция данных всё равно держится на company-scope каждого запроса. Сообщение намеренно
+    // неотличимо от неверного пароля (не раскрываем принадлежность email тенанту).
+    const host = domain?.trim();
+    if (host && user.role !== UserRole.SUPER_ADMIN) {
+      const expectedCompanyId = await this.companiesService.resolveCompanyIdByDomain(host);
+      if (user.companyId !== expectedCompanyId) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
     }
 
     return this.generateTokens(user);

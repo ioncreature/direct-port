@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
-import { closeTestApp, createTestApp, seedAdmin } from './helpers';
+import { closeTestApp, createTestApp, loginAsAdmin, seedAdmin, seedCompany } from './helpers';
 
 describe('Auth (e2e)', () => {
   let app: INestApplication;
@@ -147,6 +147,86 @@ describe('Auth (e2e)', () => {
 
       expect(res.body).toBeDefined();
       expect(res.body.results).toBeDefined();
+    });
+  });
+
+  describe('POST /api/auth/login — тенант-гейт по домену', () => {
+    const TENANT_DOMAIN = 'panel.tenant-example.com';
+    const TENANT_USER = { email: 'tenant-user@test.ru', password: 'password123' };
+    let companyId: string;
+
+    beforeAll(async () => {
+      const { accessToken } = await loginAsAdmin(app);
+      companyId = (await seedCompany(app, 'Tenant Gate Co')).id;
+      // Привязываем домен к компании и заводим её customs-пользователя (через super_admin).
+      await request(app.getHttpServer())
+        .patch(`/api/companies/${companyId}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ domains: [TENANT_DOMAIN], theme: 'sky' })
+        .expect(200);
+      await request(app.getHttpServer())
+        .post('/api/users')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ ...TENANT_USER, role: 'customs', companyId })
+        .expect(201);
+    });
+
+    it('пускает пользователя на домене его компании', async () => {
+      await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .set('x-tenant-host', TENANT_DOMAIN)
+        .send(TENANT_USER)
+        .expect(200);
+    });
+
+    it('нормализует хост с портом при сверке домена', async () => {
+      await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .set('x-tenant-host', `${TENANT_DOMAIN}:3000`)
+        .send(TENANT_USER)
+        .expect(200);
+    });
+
+    it('отклоняет пользователя на чужом/незарегистрированном домене', async () => {
+      await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .set('x-tenant-host', 'other-tenant.example.com')
+        .send(TENANT_USER)
+        .expect(401);
+    });
+
+    it('пускает пользователя без домена (гейт не против чего применять)', async () => {
+      await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send(TENANT_USER)
+        .expect(200);
+    });
+
+    it('super_admin входит на домене любого тенанта (гейт не применяется)', async () => {
+      await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .set('x-tenant-host', TENANT_DOMAIN)
+        .send({ email: 'admin@directport.ru', password: 'admin123' })
+        .expect(200);
+    });
+
+    it('GET /api/tenant/theme отдаёт тему тенанта по домену (публичный)', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/api/tenant/theme?domain=${TENANT_DOMAIN}`)
+        .expect(200);
+      expect(res.body).toEqual({ theme: 'sky' });
+    });
+
+    it('GET /api/tenant/theme на неизвестном домене отдаёт дефолтную тему', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/tenant/theme?domain=nope.example.com')
+        .expect(200);
+      expect(res.body).toEqual({ theme: 'default' });
+    });
+
+    it('GET /api/tenant/theme без домена отдаёт дефолтную тему', async () => {
+      const res = await request(app.getHttpServer()).get('/api/tenant/theme').expect(200);
+      expect(res.body).toEqual({ theme: 'default' });
     });
   });
 });

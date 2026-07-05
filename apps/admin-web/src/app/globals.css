@@ -18,6 +18,11 @@
   --petrol-light: #8fc0c7;
   --orange: #e8622a;
 
+  /* Цвета SVG-марки (brand.tsx) — через переменные, чтобы тема тенанта могла их перекрасить. */
+  --brand-mark-ink: #0b2536;
+  --brand-mark-paper: #f6f4ef;
+  --brand-mark-orange: #e8622a;
+
   /* Нейтральная тёплая шкала */
   --bg: #f1ede3;
   --sidebar-bg: #f7f4ea;
@@ -72,6 +77,48 @@
   --shadow-sm: 0 1px 2px rgba(11, 37, 54, 0.04), 0 1px 3px rgba(11, 37, 54, 0.06);
   --shadow: 0 1px 3px rgba(11, 37, 54, 0.06), 0 6px 16px -4px rgba(11, 37, 54, 0.08);
   --shadow-md: 0 4px 12px -2px rgba(11, 37, 54, 0.1), 0 12px 28px -6px rgba(11, 37, 54, 0.1);
+}
+
+/* =========================================================================
+   Тема тенанта «Небо» (sky) — светло-голубая палитра. Вешается на <html
+   data-theme="sky"> корневым layout по домену компании. Переопределяет только
+   те токены, что меняют облик: бренд, фоны, границы, акцент, тени; семантические
+   цвета (success/warning/danger) и оранжевый CTA сохраняются для узнаваемости.
+   ========================================================================= */
+:root[data-theme='sky'] {
+  --ink: #0d2a43;
+  --petrol: #2f7fd1;
+  --petrol-light: #a9cdee;
+
+  --brand-mark-ink: #12466f;
+  --brand-mark-paper: #eef6ff;
+  /* orange у марки сохраняем — акцентный сегмент остаётся фирменным */
+
+  --bg: #eef3fa;
+  --sidebar-bg: #e5eff9;
+  --surface: #ffffff;
+  --surface-hover: #eef4fc;
+  --row-hover: #f2f7fd;
+  --bg-subtle: #eff5fc;
+
+  --border: #d3e0f0;
+  --border-strong: #bcd0e8;
+  --border-subtle: #e4edf8;
+
+  --text: var(--ink);
+  --text-muted: #4a6076;
+  --text-subtle: #93a6bb;
+
+  --accent: var(--petrol);
+  --accent-soft: #dcebfa;
+  --accent-soft-text: #1c5aa0;
+  --ring: rgba(47, 127, 209, 0.3);
+
+  /* Тени в холодном сине-стальном тоне вместо тёплого ink */
+  --shadow-xs: 0 1px 2px rgba(13, 42, 67, 0.05);
+  --shadow-sm: 0 1px 2px rgba(13, 42, 67, 0.04), 0 1px 3px rgba(13, 42, 67, 0.06);
+  --shadow: 0 1px 3px rgba(13, 42, 67, 0.06), 0 6px 16px -4px rgba(13, 42, 67, 0.08);
+  --shadow-md: 0 4px 12px -2px rgba(13, 42, 67, 0.1), 0 12px 28px -6px rgba(13, 42, 67, 0.1);
 }
 
 *,

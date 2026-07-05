@@ -24,7 +24,13 @@ async function proxy(req: NextRequest, context: { params: Promise<{ path: string
   const start = performance.now();
 
   const headers = new Headers(req.headers);
+  // Исходный хост запроса — для тенант-гейта логина на бэке (x-tenant-host). Берём из
+  // x-forwarded-host (за реверс-прокси) либо Host; фиксируем до вырезания hop-by-hop host.
+  const tenantHost = (headers.get('x-forwarded-host') ?? headers.get('host') ?? '')
+    .split(',')[0]
+    .trim();
   for (const h of HOP_BY_HOP_REQUEST_HEADERS) headers.delete(h);
+  if (tenantHost) headers.set('x-tenant-host', tenantHost);
 
   const init: RequestInit & { duplex?: 'half' } = {
     method,

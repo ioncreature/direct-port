@@ -1,10 +1,9 @@
 /** Бренд direct_port — марка и вордмарк, идентичные лендингу (apps/landing).
  *  Марка повторяет apps/landing/src/app/icon.svg, вордмарк — .wm лендинга:
- *  моноширинный direct_port с цветными сегментами. */
-
-const MARK_INK = '#0B2536';
-const MARK_PAPER = '#F6F4EF';
-const MARK_ORANGE = '#E8622A';
+ *  моноширинный direct_port с цветными сегментами.
+ *
+ *  Цвета марки берутся из CSS-переменных (--brand-mark-*), чтобы тема тенанта могла их
+ *  перекрасить. var() в SVG резолвится только через style, а не через атрибут fill/stroke. */
 
 export function BrandMark({ size = 30 }: { size?: number }) {
   return (
@@ -15,10 +14,17 @@ export function BrandMark({ size = 30 }: { size?: number }) {
       aria-hidden
       style={{ display: 'block', flexShrink: 0, borderRadius: size * 0.25, boxShadow: 'var(--shadow-sm)' }}
     >
-      <rect width="64" height="64" rx="14" fill={MARK_INK} />
-      <circle cx="24.5" cy="37" r="9.5" fill="none" stroke={MARK_PAPER} strokeWidth="7" />
-      <rect x="33" y="14" width="7" height="36" rx="3.5" fill={MARK_PAPER} />
-      <rect x="47" y="14" width="9" height="36" rx="2.5" fill={MARK_ORANGE} />
+      <rect width="64" height="64" rx="14" style={{ fill: 'var(--brand-mark-ink)' }} />
+      <circle
+        cx="24.5"
+        cy="37"
+        r="9.5"
+        fill="none"
+        strokeWidth="7"
+        style={{ stroke: 'var(--brand-mark-paper)' }}
+      />
+      <rect x="33" y="14" width="7" height="36" rx="3.5" style={{ fill: 'var(--brand-mark-paper)' }} />
+      <rect x="47" y="14" width="9" height="36" rx="2.5" style={{ fill: 'var(--brand-mark-orange)' }} />
     </svg>
   );
 }

@@ -7,12 +7,20 @@ import { useAuth } from '@/hooks/use-auth';
 import { useCompanies } from '@/hooks/use-companies';
 import { fmtDate } from '@/lib/format';
 import { btnLink, primaryLink, td, tdEmpty, th } from '@/lib/table-styles';
+import type { CompanyTheme } from '@/lib/types';
 import { FormEvent, Fragment, useState } from 'react';
 
 const sortableColumns: { field: string; label: string }[] = [
   { field: 'name', label: 'Название' },
   { field: 'createdAt', label: 'Создана' },
 ];
+
+const THEME_OPTIONS: { value: CompanyTheme; label: string }[] = [
+  { value: 'default', label: 'Базовая' },
+  { value: 'sky', label: 'Небо (голубая)' },
+];
+
+const TABLE_COLSPAN = 6;
 
 export default function CompaniesPage() {
   const { user } = useAuth();
@@ -82,6 +90,33 @@ export default function CompaniesPage() {
     }
   }
 
+  async function handleEditDomains(id: string, current: string[]) {
+    // Домены тенанта: по ним админка темизируется и гейтит вход. Через запятую или с новой строки;
+    // пусто — снять все домены. Нормализацию/уникальность проверяет бэк.
+    const next = prompt(
+      'Домены тенанта (через запятую или с новой строки)',
+      current.join('\n'),
+    );
+    if (next == null) return;
+    const domains = next
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    try {
+      await updateCompany(id, { domains });
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Ошибка при сохранении доменов');
+    }
+  }
+
+  async function handleChangeTheme(id: string, theme: CompanyTheme) {
+    try {
+      await updateCompany(id, { theme });
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Ошибка при смене темы');
+    }
+  }
+
   async function handleDelete(id: string) {
     if (!confirm('Удалить компанию? Это возможно только если в ней нет пользователей.')) return;
     try {
@@ -132,6 +167,8 @@ export default function CompaniesPage() {
                   />
                 ))}
                 <th style={th}>Slug</th>
+                <th style={th}>Домены</th>
+                <th style={th}>Тема</th>
                 <th style={th}></th>
               </tr>
             </thead>
@@ -142,6 +179,35 @@ export default function CompaniesPage() {
                     <td style={td}>{c.name}</td>
                     <td style={td}>{fmtDate(c.createdAt)}</td>
                     <td style={td}>{c.slug ?? '—'}</td>
+                    <td style={td}>
+                      {c.domains.length > 0 ? (
+                        <span
+                          style={{
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: 12,
+                            color: 'var(--text-muted)',
+                            wordBreak: 'break-all',
+                          }}
+                        >
+                          {c.domains.join(', ')}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td style={td}>
+                      <select
+                        value={c.theme}
+                        onChange={(e) => handleChangeTheme(c.id, e.target.value as CompanyTheme)}
+                        style={{ padding: '4px 6px', fontSize: 13 }}
+                      >
+                        {THEME_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
                     <td style={td}>
                       <button
                         onClick={() => setExpandedId(expandedId === c.id ? null : c.id)}
@@ -162,6 +228,12 @@ export default function CompaniesPage() {
                         Slug
                       </button>
                       <button
+                        onClick={() => handleEditDomains(c.id, c.domains)}
+                        style={{ ...btnLink, color: 'var(--accent)', marginRight: 12 }}
+                      >
+                        Домены
+                      </button>
+                      <button
                         onClick={() => handleDelete(c.id)}
                         style={{ ...btnLink, color: 'var(--danger)' }}
                       >
@@ -171,7 +243,7 @@ export default function CompaniesPage() {
                   </tr>
                   {expandedId === c.id && (
                     <tr>
-                      <td style={{ ...td, background: 'var(--bg-subtle)' }} colSpan={4}>
+                      <td style={{ ...td, background: 'var(--bg-subtle)' }} colSpan={TABLE_COLSPAN}>
                         <CompanyBotsPanel companyId={c.id} />
                       </td>
                     </tr>
@@ -180,7 +252,7 @@ export default function CompaniesPage() {
               ))}
               {companies.length === 0 && (
                 <tr>
-                  <td style={tdEmpty} colSpan={4}>
+                  <td style={tdEmpty} colSpan={TABLE_COLSPAN}>
                     Компаний пока нет
                   </td>
                 </tr>

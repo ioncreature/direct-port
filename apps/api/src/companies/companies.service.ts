@@ -1,7 +1,19 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
+import { DEFAULT_COMPANY_ID } from '../common/tenant/actor-context';
+import {
+  CompanyTheme,
+  DEFAULT_COMPANY_THEME,
+  normalizeCompanyTheme,
+} from '../common/tenant/company-theme';
+import { CompanyDomain } from '../database/entities/company-domain.entity';
 import { Company } from '../database/entities/company.entity';
 import { User } from '../database/entities/user.entity';
 import { CreateCompanyDto } from './dto/create-company.dto';
@@ -11,38 +23,57 @@ import { UpdateCompanyDto } from './dto/update-company.dto';
 /** Slug'и, совпадающие со статическими маршрутами кабинета (client-web) — занимать нельзя. */
 const RESERVED_SLUGS = ['dashboard', 'api', '_next'];
 
+/** Ответ API: компания с доменами в виде плоского списка строк и валидной темой. */
+export interface CompanyView {
+  id: string;
+  name: string;
+  slug: string | null;
+  theme: CompanyTheme;
+  domains: string[];
+  clientBotUsername: string | null;
+  managerBotUsername: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 @Injectable()
 export class CompaniesService {
   constructor(
     @InjectRepository(Company) private companiesRepo: Repository<Company>,
+    @InjectRepository(CompanyDomain) private domainsRepo: Repository<CompanyDomain>,
     @InjectRepository(User) private usersRepo: Repository<User>,
   ) {}
 
-  async findAll(query: FindCompaniesQueryDto): Promise<PaginatedResponse<Company>> {
+  async findAll(query: FindCompaniesQueryDto): Promise<PaginatedResponse<CompanyView>> {
     const [data, total] = await this.companiesRepo.findAndCount({
+      relations: { domains: true },
       order: { [query.sortBy]: query.sortOrder },
       skip: (query.page - 1) * query.limit,
       take: query.limit,
     });
-    return paginate(data, total, query.page, query.limit);
+    return paginate(data.map((c) => this.serialize(c)), total, query.page, query.limit);
   }
 
-  async findOne(id: string): Promise<Company> {
-    const company = await this.companiesRepo.findOne({ where: { id } });
-    if (!company) throw new NotFoundException('Company not found');
-    return company;
+  async findOne(id: string): Promise<CompanyView> {
+    return this.serialize(await this.loadEntity(id));
   }
 
-  async create(dto: CreateCompanyDto): Promise<Company> {
+  async create(dto: CreateCompanyDto): Promise<CompanyView> {
     const name = dto.name.trim();
     const exists = await this.companiesRepo.findOne({ where: { name } });
     if (exists) throw new ConflictException('Company name already in use');
     const slug = await this.normalizeSlug(dto.slug);
-    return this.companiesRepo.save(this.companiesRepo.create({ name, slug }));
+    const company = await this.companiesRepo.save(
+      this.companiesRepo.create({ name, slug, theme: dto.theme ?? DEFAULT_COMPANY_THEME }),
+    );
+    if (dto.domains !== undefined) {
+      await this.setDomains(company.id, dto.domains);
+    }
+    return this.findOne(company.id);
   }
 
-  async update(id: string, dto: UpdateCompanyDto): Promise<Company> {
-    const company = await this.findOne(id);
+  async update(id: string, dto: UpdateCompanyDto): Promise<CompanyView> {
+    const company = await this.loadEntity(id);
     if (dto.name !== undefined) {
       const name = dto.name.trim();
       const exists = await this.companiesRepo.findOne({ where: { name } });
@@ -52,7 +83,135 @@ export class CompaniesService {
     if (dto.slug !== undefined) {
       company.slug = await this.normalizeSlug(dto.slug, id);
     }
-    return this.companiesRepo.save(company);
+    if (dto.theme !== undefined) {
+      company.theme = dto.theme;
+    }
+    await this.companiesRepo.save(company);
+    if (dto.domains !== undefined) {
+      await this.setDomains(id, dto.domains);
+    }
+    return this.findOne(id);
+  }
+
+  async remove(id: string): Promise<void> {
+    const company = await this.loadEntity(id);
+    // Удаление непустой компании запрещаем: FK users.company_id = RESTRICT всё равно отобьёт,
+    // но явная проверка даёт понятное сообщение. Документы/клиенты при удалении получили бы
+    // company_id = NULL (FK SET NULL) — поэтому удаляем только полностью пустые компании.
+    // Домены компании удаляются каскадом (FK company_domains.company_id = CASCADE).
+    const userCount = await this.usersRepo.count({ where: { companyId: id } });
+    if (userCount > 0) {
+      throw new ConflictException('Cannot delete a company that still has users');
+    }
+    await this.companiesRepo.remove(company);
+  }
+
+  /**
+   * Резолвит тему тенанта по домену запроса (для admin-web). Неизвестный/невалидный домен →
+   * дефолтная компания (её тема). Никогда не бросает — темизация не должна ронять рендер.
+   */
+  async resolveThemeByDomain(domain?: string): Promise<CompanyTheme> {
+    const company =
+      (await this.findCompanyByDomain(domain)) ??
+      (await this.companiesRepo.findOne({ where: { id: DEFAULT_COMPANY_ID } }));
+    return normalizeCompanyTheme(company?.theme);
+  }
+
+  /**
+   * Компания, которой принадлежит домен входа. Используется гейтом входа (AuthService):
+   * пользователь не-super_admin должен принадлежать этой компании. Неизвестный домен →
+   * дефолтная компания (чтобы вход по bare-домену/localhost работал для дефолтного тенанта).
+   */
+  async resolveCompanyIdByDomain(domain?: string): Promise<string> {
+    const company = await this.findCompanyByDomain(domain);
+    return company?.id ?? DEFAULT_COMPANY_ID;
+  }
+
+  private async findCompanyByDomain(domain?: string): Promise<Company | null> {
+    const normalized = this.tryNormalizeDomain(domain);
+    if (!normalized) return null;
+    const record = await this.domainsRepo.findOne({
+      where: { domain: normalized },
+      relations: { company: true },
+    });
+    return record?.company ?? null;
+  }
+
+  private async loadEntity(id: string): Promise<Company> {
+    const company = await this.companiesRepo.findOne({ where: { id }, relations: { domains: true } });
+    if (!company) throw new NotFoundException('Company not found');
+    return company;
+  }
+
+  private serialize(company: Company): CompanyView {
+    return {
+      id: company.id,
+      name: company.name,
+      slug: company.slug,
+      theme: normalizeCompanyTheme(company.theme),
+      domains: (company.domains ?? []).map((d) => d.domain).sort(),
+      clientBotUsername: company.clientBotUsername,
+      managerBotUsername: company.managerBotUsername,
+      createdAt: company.createdAt,
+      updatedAt: company.updatedAt,
+    };
+  }
+
+  /**
+   * Замещает набор доменов компании переданным (полная реконсиляция). Нормализует и дедуплицирует
+   * вход, отбивает домены, уже занятые другой компанией (понятный ConflictException поверх unique).
+   * Delete+insert в одной транзакции, чтобы не оставить компанию без доменов при сбое insert.
+   */
+  private async setDomains(companyId: string, rawDomains: string[]): Promise<void> {
+    const normalized = Array.from(new Set(rawDomains.map((d) => this.normalizeDomain(d))));
+
+    if (normalized.length > 0) {
+      const clashes = await this.domainsRepo.find({ where: { domain: In(normalized) } });
+      const foreign = clashes.filter((c) => c.companyId !== companyId);
+      if (foreign.length > 0) {
+        throw new ConflictException(
+          `Domain already assigned to another company: ${foreign.map((c) => c.domain).join(', ')}`,
+        );
+      }
+    }
+
+    await this.domainsRepo.manager.transaction(async (em) => {
+      await em.delete(CompanyDomain, { companyId });
+      if (normalized.length > 0) {
+        await em.insert(
+          CompanyDomain,
+          normalized.map((domain) => ({ companyId, domain })),
+        );
+      }
+    });
+  }
+
+  /**
+   * Нормализует домен к каноничному host: lowercase, без схемы/userinfo/порта/пути/хвостовой точки.
+   * Бросает BadRequest на пустой/битый вход (используется при сохранении из админки).
+   */
+  private normalizeDomain(raw: string): string {
+    let host = (raw ?? '').trim().toLowerCase();
+    host = host.replace(/^[a-z][a-z0-9+.-]*:\/\//, ''); // схема
+    host = host.split('/')[0].split('?')[0].split('#')[0]; // путь/query/hash
+    const at = host.lastIndexOf('@');
+    if (at >= 0) host = host.slice(at + 1); // userinfo
+    host = host.replace(/:\d+$/, ''); // порт
+    host = host.replace(/\.$/, ''); // хвостовая точка
+    if (!host || !/^[a-z0-9.-]+$/.test(host) || host.startsWith('-') || host.includes('..')) {
+      throw new BadRequestException(`Invalid domain: ${raw}`);
+    }
+    return host;
+  }
+
+  /** Ненавязчивая версия для резолва (пустой/битый домен → null, не бросает). */
+  private tryNormalizeDomain(raw: string | undefined | null): string | null {
+    if (!raw) return null;
+    try {
+      return this.normalizeDomain(raw);
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -72,17 +231,5 @@ export class CompaniesService {
       throw new ConflictException('Company slug already in use');
     }
     return slug;
-  }
-
-  async remove(id: string): Promise<void> {
-    const company = await this.findOne(id);
-    // Удаление непустой компании запрещаем: FK users.company_id = RESTRICT всё равно отобьёт,
-    // но явная проверка даёт понятное сообщение. Документы/клиенты при удалении получили бы
-    // company_id = NULL (FK SET NULL) — поэтому удаляем только полностью пустые компании.
-    const userCount = await this.usersRepo.count({ where: { companyId: id } });
-    if (userCount > 0) {
-      throw new ConflictException('Cannot delete a company that still has users');
-    }
-    await this.companiesRepo.remove(company);
   }
 }

@@ -41,6 +41,7 @@ import { BillingAccount } from '../src/database/entities/billing-account.entity'
 import { CalculationConfig } from '../src/database/entities/calculation-config.entity';
 import { CalculationLog } from '../src/database/entities/calculation-log.entity';
 import { Company } from '../src/database/entities/company.entity';
+import { CompanyDomain } from '../src/database/entities/company-domain.entity';
 import { ConversationMessage } from '../src/database/entities/conversation-message.entity';
 import { DepositTransaction } from '../src/database/entities/deposit-transaction.entity';
 import { Document } from '../src/database/entities/document.entity';
@@ -219,6 +220,7 @@ export async function createTestApp(): Promise<INestApplication> {
           AiUsageLog,
           User,
           Company,
+          CompanyDomain,
           RefreshToken,
           TnVedCode,
           CalculationLog,
