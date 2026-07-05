@@ -149,7 +149,6 @@ function createService(opts: CreateOpts = {}) {
       fixedFee: 0,
       confidenceThreshold: 0.7,
       lowConfidenceAction: 'review',
-      sendResultFile: true,
     }),
   };
 

@@ -9,7 +9,7 @@ export class CalculationConfigController {
   constructor(private service: CalculationConfigService) {}
 
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  @Roles(UserRole.ADMIN)
   get() {
     return this.service.get();
   }

@@ -146,7 +146,6 @@ interface Opts {
     pricePercent?: number;
     weightRate?: number;
     fixedFee?: number;
-    sendResultFile?: boolean;
     confidenceThreshold?: number;
     lowConfidenceAction?: 'review' | 'reject';
   };
@@ -214,7 +213,6 @@ function createProcessor(opts: Opts = {}) {
       pricePercent: 5,
       weightRate: 2,
       fixedFee: 10,
-      sendResultFile: true,
       confidenceThreshold: 0.8,
       lowConfidenceAction: 'review',
       ...opts.config,

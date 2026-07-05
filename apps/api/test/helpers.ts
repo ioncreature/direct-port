@@ -468,4 +468,27 @@ export async function loginAsAdmin(
   };
 }
 
+/**
+ * Создаёт пользователя заданной роли в заданной компании (через API от лица super_admin,
+ * токен которого передаётся) и логинит его — возвращает access-токен. Для e2e ролевого
+ * доступа и tenant-скоупа: super_admin создаёт admin/customs с явной компанией.
+ */
+export async function createUserAndLogin(
+  app: INestApplication,
+  superAdminToken: string,
+  opts: { email: string; role: 'admin' | 'customs'; companyId: string; password?: string },
+): Promise<string> {
+  const password = opts.password ?? 'password123';
+  await request(app.getHttpServer())
+    .post('/api/users')
+    .set('Authorization', `Bearer ${superAdminToken}`)
+    .send({ email: opts.email, password, role: opts.role, companyId: opts.companyId })
+    .expect(201);
+  const res = await request(app.getHttpServer())
+    .post('/api/auth/login')
+    .send({ email: opts.email, password })
+    .expect(200);
+  return res.body.accessToken;
+}
+
 export const INTERNAL_KEY_HEADER = { 'x-internal-key': 'test-internal-key' };

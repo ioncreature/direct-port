@@ -3,20 +3,30 @@ import * as request from 'supertest';
 import {
   closeTestApp,
   createTestApp,
+  createUserAndLogin,
   INTERNAL_KEY_HEADER,
   loginAsAdmin,
   seedAdmin,
+  seedCompany,
 } from './helpers';
 
 describe('CalculationConfig (e2e)', () => {
   let app: INestApplication;
   let adminToken: string;
+  let customsToken: string;
 
   beforeAll(async () => {
     app = await createTestApp();
     await seedAdmin(app);
     const auth = await loginAsAdmin(app);
     adminToken = auth.accessToken;
+    // customs в своей компании — для проверки, что настройки ему недоступны (admin-only).
+    const company = await seedCompany(app);
+    customsToken = await createUserAndLogin(app, adminToken, {
+      email: 'customs-settings@test.com',
+      role: 'customs',
+      companyId: company.id,
+    });
   });
 
   afterAll(async () => {
@@ -38,6 +48,13 @@ describe('CalculationConfig (e2e)', () => {
 
     it('should reject without auth', async () => {
       await request(app.getHttpServer()).get('/api/calculation-config').expect(401);
+    });
+
+    it('should reject customs — settings are admin-only', async () => {
+      await request(app.getHttpServer())
+        .get('/api/calculation-config')
+        .set('Authorization', `Bearer ${customsToken}`)
+        .expect(403);
     });
 
     it('should reject with internal key (requires role)', async () => {
@@ -93,30 +110,6 @@ describe('CalculationConfig (e2e)', () => {
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ pricePercent: 'abc' })
         .expect(400);
-    });
-
-    it('should update sendResultFile', async () => {
-      const res = await request(app.getHttpServer())
-        .put('/api/calculation-config')
-        .set('Authorization', `Bearer ${adminToken}`)
-        .send({ sendResultFile: false })
-        .expect(200);
-
-      expect(res.body.sendResultFile).toBe(false);
-
-      const res2 = await request(app.getHttpServer())
-        .get('/api/calculation-config')
-        .set('Authorization', `Bearer ${adminToken}`)
-        .expect(200);
-
-      expect(res2.body.sendResultFile).toBe(false);
-
-      // Restore default
-      await request(app.getHttpServer())
-        .put('/api/calculation-config')
-        .set('Authorization', `Bearer ${adminToken}`)
-        .send({ sendResultFile: true })
-        .expect(200);
     });
 
     it('should reject without auth', async () => {

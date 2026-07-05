@@ -42,9 +42,6 @@ export class CalculationConfig {
   })
   fixedFee: number;
 
-  @Column({ name: 'send_result_file', type: 'boolean', default: true })
-  sendResultFile: boolean;
-
   @Column({
     type: 'decimal',
     precision: 3,

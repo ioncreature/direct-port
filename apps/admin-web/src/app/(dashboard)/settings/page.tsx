@@ -1,17 +1,32 @@
 'use client';
 
+import { useAuth } from '@/hooks/use-auth';
 import { AI_MODEL_TIERS, type AiConfig, type AiModelTier, useAiConfig } from '@/hooks/use-ai-config';
 import { useCalculationConfig } from '@/hooks/use-calculation-config';
+import { isAdminRole } from '@/lib/roles';
 import { useEffect, useState } from 'react';
 import { AI_STEPS, type AiStepInfo } from './ai-steps';
 
 export default function SettingsPage() {
+  const { user } = useAuth();
+
+  // Настройки — только для admin/super_admin. customs (декларант) сюда не должен попадать
+  // даже по прямому URL; API конфигов тоже отдаёт их лишь ADMIN. (layout уже прячет пункт.)
+  if (user && !isAdminRole(user.role)) {
+    return <p>Недостаточно прав для просмотра этого раздела.</p>;
+  }
+
+  return <SettingsContent />;
+}
+
+// Вынесено в отдельный компонент, чтобы хуки-конфиги (GET /calculation-config, /ai-config)
+// не срабатывали для не-админов — они бы упёрлись в 403.
+function SettingsContent() {
   const calcConfig = useCalculationConfig();
 
   return (
     <div>
       <h1 style={{ marginBottom: 24 }}>Настройки</h1>
-      <NotificationSection {...calcConfig} />
       <ConfidenceSection {...calcConfig} />
       <CommissionSection {...calcConfig} />
       <AiModelsSection />
@@ -20,60 +35,6 @@ export default function SettingsPage() {
 }
 
 type CalcConfigProps = ReturnType<typeof useCalculationConfig>;
-
-// --- Секция: Уведомления ---
-
-function NotificationSection({ config, loading, saving, error, save }: CalcConfigProps) {
-  const [sendResultFile, setSendResultFile] = useState(true);
-  const [success, setSuccess] = useState(false);
-
-  useEffect(() => {
-    if (config) {
-      setSendResultFile(config.sendResultFile);
-    }
-  }, [config]);
-
-  if (loading) return <p>Загрузка...</p>;
-
-  const hasChanges = config && sendResultFile !== config.sendResultFile;
-
-  const handleSave = async () => {
-    setSuccess(false);
-    await save({ sendResultFile });
-    setSuccess(true);
-    setTimeout(() => setSuccess(false), 3000);
-  };
-
-  return (
-    <div style={{ maxWidth: 500, padding: 24, border: '1px solid var(--border)', borderRadius: 8, marginBottom: 32 }}>
-      <h3 style={{ marginBottom: 16 }}>Уведомления в Telegram</h3>
-
-      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', marginBottom: 16 }}>
-        <input
-          type="checkbox"
-          checked={sendResultFile}
-          onChange={(e) => setSendResultFile(e.target.checked)}
-          style={{ marginTop: 3, width: 18, height: 18 }}
-        />
-        <div>
-          <div style={{ fontWeight: 500, fontSize: 14 }}>Отправлять файл-результат в Telegram</div>
-          <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
-            {sendResultFile
-              ? 'После обработки документа пользователь получит Excel-файл с результатами.'
-              : 'После обработки документа пользователь получит сообщение с просьбой связаться с вами.'}
-          </div>
-        </div>
-      </label>
-
-      {error && <p style={{ color: 'var(--danger)', marginBottom: 12 }}>{error}</p>}
-      {success && <p style={{ color: 'var(--success)', marginBottom: 12 }}>Сохранено!</p>}
-
-      <button onClick={handleSave} disabled={saving || !hasChanges} style={btnStyle(saving || !hasChanges)}>
-        {saving ? 'Сохранение...' : 'Сохранить'}
-      </button>
-    </div>
-  );
-}
 
 // --- Секция: Классификация ТН ВЭД ---
 
@@ -299,7 +260,7 @@ function AiModelsSection() {
       </p>
       <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 24, lineHeight: 1.5 }}>
         <strong>Opus 4.8</strong> — самая мощная и дорогая модель, лучшее качество.{' '}
-        <strong>Sonnet 4.6</strong> — основная рабочая модель, хороший баланс.{' '}
+        <strong>Sonnet 5</strong> — основная рабочая модель, хороший баланс.{' '}
         <strong>Haiku 4.5</strong> — самая быстрая и дешёвая, подходит для простых задач.
         Проценты точности — ориентировочные, реальные результаты зависят от ваших документов.
       </p>

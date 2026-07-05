@@ -9,7 +9,7 @@ export class AiConfigController {
   constructor(private service: AiConfigService) {}
 
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  @Roles(UserRole.ADMIN)
   get() {
     return this.service.get();
   }

@@ -14,13 +14,13 @@ import { useEffect } from 'react';
 const navItems: { href: string; label: string; roles?: readonly string[] }[] = [
   { href: '/', label: 'Дашборд' },
   { href: '/users', label: 'Пользователи', roles: ADMIN_ROLES },
-  { href: '/telegram-users', label: 'Telegram', roles: ADMIN_ROLES },
+  { href: '/telegram-users', label: 'Telegram' },
   { href: '/documents', label: 'Документы' },
   { href: '/tn-ved', label: 'ТН ВЭД' },
   { href: '/leads', label: 'Лиды', roles: ['super_admin'] },
   { href: '/ai-costs', label: 'AI-расходы', roles: ADMIN_ROLES },
   { href: '/companies', label: 'Компании', roles: ['super_admin'] },
-  { href: '/settings', label: 'Настройки' },
+  { href: '/settings', label: 'Настройки', roles: ADMIN_ROLES },
   { href: '/reference', label: 'Справочник' },
 ];
 

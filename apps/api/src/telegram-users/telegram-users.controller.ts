@@ -32,8 +32,10 @@ export class TelegramUsersController {
     private clientBalance: ClientBalanceService,
   ) {}
 
+  // customs (менеджер-декларант) видит клиентов, но findAll скоупит их его компанией
+  // (resolveCompanyScope): запрошенный companyId игнорируется — только своя компания.
   @Get()
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   findAll(@Query() query: FindTelegramUsersQueryDto, @CurrentUser() actor: Actor) {
     return this.service.findAll(query, actor);
   }
@@ -45,8 +47,11 @@ export class TelegramUsersController {
     return this.service.search(q ?? '', actor);
   }
 
+  // Деталь клиента для customs тоже доступна (карточка + вкладки Документы/Переписка/Депозит,
+  // включая ручную корректировку баланса). Все by-id-эндпоинты бьют assertSameCompany —
+  // чужую компанию отдают 404, так что доступ customs остаётся в рамках его компании.
   @Get('by-id/:id')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   findOneById(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
     return this.service.findOneById(id, actor);
   }
@@ -61,7 +66,7 @@ export class TelegramUsersController {
 
   /** Ручное пополнение/корректировка депозита клиента (баланс в обработанных позициях). */
   @Post('by-id/:id/deposit')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   async adjustDeposit(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AdjustDepositDto,
@@ -76,7 +81,7 @@ export class TelegramUsersController {
 
   /** История операций по депозиту клиента (пополнения/списания/корректировки). */
   @Get('by-id/:id/deposit-transactions')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
   async depositTransactions(
     @Param('id', ParseUUIDPipe) id: string,
     @Query() query: PaginationQueryDto,

@@ -43,7 +43,6 @@ export class CalculationConfigService {
     pricePercent?: number;
     weightRate?: number;
     fixedFee?: number;
-    sendResultFile?: boolean;
     confidenceThreshold?: number;
     lowConfidenceAction?: LowConfidenceAction;
   }): Promise<CalculationConfig> {
@@ -51,7 +50,6 @@ export class CalculationConfigService {
     if (dto.pricePercent !== undefined) config.pricePercent = dto.pricePercent;
     if (dto.weightRate !== undefined) config.weightRate = dto.weightRate;
     if (dto.fixedFee !== undefined) config.fixedFee = dto.fixedFee;
-    if (dto.sendResultFile !== undefined) config.sendResultFile = dto.sendResultFile;
     if (dto.confidenceThreshold !== undefined)
       config.confidenceThreshold = dto.confidenceThreshold;
     if (dto.lowConfidenceAction !== undefined)

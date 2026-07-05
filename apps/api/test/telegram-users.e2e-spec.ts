@@ -1,6 +1,15 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
-import { closeTestApp, createTestApp, INTERNAL_KEY_HEADER } from './helpers';
+import {
+  closeTestApp,
+  createTestApp,
+  createUserAndLogin,
+  INTERNAL_KEY_HEADER,
+  loginAsAdmin,
+  seedAdmin,
+  seedCompany,
+  seedTelegramUser,
+} from './helpers';
 
 describe('TelegramUsers (e2e)', () => {
   let app: INestApplication;
@@ -72,6 +81,85 @@ describe('TelegramUsers (e2e)', () => {
 
       expect(res.body.telegramId).toBe('555666777');
       expect(res.body.username).toBe('lookup_test');
+    });
+  });
+
+  // Роль customs (декларант) получила доступ к разделу Telegram, но строго в рамках
+  // своей компании: findAll скоупит по actor.companyId, findOneById бьёт assertSameCompany.
+  describe('GET /api/telegram-users (роль + tenant-скоуп)', () => {
+    let customsToken: string;
+    let companyA: string;
+    let companyB: string;
+    let aUserId: string;
+    let bUserId: string;
+
+    beforeAll(async () => {
+      await seedAdmin(app);
+      const { accessToken: superToken } = await loginAsAdmin(app);
+      companyA = (await seedCompany(app, 'Company A')).id;
+      companyB = (await seedCompany(app, 'Company B')).id;
+      customsToken = await createUserAndLogin(app, superToken, {
+        email: 'customs-scope@test.com',
+        role: 'customs',
+        companyId: companyA,
+      });
+      aUserId = (await seedTelegramUser(app, companyA)).id;
+      bUserId = (await seedTelegramUser(app, companyB)).id;
+    });
+
+    it('customs видит клиентов только своей компании', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/telegram-users')
+        .set('Authorization', `Bearer ${customsToken}`)
+        .expect(200);
+
+      expect(res.body.data.length).toBeGreaterThan(0);
+      expect(res.body.data.every((u: { companyId: string }) => u.companyId === companyA)).toBe(
+        true,
+      );
+      // Клиент чужой компании (companyB) в выдачу не попал.
+      expect(res.body.data.some((u: { companyId: string }) => u.companyId === companyB)).toBe(
+        false,
+      );
+    });
+
+    it('customs открывает карточку клиента своей компании (200)', async () => {
+      await request(app.getHttpServer())
+        .get(`/api/telegram-users/by-id/${aUserId}`)
+        .set('Authorization', `Bearer ${customsToken}`)
+        .expect(200);
+    });
+
+    it('customs получает 404 на клиента чужой компании', async () => {
+      await request(app.getHttpServer())
+        .get(`/api/telegram-users/by-id/${bUserId}`)
+        .set('Authorization', `Bearer ${customsToken}`)
+        .expect(404);
+    });
+
+    it('customs смотрит операции по депозиту клиента своей компании (200)', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/api/telegram-users/by-id/${aUserId}/deposit-transactions`)
+        .set('Authorization', `Bearer ${customsToken}`)
+        .expect(200);
+      expect(res.body).toHaveProperty('data');
+    });
+
+    it('customs управляет балансом клиента своей компании (корректировка)', async () => {
+      const res = await request(app.getHttpServer())
+        .post(`/api/telegram-users/by-id/${aUserId}/deposit`)
+        .set('Authorization', `Bearer ${customsToken}`)
+        .send({ amount: 10, comment: 'e2e credit' })
+        .expect(201);
+      expect(res.body.balance).toBe(10);
+    });
+
+    it('customs не может трогать депозит клиента чужой компании (404)', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/telegram-users/by-id/${bUserId}/deposit`)
+        .set('Authorization', `Bearer ${customsToken}`)
+        .send({ amount: 10 })
+        .expect(404);
     });
   });
 });
