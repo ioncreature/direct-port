@@ -24,6 +24,13 @@ const navItems: { href: string; label: string; roles?: readonly string[] }[] = [
   { href: '/reference', label: 'Справочник' },
 ];
 
+const SIDEBAR_WIDTH = 232;
+const CONTENT_MAX_WIDTH = 1360;
+// Весь shell (меню + контент) центрируем на широких мониторах, чтобы он не
+// прилипал к левому краю. Макс. ширина = сайдбар + его правый бордер (1px) +
+// горизонтальные паддинги <main> (32×2) + макс. ширина контента.
+const SHELL_MAX_WIDTH = SIDEBAR_WIDTH + 1 + 32 * 2 + CONTENT_MAX_WIDTH;
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
@@ -40,10 +47,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
+    <div
+      style={{
+        display: 'flex',
+        minHeight: '100vh',
+        maxWidth: SHELL_MAX_WIDTH,
+        marginInline: 'auto',
+      }}
+    >
       <aside
         style={{
-          width: 232,
+          width: SIDEBAR_WIDTH,
           flexShrink: 0,
           borderRight: '1px solid var(--border)',
           background: 'var(--sidebar-bg)',
@@ -131,9 +145,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </aside>
       <main style={{ flex: 1, minWidth: 0, padding: '28px 32px', paddingBottom: 64 }}>
         {/* Ограничение ширины: на ультрашироких мониторах строки таблиц и сетки
-            карточек не должны растягиваться на всю ширину экрана. Центрируем
-            контейнер авто-маргинами, чтобы контент не прилипал к левому краю. */}
-        <div style={{ maxWidth: 1360, marginInline: 'auto' }}>{children}</div>
+            карточек не должны растягиваться на всю ширину экрана. Сам shell
+            (меню + контент) центрируется на корневом контейнере выше. */}
+        <div style={{ maxWidth: CONTENT_MAX_WIDTH }}>{children}</div>
       </main>
       <ForbiddenToast />
     </div>
