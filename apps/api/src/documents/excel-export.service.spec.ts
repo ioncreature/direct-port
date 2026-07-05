@@ -79,7 +79,6 @@ function makeResultRow(overrides: Record<string, unknown> = {}) {
     dutyAmount: 150,
     vatAmount: 230,
     exciseAmount: 0,
-    logisticsCommission: 50,
     totalCost: 1430,
     verificationStatus: 'exact',
     calculationStatus: 'exact',
@@ -281,7 +280,6 @@ describe('ExcelExportService', () => {
         dutyAmountRub: 13500,
         vatAmountRub: 20700,
         exciseAmountRub: 0,
-        logisticsCommissionRub: 4500,
         totalCostRub: 128700,
         exchangeRate: 90,
       });
@@ -764,7 +762,6 @@ describe('ExcelExportService', () => {
         dutyAmountRub: 13500,
         vatAmountRub: 20700,
         exciseAmountRub: 0,
-        logisticsCommissionRub: 4500,
         totalCostRub: 128700,
         exchangeRate: 90,
       });
@@ -781,7 +778,6 @@ describe('ExcelExportService', () => {
           h.startsWith('Пошлина ') ||
           h.startsWith('НДС ') ||
           h.startsWith('Акциз ') ||
-          h.startsWith('Комиссия ') ||
           h.startsWith('Итого '),
       );
       // Каждая денежная колонка должна иметь numFmt

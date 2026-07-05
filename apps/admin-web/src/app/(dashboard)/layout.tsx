@@ -3,7 +3,7 @@
 import { BrandMark, Wordmark } from '@/components/brand';
 import { ForbiddenToast } from '@/components/forbidden-toast';
 import { useAuth } from '@/hooks/use-auth';
-import { ADMIN_ROLES } from '@/lib/roles';
+import { ADMIN_ROLES, SUPER_ADMIN_ROLES } from '@/lib/roles';
 import { btnOutline } from '@/lib/table-styles';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -17,10 +17,10 @@ const navItems: { href: string; label: string; roles?: readonly string[] }[] = [
   { href: '/telegram-users', label: 'Telegram' },
   { href: '/documents', label: 'Документы' },
   { href: '/tn-ved', label: 'ТН ВЭД' },
-  { href: '/leads', label: 'Лиды', roles: ['super_admin'] },
+  { href: '/leads', label: 'Лиды', roles: SUPER_ADMIN_ROLES },
   { href: '/ai-costs', label: 'AI-расходы', roles: ADMIN_ROLES },
-  { href: '/companies', label: 'Компании', roles: ['super_admin'] },
-  { href: '/settings', label: 'Настройки', roles: ADMIN_ROLES },
+  { href: '/companies', label: 'Компании', roles: SUPER_ADMIN_ROLES },
+  { href: '/settings', label: 'Настройки', roles: SUPER_ADMIN_ROLES },
   { href: '/reference', label: 'Справочник' },
 ];
 

@@ -9,13 +9,13 @@ export class CalculationConfigController {
   constructor(private service: CalculationConfigService) {}
 
   @Get()
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPER_ADMIN)
   get() {
     return this.service.get();
   }
 
   @Put()
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPER_ADMIN)
   update(@Body() dto: UpdateCalculationConfigDto) {
     return this.service.update(dto);
   }

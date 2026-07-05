@@ -27,9 +27,6 @@ export class CalculationConfigService {
 
     const created = await this.repo.save(
       this.repo.create({
-        pricePercent: 5,
-        weightRate: 0,
-        fixedFee: 0,
         confidenceThreshold: 0.8,
         lowConfidenceAction: 'review',
       }),
@@ -40,16 +37,10 @@ export class CalculationConfigService {
   }
 
   async update(dto: {
-    pricePercent?: number;
-    weightRate?: number;
-    fixedFee?: number;
     confidenceThreshold?: number;
     lowConfidenceAction?: LowConfidenceAction;
   }): Promise<CalculationConfig> {
     const config = await this.get();
-    if (dto.pricePercent !== undefined) config.pricePercent = dto.pricePercent;
-    if (dto.weightRate !== undefined) config.weightRate = dto.weightRate;
-    if (dto.fixedFee !== undefined) config.fixedFee = dto.fixedFee;
     if (dto.confidenceThreshold !== undefined)
       config.confidenceThreshold = dto.confidenceThreshold;
     if (dto.lowConfidenceAction !== undefined)

@@ -1,6 +1,7 @@
 'use client';
 
 import { InfoCard } from '@/components/info-card';
+import { InfoTooltip } from '@/components/info-tooltip';
 import { TabsNav } from '@/components/tabs-nav';
 import { useCalculationHistory } from '@/hooks/use-calculation-history';
 import { useCountries } from '@/hooks/use-countries';
@@ -39,6 +40,14 @@ const DISPLAY_CURRENCIES = ['RUB', 'USD', 'EUR', 'CNY', 'INR'] as const;
 const CURRENCY_SYMBOLS: Record<string, string> = {
   RUB: '₽', USD: '$', EUR: '€', CNY: '¥', INR: '₹',
 };
+
+// Краткие подсказки для полей формы пересчёта (попапы «?»). Подробности — на странице /reference.
+const COUNTRY_HINT =
+  'Страна, где произведён товар. Задаёт ставку ввозной пошлины (включая антидемпинговые пошлины и тарифные преференции), попадает в графу 34 ДТ и влияет на страновые запреты. AI определяет её автоматически — при ошибке выберите вручную и нажмите «Пересчитать».';
+const FREIGHT_HINT =
+  'Стоимость доставки до границы ЕАЭС в выбранной валюте. Распределяется по позициям пропорционально весу брутто и входит в таможенную стоимость, увеличивая базу пошлины, акциза и НДС. Введите 0 или очистите поле, чтобы сбросить.';
+const INCOTERMS_HINT =
+  'Условия поставки (Incoterms 2020): что уже включено в цену товара, а что нужно добавить в таможенную стоимость. Влияют на предупреждения о занижении ТС (EXW/FCA/FOB…) или двойном счёте фрахта (CIF/CIP/DAP…).';
 
 type StepperStageState = 'done' | 'active' | 'pending' | 'warning' | 'error' | 'success';
 
@@ -377,7 +386,6 @@ export default function DocumentDetailPage() {
           acc.dutyAmount += r.dutyAmount;
           acc.vatAmount += r.vatAmount;
           acc.exciseAmount += r.exciseAmount;
-          acc.logisticsCommission += r.logisticsCommission;
           acc.totalCost += r.totalCost;
           return acc;
         },
@@ -387,7 +395,6 @@ export default function DocumentDetailPage() {
           dutyAmount: 0,
           vatAmount: 0,
           exciseAmount: 0,
-          logisticsCommission: 0,
           totalCost: 0,
         },
       ),
@@ -898,131 +905,129 @@ export default function DocumentDetailPage() {
         return (
           <div
             style={{
-              display: 'flex',
-              gap: 12,
-              alignItems: 'flex-end',
-              flexWrap: 'wrap',
-              padding: 12,
+              padding: 16,
               marginBottom: 16,
               border: '1px solid var(--border)',
               borderRadius: 8,
               background: doc.countryOriginSource === 'default' ? 'var(--warning-soft)' : 'var(--bg-subtle)',
             }}
           >
-            <div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Страна происхождения</div>
-              <select
-                value={countryDraft}
-                onChange={(e) => setCountryDraft(e.target.value)}
-                style={{
-                  padding: '6px 10px',
-                  fontSize: 14,
-                  borderRadius: 4,
-                  border: '1px solid var(--border)',
-                  background: '#fff',
-                  minWidth: 260,
-                }}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+                marginBottom: 14,
+              }}
+            >
+              <h3 style={{ margin: 0, fontSize: 15 }}>Параметры расчёта</h3>
+              <Link
+                href="/reference"
+                style={{ fontSize: 13, color: 'var(--accent)', textDecoration: 'none', whiteSpace: 'nowrap' }}
               >
-                <option value="">— не указана —</option>
-                {countries.map((c) => (
-                  <option key={c.code} value={c.code}>
-                    {c.nameRu} ({c.code})
-                  </option>
-                ))}
-              </select>
+                Что это и на что влияет? &rarr;
+              </Link>
             </div>
-            <div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Фрахт до границы</div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  step="0.01"
-                  min="0"
-                  placeholder="0"
-                  value={freightCostDraft}
-                  onChange={(e) => setFreightCostDraft(e.target.value)}
-                  style={{
-                    padding: '6px 10px',
-                    fontSize: 14,
-                    borderRadius: 4,
-                    border: '1px solid var(--border)',
-                    background: '#fff',
-                    width: 140,
-                  }}
-                />
+
+            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <RecalcField label="Страна происхождения" tooltip={COUNTRY_HINT}>
                 <select
-                  aria-label="Валюта фрахта"
-                  value={freightCurrencyDraft}
-                  onChange={(e) =>
-                    setFreightCurrencyDraft(e.target.value as 'USD' | 'CNY' | 'RUB' | 'EUR')
-                  }
-                  style={{
-                    padding: '6px 10px',
-                    fontSize: 14,
-                    borderRadius: 4,
-                    border: '1px solid var(--border)',
-                    background: '#fff',
-                  }}
+                  value={countryDraft}
+                  onChange={(e) => setCountryDraft(e.target.value)}
+                  style={{ ...recalcControl, minWidth: 260 }}
                 >
-                  {(['USD', 'CNY', 'RUB', 'EUR'] as const).map((c) => (
-                    <option key={c} value={c}>
-                      {c}
+                  <option value="">— не указана —</option>
+                  {countries.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.nameRu} ({c.code})
                     </option>
                   ))}
                 </select>
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--text-subtle)', marginTop: 4 }}>
-                Введите 0 или очистите поле, чтобы сбросить фрахт.
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Инкотермс</div>
-              <select
-                aria-label="Условия поставки (Инкотермс)"
-                value={incotermsDraft}
-                onChange={(e) => setIncotermsDraft(e.target.value)}
+              </RecalcField>
+
+              <RecalcField label="Фрахт до границы" tooltip={FREIGHT_HINT}>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    min="0"
+                    placeholder="0"
+                    value={freightCostDraft}
+                    onChange={(e) => setFreightCostDraft(e.target.value)}
+                    style={{ ...recalcControl, width: 140 }}
+                  />
+                  <select
+                    aria-label="Валюта фрахта"
+                    value={freightCurrencyDraft}
+                    onChange={(e) =>
+                      setFreightCurrencyDraft(e.target.value as 'USD' | 'CNY' | 'RUB' | 'EUR')
+                    }
+                    style={recalcControl}
+                  >
+                    {(['USD', 'CNY', 'RUB', 'EUR'] as const).map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </RecalcField>
+
+              <RecalcField label="Инкотермс" tooltip={INCOTERMS_HINT}>
+                <select
+                  aria-label="Условия поставки (Инкотермс)"
+                  value={incotermsDraft}
+                  onChange={(e) => setIncotermsDraft(e.target.value)}
+                  style={recalcControl}
+                >
+                  <option value="">— не указаны —</option>
+                  {INCOTERMS.map((term) => (
+                    <option key={term} value={term}>
+                      {term}
+                    </option>
+                  ))}
+                </select>
+              </RecalcField>
+
+              <button
+                onClick={handleRecalculate}
+                disabled={recalculateDisabled}
                 style={{
-                  padding: '6px 10px',
-                  fontSize: 14,
+                  marginLeft: 'auto',
+                  padding: '8px 16px',
+                  background: recalculateDisabled ? 'var(--text-subtle)' : 'var(--orange)',
+                  color: '#fff',
+                  border: 'none',
                   borderRadius: 4,
-                  border: '1px solid var(--border)',
-                  background: '#fff',
+                  cursor: recalculateDisabled ? 'not-allowed' : 'pointer',
+                  fontSize: 14,
+                  whiteSpace: 'nowrap',
                 }}
               >
-                <option value="">— не указаны —</option>
-                {INCOTERMS.map((term) => (
-                  <option key={term} value={term}>
-                    {term}
-                  </option>
-                ))}
-              </select>
+                {recalculating ? 'Пересчёт...' : 'Пересчитать'}
+              </button>
             </div>
-            <div style={{ flex: 1, minWidth: 200, fontSize: 12, color: 'var(--text-muted)' }}>
-              {doc.countryOriginSource && (
-                <div>
-                  Источник: <span style={{ color: 'var(--text)' }}>{countryOriginSourceLabels[doc.countryOriginSource]}</span>
-                </div>
-              )}
-              {doc.countryDetectionReason && (
-                <div style={{ marginTop: 2, fontStyle: 'italic' }}>{doc.countryDetectionReason}</div>
-              )}
-            </div>
-            <button
-              onClick={handleRecalculate}
-              disabled={recalculateDisabled}
-              style={{
-                padding: '8px 16px',
-                background: recalculateDisabled ? 'var(--text-subtle)' : 'var(--orange)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 4,
-                cursor: recalculateDisabled ? 'not-allowed' : 'pointer',
-                fontSize: 14,
-              }}
-            >
-              {recalculating ? 'Пересчёт...' : 'Пересчитать'}
-            </button>
+
+            {(doc.countryOriginSource || doc.countryDetectionReason) && (
+              <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text-muted)' }}>
+                {doc.countryOriginSource && (
+                  <>
+                    Источник страны:{' '}
+                    <span style={{ color: 'var(--text)' }}>
+                      {countryOriginSourceLabels[doc.countryOriginSource]}
+                    </span>
+                  </>
+                )}
+                {doc.countryDetectionReason && (
+                  <span style={{ fontStyle: 'italic' }}>
+                    {doc.countryOriginSource ? ' — ' : ''}
+                    {doc.countryDetectionReason}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         );
       })()}
@@ -1310,7 +1315,6 @@ function ResultDetail({
               label="Акциз"
               value={row.exciseAmount > 0 ? fmtMoney(row.exciseAmount) : '—'}
             />
-            <CalcLine label="Комиссия доставки" value={fmtMoney(row.logisticsCommission)} />
             <div
               style={{
                 display: 'flex',
@@ -1575,6 +1579,34 @@ function ChangeCodeSection({
   );
 }
 
+function RecalcField({
+  label,
+  tooltip,
+  children,
+}: {
+  label: string;
+  tooltip: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span
+        style={{
+          fontSize: 12,
+          color: 'var(--text-muted)',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 5,
+        }}
+      >
+        {label}
+        <InfoTooltip text={tooltip} />
+      </span>
+      {children}
+    </div>
+  );
+}
+
 function DetailField({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -1637,4 +1669,11 @@ const inputNumber: React.CSSProperties = {
   borderRadius: 3,
   fontSize: 13,
   textAlign: 'right',
+};
+const recalcControl: React.CSSProperties = {
+  padding: '6px 10px',
+  fontSize: 14,
+  borderRadius: 4,
+  border: '1px solid var(--border)',
+  background: '#fff',
 };

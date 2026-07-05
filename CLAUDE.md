@@ -44,7 +44,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
   - TnVed — справочник ТН ВЭД: поиск по TKS API (searchGoodsGrouped + getTnvedCode), перевод запросов через Claude, обогащение ставками + блок `regulatoryReport` в `codeDetail` (Regulatory)
   - TelegramUsers — регистрация пользователей Telegram, детальный просмотр по UUID, PATCH :telegramId/language
   - Documents — загрузка (Telegram + админка), обработка, переобработка, скачивание, token-stats. Зонтичный модуль: агрегирует внутри AiParser/Classifier/Calculator/DutyInterpreter/Currency/CalculationLogs/Tks, они не импортируются на верхнем уровне
-  - CalculationConfig — настройки формулы комиссии, порога уверенности классификатора (CRUD)
+  - CalculationConfig — настройки порога уверенности классификатора (CRUD)
   - AiConfig — CRUD для выбора моделей Claude (opus/sonnet/haiku) для 4 сценариев AI. См. `docs/AI_CONFIG.md`
   - Countries — справочник стран (OKSMT), используется для страны происхождения товара
   - Regulatory — формирует RegulatoryReport (сертификация, лицензии, маркировка, утильсбор, страновые запреты) из блоков `TnvedCode.TNVEDALL` по PRIZNAK 6/7/11–15/21/27–29/33–35. Парсер NOTE извлекает ТР ТС/ЕАЭС, форму оценки, регулятора. Отдельных запросов к TKS не делает — использует уже загруженный TnvedCode. В pipeline вызывается из `DocumentsProcessor` после Calculator (см. `attachRegulatoryReports`) и сохраняется в `resultData[i].regulatoryReport`. Lazy AI-обогащение через `RegulatoryInterpreterService` (Claude haiku по умолчанию, persistent-кэш `regulatory_interpretation_cache` 180д, ключ — sha256(NOTE)+language+model). Endpoints: `GET /tn-ved/:code/regulatory-explanations?lang=ru` (для справочника) и `GET /documents/:id/regulatory-explanations?lang=ru` (для всех позиций документа одним запросом). Подпапка `regulatory/curated/` — курируемый слой чек-листа «Документы к поставке» (ТОЛЬКО то, чего нет в TKS): `document-timing.ts` (когда получать документ каждого типа: нотификация — до заказа, экспортная ДТ — при отгрузке, ЧЗ — на фабрике), `marking-waves.ts` (волны «Честного знака» с кодами и датами, включая будущие — единственный кодовый список; матчер `matchMarkingWaves`), `base-package.ts` (базовый пакет ст. 108 + коды гр. 44 по Решению КТС № 378), `value-dossier.ts` (стоимостное досье, п. 8 Решения ЕЭК № 42). Каждая запись несёт `basis` (реквизит акта или «по практике») + `verifiedAt` (дата ручной сверки). Перечни ТР ТС/утильсбора/лицензий сюда сознательно НЕ дублируются — их актуальность поддерживает TKS
@@ -57,7 +57,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 - Вложенные модули (внутри DocumentsModule):
   - AiParser — AI-парсинг таблиц (Claude): определение валюты, перевод, извлечение данных, автодетект страны происхождения. Retry + валидация
   - Classifier — классификация+верификация ТН ВЭД: TKS search (батчи по 5) → Claude classify+verify (батчи по 10) → getTnvedCode
-  - Calculator — расчёт пошлин, НДС, акцизов, комиссии за доставку
+  - Calculator — расчёт пошлин, НДС, акцизов
   - DutyInterpreter — AI-интерпретация правил расчёта пошлин из справочника ТН ВЭД (Claude)
   - CalculationLogs — аудит-лог расчётов (запись после обработки, доступ через GET /documents/:id/calculation-history)
   - Currency — курсы валют ЦБ РФ, конвертация в RUB
@@ -78,7 +78,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 - Telegram-пользователи: список с пагинацией/сортировкой, детальная страница (документы, переписка, депозит с ручной корректировкой баланса). Доступно и роли customs, но строго со скоупом по своей компании — все by-id-эндпоинты (включая `POST by-id/:id/deposit`) идут через `resolveCompanyScope`/`assertSameCompany` (чужая компания → 404)
 - AI-расходы (`/ai-costs`, только ADMIN): сводка токенов и стоимости (Sonnet $3/$15, Haiku $1/$5 за 1M), фильтр по моделям, графики по дням, разбивка по пользователям и последние документы. См. `docs/AI_USAGE_TRACKING.md`
 - Справочник ТН ВЭД: поиск по TKS API (текст/код), перевод запросов через Claude (модель настраивается через AiConfig), кликабельные коды, копирование кода, калькулятор пошлин с учётом единиц измерения (кг/л/м²/м³/шт). Секция «Разрешительные документы и ограничения» — сертификация, разрешения, лицензии, маркировка, утильсбор, страновые запреты — со сводкой и бейджем точности применимости (exact/narrow/broad). AI-выжимки записей загружаются ленивым запросом через `useRegulatoryExplanations` после показа базового отчёта
-- Настройки (только ADMIN): формула комиссии (pricePercent, weightRate, fixedFee), порог уверенности классификатора (confidenceThreshold + lowConfidenceAction), выбор моделей Claude для 4 AI-сценариев
+- Настройки (только SUPER_ADMIN): порог уверенности классификатора (confidenceThreshold + lowConfidenceAction), выбор моделей Claude для 4 AI-сценариев. admin/customs не видят пункт в навигации и получают 403 на /calculation-config и /ai-config
 - Shared: InfoCard, table-styles, format (fmt), хуки с серверной пагинацией
 - API-клиент с автообновлением токенов
 - Отдельной страницы «Логи расчётов» нет — история доступна на странице деталей документа (вкладка/секция «История расчётов»)
@@ -147,7 +147,7 @@ Seed создаёт: admin user (admin@directport.ru / admin123) + 10 образ
 → Если все коды с низкой уверенностью и lowConfidenceAction='review' → status=CODE_REVIEW_REQUIRED
 → DutyInterpreter (Claude: интерпретация правил расчёта пошлин; пропускается для чисто адвалорных ставок без условий по стране/акциза/спецчасти)
 → При language≠ru: Claude возвращает comment_localized / reasoning_localized для двуязычных замечаний
-→ Calculator (пошлина + НДС + акциз + комиссия, конвертация валют → RUB)
+→ Calculator (пошлина + НДС + акциз, конвертация валют → RUB)
 → resultData + CalculationLog (аудит) + tokenUsage
 → status=PROCESSED (или PROCESSED_WITH_ERRORS, если есть проблемные строки)
 → Уведомление: PipelineNotifierService.notify(doc) — managed → событие менеджеру в manager-bot (очередь manager-notifications); кабинетный self_service (telegramUserId≠null) → клиенту через client-bot-outgoing (PROCESSED → Excel, прочие терминальные → нудж cabinet-doc-issue); админский self_service → no-op
@@ -245,7 +245,7 @@ interface ProductRow {
 
 **После расчёта** (`CalculatedProduct`):
 
-- Добавляются: totalPrice, freightShare, supplementaryQuantity (количество в доп. единице; null + warning-note, если данных нет), dutyAmount, vatAmount, exciseAmount, logisticsCommission, totalCost, verificationStatus ('exact'|'review')
+- Добавляются: totalPrice, freightShare, supplementaryQuantity (количество в доп. единице; null + warning-note, если данных нет), dutyAmount, vatAmount, exciseAmount, totalCost, verificationStatus ('exact'|'review')
 - Все суммы рассчитываются в исходной валюте и конвертируются в RUB по актуальному курсу
 
 **resultData** (JSONB в Document): массив `CalculatedProduct[]`
@@ -254,7 +254,7 @@ interface ProductRow {
 
 - Исходные данные: наименование, количество, цена, вес (при наличии брутто — раздельные колонки «Вес нетто (кг)» / «Вес брутто (кг)»)
 - Классификация: код ТН ВЭД, описание ТН ВЭД, ставки пошлины/НДС; при наличии — колонка «Доп. единица (гр. 41 ДТ)» («24 пар» или «нет данных (л)»)
-- Расчёты: сумма товара, пошлина, НДС, акциз, комиссия доставки, итого
+- Расчёты: сумма товара, пошлина, НДС, акциз, итого
 - Все стоимости указываются как в исходной валюте, так и в рублях
 - Статус проверки: зелёный (точное) / жёлтый (ручная проверка)
 - Колонка «Разрешительные документы» — компактная сводка из `regulatoryReport` (например, `ТР ТС 020/2011 декл.; Утильсбор 32 874 ₽`; маркировка/страновые запреты в Excel сознательно не выводятся — см. regulatory-format.ts; маркировка ЧЗ и запреты по стране показываются на листе «Проект ДТ» в предупреждениях)
@@ -277,8 +277,7 @@ dutyAmount     = customsValue × (dutyRate / 100)
                  // для комбинированных ставок (dutySign='>'): max(dutyAmount, dutyMin × weight × quantity)
 exciseAmount   = customsValue × (exciseRate / 100)
 vatAmount      = (customsValue + dutyAmount + exciseAmount) × (vatRate / 100)
-logisticsComm  = totalPrice × (pricePercent / 100) + weight × quantity × weightRate + fixedFee
-totalCost      = totalPrice + freightShare + dutyAmount + vatAmount + exciseAmount + logisticsCommission
+totalCost      = totalPrice + freightShare + dutyAmount + vatAmount + exciseAmount
 ```
 
 verificationStatus = matched AND matchConfidence >= 0.7 ? 'exact' : 'review'

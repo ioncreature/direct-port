@@ -5,9 +5,6 @@ import { useCallback, useEffect, useState } from 'react';
 
 export interface CalculationConfig {
   id: number;
-  pricePercent: number;
-  weightRate: number;
-  fixedFee: number;
   confidenceThreshold: number;
   lowConfidenceAction: 'review' | 'reject';
   updatedAt: string;
@@ -34,7 +31,7 @@ export function useCalculationConfig() {
 
   const save = useCallback(
     async (
-      values: Partial<Pick<CalculationConfig, 'pricePercent' | 'weightRate' | 'fixedFee' | 'confidenceThreshold' | 'lowConfidenceAction'>>,
+      values: Partial<Pick<CalculationConfig, 'confidenceThreshold' | 'lowConfidenceAction'>>,
     ) => {
       setSaving(true);
       setError(null);

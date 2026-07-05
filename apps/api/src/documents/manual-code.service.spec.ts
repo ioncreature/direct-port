@@ -120,7 +120,6 @@ function createService(opts: CreateOpts = {}) {
         dutyAmount: 1.25,
         vatAmount: 2.25,
         exciseAmount: 0,
-        logisticsCommission: 0,
         freightShare: 0,
         totalCost: 13.5,
         verificationStatus: 'exact',
@@ -130,7 +129,6 @@ function createService(opts: CreateOpts = {}) {
         totalDuty: 1.25,
         totalVat: 2.25,
         totalExcise: 0,
-        totalLogistics: 0,
         totalFreight: 0,
       },
     })),
@@ -144,9 +142,6 @@ function createService(opts: CreateOpts = {}) {
 
   const configService = {
     get: jest.fn().mockResolvedValue({
-      pricePercent: 0,
-      weightRate: 0,
-      fixedFee: 0,
       confidenceThreshold: 0.7,
       lowConfidenceAction: 'review',
     }),

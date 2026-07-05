@@ -76,6 +76,7 @@ import { AddCompanyBotsFoundation1780100000000 } from './migrations/178010000000
 import { AddCompanySlug1780200000000 } from './migrations/1780200000000-AddCompanySlug';
 import { AddDocumentIncoterms1780300000000 } from './migrations/1780300000000-AddDocumentIncoterms';
 import { DropSendResultFile1780400000000 } from './migrations/1780400000000-DropSendResultFile';
+import { DropCommissionColumns1780500000000 } from './migrations/1780500000000-DropCommissionColumns';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -164,6 +165,7 @@ import { SeedService } from './seeds/seed.service';
           AddCompanySlug1780200000000,
           AddDocumentIncoterms1780300000000,
           DropSendResultFile1780400000000,
+          DropCommissionColumns1780500000000,
         ],
         migrationsRun: true,
         // Каждая миграция в своей транзакции (по умолчанию TypeORM гонит все в одной).

@@ -162,14 +162,7 @@ export class DocumentsProcessor extends WorkerHost {
         this.configService.get(),
         this.currencyService.buildCurrencyToDocRates(currency, KNOWN_CURRENCIES),
       ]);
-      const {
-        pricePercent,
-        weightRate,
-        fixedFee,
-        confidenceThreshold,
-        lowConfidenceAction,
-      } = config;
-      const commission = { pricePercent, weightRate, fixedFee };
+      const { confidenceThreshold, lowConfidenceAction } = config;
       this.logger.log(`Document ${documentId}: currency=${currency}, currencyToDoc=${JSON.stringify(currencyToDoc)}`);
 
       const language = doc.language ?? doc.telegramUser?.language;
@@ -249,7 +242,6 @@ export class DocumentsProcessor extends WorkerHost {
           currency,
           countryOfOrigin: doc.countryOfOrigin,
           confidenceThreshold,
-          commission,
           currencyToDoc,
           freight: doc.freightCost
             ? { cost: doc.freightCost, currency: doc.freightCurrency }
@@ -257,7 +249,7 @@ export class DocumentsProcessor extends WorkerHost {
         },
       });
       const t2 = Date.now();
-      const summary = this.calculator.calculate(interpreted, commission, {
+      const summary = this.calculator.calculate(interpreted, {
         currencyToDoc,
         confidenceThreshold,
         countryOfOrigin: doc.countryOfOrigin,
@@ -322,7 +314,6 @@ export class DocumentsProcessor extends WorkerHost {
           totalDuty: summary.totalDuty,
           totalVat: summary.totalVat,
           totalExcise: summary.totalExcise,
-          totalLogistics: summary.totalLogistics,
           items: summary.items,
           exchangeRates: doc.exchangeRates,
           exchangeRate: converted ? exchangeRate : null,
@@ -358,7 +349,6 @@ export class DocumentsProcessor extends WorkerHost {
             totalDuty: summary.totalDuty,
             totalVat: summary.totalVat,
             totalExcise: summary.totalExcise,
-            totalLogistics: summary.totalLogistics,
             totalFreight: summary.totalFreight,
             freightCost: doc.freightCost,
             freightCurrency: doc.freightCurrency,
@@ -438,14 +428,7 @@ export class DocumentsProcessor extends WorkerHost {
         this.configService.get(),
         this.currencyService.buildCurrencyToDocRates(currency, KNOWN_CURRENCIES),
       ]);
-      const {
-        pricePercent,
-        weightRate,
-        fixedFee,
-        confidenceThreshold,
-        lowConfidenceAction,
-      } = config;
-      const commission = { pricePercent, weightRate, fixedFee };
+      const { confidenceThreshold, lowConfidenceAction } = config;
 
       // Сохраняем classify/interpret notes — они стабильны при смене страны; calculate
       // notes пересоздадим (breakdown, warning про default) ниже.
@@ -488,7 +471,7 @@ export class DocumentsProcessor extends WorkerHost {
       this.pushDocumentLevelNotes(doc, inputs);
 
       const freight = this.buildFreightOption(doc, inputs, currencyToDoc);
-      const summary = this.calculator.calculate(inputs, commission, {
+      const summary = this.calculator.calculate(inputs, {
         currencyToDoc,
         confidenceThreshold,
         countryOfOrigin: doc.countryOfOrigin,
@@ -517,7 +500,6 @@ export class DocumentsProcessor extends WorkerHost {
           dutyBase: item.dutyBase,
           vatAmount: item.vatAmount,
           exciseAmount: item.exciseAmount,
-          logisticsCommission: item.logisticsCommission,
           totalCost: item.totalCost,
           verificationStatus: item.verificationStatus,
           calculationStatus: item.calculationStatus,
@@ -539,7 +521,6 @@ export class DocumentsProcessor extends WorkerHost {
           totalDuty: summary.totalDuty,
           totalVat: summary.totalVat,
           totalExcise: summary.totalExcise,
-          totalLogistics: summary.totalLogistics,
           items: summary.items,
           exchangeRate: needsConversion ? exchangeRate : null,
           hasRowErrors,
@@ -563,7 +544,6 @@ export class DocumentsProcessor extends WorkerHost {
             totalDuty: summary.totalDuty,
             totalVat: summary.totalVat,
             totalExcise: summary.totalExcise,
-            totalLogistics: summary.totalLogistics,
             totalFreight: summary.totalFreight,
             freightCost: doc.freightCost,
             freightCurrency: doc.freightCurrency,
@@ -684,10 +664,6 @@ export class DocumentsProcessor extends WorkerHost {
 
     if (item.vatAmount > 0) {
       parts.push(`${fmt(item.vatAmount)} (НДС ${item.vatRate}%)`);
-    }
-
-    if (item.logisticsCommission > 0) {
-      parts.push(`${fmt(item.logisticsCommission)} (комиссия)`);
     }
 
     let message = `Расчёт: ${parts.join(' + ')} = ${fmt(item.totalCost)}`;

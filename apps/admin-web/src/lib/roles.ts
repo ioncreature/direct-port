@@ -12,7 +12,7 @@ export function roleLabel(role: string): string {
 }
 
 /**
- * Роли с админ-доступом: видят пользователей, AI-расходы, настройки.
+ * Роли с админ-доступом: видят пользователей, AI-расходы.
  * Единый источник для навигации и ролевого гейтинга дашборда.
  * Telegram-пользователи и документы доступны шире (в т.ч. роли customs) —
  * там изоляция обеспечивается скоупом по компании на бэке, а не этим списком.
@@ -21,4 +21,14 @@ export const ADMIN_ROLES: readonly string[] = ['admin', 'super_admin'];
 
 export function isAdminRole(role: string | null | undefined): boolean {
   return role != null && ADMIN_ROLES.includes(role);
+}
+
+/**
+ * Роли с доступом к настройкам (порог классификатора, модели AI) и другим
+ * глобальным разделам — только глобальный администратор. Зеркало ADMIN_ROLES.
+ */
+export const SUPER_ADMIN_ROLES: readonly string[] = ['super_admin'];
+
+export function isSuperAdmin(role: string | null | undefined): boolean {
+  return role != null && SUPER_ADMIN_ROLES.includes(role);
 }

@@ -45,14 +45,12 @@ interface ResultRow {
   dutyAmount: number;
   vatAmount: number;
   exciseAmount: number;
-  logisticsCommission: number;
   totalCost: number;
   totalPriceRub?: number;
   freightShareRub?: number;
   dutyAmountRub?: number;
   vatAmountRub?: number;
   exciseAmountRub?: number;
-  logisticsCommissionRub?: number;
   totalCostRub?: number;
   exchangeRate?: number;
   /** Устаревшее поле, оставлено для совместимости со старыми resultData. */
@@ -185,7 +183,6 @@ function buildColumns(
     { header: `Пошлина (${currency})`, key: 'dutyAmount', width: 16, numFmt: '#,##0.00' },
     { header: `НДС (${currency})`, key: 'vatAmount', width: 14, numFmt: '#,##0.00' },
     { header: `Акциз (${currency})`, key: 'exciseAmount', width: 14, numFmt: '#,##0.00' },
-    { header: `Комиссия (${currency})`, key: 'logisticsCommission', width: 16, numFmt: '#,##0.00' },
     { header: `Итого (${currency})`, key: 'totalCost', width: 16, numFmt: '#,##0.00' },
   ];
 
@@ -198,7 +195,6 @@ function buildColumns(
       { header: 'Пошлина (RUB)', key: 'dutyAmountRub', width: 16, numFmt: '#,##0.00' },
       { header: 'НДС (RUB)', key: 'vatAmountRub', width: 14, numFmt: '#,##0.00' },
       { header: 'Акциз (RUB)', key: 'exciseAmountRub', width: 14, numFmt: '#,##0.00' },
-      { header: 'Комиссия (RUB)', key: 'logisticsCommissionRub', width: 16, numFmt: '#,##0.00' },
       { header: 'Итого (RUB)', key: 'totalCostRub', width: 16, numFmt: '#,##0.00' },
       { header: `Курс ${currency}/RUB`, key: 'exchangeRate', width: 14, numFmt: '0.0000' },
     );
@@ -428,7 +424,6 @@ export class ExcelExportService {
         dutyAmount: toNumber(row.dutyAmount),
         vatAmount: toNumber(row.vatAmount),
         exciseAmount: toNumber(row.exciseAmount),
-        logisticsCommission: toNumber(row.logisticsCommission),
         totalCost: toNumber(row.totalCost),
         calculationStatus: STATUS_LABELS[status],
         regulatoryDetails: regulatoryText,
@@ -445,7 +440,6 @@ export class ExcelExportService {
         rowData.dutyAmountRub = toNumber(row.dutyAmountRub);
         rowData.vatAmountRub = toNumber(row.vatAmountRub);
         rowData.exciseAmountRub = toNumber(row.exciseAmountRub);
-        rowData.logisticsCommissionRub = toNumber(row.logisticsCommissionRub);
         rowData.totalCostRub = toNumber(row.totalCostRub);
         rowData.exchangeRate = toNumber(row.exchangeRate);
       }

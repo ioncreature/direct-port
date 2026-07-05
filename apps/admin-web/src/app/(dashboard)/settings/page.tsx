@@ -3,16 +3,16 @@
 import { useAuth } from '@/hooks/use-auth';
 import { AI_MODEL_TIERS, type AiConfig, type AiModelTier, useAiConfig } from '@/hooks/use-ai-config';
 import { useCalculationConfig } from '@/hooks/use-calculation-config';
-import { isAdminRole } from '@/lib/roles';
+import { isSuperAdmin } from '@/lib/roles';
 import { useEffect, useState } from 'react';
 import { AI_STEPS, type AiStepInfo } from './ai-steps';
 
 export default function SettingsPage() {
   const { user } = useAuth();
 
-  // Настройки — только для admin/super_admin. customs (декларант) сюда не должен попадать
-  // даже по прямому URL; API конфигов тоже отдаёт их лишь ADMIN. (layout уже прячет пункт.)
-  if (user && !isAdminRole(user.role)) {
+  // Настройки — только для super_admin. admin и customs сюда не должны попадать
+  // даже по прямому URL; API конфигов тоже отдаёт их лишь super_admin. (layout уже прячет пункт.)
+  if (user && !isSuperAdmin(user.role)) {
     return <p>Недостаточно прав для просмотра этого раздела.</p>;
   }
 
@@ -28,7 +28,6 @@ function SettingsContent() {
     <div>
       <h1 style={{ marginBottom: 24 }}>Настройки</h1>
       <ConfidenceSection {...calcConfig} />
-      <CommissionSection {...calcConfig} />
       <AiModelsSection />
     </div>
   );
@@ -143,73 +142,6 @@ function ConfidenceSection({ config, loading, saving, error, save }: CalcConfigP
       >
         {saving ? 'Сохранение...' : 'Сохранить'}
       </button>
-    </div>
-  );
-}
-
-// --- Секция: Формула комиссии ---
-
-function CommissionSection({ config, loading, saving, error, save }: CalcConfigProps) {
-  const [pricePercent, setPricePercent] = useState('');
-  const [weightRate, setWeightRate] = useState('');
-  const [fixedFee, setFixedFee] = useState('');
-  const [success, setSuccess] = useState(false);
-
-  useEffect(() => {
-    if (config) {
-      setPricePercent(String(config.pricePercent));
-      setWeightRate(String(config.weightRate));
-      setFixedFee(String(config.fixedFee));
-    }
-  }, [config]);
-
-  if (loading) return <p>Загрузка...</p>;
-
-  const handleSave = async () => {
-    setSuccess(false);
-    await save({
-      pricePercent: Number(pricePercent),
-      weightRate: Number(weightRate),
-      fixedFee: Number(fixedFee),
-    });
-    setSuccess(true);
-    setTimeout(() => setSuccess(false), 3000);
-  };
-
-  return (
-    <div style={{ maxWidth: 500, padding: 24, border: '1px solid var(--border)', borderRadius: 8, marginBottom: 32 }}>
-      <h3 style={{ marginBottom: 16 }}>Формула комиссии за доставку</h3>
-      <p style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 20 }}>
-        Комиссия = (Стоимость × X%) + (Вес × Y) + Фикс. сбор
-      </p>
-
-      <div style={{ marginBottom: 16 }}>
-        <label style={labelStyle}>Процент от стоимости (X%)</label>
-        <input type="number" step="0.01" min="0" value={pricePercent} onChange={(e) => setPricePercent(e.target.value)} style={inputStyle} />
-      </div>
-
-      <div style={{ marginBottom: 16 }}>
-        <label style={labelStyle}>Ставка за кг веса (Y)</label>
-        <input type="number" step="0.01" min="0" value={weightRate} onChange={(e) => setWeightRate(e.target.value)} style={inputStyle} />
-      </div>
-
-      <div style={{ marginBottom: 20 }}>
-        <label style={labelStyle}>Фиксированный сбор за позицию</label>
-        <input type="number" step="0.01" min="0" value={fixedFee} onChange={(e) => setFixedFee(e.target.value)} style={inputStyle} />
-      </div>
-
-      {error && <p style={{ color: 'var(--danger)', marginBottom: 12 }}>{error}</p>}
-      {success && <p style={{ color: 'var(--success)', marginBottom: 12 }}>Сохранено!</p>}
-
-      <button onClick={handleSave} disabled={saving} style={btnStyle(saving)}>
-        {saving ? 'Сохранение...' : 'Сохранить'}
-      </button>
-
-      {config?.updatedAt && (
-        <p style={{ fontSize: 12, color: 'var(--text-subtle)', marginTop: 12 }}>
-          Последнее обновление: {new Date(config.updatedAt).toLocaleString('ru')}
-        </p>
-      )}
     </div>
   );
 }

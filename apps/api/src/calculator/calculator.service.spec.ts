@@ -1,5 +1,5 @@
 import { CalculatorService, formatDutyRate, normalizePer } from './calculator.service';
-import type { CalculatorInput, CommissionConfig } from './calculator.service';
+import type { CalculatorInput } from './calculator.service';
 import type { DutyInterpretation, DutyChargeRule } from '../duty-interpreter/interfaces';
 import type { ProductNote } from '../common/product-notes';
 
@@ -28,8 +28,6 @@ function makeProduct(overrides: Partial<CalculatorInput> = {}): CalculatorInput 
     ...overrides,
   };
 }
-
-const ZERO_COMMISSION: CommissionConfig = { pricePercent: 0, weightRate: 0, fixedFee: 0 };
 
 describe('normalizePer', () => {
   it.each([
@@ -156,7 +154,7 @@ describe('CalculatorService', () => {
       // duty=7.5% от 1000=75, excise=0
       // vat=20% от (1000+75+0)=215
       // totalCost=1000+75+215+0+0=1290
-      const result = service.calculate([makeProduct()], ZERO_COMMISSION);
+      const result = service.calculate([makeProduct()]);
 
       expect(result.items).toHaveLength(1);
       const item = result.items[0];
@@ -175,7 +173,6 @@ describe('CalculatorService', () => {
       // vat=20% от (1000+100+50)=230
       const result = service.calculate(
         [makeProduct({ dutyRate: 10, exciseRate: 5 })],
-        ZERO_COMMISSION,
       );
       const item = result.items[0];
       expect(item.dutyAmount).toBe(100);
@@ -187,7 +184,6 @@ describe('CalculatorService', () => {
     it('нулевые ставки → нулевые суммы', () => {
       const result = service.calculate(
         [makeProduct({ dutyRate: 0, vatRate: 0, exciseRate: 0 })],
-        ZERO_COMMISSION,
       );
       const item = result.items[0];
       expect(item.dutyAmount).toBe(0);
@@ -207,7 +203,7 @@ describe('CalculatorService', () => {
         dutyMin: 0.5,
         dutyMinUnit: 'кг',
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       const item = result.items[0];
       expect(item.dutyAmount).toBe(900);
       expect(item.dutyAmountIsEstimate).toBe(false);
@@ -220,7 +216,7 @@ describe('CalculatorService', () => {
         dutyMin: 0.38,
         dutyMinUnit: 'м2',
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       const item = result.items[0];
       expect(item.dutyAmount).toBe(0); // не можем посчитать
       expect(item.dutyAmountIsEstimate).toBe(true);
@@ -237,7 +233,7 @@ describe('CalculatorService', () => {
         dimensions: [{ name: 'площадь', value: 5, unit: 'm2' }],
       });
       // 0.38 * eurToDoc(90) * 5м²*10шт = 0.38 * 90 * 50 = 1710
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       expect(result.items[0].dutyAmount).toBeCloseTo(1710);
       expect(result.items[0].dutyAmountIsEstimate).toBe(false);
     });
@@ -250,7 +246,7 @@ describe('CalculatorService', () => {
         quantity: 10,
       });
       // 2 EUR * eurToDoc(1) * 10шт = 20
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 1 });
+      const result = service.calculate([product], { eurToDoc: 1 });
       expect(result.items[0].dutyAmount).toBe(20);
     });
 
@@ -264,7 +260,7 @@ describe('CalculatorService', () => {
         dutyMin: null,
         dutyMinUnit: null,
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 10 });
+      const result = service.calculate([product], { eurToDoc: 10 });
       expect(result.items[0].dutyAmount).toBeCloseTo(204);
       expect(result.items[0].dutyAmountIsEstimate).toBe(false);
       expect(result.items[0].dutyBase).toBe('pair');
@@ -272,13 +268,13 @@ describe('CalculatorService', () => {
 
     it('IMP с IMPEDI="%" остаётся адвалорным', () => {
       const product = makeProduct({ dutyRate: 10, dutyRateUnit: '%' });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       expect(result.items[0].dutyAmount).toBe(100);
     });
 
     it('рассчитывает specific пошлину в EUR/1000шт (ОКЕИ 798)', () => {
       const product = makeProduct({ quantity: 500, dutyRate: 6, dutyRateUnit: 'EUR/1000шт' });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 100 });
+      const result = service.calculate([product], { eurToDoc: 100 });
       expect(result.items[0].dutyAmount).toBe(300);
       expect(result.items[0].dutyBase).toBe('kpcs');
       expect(result.items[0].dutyAmountIsEstimate).toBe(false);
@@ -291,7 +287,7 @@ describe('CalculatorService', () => {
         dutyRate: 0.2,
         dutyRateUnit: 'EUR/г',
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       expect(result.items[0].dutyAmount).toBe(360000);
       expect(result.items[0].dutyBase).toBe('g');
     });
@@ -303,14 +299,14 @@ describe('CalculatorService', () => {
         dutyRate: 500,
         dutyRateUnit: 'EUR/т',
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 100 });
+      const result = service.calculate([product], { eurToDoc: 100 });
       expect(result.items[0].dutyAmount).toBe(1000);
       expect(result.items[0].dutyBase).toBe('t');
     });
 
     it('specific пошлина в EUR/см³ без dimensions → estimate+blocker', () => {
       const product = makeProduct({ dutyRate: 0.5, dutyRateUnit: 'EUR/см³' });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       expect(result.items[0].dutyAmount).toBe(0);
       expect(result.items[0].dutyAmountIsEstimate).toBe(true);
       expect(result.items[0].dutyBase).toBe('cm3');
@@ -324,7 +320,7 @@ describe('CalculatorService', () => {
         dutyRateUnit: 'EUR/см³',
         dimensions: [{ name: 'engine', value: 2000, unit: 'см³' }],
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       expect(result.items[0].dutyAmount).toBe(450000);
       expect(result.items[0].dutyAmountIsEstimate).toBe(false);
     });
@@ -339,7 +335,7 @@ describe('CalculatorService', () => {
         dutyMin: 2,
         dutyMinUnit: 'EUR/кг',
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       const item = result.items[0];
       expect(item.dutyAmount).toBe(3600);
       expect(item.dutyAmountIsEstimate).toBe(false);
@@ -354,7 +350,7 @@ describe('CalculatorService', () => {
         dutyMin: 2,
         dutyMinUnit: 'EUR/кг',
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       expect(result.items[0].dutyAmount).toBe(450); // min(450, 3600)
     });
   });
@@ -369,7 +365,7 @@ describe('CalculatorService', () => {
         dutyMin: 2,
         dutyMinUnit: 'кг',
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       expect(result.items[0].dutyAmount).toBe(3600);
       expect(result.items[0].dutyAmountIsEstimate).toBe(false);
     });
@@ -383,7 +379,7 @@ describe('CalculatorService', () => {
         dutyMin: 0.01,
         dutyMinUnit: 'кг',
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       expect(result.items[0].dutyAmount).toBe(500);
     });
 
@@ -395,7 +391,7 @@ describe('CalculatorService', () => {
         dutyMinUnit: 'м2',
       });
       // adValorem=50, specific нельзя посчитать → возвращаем 50 как estimate
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       expect(result.items[0].dutyAmount).toBe(50);
       expect(result.items[0].dutyAmountIsEstimate).toBe(true);
     });
@@ -411,7 +407,7 @@ describe('CalculatorService', () => {
         dutyMin: 2,
         dutyMinUnit: 'кг',
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       expect(result.items[0].dutyAmount).toBe(50);
     });
   });
@@ -442,7 +438,7 @@ describe('CalculatorService', () => {
         vatRate: 20,
         dutyInterpretation: interpretation,
       });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       // duty=12% от 1000=120, vat=20% от (1000+120)=224
       expect(result.items[0].dutyAmount).toBe(120);
       expect(result.items[0].vatAmount).toBeCloseTo(224);
@@ -455,7 +451,7 @@ describe('CalculatorService', () => {
         reasoning: 'empty',
       };
       const product = makeProduct({ dutyInterpretation: interpretation });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       // Используются dutyRate=7.5, vatRate=20
       expect(result.items[0].dutyAmount).toBe(75);
     });
@@ -484,7 +480,7 @@ describe('CalculatorService', () => {
       const product = makeProduct({
         dutyInterpretation: { tnvedCode: '1234', charges, reasoning: '' },
       });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       // duty = 5% + 3% = 80
       expect(result.items[0].dutyAmount).toBe(80);
     });
@@ -522,7 +518,7 @@ describe('CalculatorService', () => {
         vatRate: 22,
         dutyInterpretation: { tnvedCode: '3926200000', charges, reasoning: '' },
       });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       // totalPrice=1000, duty=65, vat=22% от 1065 = 234.3 (а НЕ 234.3+106.5+0=340.8)
       expect(result.items[0].dutyAmount).toBe(65);
       expect(result.items[0].vatAmount).toBeCloseTo(234.3);
@@ -555,7 +551,7 @@ describe('CalculatorService', () => {
         vatRate: 22,
         dutyInterpretation: { tnvedCode: 'x', charges, reasoning: '' },
       });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       expect(result.items[0].vatAmount).toBeCloseTo(220); // 22% от 1000
       const warning = result.items[0].notes.find(
         (n) => n.severity === 'info' && n.field === 'vat',
@@ -584,7 +580,7 @@ describe('CalculatorService', () => {
         vatRate: 22,
         dutyInterpretation: { tnvedCode: 'x', charges, reasoning: '' },
       });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       // duty=100, vat=22% × 1100 = 242
       expect(result.items[0].vatAmount).toBeCloseTo(242);
       expect(
@@ -615,7 +611,7 @@ describe('CalculatorService', () => {
         vatRate: 0,
         dutyInterpretation: { tnvedCode: 'x', charges, reasoning: '' },
       });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       expect(result.items[0].vatAmount).toBe(0);
       // Сохраняем audit-trail: оператор должен увидеть, что AI вернул vat-charges,
       // несмотря на TKS NDS=0.
@@ -633,7 +629,7 @@ describe('CalculatorService', () => {
       // от пустой колонки), Calculator должен обработать это как «НДС не применяется»,
       // а не размножать NaN по vatAmount/totalCost.
       const product = makeProduct({ vatRate: NaN as unknown as number });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       expect(Number.isFinite(result.items[0].vatAmount)).toBe(true);
       expect(result.items[0].vatAmount).toBe(0);
       expect(Number.isFinite(result.items[0].totalCost)).toBe(true);
@@ -655,7 +651,7 @@ describe('CalculatorService', () => {
         vatRate: 22,
         dutyInterpretation: { tnvedCode: 'x', charges, reasoning: '' },
       });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       expect(result.items[0].vatAmount).toBeCloseTo(220); // 22% × 1000
       // Note не должен порождаться: ставка совпала после приведения типов.
       expect(
@@ -677,7 +673,7 @@ describe('CalculatorService', () => {
         vatRate: 22,
         dutyInterpretation: { tnvedCode: 'x', charges, reasoning: '' },
       });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       expect(result.items[0].dutyAmount).toBe(100); // 10% × 1000
       expect(result.items[0].vatAmount).toBeCloseTo(242); // 22% × 1100
     });
@@ -697,7 +693,7 @@ describe('CalculatorService', () => {
         vatRate: 22,
         dutyInterpretation: { tnvedCode: 'x', charges, reasoning: '' },
       });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       expect(result.items[0].vatAmount).toBeCloseTo(220); // 22% × 1000, а не 5 EUR × kg
     });
 
@@ -723,7 +719,7 @@ describe('CalculatorService', () => {
         vatRate: 22,
         dutyInterpretation: { tnvedCode: 'x', charges, reasoning: '' },
       });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       expect(result.items[0].dutyAmount).toBe(75); // 7.5% × 1000
       // НДС 22% от (1000 + 75) = 236.5, а НЕ 22% × 1000 = 220.
       expect(result.items[0].vatAmount).toBeCloseTo(236.5);
@@ -748,12 +744,12 @@ describe('CalculatorService', () => {
         vatRate: 22,
         dutyInterpretation: { tnvedCode: 'x', charges, reasoning: '' },
       });
-      const en = service.calculate([productEn], ZERO_COMMISSION, { language: 'en' });
+      const en = service.calculate([productEn], { language: 'en' });
       const enWarning = en.items[0].notes.find((n) => n.severity === 'info' && n.field === 'vat');
       expect(enWarning?.messageLocalized).toBeDefined();
       expect(enWarning!.messageLocalized).toMatch(/VAT|alternative|reduced/i);
 
-      const zh = service.calculate([productEn], ZERO_COMMISSION, { language: 'zh' });
+      const zh = service.calculate([productEn], { language: 'zh' });
       const zhWarning = zh.items[0].notes.find((n) => n.severity === 'info' && n.field === 'vat');
       expect(zhWarning?.messageLocalized).toBeDefined();
       expect(zhWarning!.messageLocalized).toContain('增值税');
@@ -780,7 +776,7 @@ describe('CalculatorService', () => {
         vatRate: 22,
         dutyInterpretation: { tnvedCode: '4201000000', charges, reasoning: '' },
       });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       expect(result.items[0].vatAmount).toBeCloseTo(220);
       // Дубликат базовой ставки — warning не порождается, оператора не нужно
       // отвлекать на это.
@@ -881,7 +877,7 @@ describe('CalculatorService', () => {
           vatRate,
           dutyInterpretation: { tnvedCode: code, charges, reasoning: '' },
         });
-        const result = service.calculate([product], ZERO_COMMISSION);
+        const result = service.calculate([product]);
         expect(result.items[0].dutyAmount).toBeCloseTo(expectedDuty);
         expect(result.items[0].vatAmount).toBeCloseTo(expectedVat);
         const warning = result.items[0].notes.find(
@@ -930,7 +926,7 @@ describe('CalculatorService', () => {
       const product = makeProduct({
         dutyInterpretation: { tnvedCode: '8708705009', charges: baseCharges(), reasoning: '' },
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { countryOfOrigin: '156' });
+      const result = service.calculate([product], { countryOfOrigin: '156' });
       // duty = 5% + 33.69% от 1000 = 50 + 336.9 = 386.9
       expect(result.items[0].dutyAmount).toBeCloseTo(386.9);
     });
@@ -939,7 +935,7 @@ describe('CalculatorService', () => {
       const product = makeProduct({
         dutyInterpretation: { tnvedCode: '8708705009', charges: baseCharges(), reasoning: '' },
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { countryOfOrigin: '392' });
+      const result = service.calculate([product], { countryOfOrigin: '392' });
       // duty = только 5% от 1000 = 50
       expect(result.items[0].dutyAmount).toBe(50);
     });
@@ -948,7 +944,7 @@ describe('CalculatorService', () => {
       const product = makeProduct({
         dutyInterpretation: { tnvedCode: '8708705009', charges: baseCharges(), reasoning: '' },
       });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       expect(result.items[0].dutyAmount).toBe(50);
     });
 
@@ -962,7 +958,7 @@ describe('CalculatorService', () => {
           dutyInterpretation: { tnvedCode: '8708705009', charges: baseCharges(), reasoning: '' },
         }),
       ];
-      const result = service.calculate(products, ZERO_COMMISSION, { countryOfOrigin: '156' });
+      const result = service.calculate(products, { countryOfOrigin: '156' });
 
       // строка 1 — страна документа (Китай): 5% + 33.69%
       expect(result.items[0].dutyAmount).toBeCloseTo(386.9);
@@ -990,7 +986,7 @@ describe('CalculatorService', () => {
         vatRate: 0,
         dutyInterpretation: { tnvedCode: 'x', charges, reasoning: '' },
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { countryOfOrigin: '12' });
+      const result = service.calculate([product], { countryOfOrigin: '12' });
       expect(result.items[0].dutyAmount).toBe(100);
     });
 
@@ -998,7 +994,7 @@ describe('CalculatorService', () => {
       const product = makeProduct({
         dutyInterpretation: { tnvedCode: '8708705009', charges: baseCharges(), reasoning: '' },
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { countryOfOrigin: '156' });
+      const result = service.calculate([product], { countryOfOrigin: '156' });
       const warning = result.items[0].notes.find(
         (n) => n.severity === 'warning' && n.field === 'antidumping',
       );
@@ -1026,7 +1022,7 @@ describe('CalculatorService', () => {
         vatRate: 0,
         dutyInterpretation: { tnvedCode: 'x', charges, reasoning: '' },
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { countryOfOrigin: '704' });
+      const result = service.calculate([product], { countryOfOrigin: '704' });
       // Осталась только преференциальная 0% — duty=0
       expect(result.items[0].dutyAmount).toBe(0);
       const info = result.items[0].notes.find(
@@ -1037,30 +1033,10 @@ describe('CalculatorService', () => {
     });
   });
 
-  describe('Комиссия за логистику', () => {
-    it('рассчитывает комиссию: pricePercent + weightRate + fixedFee', () => {
-      const commission: CommissionConfig = {
-        pricePercent: 5,
-        weightRate: 10,
-        fixedFee: 500,
-      };
-      const product = makeProduct(); // totalPrice=1000, weight=2, qty=10
-      const result = service.calculate([product], commission);
-      // 1000*5/100 + 2*10*10 + 500 = 50 + 200 + 500 = 750
-      expect(result.items[0].logisticsCommission).toBe(750);
-    });
-
-    it('нулевая комиссия при нулевых настройках', () => {
-      const result = service.calculate([makeProduct()], ZERO_COMMISSION);
-      expect(result.items[0].logisticsCommission).toBe(0);
-    });
-  });
-
   describe('VerificationStatus', () => {
     it('exact при matched=true и confidence >= дефолтного порога 0.8', () => {
       const result = service.calculate(
         [makeProduct({ matched: true, matchConfidence: 0.8 })],
-        ZERO_COMMISSION,
       );
       expect(result.items[0].verificationStatus).toBe('exact');
     });
@@ -1068,7 +1044,6 @@ describe('CalculatorService', () => {
     it('review при confidence < дефолтного порога 0.8', () => {
       const result = service.calculate(
         [makeProduct({ matched: true, matchConfidence: 0.79 })],
-        ZERO_COMMISSION,
       );
       expect(result.items[0].verificationStatus).toBe('review');
     });
@@ -1076,7 +1051,6 @@ describe('CalculatorService', () => {
     it('review при matched=false', () => {
       const result = service.calculate(
         [makeProduct({ matched: false, matchConfidence: 0.95 })],
-        ZERO_COMMISSION,
       );
       expect(result.items[0].verificationStatus).toBe('review');
     });
@@ -1084,7 +1058,6 @@ describe('CalculatorService', () => {
     it('использует переданный порог вместо дефолтного', () => {
       const result = service.calculate(
         [makeProduct({ matched: true, matchConfidence: 0.75 })],
-        ZERO_COMMISSION,
         { confidenceThreshold: 0.7 },
       );
       expect(result.items[0].verificationStatus).toBe('exact');
@@ -1093,7 +1066,6 @@ describe('CalculatorService', () => {
     it('review при confidence ниже переданного порога', () => {
       const result = service.calculate(
         [makeProduct({ matched: true, matchConfidence: 0.85 })],
-        ZERO_COMMISSION,
         { confidenceThreshold: 0.9 },
       );
       expect(result.items[0].verificationStatus).toBe('review');
@@ -1104,7 +1076,6 @@ describe('CalculatorService', () => {
     it('review при verified=false даже с высоким matchConfidence (частотность TKS ≠ качество матча)', () => {
       const result = service.calculate(
         [makeProduct({ verified: false, matched: true, matchConfidence: 0.95 })],
-        ZERO_COMMISSION,
       );
       expect(result.items[0].verificationStatus).toBe('review');
     });
@@ -1130,7 +1101,6 @@ describe('CalculatorService', () => {
             } as DutyInterpretation,
           }),
         ],
-        ZERO_COMMISSION,
       );
       // 1000 × 10% = 100, а не 200
       expect(result.items[0].dutyAmount).toBe(100);
@@ -1148,7 +1118,6 @@ describe('CalculatorService', () => {
             } as DutyInterpretation,
           }),
         ],
-        ZERO_COMMISSION,
       );
       expect(result.items[0].dutyAmount).toBe(150);
     });
@@ -1159,7 +1128,6 @@ describe('CalculatorService', () => {
       // Раньше «5 EUR/неизвестная-единица» трактовалось как 5% — тихое искажение пошлины.
       const result = service.calculate(
         [makeProduct({ dutyRate: 5, dutyRateUnit: '883' })],
-        ZERO_COMMISSION,
       );
       const item = result.items[0];
       expect(item.dutyAmount).toBe(0);
@@ -1179,7 +1147,6 @@ describe('CalculatorService', () => {
             dutyMinUnit: 'EUR/кг',
           }),
         ],
-        ZERO_COMMISSION,
         { eurToDoc: 90 },
       );
       // IMP2: 2 EUR/кг × 90 × (2 кг × 10 шт) = 3600
@@ -1191,7 +1158,7 @@ describe('CalculatorService', () => {
     it('строка с Infinity-весом не получает долю фрахта', () => {
       const broken = makeProduct({ weight: Infinity });
       const ok = makeProduct();
-      const result = service.calculate([broken, ok], ZERO_COMMISSION, {
+      const result = service.calculate([broken, ok], {
         freight: { totalInDocCurrency: 100, weightDenominator: 20 },
       });
       expect(result.items[0].freightShare).toBe(0);
@@ -1202,7 +1169,7 @@ describe('CalculatorService', () => {
   describe('Доп. единица измерения (supplementaryQuantity, графа 41 ДТ)', () => {
     it('шт/пары: количество берётся из quantity', () => {
       const product = makeProduct({ quantity: 24, supplementaryUnit: 'пар' });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       expect(result.items[0].supplementaryQuantity).toBe(24);
     });
 
@@ -1212,13 +1179,13 @@ describe('CalculatorService', () => {
         supplementaryUnit: 'л',
         dimensions: [{ name: 'объём', value: 0.5, unit: 'l' }],
       });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       expect(result.items[0].supplementaryQuantity).toBeCloseTo(5, 5);
     });
 
     it('нет данных для доп. единицы → null + warning-note (не blocker)', () => {
       const product = makeProduct({ quantity: 10, supplementaryUnit: 'л' });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       const item = result.items[0];
       expect(item.supplementaryQuantity).toBeNull();
       const note = item.notes.find((n) => n.field === 'supplementary_unit');
@@ -1231,7 +1198,7 @@ describe('CalculatorService', () => {
     });
 
     it('код без доп. единицы: supplementaryQuantity=null и никаких заметок', () => {
-      const result = service.calculate([makeProduct()], ZERO_COMMISSION);
+      const result = service.calculate([makeProduct()]);
       const item = result.items[0];
       expect(item.supplementaryQuantity).toBeNull();
       expect(item.notes.find((n) => n.field === 'supplementary_unit')).toBeUndefined();
@@ -1241,7 +1208,7 @@ describe('CalculatorService', () => {
 
   describe('CalculationStatus', () => {
     it('exact без заметок', () => {
-      const result = service.calculate([makeProduct()], ZERO_COMMISSION);
+      const result = service.calculate([makeProduct()]);
       expect(result.items[0].calculationStatus).toBe('exact');
     });
 
@@ -1251,7 +1218,7 @@ describe('CalculatorService', () => {
         dutyMin: 0.38,
         dutyMinUnit: 'м2',
       });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       expect(result.items[0].calculationStatus).toBe('needs_info');
     });
 
@@ -1259,7 +1226,7 @@ describe('CalculatorService', () => {
       const product = makeProduct({
         notes: [{ stage: 'classify', severity: 'warning', message: 'low confidence' }],
       });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       expect(result.items[0].calculationStatus).toBe('partial');
     });
 
@@ -1267,7 +1234,7 @@ describe('CalculatorService', () => {
       const product = makeProduct({
         notes: [{ stage: 'classify', severity: 'blocker', field: 'code', message: 'not found' }],
       });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       expect(result.items[0].calculationStatus).toBe('error');
     });
   });
@@ -1278,7 +1245,7 @@ describe('CalculatorService', () => {
         makeProduct({ price: 100, quantity: 10 }), // totalPrice=1000
         makeProduct({ price: 200, quantity: 5 }),  // totalPrice=1000
       ];
-      const result = service.calculate(products, ZERO_COMMISSION);
+      const result = service.calculate(products);
       expect(result.items).toHaveLength(2);
       expect(result.totalDuty).toBe(result.items[0].dutyAmount + result.items[1].dutyAmount);
       expect(result.totalVat).toBe(result.items[0].vatAmount + result.items[1].vatAmount);
@@ -1286,7 +1253,7 @@ describe('CalculatorService', () => {
     });
 
     it('пустой список → нулевые итоги', () => {
-      const result = service.calculate([], ZERO_COMMISSION);
+      const result = service.calculate([]);
       expect(result.items).toHaveLength(0);
       expect(result.grandTotal).toBe(0);
     });
@@ -1295,7 +1262,7 @@ describe('CalculatorService', () => {
   describe('Freight (фрахт до границы)', () => {
     it('legacy: без freight-опции freightShare=0 на каждой позиции и totalFreight=0', () => {
       const product = makeProduct({ price: 1000, quantity: 1, weight: 1, vatRate: 22 });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       expect(result.items[0].freightShare).toBe(0);
       expect(result.totalFreight).toBe(0);
       // legacy формула: duty = 1000 * 0.075 = 75; vat = (1000+75)*0.22 = 236.5
@@ -1307,7 +1274,7 @@ describe('CalculatorService', () => {
     it('freightShare включается в базу пошлины, НДС и в totalCost (ТК ЕАЭС)', () => {
       // 1 строка, weight*qty = 1*1 = 1, denominator=1 → вся сумма фрахта (100) идёт на эту строку.
       const product = makeProduct({ price: 1000, quantity: 1, weight: 1, dutyRate: 10, vatRate: 22 });
-      const result = service.calculate([product], ZERO_COMMISSION, {
+      const result = service.calculate([product], {
         freight: { totalInDocCurrency: 100, weightDenominator: 1 },
       });
       const item = result.items[0];
@@ -1324,7 +1291,7 @@ describe('CalculatorService', () => {
         makeProduct({ price: 1000, quantity: 2, weight: 1, dutyRate: 10, vatRate: 22 }),
       ];
       // веса × qty: 3 и 2, знаменатель=5; всего фрахта=500 → 300 и 200.
-      const result = service.calculate(products, ZERO_COMMISSION, {
+      const result = service.calculate(products, {
         freight: { totalInDocCurrency: 500, weightDenominator: 5 },
       });
       expect(result.items[0].freightShare).toBeCloseTo(300, 5);
@@ -1339,7 +1306,7 @@ describe('CalculatorService', () => {
       ];
       // брутто × qty: 3 и 2, знаменатель=5; всего фрахта=500 → 300 и 200
       // (по нетто было бы 2 и 1 → 333.33 и 166.67).
-      const result = service.calculate(products, ZERO_COMMISSION, {
+      const result = service.calculate(products, {
         freight: { totalInDocCurrency: 500, weightDenominator: 5 },
       });
       expect(result.items[0].freightShare).toBeCloseTo(300, 5);
@@ -1352,7 +1319,7 @@ describe('CalculatorService', () => {
         makeProduct({ price: 1000, quantity: 1, weight: 2, dutyRate: 0, vatRate: 0 }),
       ];
       // базисы: 3 (брутто) и 2 (нетто), знаменатель=5 → 300 и 200.
-      const result = service.calculate(products, ZERO_COMMISSION, {
+      const result = service.calculate(products, {
         freight: { totalInDocCurrency: 500, weightDenominator: 5 },
       });
       expect(result.items[0].freightShare).toBeCloseTo(300, 5);
@@ -1363,7 +1330,7 @@ describe('CalculatorService', () => {
       const products = [
         makeProduct({ price: 1000, quantity: 1, weight: 1, dutyRate: 10, vatRate: 22 }),
       ];
-      const result = service.calculate(products, ZERO_COMMISSION, {
+      const result = service.calculate(products, {
         freight: { totalInDocCurrency: 100, weightDenominator: 0 },
       });
       expect(result.items[0].freightShare).toBe(0);
@@ -1371,7 +1338,7 @@ describe('CalculatorService', () => {
 
     it('totalInDocCurrency=NaN → нули по всем строкам', () => {
       const products = [makeProduct({ price: 1000, dutyRate: 10, vatRate: 22 })];
-      const result = service.calculate(products, ZERO_COMMISSION, {
+      const result = service.calculate(products, {
         freight: { totalInDocCurrency: NaN, weightDenominator: 1 },
       });
       expect(result.items[0].freightShare).toBe(0);
@@ -1387,7 +1354,7 @@ describe('CalculatorService', () => {
         dutyRate: 10,
         vatRate: 22,
       });
-      const result = service.calculate([zeroWeightRow], ZERO_COMMISSION, {
+      const result = service.calculate([zeroWeightRow], {
         freight: { totalInDocCurrency: 100, weightDenominator: 10 },
       });
       expect(result.items[0].freightShare).toBe(0);
@@ -1402,7 +1369,7 @@ describe('CalculatorService', () => {
         exciseRate: 5,
         vatRate: 22,
       });
-      const result = service.calculate([product], ZERO_COMMISSION, {
+      const result = service.calculate([product], {
         freight: { totalInDocCurrency: 200, weightDenominator: 1 },
       });
       const item = result.items[0];
@@ -1421,7 +1388,7 @@ describe('CalculatorService', () => {
         dutyMin: 0.5,
         dutyMinUnit: 'кг',
       });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       expect(result.items[0].dutyAmount).toBe(10);
     });
   });
@@ -1434,7 +1401,7 @@ describe('CalculatorService', () => {
         message: 'Подобрано по ключевым словам',
       };
       const product = makeProduct({ notes: [inputNote] });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       expect(result.items[0].notes).toContainEqual(inputNote);
     });
 
@@ -1444,7 +1411,7 @@ describe('CalculatorService', () => {
         dutyMin: 0.38,
         dutyMinUnit: 'м2',
       });
-      const result = service.calculate([product], ZERO_COMMISSION);
+      const result = service.calculate([product]);
       const blockerNotes = result.items[0].notes.filter(
         (n) => n.stage === 'calculate' && n.severity === 'blocker',
       );
@@ -1459,7 +1426,7 @@ describe('CalculatorService', () => {
         dutyRate: 0.5,
         dutyRateUnit: 'USD/кг',
       });
-      const result = service.calculate([product], ZERO_COMMISSION, {
+      const result = service.calculate([product], {
         currencyToDoc: { USD: 75, EUR: 90 },
       });
       expect(result.items[0].dutyAmount).toBe(750);
@@ -1471,7 +1438,7 @@ describe('CalculatorService', () => {
         dutyRate: 10,
         dutyRateUnit: 'RUB/кг',
       });
-      const result = service.calculate([product], ZERO_COMMISSION, {
+      const result = service.calculate([product], {
         currencyToDoc: { USD: 1, RUB: 0.0125, EUR: 1.1 },
       });
       // 10 RUB/кг × 0.0125 × 20кг = 2.5 USD
@@ -1483,7 +1450,7 @@ describe('CalculatorService', () => {
         dutyRate: 1,
         dutyRateUnit: 'BYN/кг',
       });
-      const result = service.calculate([product], ZERO_COMMISSION, {
+      const result = service.calculate([product], {
         currencyToDoc: { BYN: 30, EUR: 90 },
       });
       expect(result.items[0].dutyAmount).toBe(600); // 1 × 30 × 20
@@ -1494,7 +1461,7 @@ describe('CalculatorService', () => {
         dutyRate: 1,
         dutyRateUnit: 'AMD/кг',
       });
-      const result = service.calculate([product], ZERO_COMMISSION, {
+      const result = service.calculate([product], {
         currencyToDoc: { EUR: 90 }, // нет AMD
       });
       const item = result.items[0];
@@ -1511,7 +1478,7 @@ describe('CalculatorService', () => {
         dutyRate: 1,
         dutyRateUnit: 'EUR/кг',
       });
-      const result = service.calculate([product], ZERO_COMMISSION, {
+      const result = service.calculate([product], {
         eurToDoc: 50, // игнорируется
         currencyToDoc: { EUR: 100 },
       });
@@ -1543,7 +1510,7 @@ describe('CalculatorService', () => {
         },
         dimensions: [{ name: 'ethanol', value: 0.2, unit: 'л 100% спирта' }],
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       expect(result.items[0].exciseAmount).toBe(900);
     });
 
@@ -1554,7 +1521,7 @@ describe('CalculatorService', () => {
         dutyRateUnit: 'EUR/т п массы',
         dimensions: [{ name: 'gross_mass', value: 5, unit: 'т п массы' }],
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       // 100 × 90 × 5 = 45000
       expect(result.items[0].dutyAmount).toBe(45000);
       expect(result.items[0].dutyBase).toBe('gross_mass_t');
@@ -1567,7 +1534,7 @@ describe('CalculatorService', () => {
         dutyRateUnit: 'EUR/т грп',
         dimensions: [{ name: 'load_capacity', value: 10, unit: 'т грп' }],
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       expect(result.items[0].dutyAmount).toBe(45000); // 50 × 90 × 10
       expect(result.items[0].dutyBase).toBe('load_capacity_t');
     });
@@ -1597,7 +1564,7 @@ describe('CalculatorService', () => {
           ],
         },
       });
-      const result = service.calculate([product], ZERO_COMMISSION, {
+      const result = service.calculate([product], {
         currencyToDoc: { EUR: 90, USD: 75 },
       });
       expect(result.items[0].dutyAmount).toBe(1500);
@@ -1619,7 +1586,7 @@ describe('CalculatorService', () => {
         },
       });
       // p1=0.5*90*10=450, p2=1*90*20=1800, min=450
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       expect(result.items[0].dutyAmount).toBe(450);
     });
 
@@ -1638,7 +1605,7 @@ describe('CalculatorService', () => {
           ],
         },
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       expect(result.items[0].dutyAmount).toBe(450);
       expect(result.items[0].dutyAmountIsEstimate).toBe(true);
       // dutyBase должен указывать на фактически посчитанную составляющую (pair), не primary.
@@ -1660,7 +1627,7 @@ describe('CalculatorService', () => {
           ],
         },
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       expect(result.items[0].dutyAmount).toBe(900); // 1*90*10
       expect(result.items[0].dutyBase).toBe('pair'); // а не 'm2'
     });
@@ -1675,7 +1642,7 @@ describe('CalculatorService', () => {
           charges: [charge({ kind: 'combined_specific_min' } as any)],
         },
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       expect(result.items[0].dutyAmount).toBe(0);
       expect(result.items[0].dutyAmountIsEstimate).toBe(true);
       const blocker = result.items[0].notes.find(
@@ -1692,7 +1659,7 @@ describe('CalculatorService', () => {
         dutyRate: 500,
         dutyRateUnit: 'RUB', // IMPEDI=643 после нормализации
       });
-      const result = service.calculate([product], ZERO_COMMISSION, {
+      const result = service.calculate([product], {
         currencyToDoc: { RUB: 1, EUR: 90 },
       });
       // 500 RUB × 3 = 1500, а НЕ 500% × 300 = 1500000
@@ -1706,14 +1673,14 @@ describe('CalculatorService', () => {
         dutyRate: 10,
         dutyRateUnit: 'EUR',
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       expect(result.items[0].dutyAmount).toBe(1800); // 10 × 90 × 2
     });
   });
 
   describe('usedFallback', () => {
     it('false — все товары посчитаны точно (calculationStatus=exact, без estimate)', () => {
-      const result = service.calculate([makeProduct()], ZERO_COMMISSION);
+      const result = service.calculate([makeProduct()]);
       expect(result.items[0].calculationStatus).toBe('exact');
       expect(result.items[0].dutyAmountIsEstimate).toBe(false);
       expect(result.usedFallback).toBe(false);
@@ -1726,7 +1693,7 @@ describe('CalculatorService', () => {
         dutyMin: 0.38,
         dutyMinUnit: 'м2',
       });
-      const result = service.calculate([product], ZERO_COMMISSION, { eurToDoc: 90 });
+      const result = service.calculate([product], { eurToDoc: 90 });
       expect(result.items[0].dutyAmountIsEstimate).toBe(true);
       expect(result.usedFallback).toBe(true);
     });

@@ -14,36 +14,6 @@ export class CalculationConfig {
 
   @Column({
     type: 'decimal',
-    precision: 8,
-    scale: 4,
-    name: 'price_percent',
-    default: 5,
-    transformer: decimalTransformer,
-  })
-  pricePercent: number;
-
-  @Column({
-    type: 'decimal',
-    precision: 10,
-    scale: 4,
-    name: 'weight_rate',
-    default: 0,
-    transformer: decimalTransformer,
-  })
-  weightRate: number;
-
-  @Column({
-    type: 'decimal',
-    precision: 10,
-    scale: 2,
-    name: 'fixed_fee',
-    default: 0,
-    transformer: decimalTransformer,
-  })
-  fixedFee: number;
-
-  @Column({
-    type: 'decimal',
     precision: 3,
     scale: 2,
     name: 'confidence_threshold',

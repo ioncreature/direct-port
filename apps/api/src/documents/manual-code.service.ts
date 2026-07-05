@@ -40,7 +40,6 @@ interface ResultTotals {
   totalDuty: number;
   totalVat: number;
   totalExcise: number;
-  totalLogistics: number;
   totalFreight: number;
 }
 
@@ -142,11 +141,6 @@ export class ManualCodeService {
       this.configService.get(),
       this.currencyService.buildCurrencyToDocRates(currency, KNOWN_CURRENCIES),
     ]);
-    const commission = {
-      pricePercent: config.pricePercent,
-      weightRate: config.weightRate,
-      fixedFee: config.fixedFee,
-    };
 
     const classified = this.buildClassifiedFromTnved(oldRow, tnved);
 
@@ -157,7 +151,7 @@ export class ManualCodeService {
 
     const freight = this.buildFreightOption(doc, rows, currencyToDoc);
 
-    const summary = this.calculator.calculate([interpreted], commission, {
+    const summary = this.calculator.calculate([interpreted], {
       currencyToDoc,
       confidenceThreshold: config.confidenceThreshold,
       countryOfOrigin: doc.countryOfOrigin,
@@ -311,12 +305,6 @@ export class ManualCodeService {
     );
     const classified = classifyResult.products[0];
 
-    const commission = {
-      pricePercent: config.pricePercent,
-      weightRate: config.weightRate,
-      fixedFee: config.fixedFee,
-    };
-
     const needsConversion = currency !== 'RUB';
     // interpret / regulatoryReport / getRate независимы после classify — параллелим, чтобы
     // время уточнения было ~300мс вместо ~800мс с последовательными awaits.
@@ -336,7 +324,7 @@ export class ManualCodeService {
 
     const freight = this.buildFreightOption(doc, rows, currencyToDoc);
 
-    const summary = this.calculator.calculate([interpreted], commission, {
+    const summary = this.calculator.calculate([interpreted], {
       currencyToDoc,
       confidenceThreshold: config.confidenceThreshold,
       countryOfOrigin: doc.countryOfOrigin,
@@ -513,10 +501,9 @@ export class ManualCodeService {
         totalDuty: acc.totalDuty + (Number(r.dutyAmount) || 0),
         totalVat: acc.totalVat + (Number(r.vatAmount) || 0),
         totalExcise: acc.totalExcise + (Number(r.exciseAmount) || 0),
-        totalLogistics: acc.totalLogistics + (Number(r.logisticsCommission) || 0),
         totalFreight: acc.totalFreight + (Number(r.freightShare) || 0),
       }),
-      { grandTotal: 0, totalDuty: 0, totalVat: 0, totalExcise: 0, totalLogistics: 0, totalFreight: 0 },
+      { grandTotal: 0, totalDuty: 0, totalVat: 0, totalExcise: 0, totalFreight: 0 },
     );
   }
 

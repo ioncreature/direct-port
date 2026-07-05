@@ -54,7 +54,6 @@ export function buildResultRow(opts: {
     dutyBase: item.dutyBase,
     vatAmount: item.vatAmount,
     exciseAmount: item.exciseAmount,
-    logisticsCommission: item.logisticsCommission,
     totalCost: item.totalCost,
     verificationStatus: item.verificationStatus,
     calculationStatus: item.calculationStatus,
@@ -86,21 +85,14 @@ export function buildRubFields(
   const dutyAmountRub = toRub(item.dutyAmount);
   const vatAmountRub = toRub(item.vatAmount);
   const exciseAmountRub = toRub(item.exciseAmount);
-  const logisticsCommissionRub = toRub(item.logisticsCommission);
   return {
     totalPriceRub,
     freightShareRub,
     dutyAmountRub,
     vatAmountRub,
     exciseAmountRub,
-    logisticsCommissionRub,
     totalCostRub: roundMoney(
-      totalPriceRub +
-        freightShareRub +
-        dutyAmountRub +
-        vatAmountRub +
-        exciseAmountRub +
-        logisticsCommissionRub,
+      totalPriceRub + freightShareRub + dutyAmountRub + vatAmountRub + exciseAmountRub,
     ),
     exchangeRate,
   };

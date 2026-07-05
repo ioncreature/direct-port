@@ -9,13 +9,13 @@ export class AiConfigController {
   constructor(private service: AiConfigService) {}
 
   @Get()
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPER_ADMIN)
   get() {
     return this.service.get();
   }
 
   @Put()
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPER_ADMIN)
   update(@Body() dto: UpdateAiConfigDto) {
     return this.service.update(dto);
   }

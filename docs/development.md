@@ -74,8 +74,8 @@ pnpm dev:status     # статус процессов
 - **Classifier** — классификация товаров через TKS API
 - **Verification** — верификация кодов ТН ВЭД через Claude
 - **DutyInterpreter** — AI-интерпретация правил расчёта пошлин (Claude)
-- **Calculator** — расчёт пошлин, НДС, акцизов, комиссии за доставку
-- **CalculationConfig** — конфигурируемая формула комиссии
+- **Calculator** — расчёт пошлин, НДС, акцизов
+- **CalculationConfig** — порог уверенности классификатора
 - **CalculationLogs** — аудит-лог расчётов
 - **Currency** — курсы валют ЦБ РФ, конвертация в RUB
 - **TnVed** — справочник кодов ТН ВЭД
@@ -90,7 +90,7 @@ pnpm dev:status     # статус процессов
 - `TelegramUser` — Telegram-пользователи
 - `Document` — документы (parsedData, resultData, status, currency)
 - `CalculationLog` — аудит-логи расчётов (связан с Document)
-- `CalculationConfig` — формула комиссии за доставку
+- `CalculationConfig` — порог уверенности классификатора + действие при низкой уверенности
 
 ### Миграции и seed
 
@@ -116,7 +116,7 @@ Seed создаёт: `admin@directport.ru` / `admin123` + 10 образцов к
 - Telegram-пользователи: список с пагинацией, детальная страница с документами
 - Логи расчётов: таблица с пагинацией, ссылки на документы
 - Справочник ТН ВЭД: поиск кодов
-- Настройки: формула комиссии за доставку
+- Настройки (только super_admin): порог уверенности классификатора, выбор моделей Claude
 - Shared: InfoCard, table-styles, format, хуки с серверной пагинацией
 - API-клиент (`src/lib/api.ts`) с автообновлением JWT-токенов
 
@@ -162,7 +162,7 @@ direct-port/
 │   │       ├── verification/   # верификация кодов (Claude)
 │   │       ├── duty-interpreter/ # интерпретация пошлин (Claude)
 │   │       ├── calculator/     # расчёт пошлин и налогов
-│   │       ├── calculation-config/ # формула комиссии
+│   │       ├── calculation-config/ # порог уверенности классификатора
 │   │       ├── calculation-logs/   # аудит-логи расчётов
 │   │       ├── currency/       # курсы валют ЦБ РФ
 │   │       ├── tn-ved/         # справочник ТН ВЭД

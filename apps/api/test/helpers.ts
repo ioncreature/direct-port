@@ -444,9 +444,8 @@ export async function seedCalculationConfig(app: INestApplication) {
   const repo = ds.getRepository(CalculationConfig);
   return repo.save(
     repo.create({
-      pricePercent: 5,
-      weightRate: 2,
-      fixedFee: 10,
+      confidenceThreshold: 0.8,
+      lowConfidenceAction: 'review',
     }),
   );
 }

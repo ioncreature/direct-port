@@ -310,7 +310,6 @@ export interface DocumentResultRow {
   dutyAmount: number;
   vatAmount: number;
   exciseAmount: number;
-  logisticsCommission: number;
   totalCost: number;
   verificationStatus: 'exact' | 'review';
   matchConfidence: number;
@@ -466,7 +465,6 @@ export interface CalculationLogSummary {
   totalDuty: number;
   totalVat: number;
   totalExcise: number;
-  totalLogistics: number;
   currency: string;
 }
 

@@ -52,7 +52,6 @@ export interface CalculatedProduct extends ClassifiedProduct {
   dutyRateDisplay: string;
   vatAmount: number;
   exciseAmount: number;
-  logisticsCommission: number;
   totalCost: number;
   /** Устаревшее поле, остаётся для обратной совместимости. Выводит только качество матча TKS. */
   verificationStatus: 'exact' | 'review';
@@ -68,24 +67,11 @@ export interface CalculationSummary {
   totalDuty: number;
   totalVat: number;
   totalExcise: number;
-  totalLogistics: number;
   totalFreight: number;
   grandTotal: number;
   /** true → хотя бы один товар рассчитан через fallback (оценочная пошлина или неточный статус). */
   usedFallback: boolean;
 }
-
-export interface CommissionConfig {
-  pricePercent: number;
-  weightRate: number;
-  fixedFee: number;
-}
-
-const DEFAULT_COMMISSION: CommissionConfig = {
-  pricePercent: 5,
-  weightRate: 0,
-  fixedFee: 0,
-};
 
 /**
  * Таблица единиц: canonical → [человекочитаемое_описание, aliases...].
@@ -240,7 +226,6 @@ export class CalculatorService {
 
   calculate(
     products: CalculatorInput[],
-    commission: CommissionConfig = DEFAULT_COMMISSION,
     options?: {
       eurToDoc?: number;
       /** Курс «1 единица валюты → единица валюты документа» для каждой валюты.
@@ -268,10 +253,10 @@ export class CalculatorService {
     const language = options?.language ?? undefined;
     const freightShares = this.distributeFreight(products, options?.freight);
     this.logger.log(
-      `Calculating ${products.length} products, commission: ${JSON.stringify(commission)}, rates=${JSON.stringify(currencyRates)}, confidenceThreshold=${threshold}, country=${countryOfOrigin ?? '—'}, freightTotal=${freightShares.reduce((s, v) => s + v, 0).toFixed(2)}`,
+      `Calculating ${products.length} products, rates=${JSON.stringify(currencyRates)}, confidenceThreshold=${threshold}, country=${countryOfOrigin ?? '—'}, freightTotal=${freightShares.reduce((s, v) => s + v, 0).toFixed(2)}`,
     );
     const items = products.map((p, i) =>
-      this.calculateOne(p, commission, currencyRates, threshold, countryOfOrigin, language, freightShares[i]),
+      this.calculateOne(p, currencyRates, threshold, countryOfOrigin, language, freightShares[i]),
     );
     const summary = this.summarize(items);
     this.logger.log(`Calculation done: grandTotal=${summary.grandTotal.toFixed(2)}, duty=${summary.totalDuty.toFixed(2)}, vat=${summary.totalVat.toFixed(2)}, freight=${summary.totalFreight.toFixed(2)}`);
@@ -336,7 +321,6 @@ export class CalculatorService {
       totalDuty: roundMoney(items.reduce((s, i) => s + i.dutyAmount, 0)),
       totalVat: roundMoney(items.reduce((s, i) => s + i.vatAmount, 0)),
       totalExcise: roundMoney(items.reduce((s, i) => s + i.exciseAmount, 0)),
-      totalLogistics: roundMoney(items.reduce((s, i) => s + i.logisticsCommission, 0)),
       totalFreight: roundMoney(items.reduce((s, i) => s + i.freightShare, 0)),
       grandTotal: roundMoney(items.reduce((s, i) => s + i.totalCost, 0)),
       usedFallback: items.some((i) => i.dutyAmountIsEstimate || i.calculationStatus !== 'exact'),
@@ -375,7 +359,6 @@ export class CalculatorService {
       dutyRateDisplay: '—',
       vatAmount: 0,
       exciseAmount: 0,
-      logisticsCommission: 0,
       totalCost: 0,
       verificationStatus: 'review',
       calculationStatus: resolveCalculationStatus(notes),
@@ -385,7 +368,6 @@ export class CalculatorService {
 
   private calculateOne(
     p: CalculatorInput,
-    commission: CommissionConfig,
     currencyRates: Record<string, number>,
     confidenceThreshold: number,
     countryOfOrigin: string | null,
@@ -521,17 +503,11 @@ export class CalculatorService {
       }
     }
 
-    const logisticsCommission = roundMoney(
-      totalPrice * (commission.pricePercent / 100) +
-        p.weight * p.quantity * commission.weightRate +
-        commission.fixedFee,
-    );
-
     // Фрахт входит в стоимость товара для клиента: он уже потратил эти деньги на доставку
     // до границы. Включаем в totalCost, чтобы итог отражал полные затраты. Все слагаемые
     // уже округлены — totalCost = сумма округлённых компонентов (#4).
     const totalCost = roundMoney(
-      totalPrice + roundedFreight + dutyAmount + vatAmount + exciseAmount + logisticsCommission,
+      totalPrice + roundedFreight + dutyAmount + vatAmount + exciseAmount,
     );
 
     // verified=false означает, что AI-классификация не отработала и код взят по
@@ -555,7 +531,6 @@ export class CalculatorService {
       dutyRateDisplay,
       vatAmount,
       exciseAmount,
-      logisticsCommission,
       totalCost,
       verificationStatus,
       calculationStatus,

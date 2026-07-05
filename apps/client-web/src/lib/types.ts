@@ -69,7 +69,6 @@ export interface CalculatedRow {
   dutyAmountRub?: number;
   vatAmountRub?: number;
   exciseAmountRub?: number;
-  logisticsCommissionRub?: number;
   totalCostRub?: number;
   calculationStatus?: string;
   notes?: ProductNote[];

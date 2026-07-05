@@ -160,11 +160,7 @@ describe('Documents (e2e)', () => {
       expect(products[0].dutyRate).toBe(15);
       expect(products[0].vatRate).toBe(20);
 
-      const summary = calculator.calculate(products, {
-        pricePercent: 5,
-        weightRate: 2,
-        fixedFee: 10,
-      });
+      const summary = calculator.calculate(products);
 
       expect(summary.items).toHaveLength(1);
       const item = summary.items[0];
@@ -176,11 +172,9 @@ describe('Documents (e2e)', () => {
       expect(item.exciseAmount).toBe(0);
       // vatAmount = (5000 + 750 + 0) * 20% = 1150
       expect(item.vatAmount).toBe(1150);
-      // logisticsCommission = 5000 * 5% + 100 * 10 * 2 + 10 = 250 + 2000 + 10 = 2260
-      expect(item.logisticsCommission).toBe(2260);
-      // totalCost = 5000 + 750 + 1150 + 0 + 2260 = 9160
-      expect(item.totalCost).toBe(9160);
-      expect(summary.grandTotal).toBe(9160);
+      // totalCost = 5000 + 750 + 1150 + 0 = 6900
+      expect(item.totalCost).toBe(6900);
+      expect(summary.grandTotal).toBe(6900);
     });
   });
 
@@ -210,8 +204,7 @@ describe('Documents (e2e)', () => {
             dutyAmount: 750,
             vatAmount: 1150,
             exciseAmount: 0,
-            logisticsCommission: 260,
-            totalCost: 7160,
+            totalCost: 6900,
             verificationStatus: 'exact',
             matchConfidence: 0.85,
           },
@@ -371,8 +364,7 @@ describe('Documents (e2e)', () => {
             dutyAmount: 0,
             vatAmount: 0,
             exciseAmount: 0,
-            logisticsCommission: 5,
-            totalCost: 105,
+            totalCost: 100,
             verificationStatus: 'review',
             calculationStatus: 'error',
             matchConfidence: 0,
@@ -438,8 +430,7 @@ describe('Documents (e2e)', () => {
             dutyAmount: 15,
             vatAmount: 23,
             exciseAmount: 0,
-            logisticsCommission: 5,
-            totalCost: 143,
+            totalCost: 138,
             verificationStatus: 'exact',
             matchConfidence: 0.9,
           },
@@ -457,8 +448,7 @@ describe('Documents (e2e)', () => {
             dutyAmount: 0,
             vatAmount: 10,
             exciseAmount: 0,
-            logisticsCommission: 2.5,
-            totalCost: 62.5,
+            totalCost: 60,
             verificationStatus: 'review',
             matchConfidence: 0,
           },

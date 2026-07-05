@@ -80,8 +80,7 @@ function makeCalculated(overrides: Partial<CalculatedProduct> = {}): CalculatedP
     dutyRateDisplay: '15%',
     vatAmount: 230,
     exciseAmount: 0,
-    logisticsCommission: 50,
-    totalCost: 1430,
+    totalCost: 1380,
     verificationStatus: 'exact',
     calculationStatus: 'exact',
     notes: [],
@@ -95,7 +94,6 @@ function makeSummary(items: CalculatedProduct[]): CalculationSummary {
     totalDuty: items.reduce((s, i) => s + i.dutyAmount, 0),
     totalVat: items.reduce((s, i) => s + i.vatAmount, 0),
     totalExcise: items.reduce((s, i) => s + i.exciseAmount, 0),
-    totalLogistics: items.reduce((s, i) => s + i.logisticsCommission, 0),
     totalFreight: items.reduce((s, i) => s + i.freightShare, 0),
     grandTotal: items.reduce((s, i) => s + i.totalCost, 0),
     usedFallback: items.some((i) => i.dutyAmountIsEstimate || i.calculationStatus !== 'exact'),
@@ -123,8 +121,7 @@ function resultRow(overrides: Record<string, unknown> = {}): Record<string, unkn
     dutyAmount: 150,
     vatAmount: 230,
     exciseAmount: 0,
-    logisticsCommission: 50,
-    totalCost: 1430,
+    totalCost: 1380,
     calculationStatus: 'exact',
     ...overrides,
   };
@@ -143,9 +140,6 @@ interface Opts {
   summary?: CalculationSummary;
   calculateError?: Error;
   config?: {
-    pricePercent?: number;
-    weightRate?: number;
-    fixedFee?: number;
     confidenceThreshold?: number;
     lowConfidenceAction?: 'review' | 'reject';
   };
@@ -210,9 +204,6 @@ function createProcessor(opts: Opts = {}) {
 
   const configService = {
     get: jest.fn().mockResolvedValue({
-      pricePercent: 5,
-      weightRate: 2,
-      fixedFee: 10,
       confidenceThreshold: 0.8,
       lowConfidenceAction: 'review',
       ...opts.config,
@@ -457,7 +448,7 @@ describe('DocumentsProcessor.process', () => {
 
       await processor.process(fakeJob('doc-1'));
 
-      const [products, , options] = calculator.calculate.mock.calls[0];
+      const [products, options] = calculator.calculate.mock.calls[0];
       expect(options.freight).toBeUndefined();
       const freightNotes = (products[0].notes as ProductNote[]).filter(
         (n) => n.field === 'freight' && n.severity === 'warning',
@@ -543,7 +534,7 @@ describe('DocumentsProcessor.process', () => {
       await processor.process(fakeJob('doc-1'));
 
       const firstRow = doc.resultData![0] as Record<string, unknown>;
-      expect(firstRow.totalCostRub).toBe(1430 * 90);
+      expect(firstRow.totalCostRub).toBe(1380 * 90);
       expect(firstRow.dutyAmountRub).toBe(150 * 90);
       expect(firstRow.vatAmountRub).toBe(230 * 90);
       expect(firstRow.exchangeRate).toBe(90);
@@ -615,7 +606,6 @@ describe('DocumentsProcessor.process', () => {
 
       expect(calculator.calculate).toHaveBeenCalledWith(
         expect.any(Array),
-        expect.any(Object),
         expect.objectContaining({ countryOfOrigin: '840' }),
       );
     });
@@ -891,8 +881,7 @@ describe('DocumentsProcessor.recalculate (job.name="recalculate-document")', () 
           dutyAmount: 150,
           vatAmount: 230,
           exciseAmount: 0,
-          logisticsCommission: 50,
-          totalCost: 1430,
+          totalCost: 1380,
           calculationStatus: 'exact',
         },
       ],
@@ -994,7 +983,6 @@ describe('DocumentsProcessor.recalculate (job.name="recalculate-document")', () 
           dutyAmount: 0,
           vatAmount: 20,
           exciseAmount: 0,
-          logisticsCommission: 5,
           totalCost: 125,
           calculationStatus: 'exact',
         },
@@ -1035,7 +1023,6 @@ describe('DocumentsProcessor.recalculate (job.name="recalculate-document")', () 
           dutyAmount: 0,
           vatAmount: 20,
           exciseAmount: 0,
-          logisticsCommission: 5,
           totalCost: 125,
           calculationStatus: 'exact',
         },
@@ -1074,7 +1061,6 @@ describe('DocumentsProcessor.recalculate (job.name="recalculate-document")', () 
           dutyAmount: 0,
           vatAmount: 20,
           exciseAmount: 0,
-          logisticsCommission: 5,
           totalCost: 125,
           calculationStatus: 'exact',
         },
