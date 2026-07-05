@@ -131,8 +131,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </aside>
       <main style={{ flex: 1, minWidth: 0, padding: '28px 32px', paddingBottom: 64 }}>
         {/* Ограничение ширины: на ультрашироких мониторах строки таблиц и сетки
-            карточек не должны растягиваться на всю ширину экрана. */}
-        <div style={{ maxWidth: 1360 }}>{children}</div>
+            карточек не должны растягиваться на всю ширину экрана. Центрируем
+            контейнер авто-маргинами, чтобы контент не прилипал к левому краю. */}
+        <div style={{ maxWidth: 1360, marginInline: 'auto' }}>{children}</div>
       </main>
       <ForbiddenToast />
     </div>
