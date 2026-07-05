@@ -1,39 +1,59 @@
 'use client';
 
 import { BotLinksSection } from '@/components/bot-links-section';
+import { useAuth } from '@/hooks/use-auth';
 import { useDocuments } from '@/hooks/use-documents';
-import { useTelegramUsers } from '@/hooks/use-telegram-users';
-import { useUsers } from '@/hooks/use-users';
 import api from '@/lib/api';
 import { statusColors, statusLabels } from '@/lib/documents';
 import { calcAiCostFromMap, fmtCost } from '@/lib/format';
+import { isAdminRole } from '@/lib/roles';
 import { cardSurface } from '@/lib/table-styles';
-import type { DocumentStatus, MonthlyTokenStats } from '@/lib/types';
+import type { DocumentStatus, MonthlyTokenStats, PaginatedResponse } from '@/lib/types';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 export default function DashboardPage() {
-  const { total: usersTotal, loading: usersLoading } = useUsers();
+  const { user } = useAuth();
+  // Дашборд уважает ту же ролевую матрицу, что и навигация: список пользователей, telegram-
+  // пользователей и AI-статистика — ADMIN-only. Без этого гейта запросы к ним отдавали бы 403
+  // для роли customs, а глобальный interceptor показал бы ложный тост «Недостаточно прав».
+  const isAdmin = isAdminRole(user?.role);
+
   const { documents, total: docsTotal, loading: docsLoading } = useDocuments();
-  const { total: tgTotal, loading: tgLoading } = useTelegramUsers();
+  const [usersTotal, setUsersTotal] = useState<number | null>(null);
+  const [tgTotal, setTgTotal] = useState<number | null>(null);
   const [aiCost, setAiCost] = useState<number | null>(null);
   const [leadCost, setLeadCost] = useState<number | null>(null);
   const [statusCounts, setStatusCounts] = useState<Partial<Record<DocumentStatus, number>>>({});
 
   useEffect(() => {
-    api.get<MonthlyTokenStats>('/documents/token-stats/monthly').then(({ data }) => {
-      setAiCost(calcAiCostFromMap(data.models));
-      // Лиды приходят только в общем разрезе (для super_admin); у admin'а компании — null.
-      if (data.leads) setLeadCost(calcAiCostFromMap(data.leads));
-    }).catch(() => {});
-    api.get<Partial<Record<DocumentStatus, number>>>('/documents/status-counts').then(({ data }) => {
-      setStatusCounts(data);
-    }).catch(() => {});
+    // status-counts доступен и admin, и customs.
+    api
+      .get<Partial<Record<DocumentStatus, number>>>('/documents/status-counts')
+      .then(({ data }) => setStatusCounts(data))
+      .catch(() => {});
   }, []);
 
-  const loading = usersLoading || docsLoading || tgLoading;
+  useEffect(() => {
+    if (!isAdmin) return;
+    const loadTotal = (url: string, set: (n: number) => void) =>
+      api
+        .get<PaginatedResponse<unknown>>(url, { params: { limit: 1 } })
+        .then(({ data }) => set(data.total))
+        .catch(() => {});
+    loadTotal('/users', setUsersTotal);
+    loadTotal('/telegram-users', setTgTotal);
+    api
+      .get<MonthlyTokenStats>('/documents/token-stats/monthly')
+      .then(({ data }) => {
+        setAiCost(calcAiCostFromMap(data.models));
+        // Лиды приходят только в общем разрезе (для super_admin); у admin'а компании — null.
+        if (data.leads) setLeadCost(calcAiCostFromMap(data.leads));
+      })
+      .catch(() => {});
+  }, [isAdmin]);
 
-  if (loading) return <p>Загрузка...</p>;
+  if (docsLoading) return <p>Загрузка...</p>;
 
   const recentDocs = [...documents]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -60,8 +80,8 @@ export default function DashboardPage() {
           marginBottom: 32,
         }}
       >
-        <StatCard label="Пользователи" value={usersTotal} href="/users" />
-        <StatCard label="Telegram" value={tgTotal} href="/telegram-users" />
+        {isAdmin && <StatCard label="Пользователи" value={usersTotal ?? 0} href="/users" />}
+        {isAdmin && <StatCard label="Telegram" value={tgTotal ?? 0} href="/telegram-users" />}
         <StatCard label="Документы" value={docsTotal} href="/documents" />
         <StatCard label="Обработано" value={statusCounts.processed ?? 0} color="var(--success)" />
         <StatCard
@@ -70,13 +90,15 @@ export default function DashboardPage() {
           color="var(--warning)"
         />
         <StatCard label="Сбои" value={statusCounts.failed ?? 0} color="var(--danger)" />
-        <StatCard
-          label="AI за месяц"
-          value={aiCost != null ? fmtCost(aiCost) : '...'}
-          href="/ai-costs"
-          color="var(--violet)"
-        />
-        {leadCost != null && (
+        {isAdmin && (
+          <StatCard
+            label="AI за месяц"
+            value={aiCost != null ? fmtCost(aiCost) : '...'}
+            href="/ai-costs"
+            color="var(--violet)"
+          />
+        )}
+        {isAdmin && leadCost != null && (
           <StatCard
             label="Поиск лидов за месяц"
             value={fmtCost(leadCost)}

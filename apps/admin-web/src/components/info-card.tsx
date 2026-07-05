@@ -23,7 +23,17 @@ export function InfoCard({
       >
         {label}
       </div>
-      <div style={{ fontSize: 16, fontWeight: 600, color: color || 'var(--text)' }}>{value}</div>
+      <div
+        title={value}
+        style={{
+          fontSize: 16,
+          fontWeight: 600,
+          color: color || 'var(--text)',
+          overflowWrap: 'anywhere',
+        }}
+      >
+        {value}
+      </div>
     </div>
   );
 }

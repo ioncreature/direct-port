@@ -3,6 +3,7 @@
 import { CompanySelect } from '@/components/company-select';
 import { useAuth } from '@/hooks/use-auth';
 import { useUsers } from '@/hooks/use-users';
+import { roleLabels } from '@/lib/roles';
 import type { User } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useState } from 'react';
@@ -106,10 +107,10 @@ export default function EditUserPage() {
             onChange={(e) => setRole(e.target.value as User['role'])}
             style={inputStyle}
           >
-            <option value="customs">Таможня</option>
-            <option value="admin">Администратор</option>
+            <option value="customs">{roleLabels.customs}</option>
+            <option value="admin">{roleLabels.admin}</option>
             {(isSuperAdmin || role === 'super_admin') && (
-              <option value="super_admin">Глобальный администратор</option>
+              <option value="super_admin">{roleLabels.super_admin}</option>
             )}
           </select>
         </div>

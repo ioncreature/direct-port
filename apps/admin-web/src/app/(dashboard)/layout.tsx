@@ -3,6 +3,7 @@
 import { BrandMark, Wordmark } from '@/components/brand';
 import { ForbiddenToast } from '@/components/forbidden-toast';
 import { useAuth } from '@/hooks/use-auth';
+import { ADMIN_ROLES } from '@/lib/roles';
 import { btnOutline } from '@/lib/table-styles';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -10,16 +11,17 @@ import { useEffect } from 'react';
 
 // roles не задан → пункт виден всем ролям. super_admin проходит везде через bypass на бэке,
 // поэтому добавляем его в каждый ограниченный список явно.
-const navItems: { href: string; label: string; roles?: string[] }[] = [
+const navItems: { href: string; label: string; roles?: readonly string[] }[] = [
   { href: '/', label: 'Дашборд' },
-  { href: '/users', label: 'Пользователи', roles: ['admin', 'super_admin'] },
-  { href: '/telegram-users', label: 'Telegram', roles: ['admin', 'super_admin'] },
+  { href: '/users', label: 'Пользователи', roles: ADMIN_ROLES },
+  { href: '/telegram-users', label: 'Telegram', roles: ADMIN_ROLES },
   { href: '/documents', label: 'Документы' },
   { href: '/tn-ved', label: 'ТН ВЭД' },
   { href: '/leads', label: 'Лиды', roles: ['super_admin'] },
-  { href: '/ai-costs', label: 'AI-расходы', roles: ['admin', 'super_admin'] },
+  { href: '/ai-costs', label: 'AI-расходы', roles: ADMIN_ROLES },
   { href: '/companies', label: 'Компании', roles: ['super_admin'] },
   { href: '/settings', label: 'Настройки' },
+  { href: '/reference', label: 'Справочник' },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

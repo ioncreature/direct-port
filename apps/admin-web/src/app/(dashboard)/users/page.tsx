@@ -6,15 +6,16 @@ import { SortableTh } from '@/components/sortable-th';
 import { useAuth } from '@/hooks/use-auth';
 import { useUsers } from '@/hooks/use-users';
 import { fmtDate } from '@/lib/format';
+import { roleLabel, roleLabels } from '@/lib/roles';
 import { btnLink, filterChip, primaryLink, tdEmpty, td, th } from '@/lib/table-styles';
 import type { User } from '@/lib/types';
 import Link from 'next/link';
 
 const roles: { value: User['role'] | ''; label: string }[] = [
   { value: '', label: 'Все' },
-  { value: 'admin', label: 'Администратор' },
-  { value: 'customs', label: 'Таможня' },
-  { value: 'super_admin', label: 'Глобальный администратор' },
+  { value: 'admin', label: roleLabels.admin },
+  { value: 'customs', label: roleLabels.customs },
+  { value: 'super_admin', label: roleLabels.super_admin },
 ];
 
 const sortableColumns: { field: string; label: string }[] = [
@@ -110,7 +111,7 @@ export default function UsersPage() {
               {users.map((user) => (
                 <tr key={user.id}>
                   <td style={td}>{user.email}</td>
-                  <td style={td}>{user.role}</td>
+                  <td style={td}>{roleLabel(user.role)}</td>
                   <td style={td}>{fmtDate(user.createdAt)}</td>
                   {isSuperAdmin && <td style={td}>{user.companyName ?? '—'}</td>}
                   <td style={td}>{user.isActive ? 'Да' : 'Нет'}</td>

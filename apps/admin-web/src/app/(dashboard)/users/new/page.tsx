@@ -3,6 +3,7 @@
 import { CompanySelect } from '@/components/company-select';
 import { useAuth } from '@/hooks/use-auth';
 import { useUsers } from '@/hooks/use-users';
+import { roleLabels } from '@/lib/roles';
 import type { User } from '@/lib/types';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
@@ -84,9 +85,9 @@ export default function NewUserPage() {
             onChange={(e) => setRole(e.target.value as User['role'])}
             style={{ width: '100%', padding: 8, boxSizing: 'border-box' }}
           >
-            <option value="customs">Таможня</option>
-            <option value="admin">Администратор</option>
-            {isSuperAdmin && <option value="super_admin">Глобальный администратор</option>}
+            <option value="customs">{roleLabels.customs}</option>
+            <option value="admin">{roleLabels.admin}</option>
+            {isSuperAdmin && <option value="super_admin">{roleLabels.super_admin}</option>}
           </select>
         </div>
         {needsCompany && (
