@@ -197,6 +197,10 @@ export const en: Dictionary = {
         text: 'The cost of delivery to the border is distributed across line items in proportion to weight and included in the customs value — that is, in the base for duty, excise, and VAT, as the EAEU Customs Code requires.',
       },
       {
+        title: 'Incoterms',
+        text: 'Delivery terms — EXW, FOB, CIF, DDP, and others — define what’s already in the price and what has to be added to the customs value. The service accounts for the term and warns you when freight risks being double-counted or, conversely, the value is understated.',
+      },
+      {
         title: 'Logistics',
         text: 'A configurable formula: a percentage of the value, a per-kilogram rate, and a fixed delivery fee. Tailored to how you work.',
       },

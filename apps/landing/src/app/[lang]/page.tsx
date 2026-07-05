@@ -361,6 +361,7 @@ function WhatIsCalculated({ dict }: { dict: Dictionary }) {
     <IconBook key="bk" />,
     <IconCurrency key="cu" />,
     <IconShip key="sp" />,
+    <IconRoute key="rt" />,
     <IconTruck key="tk" />,
   ];
   return (
@@ -678,6 +679,16 @@ function IconTruck() {
       <path d="M14 9h4l3 3v5h-7" />
       <circle cx="6" cy="19" r="2" />
       <circle cx="17" cy="19" r="2" />
+    </svg>
+  );
+}
+
+function IconRoute() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="6" cy="19" r="3" />
+      <path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15" />
+      <circle cx="18" cy="5" r="3" />
     </svg>
   );
 }
