@@ -34,7 +34,7 @@ export class CompaniesController {
 
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.companiesService.findOne(id);
+    return this.companiesService.getDetail(id);
   }
 
   @Post()

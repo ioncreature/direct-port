@@ -3,6 +3,7 @@
 import { BrandMark, Wordmark } from '@/components/brand';
 import { useAuth } from '@/hooks/use-auth';
 import { btnPrimary } from '@/lib/table-styles';
+import { isAxiosError } from 'axios';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
 
@@ -21,8 +22,15 @@ export default function LoginPage() {
     try {
       await login(email, password);
       router.push('/');
-    } catch {
-      setError('Неверный email или пароль');
+    } catch (err) {
+      // Заблокированному аккаунту бэк отдаёт 403 с понятным сообщением — показываем его как есть;
+      // всё остальное (неверный логин/пароль, недоступность) сводим к общей формулировке.
+      if (isAxiosError(err) && err.response?.status === 403) {
+        const msg = (err.response.data as { message?: string } | undefined)?.message;
+        setError(msg || 'Ваш аккаунт отключён. Обратитесь к администратору.');
+      } else {
+        setError('Неверный email или пароль');
+      }
     } finally {
       setLoading(false);
     }

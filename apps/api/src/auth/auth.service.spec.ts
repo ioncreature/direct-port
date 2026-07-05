@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 import { UserRole } from '../database/entities/user.entity';
@@ -109,12 +109,20 @@ describe('AuthService', () => {
       );
     });
 
-    it('выбрасывает UnauthorizedException если пользователь деактивирован', async () => {
+    it('выбрасывает ForbiddenException (аккаунт отключён) для деактивированного при верном пароле', async () => {
       const { service } = createService({ user: makeUser({ isActive: false }) });
 
       await expect(
         service.login('admin@directport.ru', 'correct-password'),
-      ).rejects.toThrow(UnauthorizedException);
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('деактивированному при НЕВЕРНОМ пароле отдаёт UnauthorizedException (не раскрывает аккаунт)', async () => {
+      const { service } = createService({ user: makeUser({ isActive: false }) });
+
+      await expect(service.login('admin@directport.ru', 'wrong')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('сохраняет хэш refresh-токена в БД', async () => {

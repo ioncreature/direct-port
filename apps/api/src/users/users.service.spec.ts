@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { Actor } from '../common/tenant/actor-context';
 import { User, UserRole } from '../database/entities/user.entity';
@@ -31,6 +31,8 @@ function makeRepo(overrides: Partial<Record<keyof Repository<User>, unknown>> = 
     create: jest.fn().mockImplementation((d) => d),
     save: jest.fn().mockImplementation(async (u) => ({ id: 'new-id', ...u })),
     remove: jest.fn().mockResolvedValue(undefined),
+    // По умолчанию у пользователя нет артефактов (все exists = false) → удаление разрешено.
+    manager: { exists: jest.fn().mockResolvedValue(false) },
     ...overrides,
   } as unknown as Repository<User>;
 }
@@ -154,5 +156,38 @@ describe('UsersService.update — смена компании', () => {
     await expect(service.update('u1', { companyId: 'comp-2' }, superAdmin)).rejects.toThrow(
       BadRequestException,
     );
+  });
+});
+
+describe('UsersService.remove', () => {
+  it('запрещает удаление самого себя (BadRequest)', async () => {
+    const repo = makeRepo({
+      findOne: jest.fn().mockResolvedValue(makeUser({ id: 'a', companyId: 'comp-1' })),
+    });
+    const service = new UsersService(repo);
+
+    await expect(service.remove('a', companyAdmin)).rejects.toThrow(BadRequestException);
+    expect(repo.remove).not.toHaveBeenCalled();
+  });
+
+  it('запрещает удаление пользователя с артефактами (Conflict)', async () => {
+    const repo = makeRepo({
+      findOne: jest.fn().mockResolvedValue(makeUser({ id: 'u1', companyId: 'comp-1' })),
+      manager: { exists: jest.fn().mockResolvedValue(true) },
+    });
+    const service = new UsersService(repo);
+
+    await expect(service.remove('u1', companyAdmin)).rejects.toThrow(ConflictException);
+    expect(repo.remove).not.toHaveBeenCalled();
+  });
+
+  it('удаляет пользователя без артефактов', async () => {
+    const repo = makeRepo({
+      findOne: jest.fn().mockResolvedValue(makeUser({ id: 'u1', companyId: 'comp-1' })),
+    });
+    const service = new UsersService(repo);
+
+    await service.remove('u1', companyAdmin);
+    expect(repo.remove).toHaveBeenCalledTimes(1);
   });
 });

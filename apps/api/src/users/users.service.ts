@@ -10,6 +10,10 @@ import * as bcrypt from 'bcrypt';
 import { FindOptionsWhere, Repository } from 'typeorm';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 import { Actor, assertSameCompany, resolveCompanyScope } from '../common/tenant/actor-context';
+import { ConversationMessage } from '../database/entities/conversation-message.entity';
+import { DepositTransaction } from '../database/entities/deposit-transaction.entity';
+import { Document } from '../database/entities/document.entity';
+import { TopUpRequest } from '../database/entities/top-up-request.entity';
 import { User, UserRole } from '../database/entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { FindUsersQueryDto } from './dto/find-users-query.dto';
@@ -94,7 +98,36 @@ export class UsersService {
     const user = await this.usersRepo.findOne({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
     assertSameCompany(actor, user.companyId);
+    // Себя удалить нельзя (в UI кнопка скрыта; здесь — защита на бэке).
+    if (id === actor.id) {
+      throw new BadRequestException('You cannot delete your own account');
+    }
+    // Нельзя удалять пользователя, за которым числятся артефакты: FK всех этих ссылок = SET NULL,
+    // т.е. удаление молча осиротило бы документы, переписку и аудит операций с балансом.
+    await this.assertDeletable(id);
     await this.usersRepo.remove(user);
+  }
+
+  /**
+   * Блокирует удаление пользователя, за которым остались артефакты: загруженные им документы,
+   * отправленные как менеджер сообщения, выполненные операции с балансом и подтверждённые
+   * пополнения. Считаем через общий EntityManager, не раздувая конструктор сервиса репозиториями.
+   */
+  private async assertDeletable(userId: string): Promise<void> {
+    const em = this.usersRepo.manager;
+    // exists, а не count: нужен лишь факт наличия — короткое замыкание на первой строке
+    // (эти FK-колонки не проиндексированы, полный COUNT был бы дороже).
+    const [documents, messages, deposits, topUps] = await Promise.all([
+      em.exists(Document, { where: { uploadedByUserId: userId } }),
+      em.exists(ConversationMessage, { where: { managerId: userId } }),
+      em.exists(DepositTransaction, { where: { createdByUserId: userId } }),
+      em.exists(TopUpRequest, { where: { confirmedByUserId: userId } }),
+    ]);
+    if (documents || messages || deposits || topUps) {
+      throw new ConflictException(
+        'Cannot delete a user who has uploaded documents or other related records',
+      );
+    }
   }
 
   /**

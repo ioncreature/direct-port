@@ -12,6 +12,7 @@ export interface CompanyUpdatePayload {
   domains?: string[];
 }
 
+/** Список компаний + создание (super_admin). Редактирование/удаление — на странице компании (useCompany). */
 export function useCompanies() {
   const list = useServerPaginatedList<Company>('/companies', {
     defaultSortBy: 'name',
@@ -21,22 +22,6 @@ export function useCompanies() {
   const createCompany = useCallback(
     async (payload: { name: string; slug?: string }) => {
       await api.post('/companies', payload);
-      await list.refetch();
-    },
-    [list],
-  );
-
-  const updateCompany = useCallback(
-    async (id: string, payload: CompanyUpdatePayload) => {
-      await api.patch(`/companies/${id}`, payload);
-      await list.refetch();
-    },
-    [list],
-  );
-
-  const deleteCompany = useCallback(
-    async (id: string) => {
-      await api.delete(`/companies/${id}`);
       await list.refetch();
     },
     [list],
@@ -54,7 +39,5 @@ export function useCompanies() {
     toggleSort: list.toggleSort,
     refetch: list.refetch,
     createCompany,
-    updateCompany,
-    deleteCompany,
   };
 }

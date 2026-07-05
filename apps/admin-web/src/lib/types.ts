@@ -36,6 +36,18 @@ export interface Company {
   updatedAt: string;
 }
 
+/** Число привязанных к компании сущностей — блокируют удаление, показываются на её странице. */
+export interface CompanyCounts {
+  users: number;
+  clients: number;
+  documents: number;
+}
+
+/** Деталь компании (GET /companies/:id): компания + счётчики привязанных сущностей. */
+export interface CompanyDetail extends Company {
+  counts: CompanyCounts;
+}
+
 /** Статус ботов компании (без токенов) — для управления на странице компаний. */
 export interface CompanyBotsStatus {
   client: { configured: boolean; username: string | null };

@@ -9,6 +9,7 @@ import { fmtDate } from '@/lib/format';
 import { roleLabel, roleLabels } from '@/lib/roles';
 import { btnLink, filterChip, primaryLink, tdEmpty, td, th } from '@/lib/table-styles';
 import type { User } from '@/lib/types';
+import { isAxiosError } from 'axios';
 import Link from 'next/link';
 
 const roles: { value: User['role'] | ''; label: string }[] = [
@@ -43,6 +44,20 @@ export default function UsersPage() {
     filterByCompany,
     deleteUser,
   } = useUsers();
+
+  async function handleDelete(userId: string) {
+    if (!confirm('Удалить пользователя?')) return;
+    try {
+      await deleteUser(userId);
+    } catch (err) {
+      // 409 — у пользователя есть документы/записи (гард на бэке). Остальное — общий текст.
+      alert(
+        isAxiosError(err) && err.response?.status === 409
+          ? 'Нельзя удалить пользователя: за ним числятся документы или другие записи.'
+          : 'Не удалось удалить пользователя.',
+      );
+    }
+  }
 
   return (
     <div>
@@ -122,14 +137,14 @@ export default function UsersPage() {
                     >
                       Изменить
                     </Link>
-                    <button
-                      onClick={() => {
-                        if (confirm('Удалить пользователя?')) deleteUser(user.id);
-                      }}
-                      style={{ ...btnLink, color: 'var(--danger)' }}
-                    >
-                      Удалить
-                    </button>
+                    {user.id !== actor?.id && (
+                      <button
+                        onClick={() => handleDelete(user.id)}
+                        style={{ ...btnLink, color: 'var(--danger)' }}
+                      >
+                        Удалить
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

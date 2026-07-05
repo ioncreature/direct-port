@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -26,13 +26,19 @@ export class AuthService {
    */
   async login(email: string, password: string, domain?: string) {
     const user = await this.usersRepo.findOne({ where: { email } });
-    if (!user || !user.isActive) {
+    if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // Заблокированному аккаунту сообщаем об отключении ЯВНО (403), но только после проверки
+    // пароля — чтобы посторонний по коду ответа не узнал, что такой email существует и отключён.
+    if (!user.isActive) {
+      throw new ForbiddenException('Ваш аккаунт отключён. Обратитесь к администратору.');
     }
 
     // Тенант-гейт: если запрос несёт домен (admin-web всегда проставляет x-tenant-host), пользователь

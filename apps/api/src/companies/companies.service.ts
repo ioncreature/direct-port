@@ -15,6 +15,8 @@ import {
 } from '../common/tenant/company-theme';
 import { CompanyDomain } from '../database/entities/company-domain.entity';
 import { Company } from '../database/entities/company.entity';
+import { Document } from '../database/entities/document.entity';
+import { TelegramUser } from '../database/entities/telegram-user.entity';
 import { User } from '../database/entities/user.entity';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { FindCompaniesQueryDto } from './dto/find-companies-query.dto';
@@ -36,12 +38,26 @@ export interface CompanyView {
   updatedAt: Date;
 }
 
+/** Число привязанных к компании сущностей — блокируют удаление и показываются на её странице. */
+export interface CompanyCounts {
+  users: number;
+  clients: number;
+  documents: number;
+}
+
+/** Деталь компании (GET /companies/:id): вид + счётчики привязанных сущностей. */
+export interface CompanyDetailView extends CompanyView {
+  counts: CompanyCounts;
+}
+
 @Injectable()
 export class CompaniesService {
   constructor(
     @InjectRepository(Company) private companiesRepo: Repository<Company>,
     @InjectRepository(CompanyDomain) private domainsRepo: Repository<CompanyDomain>,
     @InjectRepository(User) private usersRepo: Repository<User>,
+    @InjectRepository(TelegramUser) private telegramUsersRepo: Repository<TelegramUser>,
+    @InjectRepository(Document) private documentsRepo: Repository<Document>,
   ) {}
 
   async findAll(query: FindCompaniesQueryDto): Promise<PaginatedResponse<CompanyView>> {
@@ -56,6 +72,12 @@ export class CompaniesService {
 
   async findOne(id: string): Promise<CompanyView> {
     return this.serialize(await this.loadEntity(id));
+  }
+
+  /** Деталь компании со счётчиками привязанных сущностей (для её страницы в админке). */
+  async getDetail(id: string): Promise<CompanyDetailView> {
+    const view = this.serialize(await this.loadEntity(id));
+    return { ...view, counts: await this.countRelated(id) };
   }
 
   async create(dto: CreateCompanyDto): Promise<CompanyView> {
@@ -95,15 +117,28 @@ export class CompaniesService {
 
   async remove(id: string): Promise<void> {
     const company = await this.loadEntity(id);
-    // Удаление непустой компании запрещаем: FK users.company_id = RESTRICT всё равно отобьёт,
-    // но явная проверка даёт понятное сообщение. Документы/клиенты при удалении получили бы
-    // company_id = NULL (FK SET NULL) — поэтому удаляем только полностью пустые компании.
-    // Домены компании удаляются каскадом (FK company_domains.company_id = CASCADE).
-    const userCount = await this.usersRepo.count({ where: { companyId: id } });
-    if (userCount > 0) {
-      throw new ConflictException('Cannot delete a company that still has users');
+    // Удаляем только полностью пустую компанию. users/telegram_users.company_id = RESTRICT БД
+    // отбила бы и сама, но documents.company_id = SET NULL молча осиротил бы документы — поэтому
+    // проверяем все три явно и отдаём понятный 409 вместо сырой ошибки БД. Скоуп — users/clients/
+    // documents (leads.company_id тоже SET NULL, но в этот гард сознательно не входит). Домены
+    // удаляются каскадом (FK company_domains.company_id = CASCADE).
+    const counts = await this.countRelated(id);
+    if (counts.users > 0 || counts.clients > 0 || counts.documents > 0) {
+      throw new ConflictException(
+        'Cannot delete a company while it still has related users, clients or documents',
+      );
     }
     await this.companiesRepo.remove(company);
+  }
+
+  /** Считает привязанные к компании сущности (для страницы компании и блокировки удаления). */
+  private async countRelated(id: string): Promise<CompanyCounts> {
+    const [users, clients, documents] = await Promise.all([
+      this.usersRepo.count({ where: { companyId: id } }),
+      this.telegramUsersRepo.count({ where: { companyId: id } }),
+      this.documentsRepo.count({ where: { companyId: id } }),
+    ]);
+    return { users, clients, documents };
   }
 
   /**
