@@ -50,7 +50,7 @@ export default function UploadDocumentPage() {
           />
         </div>
         {file && (
-          <p style={{ marginBottom: 16, color: file.size > 40 * 1024 * 1024 ? '#dc2626' : 'var(--text-muted)' }}>
+          <p style={{ marginBottom: 16, color: file.size > 40 * 1024 * 1024 ? 'var(--danger)' : 'var(--text-muted)' }}>
             {file.name} ({fmtFileSize(file.size)})
             {file.size > 40 * 1024 * 1024 && ' — превышает лимит 40 МБ'}
           </p>

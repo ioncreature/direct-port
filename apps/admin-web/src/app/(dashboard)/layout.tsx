@@ -1,5 +1,6 @@
 'use client';
 
+import { BrandMark, Wordmark } from '@/components/brand';
 import { ForbiddenToast } from '@/components/forbidden-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { btnOutline } from '@/lib/table-styles';
@@ -61,25 +62,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             marginBottom: 26,
           }}
         >
-          <div
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: 8,
-              background: 'var(--accent)',
-              color: '#fff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 700,
-              fontSize: 13,
-              letterSpacing: '-0.02em',
-              boxShadow: 'var(--shadow-sm)',
-            }}
-          >
-            DP
-          </div>
-          <span style={{ fontSize: 16, fontWeight: 700, letterSpacing: '-0.02em' }}>DirectPort</span>
+          <BrandMark size={30} />
+          <Wordmark fontSize={16} />
         </div>
 
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>

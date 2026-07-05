@@ -25,21 +25,21 @@ const FORM_LABELS: Record<AssessmentForm, string> = {
 const PRECISION_BADGES: Record<MatchPrecision, { label: string; bg: string; fg: string; tooltip: string }> = {
   exact: {
     label: 'Точное совпадение',
-    bg: '#dcfce7',
-    fg: '#166534',
+    bg: 'var(--success-soft)',
+    fg: 'var(--success-strong)',
     tooltip: 'Запись справочника привязана к этому 10-значному коду или его 8-значной подсубпозиции.',
   },
   narrow: {
     label: 'Применима к товарной позиции',
-    bg: '#fef3c7',
-    fg: '#92400e',
+    bg: 'var(--warning-soft)',
+    fg: 'var(--warning-strong)',
     tooltip:
       'Запись охватывает товарную позицию (4–7 знаков) — мера почти наверняка применима, но рекомендуется проверка по характеристикам.',
   },
   broad: {
     label: 'Возможно применимо',
-    bg: '#fee2e2',
-    fg: '#991b1b',
+    bg: 'var(--danger-soft)',
+    fg: 'var(--danger-strong)',
     tooltip:
       'Запись охватывает крупную группу/раздел (≤3 знаков). Без характеристик товара возможны ложные срабатывания — обязательно перепроверить у брокера.',
   },
@@ -133,7 +133,7 @@ export function RegulatoryRequirementsSection({
         </p>
       )}
       {explanations.status === 'error' && (
-        <p style={{ color: '#b91c1c', fontSize: 12, margin: '0 0 14px' }}>
+        <p style={{ color: 'var(--danger-strong)', fontSize: 12, margin: '0 0 14px' }}>
           AI-выжимки недоступны: {explanations.message}. Показаны базовые сводки.
         </p>
       )}
@@ -251,8 +251,8 @@ function RegulatoryCard({
               fontSize: 10,
               padding: '1px 6px',
               borderRadius: 4,
-              backgroundColor: '#ede9fe',
-              color: '#5b21b6',
+              backgroundColor: 'var(--violet-soft)',
+              color: 'var(--violet-strong)',
               verticalAlign: 'middle',
               cursor: 'help',
             }}
@@ -321,7 +321,7 @@ function RegulatoryCard({
           style={{
             marginTop: 8,
             padding: 12,
-            backgroundColor: '#f9fafb',
+            backgroundColor: 'var(--bg-subtle)',
             border: '1px solid var(--border)',
             borderRadius: 4,
             fontSize: 12,

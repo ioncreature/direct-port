@@ -66,7 +66,7 @@ export default function AiCostsPage() {
               style={{
                 ...btnOutline,
                 fontWeight: !modelFilter ? 700 : 400,
-                borderColor: !modelFilter ? '#000' : 'var(--border)',
+                borderColor: !modelFilter ? 'var(--ink)' : 'var(--border)',
               }}
             >
               Все модели
@@ -78,7 +78,7 @@ export default function AiCostsPage() {
                 style={{
                   ...btnOutline,
                   fontWeight: modelFilter === m ? 700 : 400,
-                  borderColor: modelFilter === m ? '#000' : 'var(--border)',
+                  borderColor: modelFilter === m ? 'var(--ink)' : 'var(--border)',
                 }}
               >
                 {modelLabel(m)}
@@ -208,7 +208,7 @@ export default function AiCostsPage() {
         </div>
       </div>
 
-      <div style={{ marginTop: 24, padding: 16, background: '#f9f9f9', borderRadius: 8, fontSize: 13, color: 'var(--text-subtle)' }}>
+      <div style={{ marginTop: 24, padding: 16, background: 'var(--bg-subtle)', borderRadius: 8, fontSize: 13, color: 'var(--text-subtle)' }}>
         Расчёт стоимости по моделям: Claude Haiku — $1 / $5 за 1M токенов (in/out), Claude Sonnet — $3 / $15 за 1M токенов (in/out), Claude Opus — $5 / $25 за 1M токенов (in/out)
       </div>
     </div>
@@ -220,7 +220,7 @@ function ModelBreakdown({ models }: { models: TokenUsageMap }) {
   return (
     <>
       {Object.entries(models).map(([model, usage]) => (
-        <div key={model} style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>
+        <div key={model} style={{ fontSize: 12, color: 'var(--text-subtle)', marginTop: 4 }}>
           {modelLabel(model)}: {fmtTokens(usage.inputTokens)} in / {fmtTokens(usage.outputTokens)} out
         </div>
       ))}
@@ -238,9 +238,9 @@ function LeadsCard({ models }: { models: TokenUsageMap }) {
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 20, maxWidth: 360 }}>
       <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>
-        Поиск лидов <span style={{ color: '#aaa' }}>· всего</span>
+        Поиск лидов <span style={{ color: 'var(--text-subtle)' }}>· всего</span>
       </div>
-      <div style={{ fontSize: 28, fontWeight: 700, color: '#7c3aed' }}>{fmtCost(cost)}</div>
+      <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--violet)' }}>{fmtCost(cost)}</div>
       <div style={{ fontSize: 13, color: 'var(--text-subtle)', marginTop: 8 }}>
         {fmtTokens(tokens)} токенов · discovery + обогащение
       </div>
@@ -288,7 +288,7 @@ function DailyChart({ data }: { data: DailyTokenStats[] }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, fontSize: 13, color: 'var(--text-muted)' }}>
         <span>
           Последние {data.length} дней{' '}
-          <span style={{ color: '#aaa' }}>· шкала {fmtCost(0)} – {fmtCost(axisMax)}</span>
+          <span style={{ color: 'var(--text-subtle)' }}>· шкала {fmtCost(0)} – {fmtCost(axisMax)}</span>
         </span>
         <span style={{ fontWeight: 600 }}>Итого: {fmtCost(total)}</span>
       </div>
@@ -314,7 +314,7 @@ function DailyChart({ data }: { data: DailyTokenStats[] }) {
                   width: '100%',
                   maxWidth: 24,
                   height: heightPx,
-                  background: isToday ? 'var(--accent)' : isActive ? '#60a5fa' : '#93c5fd',
+                  background: isToday ? 'var(--orange)' : isActive ? '#4d949e' : 'var(--petrol-light)',
                   borderRadius: '3px 3px 0 0',
                   transition: 'height 0.3s, background 0.15s',
                 }}
@@ -329,14 +329,14 @@ function DailyChart({ data }: { data: DailyTokenStats[] }) {
           {data.map((d) => (
             <div
               key={d.date}
-              style={{ flex: 1, minWidth: 0, fontSize: 10, color: '#999', textAlign: 'center', whiteSpace: 'nowrap' }}
+              style={{ flex: 1, minWidth: 0, fontSize: 10, color: 'var(--text-subtle)', textAlign: 'center', whiteSpace: 'nowrap' }}
             >
               {d.date.slice(5)}
             </div>
           ))}
         </div>
       ) : (
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#999', marginTop: 4 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-subtle)', marginTop: 4 }}>
           <span>{data[0]?.date.slice(5)}</span>
           <span>{data[data.length - 1]?.date.slice(5)}</span>
         </div>
@@ -354,7 +354,7 @@ function BarTooltip({ date, cost, models }: { date: string; cost: number; models
         bottom: 'calc(100% + 6px)',
         left: '50%',
         transform: 'translateX(-50%)',
-        background: '#111',
+        background: 'var(--ink)',
         color: '#fff',
         padding: '6px 10px',
         borderRadius: 6,
@@ -368,7 +368,7 @@ function BarTooltip({ date, cost, models }: { date: string; cost: number; models
       <div style={{ fontWeight: 600 }}>{date}</div>
       <div style={{ marginTop: 2 }}>{fmtCost(cost)}</div>
       {entries.map(([model, usage]) => (
-        <div key={model} style={{ marginTop: 2, color: '#bbb' }}>
+        <div key={model} style={{ marginTop: 2, color: '#b3c0c8' }}>
           {modelLabel(model)}: {fmtTokens(usage.inputTokens)} in / {fmtTokens(usage.outputTokens)} out
         </div>
       ))}

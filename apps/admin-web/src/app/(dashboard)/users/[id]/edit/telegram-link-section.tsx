@@ -57,7 +57,7 @@ export function TelegramLinkSection({ user }: { user: User }) {
           </button>
           {token && (
             <div
-              style={{ marginTop: 12, padding: 12, background: '#f9fafb', borderRadius: 8 }}
+              style={{ marginTop: 12, padding: 12, background: 'var(--bg-subtle)', borderRadius: 8 }}
             >
               <p style={{ marginBottom: 8 }}>
                 Отправьте менеджеру ссылку (действует 15 минут):
@@ -81,7 +81,7 @@ export function TelegramLinkSection({ user }: { user: User }) {
           )}
         </div>
       )}
-      {error && <p style={{ color: '#dc2626', marginTop: 8 }}>{error}</p>}
+      {error && <p style={{ color: 'var(--danger)', marginTop: 8 }}>{error}</p>}
     </div>
   );
 }

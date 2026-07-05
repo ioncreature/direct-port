@@ -96,7 +96,7 @@ export default function TnVedPage() {
       {result?.mode === 'text_search' && result.results.length > 0 && (
         <>
           <ResultsTable items={result.results} onCodeClick={onCodeClick} />
-          <p style={{ fontSize: 12, color: '#999', marginTop: 12 }}>
+          <p style={{ fontSize: 12, color: 'var(--text-subtle)', marginTop: 12 }}>
             Найдено {result.totalFound} результатов, показано {result.results.length}
           </p>
         </>
@@ -152,12 +152,12 @@ function CopyButton({ text }: { text: string }) {
       title="Копировать код"
       style={{
         background: 'none',
-        border: '1px solid #ccc',
+        border: '1px solid var(--border-strong)',
         borderRadius: 4,
         padding: '2px 8px',
         cursor: 'pointer',
         fontSize: 12,
-        color: copied ? '#16a34a' : 'var(--text-muted)',
+        color: copied ? 'var(--success)' : 'var(--text-muted)',
       }}
     >
       {copied ? 'Скопировано' : 'Копировать'}
@@ -173,7 +173,7 @@ function CodeDetailCard({ detail }: { detail: TnVedCodeDetail }) {
         padding: 20,
         border: '1px solid var(--border)',
         borderRadius: 8,
-        backgroundColor: '#f9f9f9',
+        backgroundColor: 'var(--bg-subtle)',
       }}
     >
       <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 12 }}>
@@ -484,7 +484,7 @@ function ResultsTable({
                   cursor: 'pointer',
                   color: 'var(--accent)',
                   textDecoration: 'underline',
-                  textDecorationColor: '#93c5fd',
+                  textDecorationColor: 'var(--petrol-light)',
                   whiteSpace: 'nowrap',
                 }}
               >

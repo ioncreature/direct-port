@@ -15,7 +15,7 @@ export function MessagesPanel({ clientId }: { clientId: string }) {
   const { messages, loading, error } = useConversation(clientId);
 
   if (loading) return <p>Загрузка...</p>;
-  if (error) return <p style={{ color: '#dc2626' }}>{error}</p>;
+  if (error) return <p style={{ color: 'var(--danger)' }}>{error}</p>;
   if (messages.length === 0)
     return <p style={{ color: 'var(--text-muted)' }}>Переписки пока нет.</p>;
 
@@ -30,7 +30,7 @@ export function MessagesPanel({ clientId }: { clientId: string }) {
           >
             <div
               style={{
-                background: fromClient ? '#f3f4f6' : '#dbeafe',
+                background: fromClient ? 'var(--bg)' : 'var(--accent-soft)',
                 borderRadius: 10,
                 padding: '8px 12px',
               }}

@@ -8,34 +8,58 @@
    ========================================================================= */
 
 :root {
-  /* Типографика (--font-inter приходит из next/font, см. layout.tsx) */
+  /* Типографика (--font-inter и --font-jbmono приходят из next/font, см. layout.tsx) */
   --font-sans: var(--font-inter), system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
 
-  /* Нейтральная шкала */
-  --bg: #f3f4f6;
-  --sidebar-bg: #fafafb;
+  /* Бренд — палитра «Глубокая вода» (как на лендинге, apps/landing) */
+  --ink: #0b2536;
+  --petrol: #0f6e7c;
+  --petrol-light: #8fc0c7;
+  --orange: #e8622a;
+
+  /* Нейтральная тёплая шкала */
+  --bg: #f1ede3;
+  --sidebar-bg: #f7f4ea;
   --surface: #ffffff;
-  --surface-hover: #f6f7f9;
-  --row-hover: #f8f9fb;
+  --surface-hover: #f6f3ea;
+  --row-hover: #f8f6ef;
+  --bg-subtle: #f7f5ee; /* тёплые вставки-панели на белых карточках */
 
-  --border: #e6e8ec;
-  --border-strong: #d6d9de;
-  --border-subtle: #eef0f2;
+  --border: #e2ddd2;
+  --border-strong: #d2cbba;
+  --border-subtle: #eee9dd;
 
-  --text: #1b1f24;
-  --text-muted: #5e6672;
-  --text-subtle: #98a1ad;
+  --text: var(--ink);
+  --text-muted: #52646d;
+  --text-subtle: #98a1a8;
 
-  /* Акцент — индиго */
-  --accent: #4f46e5;
-  --accent-soft: #eef2ff;
-  --accent-soft-text: #4338ca;
-  --ring: rgba(79, 70, 229, 0.32);
+  /* Акцент — петроль; CTA-кнопки — оранжевый (см. table-styles.ts) */
+  --accent: var(--petrol);
+  --accent-soft: #e2eeec;
+  --accent-soft-text: #0b5661;
+  --ring: rgba(15, 110, 124, 0.3);
 
-  /* Семантические */
-  --success: #16a34a;
-  --warning: #d97706;
-  --danger: #dc2626;
+  /* Семантические — приглушённые тона лендинга */
+  --success: #2f7d54;
+  --success-soft: #dcefe2;
+  --success-strong: #266749;
+  --warning: #a9791f;
+  --warning-soft: #f6ecd4;
+  --warning-soft-border: #e7d3a1;
+  --warning-strong: #7a5715;
+  --danger: #b5432f;
+  --danger-soft: #f7e2dc;
+  --danger-soft-border: #eac3b8;
+  --danger-strong: #8f3423;
+  /* Оранжевая зона — между warning и danger (needs_info, частичные сбои) */
+  --orange-soft: #fdeee4;
+  --orange-soft-border: #f6d9c7;
+  --orange-strong: #a44a20;
+  /* Фиолетовый — AI-активность (parsing, поиск лидов) */
+  --violet: #8d6cab;
+  --violet-soft: #ece5f3;
+  --violet-strong: #5d4680;
 
   /* Радиусы */
   --radius-sm: 7px;
@@ -43,11 +67,11 @@
   --radius-lg: 14px;
   --radius-pill: 999px;
 
-  /* Тени — мягкие, многослойные */
-  --shadow-xs: 0 1px 2px rgba(17, 24, 39, 0.05);
-  --shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.04), 0 1px 3px rgba(17, 24, 39, 0.06);
-  --shadow: 0 1px 3px rgba(17, 24, 39, 0.06), 0 6px 16px -4px rgba(17, 24, 39, 0.08);
-  --shadow-md: 0 4px 12px -2px rgba(17, 24, 39, 0.10), 0 12px 28px -6px rgba(17, 24, 39, 0.10);
+  /* Тени — мягкие, многослойные, в тоне ink */
+  --shadow-xs: 0 1px 2px rgba(11, 37, 54, 0.05);
+  --shadow-sm: 0 1px 2px rgba(11, 37, 54, 0.04), 0 1px 3px rgba(11, 37, 54, 0.06);
+  --shadow: 0 1px 3px rgba(11, 37, 54, 0.06), 0 6px 16px -4px rgba(11, 37, 54, 0.08);
+  --shadow-md: 0 4px 12px -2px rgba(11, 37, 54, 0.1), 0 12px 28px -6px rgba(11, 37, 54, 0.1);
 }
 
 *,
@@ -72,11 +96,13 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* Заголовки — единая шкала с tight letter-spacing */
+/* Заголовки — единая шкала с tight letter-spacing.
+   h1 — моноширинный, как заголовки «терминальной» темы лендинга. */
 h1 {
-  font-size: 22px;
+  font-family: var(--font-mono);
+  font-size: 21px;
   font-weight: 700;
-  letter-spacing: -0.021em;
+  letter-spacing: -0.03em;
   margin: 0 0 4px;
   color: var(--text);
 }
@@ -153,7 +179,7 @@ textarea::placeholder {
   color: var(--text-subtle);
 }
 
-/* Нативные контролы — индиго-акцент */
+/* Нативные контролы — петроль-акцент */
 input[type='checkbox'],
 input[type='radio'],
 input[type='range'] {
@@ -182,20 +208,20 @@ tbody tr:hover {
 /* Тонкие скроллбары */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #cdd2da transparent;
+  scrollbar-color: #cfc9ba transparent;
 }
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 *::-webkit-scrollbar-thumb {
-  background: #cdd2da;
+  background: #cfc9ba;
   border-radius: 999px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: #b4bcc7;
+  background: #b9b19d;
   background-clip: content-box;
 }
 *::-webkit-scrollbar-track {

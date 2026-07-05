@@ -171,7 +171,7 @@ export default function CompaniesPage() {
                   </tr>
                   {expandedId === c.id && (
                     <tr>
-                      <td style={{ ...td, background: 'var(--bg-muted, #f7f7f7)' }} colSpan={4}>
+                      <td style={{ ...td, background: 'var(--bg-subtle)' }} colSpan={4}>
                         <CompanyBotsPanel companyId={c.id} />
                       </td>
                     </tr>

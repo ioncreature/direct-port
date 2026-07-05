@@ -74,14 +74,14 @@ export default function DashboardPage() {
           label="AI за месяц"
           value={aiCost != null ? fmtCost(aiCost) : '...'}
           href="/ai-costs"
-          color="#7c3aed"
+          color="var(--violet)"
         />
         {leadCost != null && (
           <StatCard
             label="Поиск лидов за месяц"
             value={fmtCost(leadCost)}
             href="/ai-costs"
-            color="#7c3aed"
+            color="var(--violet)"
           />
         )}
       </div>

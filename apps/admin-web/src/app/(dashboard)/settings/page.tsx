@@ -65,8 +65,8 @@ function NotificationSection({ config, loading, saving, error, save }: CalcConfi
         </div>
       </label>
 
-      {error && <p style={{ color: '#dc2626', marginBottom: 12 }}>{error}</p>}
-      {success && <p style={{ color: '#16a34a', marginBottom: 12 }}>Сохранено!</p>}
+      {error && <p style={{ color: 'var(--danger)', marginBottom: 12 }}>{error}</p>}
+      {success && <p style={{ color: 'var(--success)', marginBottom: 12 }}>Сохранено!</p>}
 
       <button onClick={handleSave} disabled={saving || !hasChanges} style={btnStyle(saving || !hasChanges)}>
         {saving ? 'Сохранение...' : 'Сохранить'}
@@ -125,7 +125,7 @@ function ConfidenceSection({ config, loading, saving, error, save }: CalcConfigP
           style={inputStyle}
         />
         {!thresholdValid && threshold !== '' && (
-          <p style={{ fontSize: 12, color: '#dc2626', marginTop: 4 }}>
+          <p style={{ fontSize: 12, color: 'var(--danger)', marginTop: 4 }}>
             Значение должно быть от 0 до 1
           </p>
         )}
@@ -172,8 +172,8 @@ function ConfidenceSection({ config, loading, saving, error, save }: CalcConfigP
         </div>
       </div>
 
-      {error && <p style={{ color: '#dc2626', marginBottom: 12 }}>{error}</p>}
-      {success && <p style={{ color: '#16a34a', marginBottom: 12 }}>Сохранено!</p>}
+      {error && <p style={{ color: 'var(--danger)', marginBottom: 12 }}>{error}</p>}
+      {success && <p style={{ color: 'var(--success)', marginBottom: 12 }}>Сохранено!</p>}
 
       <button
         onClick={handleSave}
@@ -237,15 +237,15 @@ function CommissionSection({ config, loading, saving, error, save }: CalcConfigP
         <input type="number" step="0.01" min="0" value={fixedFee} onChange={(e) => setFixedFee(e.target.value)} style={inputStyle} />
       </div>
 
-      {error && <p style={{ color: '#dc2626', marginBottom: 12 }}>{error}</p>}
-      {success && <p style={{ color: '#16a34a', marginBottom: 12 }}>Сохранено!</p>}
+      {error && <p style={{ color: 'var(--danger)', marginBottom: 12 }}>{error}</p>}
+      {success && <p style={{ color: 'var(--success)', marginBottom: 12 }}>Сохранено!</p>}
 
       <button onClick={handleSave} disabled={saving} style={btnStyle(saving)}>
         {saving ? 'Сохранение...' : 'Сохранить'}
       </button>
 
       {config?.updatedAt && (
-        <p style={{ fontSize: 12, color: '#999', marginTop: 12 }}>
+        <p style={{ fontSize: 12, color: 'var(--text-subtle)', marginTop: 12 }}>
           Последнее обновление: {new Date(config.updatedAt).toLocaleString('ru')}
         </p>
       )}
@@ -297,7 +297,7 @@ function AiModelsSection() {
         Обработка каждого документа проходит через несколько этапов. На каждом этапе работает ИИ (Claude),
         и вы можете выбрать уровень модели — от базовой до максимальной.
       </p>
-      <p style={{ fontSize: 13, color: '#777', marginBottom: 24, lineHeight: 1.5 }}>
+      <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 24, lineHeight: 1.5 }}>
         <strong>Opus 4.8</strong> — самая мощная и дорогая модель, лучшее качество.{' '}
         <strong>Sonnet 4.6</strong> — основная рабочая модель, хороший баланс.{' '}
         <strong>Haiku 4.5</strong> — самая быстрая и дешёвая, подходит для простых задач.
@@ -313,15 +313,15 @@ function AiModelsSection() {
         />
       ))}
 
-      {error && <p style={{ color: '#dc2626', marginBottom: 12 }}>{error}</p>}
-      {success && <p style={{ color: '#16a34a', marginBottom: 12 }}>Сохранено!</p>}
+      {error && <p style={{ color: 'var(--danger)', marginBottom: 12 }}>{error}</p>}
+      {success && <p style={{ color: 'var(--success)', marginBottom: 12 }}>Сохранено!</p>}
 
       <button onClick={handleSave} disabled={saving || !hasChanges} style={btnStyle(saving || !hasChanges)}>
         {saving ? 'Сохранение...' : 'Сохранить'}
       </button>
 
       {config?.updatedAt && (
-        <p style={{ fontSize: 12, color: '#999', marginTop: 12 }}>
+        <p style={{ fontSize: 12, color: 'var(--text-subtle)', marginTop: 12 }}>
           Последнее обновление: {new Date(config.updatedAt).toLocaleString('ru')}
         </p>
       )}
@@ -339,7 +339,7 @@ function AiStepCard({
   onChange: (tier: AiModelTier) => void;
 }) {
   return (
-    <div style={{ marginBottom: 28, padding: 20, background: '#f9fafb', borderRadius: 8 }}>
+    <div style={{ marginBottom: 28, padding: 20, background: 'var(--bg-subtle)', borderRadius: 8 }}>
       <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 6 }}>{step.title}</div>
       <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.5 }}>{step.description}</div>
 
@@ -394,8 +394,8 @@ function AiStepCard({
 const recommendedBadge: React.CSSProperties = {
   fontSize: 11,
   padding: '2px 8px',
-  background: '#dcfce7',
-  color: '#166534',
+  background: 'var(--success-soft)',
+  color: 'var(--success-strong)',
   borderRadius: 10,
   fontWeight: 500,
 };
@@ -420,7 +420,7 @@ const inputStyle: React.CSSProperties = {
 function btnStyle(disabled?: boolean): React.CSSProperties {
   return {
     padding: '10px 24px',
-    background: 'var(--accent)',
+    background: 'var(--orange)',
     color: 'white',
     border: 'none',
     borderRadius: 4,

@@ -1,5 +1,6 @@
 'use client';
 
+import { BrandMark, Wordmark } from '@/components/brand';
 import { useAuth } from '@/hooks/use-auth';
 import { btnPrimary } from '@/lib/table-styles';
 import { useRouter } from 'next/navigation';
@@ -49,26 +50,9 @@ export default function LoginPage() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 20 }}>
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 9,
-              background: 'var(--accent)',
-              color: '#fff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 700,
-              fontSize: 15,
-              letterSpacing: '-0.02em',
-              boxShadow: 'var(--shadow-sm)',
-            }}
-          >
-            DP
-          </div>
+          <BrandMark size={36} />
           <div>
-            <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em' }}>DirectPort</div>
+            <Wordmark fontSize={18} />
             <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Вход в систему</div>
           </div>
         </div>
@@ -104,8 +88,8 @@ export default function LoginPage() {
             <p
               style={{
                 color: 'var(--danger)',
-                background: '#fef2f2',
-                border: '1px solid #fecaca',
+                background: 'var(--danger-soft)',
+                border: '1px solid var(--danger-soft-border)',
                 borderRadius: 'var(--radius-sm)',
                 padding: '8px 11px',
                 fontSize: 13,

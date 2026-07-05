@@ -42,7 +42,7 @@ export default function TelegramUserDetailPage() {
 
   if (userLoading) return <p>Загрузка...</p>;
   if (error || !user)
-    return <p style={{ color: '#dc2626' }}>{error || 'Пользователь не найден'}</p>;
+    return <p style={{ color: 'var(--danger)' }}>{error || 'Пользователь не найден'}</p>;
 
   return (
     <div>

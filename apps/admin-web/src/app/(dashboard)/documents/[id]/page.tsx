@@ -19,15 +19,15 @@ import { useParams } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const calcStatusConfig: Record<CalculationStatus, { label: string; color: string; bg: string }> = {
-  exact: { label: 'Точное', color: '#16a34a', bg: '#dcfce7' },
-  partial: { label: 'Есть замечания', color: '#ca8a04', bg: '#fef9c3' },
-  needs_info: { label: 'Требует уточнения', color: '#c2410c', bg: '#fed7aa' },
-  error: { label: 'Ошибка', color: '#dc2626', bg: '#fee2e2' },
+  exact: { label: 'Точное', color: 'var(--success)', bg: 'var(--success-soft)' },
+  partial: { label: 'Есть замечания', color: 'var(--warning)', bg: 'var(--warning-soft)' },
+  needs_info: { label: 'Требует уточнения', color: 'var(--orange-strong)', bg: 'var(--orange-soft-border)' },
+  error: { label: 'Ошибка', color: 'var(--danger)', bg: 'var(--danger-soft)' },
 };
 
 const noteSeverityConfig: Record<ProductNoteSeverity, { icon: string; color: string }> = {
-  blocker: { icon: '!!', color: '#dc2626' },
-  warning: { icon: '!', color: '#ca8a04' },
+  blocker: { icon: '!!', color: 'var(--danger)' },
+  warning: { icon: '!', color: 'var(--warning)' },
   info: { icon: 'i', color: 'var(--text-muted)' },
 };
 
@@ -43,12 +43,12 @@ type StepperStageState = 'done' | 'active' | 'pending' | 'warning' | 'error' | '
 type StepperStage = { key: string; label: string; state: StepperStageState };
 
 const STAGE_COLORS: Record<StepperStageState, { fill: string; ring: string; text: string }> = {
-  done: { fill: '#16a34a', ring: '#16a34a', text: 'var(--text)' },
-  active: { fill: 'var(--accent)', ring: 'var(--accent)', text: '#111827' },
-  pending: { fill: '#fff', ring: '#d1d5db', text: 'var(--text-subtle)' },
-  warning: { fill: '#ca8a04', ring: '#ca8a04', text: '#111827' },
-  error: { fill: '#dc2626', ring: '#dc2626', text: '#111827' },
-  success: { fill: '#16a34a', ring: '#16a34a', text: '#111827' },
+  done: { fill: 'var(--success)', ring: 'var(--success)', text: 'var(--text)' },
+  active: { fill: 'var(--accent)', ring: 'var(--accent)', text: 'var(--text)' },
+  pending: { fill: '#fff', ring: 'var(--border-strong)', text: 'var(--text-subtle)' },
+  warning: { fill: 'var(--warning)', ring: 'var(--warning)', text: 'var(--text)' },
+  error: { fill: 'var(--danger)', ring: 'var(--danger)', text: 'var(--text)' },
+  success: { fill: 'var(--success)', ring: 'var(--success)', text: 'var(--text)' },
 };
 
 const isCompleteStage = (s: StepperStageState) => s === 'done' || s === 'success';
@@ -385,7 +385,7 @@ export default function DocumentDetailPage() {
   );
 
   if (loading) return <p>Загрузка...</p>;
-  if (error || !doc) return <p style={{ color: '#dc2626' }}>{error || 'Документ не найден'}</p>;
+  if (error || !doc) return <p style={{ color: 'var(--danger)' }}>{error || 'Документ не найден'}</p>;
 
   const updateRow = (index: number, field: keyof ParsedDataRow, value: string | number) => {
     setEditableRows((prev) =>
@@ -541,8 +541,8 @@ export default function DocumentDetailPage() {
         <div
           style={{
             padding: 16,
-            background: '#fef2f2',
-            border: '1px solid #fecaca',
+            background: 'var(--danger-soft)',
+            border: '1px solid var(--danger-soft-border)',
             borderRadius: 8,
             marginBottom: 24,
             display: 'flex',
@@ -570,7 +570,7 @@ export default function DocumentDetailPage() {
             disabled={rejecting || (isReview && !rejectReason.trim())}
             style={{
               padding: '6px 14px',
-              background: '#dc2626',
+              background: 'var(--danger)',
               color: '#fff',
               border: 'none',
               borderRadius: 4,
@@ -639,7 +639,7 @@ export default function DocumentDetailPage() {
             {Object.entries(doc.tokenUsage).map(([stage, models]) => {
               const stageCost = calcAiCostFromMap(models);
               return (
-                <div key={stage} style={{ flex: '1 1 180px', padding: 12, background: '#f9f9f9', borderRadius: 6 }}>
+                <div key={stage} style={{ flex: '1 1 180px', padding: 12, background: 'var(--bg-subtle)', borderRadius: 6 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{stageLabel(stage)}</div>
                   <div style={{ fontSize: 15, fontWeight: 700 }}>{fmtCost(stageCost)}</div>
                   {Object.entries(models).map(([model, usage]) => (
@@ -658,14 +658,14 @@ export default function DocumentDetailPage() {
         <div
           style={{
             padding: 16,
-            background: '#fef2f2',
-            border: '1px solid #fecaca',
+            background: 'var(--danger-soft)',
+            border: '1px solid var(--danger-soft-border)',
             borderRadius: 8,
             marginBottom: 24,
           }}
         >
-          <strong style={{ color: '#dc2626' }}>Ошибка:</strong>{' '}
-          <span style={{ color: '#991b1b' }}>{doc.errorMessage}</span>
+          <strong style={{ color: 'var(--danger)' }}>Ошибка:</strong>{' '}
+          <span style={{ color: 'var(--danger-strong)' }}>{doc.errorMessage}</span>
         </div>
       )}
 
@@ -673,16 +673,16 @@ export default function DocumentDetailPage() {
         <div
           style={{
             padding: 16,
-            background: '#fff7ed',
-            border: '1px solid #fed7aa',
+            background: 'var(--orange-soft)',
+            border: '1px solid var(--orange-soft-border)',
             borderRadius: 8,
             marginBottom: 24,
           }}
         >
-          <strong style={{ color: '#c2410c' }}>
+          <strong style={{ color: 'var(--orange-strong)' }}>
             {isCodeReview ? 'Строки с низкой уверенностью:' : 'Причины отклонения:'}
           </strong>
-          <ol style={{ margin: '8px 0 0', paddingLeft: 20, color: '#9a3412' }}>
+          <ol style={{ margin: '8px 0 0', paddingLeft: 20, color: '#8f3f1b' }}>
             {doc.rejectionReasons.map((reason, i) => (
               <li key={i} style={{ marginBottom: 4, fontSize: 14 }}>{reason}</li>
             ))}
@@ -694,14 +694,14 @@ export default function DocumentDetailPage() {
         <div
           style={{
             padding: 16,
-            background: '#fffbeb',
-            border: '1px solid #fcd34d',
+            background: 'var(--warning-soft)',
+            border: '1px solid var(--warning-soft-border)',
             borderRadius: 8,
             marginBottom: 24,
           }}
         >
-          <strong style={{ color: '#d97706' }}>Внимание:</strong>{' '}
-          <span style={{ color: '#92400e' }}>
+          <strong style={{ color: 'var(--warning)' }}>Внимание:</strong>{' '}
+          <span style={{ color: 'var(--warning-strong)' }}>
             Документ обработан, но часть строк содержит ошибки классификации.
             Скачивание недоступно. Попробуйте переобработать документ.
           </span>
@@ -801,7 +801,7 @@ export default function DocumentDetailPage() {
                         style={{
                           background: 'none',
                           border: 'none',
-                          color: '#dc2626',
+                          color: 'var(--danger)',
                           cursor: 'pointer',
                           fontSize: 16,
                           padding: '0 4px',
@@ -885,7 +885,7 @@ export default function DocumentDetailPage() {
               marginBottom: 16,
               border: '1px solid var(--border)',
               borderRadius: 8,
-              background: doc.countryOriginSource === 'default' ? '#fffbeb' : '#fafafa',
+              background: doc.countryOriginSource === 'default' ? 'var(--warning-soft)' : 'var(--bg-subtle)',
             }}
           >
             <div>
@@ -992,7 +992,7 @@ export default function DocumentDetailPage() {
               disabled={recalculateDisabled}
               style={{
                 padding: '8px 16px',
-                background: recalculateDisabled ? 'var(--text-subtle)' : 'var(--accent)',
+                background: recalculateDisabled ? 'var(--text-subtle)' : 'var(--orange)',
                 color: '#fff',
                 border: 'none',
                 borderRadius: 4,
@@ -1152,7 +1152,7 @@ const ResultRow = memo(function ResultRow({
         onClick={() => onToggle(index)}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        style={{ cursor: 'pointer', background: hovered ? '#fafafa' : 'transparent' }}
+        style={{ cursor: 'pointer', background: hovered ? 'var(--bg-subtle)' : 'transparent' }}
       >
         <td style={td}>{index + 1}</td>
         <td style={td}>
@@ -1238,7 +1238,7 @@ function ResultDetail({
             display: 'flex',
             gap: 24,
             padding: '16px 12px',
-            background: '#fafafa',
+            background: 'var(--bg-subtle)',
           }}
         >
           {/* Left: image + basic info */}
@@ -1299,17 +1299,17 @@ function ResultDetail({
             {row.dutyFormula && (
               <div
                 style={{
-                  background: '#fff7ed',
-                  border: '1px solid #fed7aa',
+                  background: 'var(--orange-soft)',
+                  border: '1px solid var(--orange-soft-border)',
                   borderRadius: 6,
                   padding: 10,
                   marginBottom: 12,
                 }}
               >
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#c2410c', marginBottom: 4 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--orange-strong)', marginBottom: 4 }}>
                   Формула пошлины
                 </div>
-                <div style={{ fontSize: 13, fontStyle: 'italic', color: '#9a3412' }}>
+                <div style={{ fontSize: 13, fontStyle: 'italic', color: '#8f3f1b' }}>
                   {row.dutyFormula}
                 </div>
               </div>
@@ -1348,7 +1348,7 @@ function ResultDetail({
           </div>
         </div>
         {canEditCode && (
-          <div style={{ padding: '0 12px 16px', background: '#fafafa' }}>
+          <div style={{ padding: '0 12px 16px', background: 'var(--bg-subtle)' }}>
             <ChangeCodeSection
               rowIndex={rowIndex}
               currentCode={row.tnVedCode}
@@ -1358,14 +1358,14 @@ function ResultDetail({
           </div>
         )}
         {row.regulatoryReport ? (
-          <div style={{ padding: '0 12px 16px', background: '#fafafa' }}>
+          <div style={{ padding: '0 12px 16px', background: 'var(--bg-subtle)' }}>
             <RegulatoryRequirementsSection
               report={row.regulatoryReport}
               explanations={explanations}
             />
           </div>
         ) : (
-          <div style={{ padding: '0 12px 16px', background: '#fafafa', fontSize: 12, color: 'var(--text-subtle)' }}>
+          <div style={{ padding: '0 12px 16px', background: 'var(--bg-subtle)', fontSize: 12, color: 'var(--text-subtle)' }}>
             Разрешительные документы для этой строки не рассчитаны (документ обработан до релиза
             фичи). Запустите пересчёт, чтобы получить список.
           </div>
@@ -1408,18 +1408,18 @@ function ChangeCodeSection({
   return (
     <div
       style={{
-        border: '1px solid #fcd34d',
-        background: '#fffbeb',
+        border: '1px solid var(--warning-soft-border)',
+        background: 'var(--warning-soft)',
         borderRadius: 8,
         padding: 14,
       }}
     >
-      <div style={{ fontSize: 13, fontWeight: 600, color: '#92400e', marginBottom: 10 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--warning-strong)', marginBottom: 10 }}>
         Изменить код ТН ВЭД
       </div>
       {candidateCodes && candidateCodes.length > 0 && (
         <>
-          <div style={{ fontSize: 12, color: '#78350f', marginBottom: 8 }}>
+          <div style={{ fontSize: 12, color: 'var(--warning-strong)', marginBottom: 8 }}>
             Варианты, которые рассматривал AI при классификации:
           </div>
           <div
@@ -1437,7 +1437,7 @@ function ChangeCodeSection({
                 <div
                   key={cand.code}
                   style={{
-                    border: isCurrent ? '2px solid #16a34a' : '1px solid #fcd34d',
+                    border: isCurrent ? '2px solid var(--success)' : '1px solid var(--warning-soft-border)',
                     borderRadius: 6,
                     padding: 10,
                     background: '#fff',
@@ -1462,7 +1462,7 @@ function ChangeCodeSection({
                     {cand.exciseRate > 0 && ` · Акциз ${cand.exciseRate}%`}
                   </div>
                   {cand.reasoning && (
-                    <div style={{ fontSize: 11, color: '#92400e', fontStyle: 'italic' }}>
+                    <div style={{ fontSize: 11, color: 'var(--warning-strong)', fontStyle: 'italic' }}>
                       {cand.reasoning}
                     </div>
                   )}
@@ -1477,8 +1477,8 @@ function ChangeCodeSection({
                       borderRadius: 4,
                       border: 'none',
                       cursor: isCurrent || submitting !== null ? 'not-allowed' : 'pointer',
-                      background: isCurrent ? '#dcfce7' : 'var(--accent)',
-                      color: isCurrent ? '#15803d' : '#fff',
+                      background: isCurrent ? 'var(--success-soft)' : 'var(--orange)',
+                      color: isCurrent ? 'var(--success-strong)' : '#fff',
                       fontWeight: 500,
                     }}
                   >
@@ -1492,7 +1492,7 @@ function ChangeCodeSection({
       )}
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <label style={{ fontSize: 12, color: '#78350f' }}>Свой код:</label>
+        <label style={{ fontSize: 12, color: 'var(--warning-strong)' }}>Свой код:</label>
         <input
           type="text"
           value={customCode}
@@ -1501,7 +1501,7 @@ function ChangeCodeSection({
           maxLength={10}
           style={{
             padding: '4px 8px',
-            border: '1px solid #fcd34d',
+            border: '1px solid var(--warning-soft-border)',
             borderRadius: 4,
             fontSize: 13,
             width: 130,
@@ -1518,7 +1518,7 @@ function ChangeCodeSection({
             borderRadius: 4,
             border: 'none',
             cursor: customValid && submitting === null ? 'pointer' : 'not-allowed',
-            background: customValid && submitting === null ? 'var(--accent)' : 'var(--text-subtle)',
+            background: customValid && submitting === null ? 'var(--orange)' : 'var(--text-subtle)',
             color: '#fff',
             fontWeight: 500,
           }}
@@ -1526,13 +1526,13 @@ function ChangeCodeSection({
           {submitting === customCode.trim() ? 'Применяется...' : 'Применить'}
         </button>
         {!candidateCodes?.length && (
-          <span style={{ fontSize: 11, color: '#78350f' }}>
+          <span style={{ fontSize: 11, color: 'var(--warning-strong)' }}>
             AI не предложил альтернатив — введите код вручную.
           </span>
         )}
       </div>
       {localError && (
-        <div style={{ marginTop: 8, fontSize: 12, color: '#dc2626' }}>{localError}</div>
+        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--danger)' }}>{localError}</div>
       )}
     </div>
   );
@@ -1544,7 +1544,7 @@ function ImagePlaceholder({ size, label = 'img' }: { size: number; label?: strin
       style={{
         width: size,
         height: size,
-        background: '#f3f4f6',
+        background: 'var(--bg)',
         borderRadius: size > 60 ? 6 : 4,
         border: '1px solid var(--border)',
         display: 'flex',
@@ -1581,7 +1581,7 @@ function CalcLine({ label, value, note }: { label: string; value: string; note?:
       <span style={{ color: 'var(--text-muted)' }}>
         {label}
         {note && (
-          <span style={{ fontSize: 11, color: '#c2410c', marginLeft: 4 }}>({note})</span>
+          <span style={{ fontSize: 11, color: 'var(--orange-strong)', marginLeft: 4 }}>({note})</span>
         )}
       </span>
       <span>{value}</span>

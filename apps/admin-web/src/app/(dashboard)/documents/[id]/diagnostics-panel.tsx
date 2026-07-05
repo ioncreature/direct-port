@@ -39,10 +39,10 @@ const STATUS_CONFIG: Record<
   PipelineStageStatus,
   { label: string; color: string; bg: string }
 > = {
-  ok: { label: 'Успех', color: '#16a34a', bg: '#dcfce7' },
-  partial_ok: { label: 'Частично (fallback)', color: '#c2410c', bg: '#fed7aa' },
-  failed: { label: 'Ошибка', color: '#dc2626', bg: '#fee2e2' },
-  running: { label: 'Выполняется', color: 'var(--accent)', bg: '#dbeafe' },
+  ok: { label: 'Успех', color: 'var(--success)', bg: 'var(--success-soft)' },
+  partial_ok: { label: 'Частично (fallback)', color: 'var(--orange-strong)', bg: 'var(--orange-soft-border)' },
+  failed: { label: 'Ошибка', color: 'var(--danger)', bg: 'var(--danger-soft)' },
+  running: { label: 'Выполняется', color: 'var(--accent)', bg: 'var(--accent-soft)' },
 };
 
 const PURPOSE_LABELS: Record<AiCallPurpose, string> = {
@@ -86,7 +86,7 @@ export function DiagnosticsPanel({ documentId }: { documentId: string }) {
   if (error) {
     return (
       <div style={{ padding: 16 }}>
-        <div style={{ color: '#dc2626', marginBottom: 8 }}>{error}</div>
+        <div style={{ color: 'var(--danger)', marginBottom: 8 }}>{error}</div>
         <button type="button" style={btnOutline} onClick={load}>
           Повторить
         </button>
@@ -198,13 +198,13 @@ function StageRunCard({
           style={{
             marginTop: 10,
             padding: 10,
-            background: '#fef2f2',
-            border: '1px solid #fecaca',
+            background: 'var(--danger-soft)',
+            border: '1px solid var(--danger-soft-border)',
             borderRadius: 6,
             fontSize: 12,
           }}
         >
-          <div style={{ fontWeight: 600, color: '#991b1b', marginBottom: 4 }}>
+          <div style={{ fontWeight: 600, color: 'var(--danger-strong)', marginBottom: 4 }}>
             {stageRun.error.message}
           </div>
           {stageRun.error.stack && (
@@ -216,7 +216,7 @@ function StageRunCard({
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word',
                   fontSize: 11,
-                  color: '#7f1d1d',
+                  color: 'var(--danger-strong)',
                 }}
               >
                 {stageRun.error.stack}
@@ -250,7 +250,7 @@ function StageRunCard({
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-word',
               fontSize: 11,
-              background: '#f9fafb',
+              background: 'var(--bg-subtle)',
               padding: 8,
               borderRadius: 4,
             }}
@@ -304,11 +304,11 @@ function AiCallsTable({
               </td>
               <td style={td}>
                 {c.error ? (
-                  <span style={{ color: '#dc2626' }} title={c.error.message}>
+                  <span style={{ color: 'var(--danger)' }} title={c.error.message}>
                     Ошибка
                   </span>
                 ) : (
-                  <span style={{ color: '#16a34a' }}>OK</span>
+                  <span style={{ color: 'var(--success)' }}>OK</span>
                 )}
               </td>
               <td style={td}>
@@ -440,8 +440,8 @@ function JsonBlock({ value }: { value: unknown }) {
   return (
     <pre
       style={{
-        background: '#0f172a',
-        color: '#e2e8f0',
+        background: 'var(--ink)',
+        color: '#dbe4e9',
         padding: 12,
         borderRadius: 6,
         fontSize: 12,
@@ -484,7 +484,7 @@ function AiCallModal({
 
   return (
     <ModalShell title="Вызов Claude" onClose={onClose}>
-      {err && <div style={{ color: '#dc2626' }}>{err}</div>}
+      {err && <div style={{ color: 'var(--danger)' }}>{err}</div>}
       {!call && !err && <div style={{ color: 'var(--text-muted)' }}>Загрузка…</div>}
       {call && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -497,11 +497,11 @@ function AiCallModal({
             <div
               style={{
                 padding: 10,
-                background: '#fef2f2',
-                border: '1px solid #fecaca',
+                background: 'var(--danger-soft)',
+                border: '1px solid var(--danger-soft-border)',
                 borderRadius: 6,
                 fontSize: 12,
-                color: '#991b1b',
+                color: 'var(--danger-strong)',
               }}
             >
               {call.error.message}
@@ -550,7 +550,7 @@ function VersionModal({
 
   return (
     <ModalShell title={`Снимок версии v${version}`} onClose={onClose}>
-      {err && <div style={{ color: '#dc2626' }}>{err}</div>}
+      {err && <div style={{ color: 'var(--danger)' }}>{err}</div>}
       {!data && !err && <div style={{ color: 'var(--text-muted)' }}>Загрузка…</div>}
       {data && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

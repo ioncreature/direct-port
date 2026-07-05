@@ -152,7 +152,7 @@ export default function DocumentsPage() {
                       <button
                         onClick={() => handleReprocess(doc.id)}
                         disabled={reprocessingIds.has(doc.id)}
-                        style={{ ...btnLink, color: '#ca8a04' }}
+                        style={{ ...btnLink, color: 'var(--warning)' }}
                       >
                         {reprocessingIds.has(doc.id) ? 'Отправка...' : 'Переобработать'}
                       </button>

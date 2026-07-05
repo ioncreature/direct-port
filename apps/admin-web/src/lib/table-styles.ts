@@ -1,7 +1,8 @@
 export const th: React.CSSProperties = {
   textAlign: 'left',
   padding: '10px 12px',
-  fontSize: 12,
+  fontFamily: 'var(--font-mono)',
+  fontSize: 11,
   fontWeight: 600,
   color: 'var(--text-muted)',
   textTransform: 'uppercase',
@@ -47,9 +48,10 @@ export const btnLink: React.CSSProperties = {
   color: 'var(--accent)',
   cursor: 'pointer',
 };
+/** Главное действие — оранжевый CTA, как кнопки лендинга. */
 export const btnPrimary: React.CSSProperties = {
   padding: '8px 16px',
-  background: 'var(--accent)',
+  background: 'var(--orange)',
   color: '#fff',
   border: 'none',
   borderRadius: 'var(--radius-sm)',
@@ -106,7 +108,8 @@ export const successBadge: React.CSSProperties = {
   fontWeight: 600,
 };
 
-/** Pill-чип фильтра (списки документов/пользователей). */
+/** Pill-чип фильтра (списки документов/пользователей).
+ *  Активный — ink-фон, как сегментированный переключатель лендинга. */
 export function filterChip(active: boolean): React.CSSProperties {
   return {
     padding: '5px 13px',
@@ -114,8 +117,8 @@ export function filterChip(active: boolean): React.CSSProperties {
     cursor: 'pointer',
     fontSize: 13,
     fontWeight: 500,
-    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-    background: active ? 'var(--accent)' : 'var(--surface)',
+    border: `1px solid ${active ? 'var(--ink)' : 'var(--border)'}`,
+    background: active ? 'var(--ink)' : 'var(--surface)',
     color: active ? '#fff' : 'var(--text-muted)',
     boxShadow: active ? 'var(--shadow-xs)' : 'none',
   };

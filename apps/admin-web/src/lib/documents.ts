@@ -23,16 +23,16 @@ export const statusLabels: Record<DocumentStatus, string> = {
 };
 
 export const statusColors: Record<DocumentStatus, string> = {
-  intake: '#0891b2',
-  parsing: '#8b5cf6',
+  intake: 'var(--petrol)',
+  parsing: 'var(--violet)',
   pending: 'var(--text-subtle)',
-  processing: '#2563eb',
-  processed: '#16a34a',
-  processed_with_errors: '#d97706',
-  failed: '#dc2626',
-  rejected: '#ea580c',
-  requires_review: '#ca8a04',
-  code_review_required: '#ca8a04',
+  processing: '#3e6f96',
+  processed: 'var(--success)',
+  processed_with_errors: '#bc6d1d',
+  failed: 'var(--danger)',
+  rejected: 'var(--orange-strong)',
+  requires_review: 'var(--warning)',
+  code_review_required: 'var(--warning)',
 };
 
 export async function downloadDocument(id: string) {
