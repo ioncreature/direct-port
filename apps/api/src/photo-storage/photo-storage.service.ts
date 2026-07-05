@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 // sharp — CommonJS-модуль; без esModuleInterop default-import ломается в runtime,
 // а TS-namespace import не парсит Babel jest. Простой require обходит оба.
 /* eslint-disable @typescript-eslint/no-require-imports */
@@ -11,6 +11,9 @@ import { DocumentPhoto } from '../database/entities/document-photo.entity';
 
 const MAX_DIMENSION_PX = 1024;
 const JPEG_QUALITY = 85;
+/** Миниатюры для выходного Excel и таблиц админки: мелкие и дешёвые (~5–8 КБ). */
+const THUMB_DIMENSION_PX = 120;
+const THUMB_JPEG_QUALITY = 70;
 const RESIZE_CONCURRENCY = 4;
 /** Защита от OOM на патологических xlsx с тысячами embedded-картинок. */
 const MAX_IMAGES_PER_DOC = 200;
@@ -30,6 +33,16 @@ export interface ProductPhotoInput {
 export interface SavedPhotoRef {
   productIndex: number;
   hash: string;
+}
+
+/** Миниатюра первого фото строки (photoIds[0]) + список всех фото строки. */
+export interface RowPhotoThumbnail {
+  rowIndex: number;
+  photoIds: string[];
+  imageHash: string;
+  bytes: Buffer;
+  width: number;
+  height: number;
 }
 
 @Injectable()
@@ -128,6 +141,8 @@ export class PhotoStorageService {
 
   private async resizeOne(
     bytes: Buffer,
+    maxDimension = MAX_DIMENSION_PX,
+    quality = JPEG_QUALITY,
   ): Promise<{ data: Buffer; width: number | null; height: number | null } | null> {
     try {
       const { data, info } = await sharp(bytes, {
@@ -138,18 +153,77 @@ export class PhotoStorageService {
         failOn: 'error',
       })
         .resize({
-          width: MAX_DIMENSION_PX,
-          height: MAX_DIMENSION_PX,
+          width: maxDimension,
+          height: maxDimension,
           fit: 'inside',
           withoutEnlargement: true,
         })
-        .jpeg({ quality: JPEG_QUALITY })
+        .jpeg({ quality })
         .toBuffer({ resolveWithObject: true });
       return { data, width: info?.width ?? null, height: info?.height ?? null };
     } catch (err) {
       this.logger.warn(`sharp processing failed: ${errMsg(err)}`);
       return null;
     }
+  }
+
+  /**
+   * Миниатюры (≤120px) первых фото каждой строки документа. Не хранятся —
+   * генерируются на лету из уже ресайзнутых 1024px-версий (осознанный компромисс:
+   * при заметной нагрузке следующий шаг — персистентная колонка thumbBytes).
+   * Одинаковые изображения (по imageHash) ресайзятся один раз.
+   */
+  async getRowThumbnails(documentId: string): Promise<RowPhotoThumbnail[]> {
+    const meta: Pick<DocumentPhoto, 'id' | 'rowIndex'>[] = await this.repo.find({
+      where: { documentId },
+      select: ['id', 'rowIndex'],
+      order: { rowIndex: 'ASC', createdAt: 'ASC' },
+    });
+    if (meta.length === 0) return [];
+    const idsByRow = new Map<number, string[]>();
+    for (const m of meta) {
+      const ids = idsByRow.get(m.rowIndex);
+      if (ids) ids.push(m.id);
+      else idsByRow.set(m.rowIndex, [m.id]);
+    }
+
+    // BYTEA тянем только для первого фото каждой строки (photoIds[0]).
+    const firstIds = [...idsByRow.values()].map((ids) => ids[0]);
+    const firsts = await this.repo.find({ where: { id: In(firstIds) } });
+    const firstById = new Map(firsts.map((p) => [p.id, p]));
+
+    const uniques = [...new Map(firsts.map((p) => [p.imageHash, p])).values()];
+    const thumbByHash = new Map<
+      string,
+      { data: Buffer; width: number | null; height: number | null } | null
+    >();
+    for (let i = 0; i < uniques.length; i += RESIZE_CONCURRENCY) {
+      const batch = uniques.slice(i, i + RESIZE_CONCURRENCY);
+      const resized = await Promise.all(
+        batch.map((p) => this.resizeOne(p.bytes, THUMB_DIMENSION_PX, THUMB_JPEG_QUALITY)),
+      );
+      batch.forEach((p, j) => thumbByHash.set(p.imageHash, resized[j]));
+    }
+
+    const result: RowPhotoThumbnail[] = [];
+    for (const [rowIndex, photoIds] of idsByRow) {
+      const photo = firstById.get(photoIds[0]);
+      const thumb = photo ? thumbByHash.get(photo.imageHash) : null;
+      if (!photo || !thumb) continue; // битое фото — строка остаётся без миниатюры
+      result.push({
+        rowIndex,
+        photoIds,
+        imageHash: photo.imageHash,
+        bytes: thumb.data,
+        width: thumb.width ?? THUMB_DIMENSION_PX,
+        height: thumb.height ?? THUMB_DIMENSION_PX,
+      });
+    }
+    return result;
+  }
+
+  async getById(documentId: string, photoId: string): Promise<DocumentPhoto | null> {
+    return this.repo.findOne({ where: { id: photoId, documentId } });
   }
 
   async deleteForDocument(documentId: string): Promise<void> {

@@ -1,6 +1,37 @@
 import * as ExcelJS from 'exceljs';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
+import type {
+  PhotoStorageService,
+  RowPhotoThumbnail,
+} from '../photo-storage/photo-storage.service';
 import { ExcelExportService } from './excel-export.service';
+
+/** Мок PhotoStorageService: по умолчанию документ без фото. */
+function makePhotoStorage(thumbnails: RowPhotoThumbnail[] = []): PhotoStorageService {
+  return {
+    getRowThumbnails: jest.fn().mockResolvedValue(thumbnails),
+  } as unknown as PhotoStorageService;
+}
+
+/** Валидный однопиксельный JPEG — ExcelJS не разбирает байты, но пусть будут настоящими. */
+const TINY_JPEG = Buffer.from(
+  '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a' +
+    'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA' +
+    'AAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==',
+  'base64',
+);
+
+function makeThumbnail(overrides: Partial<RowPhotoThumbnail> = {}): RowPhotoThumbnail {
+  return {
+    rowIndex: 0,
+    photoIds: ['photo-1'],
+    imageHash: 'hash-1',
+    bytes: TINY_JPEG,
+    width: 120,
+    height: 90,
+    ...overrides,
+  };
+}
 
 function makeDocument(overrides: Partial<Document> = {}): Document {
   const doc = new Document();
@@ -85,7 +116,7 @@ describe('ExcelExportService', () => {
   let service: ExcelExportService;
 
   beforeEach(() => {
-    service = new ExcelExportService();
+    service = new ExcelExportService(makePhotoStorage());
   });
 
   describe('базовая генерация', () => {
@@ -925,6 +956,65 @@ describe('ExcelExportService', () => {
       const text = sheetText(wb.getWorksheet('Документы к поставке')!);
       expect(text).toContain('Маркировка «Честный знак» — Обувь');
       expect(text).toContain('01.07.2020');
+    });
+  });
+
+  describe('фото строк', () => {
+    it('без фото колонки «Фото» нет', async () => {
+      const doc = makeDocument({ resultData: [makeResultRow()] });
+      const wb = await readWorkbook((await service.generate(doc)) as ArrayBuffer);
+      expect(getHeaders(wb.getWorksheet('Результат')!)).not.toContain('Фото');
+    });
+
+    it('с фото появляется колонка «Фото» и картинка на листе', async () => {
+      service = new ExcelExportService(makePhotoStorage([makeThumbnail()]));
+      const doc = makeDocument({ resultData: [makeResultRow(), makeResultRow()] });
+      const wb = await readWorkbook((await service.generate(doc)) as ArrayBuffer);
+      const sheet = wb.getWorksheet('Результат')!;
+
+      const headers = getHeaders(sheet);
+      expect(headers[1]).toBe('Наименование');
+      expect(headers[2]).toBe('Фото');
+      expect(sheet.getImages()).toHaveLength(1);
+      // Якорь на строке первого товара (row zero-based: заголовок 0, товар 1)
+      expect(Math.floor(sheet.getImages()[0].range.tl.row)).toBe(1);
+    });
+
+    it('одинаковые изображения (hash) регистрируются в workbook один раз', async () => {
+      service = new ExcelExportService(
+        makePhotoStorage([
+          makeThumbnail({ rowIndex: 0, photoIds: ['p1'], imageHash: 'same' }),
+          makeThumbnail({ rowIndex: 1, photoIds: ['p2'], imageHash: 'same' }),
+        ]),
+      );
+      const doc = makeDocument({ resultData: [makeResultRow(), makeResultRow()] });
+      const wb = await readWorkbook((await service.generate(doc)) as ArrayBuffer);
+      const sheet = wb.getWorksheet('Результат')!;
+
+      // Обе строки ссылаются на одно media (imageId одинаковый)
+      const images = sheet.getImages();
+      expect(images).toHaveLength(2);
+      expect(images[0].imageId).toBe(images[1].imageId);
+    });
+
+    it('строка с фото получает высоту под миниатюру', async () => {
+      service = new ExcelExportService(
+        makePhotoStorage([makeThumbnail({ height: 120 })]),
+      );
+      const doc = makeDocument({ resultData: [makeResultRow()] });
+      const wb = await readWorkbook((await service.generate(doc)) as ArrayBuffer);
+      const sheet = wb.getWorksheet('Результат')!;
+
+      expect(sheet.getRow(2).height).toBeGreaterThanOrEqual(90);
+    });
+
+    it('сбой загрузки фото не роняет генерацию — Excel без колонки «Фото»', async () => {
+      service = new ExcelExportService({
+        getRowThumbnails: jest.fn().mockRejectedValue(new Error('db down')),
+      } as unknown as PhotoStorageService);
+      const doc = makeDocument({ resultData: [makeResultRow()] });
+      const wb = await readWorkbook((await service.generate(doc)) as ArrayBuffer);
+      expect(getHeaders(wb.getWorksheet('Результат')!)).not.toContain('Фото');
     });
   });
 });

@@ -1,6 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import * as ExcelJS from 'exceljs';
 import { normalizePer } from '../calculator/calculator.service';
+import { errMsg } from '../common/errors';
+import {
+  PhotoStorageService,
+  type RowPhotoThumbnail,
+} from '../photo-storage/photo-storage.service';
 import type { ProductAttributes } from '../common/product-attributes';
 import type { CalculationStatus, ProductNote } from '../common/product-notes';
 import { Document } from '../database/entities/document.entity';
@@ -136,6 +141,7 @@ function buildColumns(
   hasSupplementary = false,
   hasDtNumbers = false,
   hasRowCountry = false,
+  hasPhotos = false,
 ): ColumnDef[] {
   const columns: ColumnDef[] = [
     // «№ товара ДТ» — первая колонка: декларантское ПО (Контур/Альта/СТМ) группирует
@@ -144,6 +150,8 @@ function buildColumns(
       ? [{ header: '№ товара ДТ', key: 'dtGoodNumber', width: 10, numFmt: '0' } as ColumnDef]
       : []),
     { header: 'Наименование', key: 'description', width: 40 },
+    // Ширина 18 ≈ 126px — под миниатюру ≤120px (~7px на единицу ширины колонки).
+    ...(hasPhotos ? [{ header: 'Фото', key: 'photo', width: 18 } as ColumnDef] : []),
     { header: 'Количество', key: 'quantity', width: 12, numFmt: '#,##0.####' },
     { header: `Цена (${currency})`, key: 'price', width: 14, numFmt: '#,##0.00' },
     // «Вес нетто» вместо «Вес» только при наличии брутто: для legacy-документов
@@ -286,9 +294,16 @@ const HEADER_FONT: Partial<ExcelJS.Font> = {
 
 const ROW_HEIGHT_PER_LINE = 15;
 const ROW_HEIGHT_PADDING = 5;
+/** Высота строки Excel задаётся в пунктах: 1px ≈ 0.75pt. */
+const PX_TO_PT = 0.75;
+const PHOTO_ROW_PADDING_PT = 6;
 
 @Injectable()
 export class ExcelExportService {
+  private logger = new Logger(ExcelExportService.name);
+
+  constructor(private photoStorage: PhotoStorageService) {}
+
   async generate(doc: Document): Promise<ExcelJS.Buffer> {
     const data = (doc.resultData ?? doc.parsedData ?? []) as unknown as ResultRow[];
     const hasResults = data.length > 0 && 'tnVedCode' in data[0];
@@ -335,6 +350,10 @@ export class ExcelExportService {
     // (сборные инвойсы); для обычных документов страна одна на документ.
     const hasRowCountry = data.some((r) => !!r.countryOfOrigin);
 
+    // Фото из document_photo (привязаны к индексам parsedData = индексам resultData).
+    const photoByRow = await this.loadRowThumbnails(doc.id);
+    const hasPhotos = photoByRow.size > 0;
+
     const COLUMNS = buildColumns(
       currency,
       hasRub,
@@ -345,6 +364,7 @@ export class ExcelExportService {
       hasSupplementary,
       hasDtNumbers,
       hasRowCountry,
+      hasPhotos,
     );
     const hasLocalizedNotes = language != null && language !== 'ru';
 
@@ -362,6 +382,10 @@ export class ExcelExportService {
     const statusColIdx = COLUMNS.findIndex((c) => c.key === 'calculationStatus') + 1;
     const notesColIdx = COLUMNS.findIndex((c) => c.key === 'notesText') + 1;
     const regulatoryColIdx = COLUMNS.findIndex((c) => c.key === 'regulatoryDetails') + 1;
+    // 0-based индекс колонки «Фото» — anchor картинок в ExcelJS считается с нуля.
+    const photoColIdx = COLUMNS.findIndex((c) => c.key === 'photo');
+    // Одинаковые изображения (по hash) регистрируются в workbook один раз.
+    const imageIdByHash = new Map<string, number>();
 
     for (let rowIdx = 0; rowIdx < data.length; rowIdx++) {
       const row = data[rowIdx];
@@ -452,13 +476,37 @@ export class ExcelExportService {
       const regulatoryCell = excelRow.getCell(regulatoryColIdx);
       regulatoryCell.alignment = { wrapText: true, vertical: 'top' };
 
-      // Высота — по самой высокой из многострочных колонок, иначе ExcelJS не
-      // подбирает её автоматически и многострочный текст обрезается.
+      const photo = photoByRow.get(rowIdx);
+      if (photo) {
+        let imageId = imageIdByHash.get(photo.imageHash);
+        if (imageId === undefined) {
+          // ExcelJS.Buffer типизирован как ArrayBuffer и несовместим с Node Buffer,
+          // при этом runtime принимает Node Buffer (тот же приём в client-portal).
+          imageId = workbook.addImage({
+            buffer: photo.bytes as unknown as ExcelJS.Buffer,
+            extension: 'jpeg',
+          });
+          imageIdByHash.set(photo.imageHash, imageId);
+        }
+        // tl — zero-based координаты ячейки (excelRow.number — 1-based строка листа);
+        // editAs: 'oneCell' — картинка следует за ячейкой при сортировке/фильтрации.
+        sheet.addImage(imageId, {
+          tl: { col: photoColIdx + 0.1, row: excelRow.number - 1 + 0.1 },
+          ext: { width: photo.width, height: photo.height },
+          editAs: 'oneCell',
+        });
+      }
+
+      // Высота — по самой высокой из многострочных колонок (иначе ExcelJS не
+      // подбирает её автоматически и текст обрезается) либо по миниатюре фото.
       const notesLines = notesText ? notesText.split('\n').length : 0;
       const regulatoryLines = regulatoryText ? regulatoryText.split('\n').length : 0;
       const maxLines = Math.max(notesLines, regulatoryLines);
-      if (maxLines > 1) {
-        excelRow.height = ROW_HEIGHT_PER_LINE * maxLines + ROW_HEIGHT_PADDING;
+      const textHeight = maxLines > 1 ? ROW_HEIGHT_PER_LINE * maxLines + ROW_HEIGHT_PADDING : 0;
+      const photoHeight = photo ? photo.height * PX_TO_PT + PHOTO_ROW_PADDING_PT : 0;
+      const rowHeight = Math.max(textHeight, photoHeight);
+      if (rowHeight > 0) {
+        excelRow.height = rowHeight;
       }
     }
 
@@ -483,6 +531,23 @@ export class ExcelExportService {
     this.addShipmentChecklistSheet(workbook, checklist, language);
 
     return workbook.xlsx.writeBuffer();
+  }
+
+  /**
+   * Миниатюры фото по строкам документа. Фото — украшение выгрузки: любой их сбой
+   * (недоступная БД, битые байты) не должен ронять скачивание расчёта.
+   */
+  private async loadRowThumbnails(
+    documentId: string | undefined,
+  ): Promise<Map<number, RowPhotoThumbnail>> {
+    if (!documentId) return new Map();
+    try {
+      const thumbs = await this.photoStorage.getRowThumbnails(documentId);
+      return new Map(thumbs.map((t) => [t.rowIndex, t]));
+    } catch (err) {
+      this.logger.warn(`Failed to load photo thumbnails for ${documentId}: ${errMsg(err)}`);
+      return new Map();
+    }
   }
 
   /** Общая стилизация строки заголовков листа (синяя шапка, перенос, высота). */

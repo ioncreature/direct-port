@@ -3,8 +3,12 @@ import * as request from 'supertest';
 import { DataSource } from 'typeorm';
 import { CalculatorService } from '../src/calculator/calculator.service';
 import { ClassifierService } from '../src/classifier/classifier.service';
+import { DocumentPhoto } from '../src/database/entities/document-photo.entity';
 import { Document, DocumentStatus } from '../src/database/entities/document.entity';
 import { ExcelExportService } from '../src/documents/excel-export.service';
+
+/* eslint-disable @typescript-eslint/no-require-imports */
+const sharp = require('sharp');
 import {
   closeTestApp,
   createTestApp,
@@ -251,6 +255,94 @@ describe('Documents (e2e)', () => {
         .expect(200);
 
       expect(res.headers['content-type']).toContain('spreadsheetml');
+    });
+  });
+
+  describe('GET /api/documents/:id/photos', () => {
+    async function seedDocWithPhotos() {
+      const ds = app.get(DataSource);
+      const docRepo = ds.getRepository(Document);
+      const photoRepo = ds.getRepository(DocumentPhoto);
+
+      const doc = await docRepo.save(
+        docRepo.create({
+          telegramUserId,
+          originalFileName: 'photos-test.xlsx',
+          columnMapping: { description: 0 },
+          parsedData: sampleParsedData,
+          rowCount: 2,
+          status: DocumentStatus.PROCESSED,
+        }),
+      );
+      const jpeg: Buffer = await sharp({
+        create: { width: 600, height: 400, channels: 3, background: { r: 10, g: 120, b: 200 } },
+      })
+        .jpeg()
+        .toBuffer();
+      const photos = await photoRepo.save([
+        photoRepo.create({
+          documentId: doc.id,
+          rowIndex: 0,
+          imageHash: 'e2e-hash-1',
+          mimeType: 'image/jpeg',
+          bytes: jpeg,
+        }),
+        photoRepo.create({
+          documentId: doc.id,
+          rowIndex: 0,
+          imageHash: 'e2e-hash-2',
+          mimeType: 'image/jpeg',
+          bytes: jpeg,
+        }),
+      ]);
+      return { doc, photos };
+    }
+
+    it('отдаёт миниатюру первого фото строки и все photoIds', async () => {
+      const { doc, photos } = await seedDocWithPhotos();
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/documents/${doc.id}/photos`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      expect(res.body.rows).toHaveLength(1);
+      expect(res.body.rows[0].rowIndex).toBe(0);
+      expect(res.body.rows[0].photoIds).toEqual([photos[0].id, photos[1].id]);
+      expect(res.body.rows[0].thumb).toMatch(/^data:image\/jpeg;base64,/);
+    });
+
+    it('полноразмерное фото отдаётся с ETag и immutable-кэшем, 304 по If-None-Match', async () => {
+      const { doc, photos } = await seedDocWithPhotos();
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/documents/${doc.id}/photos/${photos[0].id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(res.headers['content-type']).toContain('image/jpeg');
+      expect(res.headers.etag).toBe('"e2e-hash-1"');
+      expect(res.headers['cache-control']).toContain('immutable');
+
+      await request(app.getHttpServer())
+        .get(`/api/documents/${doc.id}/photos/${photos[0].id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('If-None-Match', '"e2e-hash-1"')
+        .expect(304);
+    });
+
+    it('404 для фото чужого документа', async () => {
+      const { photos } = await seedDocWithPhotos();
+      const { doc: otherDoc } = await seedDocWithPhotos();
+
+      await request(app.getHttpServer())
+        .get(`/api/documents/${otherDoc.id}/photos/${photos[0].id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(404);
+    });
+
+    it('требует авторизацию', async () => {
+      const { doc } = await seedDocWithPhotos();
+      await request(app.getHttpServer()).get(`/api/documents/${doc.id}/photos`).expect(401);
     });
   });
 

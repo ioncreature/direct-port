@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  NotFoundException,
   Param,
   ParseIntPipe,
   ParseUUIDPipe,
@@ -37,6 +38,7 @@ import { ReviewDocumentDto } from './dto/review-document.dto';
 import { SetRowCodeDto } from './dto/set-row-code.dto';
 import { UploadAdminDto } from './dto/upload-admin.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
+import { PhotoStorageService } from '../photo-storage/photo-storage.service';
 import { ExcelExportService } from './excel-export.service';
 import { ManualCodeService } from './manual-code.service';
 
@@ -48,6 +50,7 @@ export class DocumentsController {
     private calculationLogs: CalculationLogsService,
     private diagnostics: DiagnosticsService,
     private manualCode: ManualCodeService,
+    private photoStorage: PhotoStorageService,
   ) {}
 
   @Post()
@@ -290,6 +293,50 @@ export class DocumentsController {
   ) {
     await this.service.assertAccess(id, actor);
     return this.diagnostics.findVersionByNumber(id, version);
+  }
+
+  /**
+   * Фото строк документа для таблиц админки: миниатюра (≤120px, base64) первого
+   * фото каждой строки + id всех фото строки. rowIndex — индекс в parsedData/resultData.
+   */
+  @Get(':id/photos')
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  async getPhotos(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: Actor) {
+    await this.service.assertAccess(id, actor);
+    const thumbs = await this.photoStorage.getRowThumbnails(id);
+    return {
+      rows: thumbs.map((t) => ({
+        rowIndex: t.rowIndex,
+        photoIds: t.photoIds,
+        thumb: `data:image/jpeg;base64,${t.bytes.toString('base64')}`,
+      })),
+    };
+  }
+
+  /**
+   * Полноразмерное (≤1024px) фото. Байты контент-адресуемы (imageHash) — отдаём
+   * immutable-кэш; 304 по If-None-Match Express выдаёт сам (req.fresh) по ETag.
+   */
+  @Get(':id/photos/:photoId')
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  async getPhoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('photoId', ParseUUIDPipe) photoId: string,
+    @Res() res: Response,
+    @CurrentUser() actor: Actor,
+  ) {
+    await this.service.assertAccess(id, actor);
+    const photo = await this.photoStorage.getById(id, photoId);
+    if (!photo) {
+      throw new NotFoundException({
+        code: ErrorCode.PHOTO_NOT_FOUND,
+        message: 'Photo not found',
+      });
+    }
+    res.setHeader('ETag', `"${photo.imageHash}"`);
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    res.setHeader('Content-Type', photo.mimeType);
+    res.send(photo.bytes);
   }
 
   @Get(':id/download')

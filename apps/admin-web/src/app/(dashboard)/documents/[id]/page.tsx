@@ -5,15 +5,17 @@ import { TabsNav } from '@/components/tabs-nav';
 import { useCalculationHistory } from '@/hooks/use-calculation-history';
 import { useCountries } from '@/hooks/use-countries';
 import { useDocument } from '@/hooks/use-document';
+import { useDocumentPhotos } from '@/hooks/use-document-photos';
 import { useDocumentRegulatoryExplanations } from '@/hooks/use-document-regulatory-explanations';
 import { RegulatoryRequirementsSection } from '../../tn-ved/regulatory-section';
 import { DiagnosticsPanel } from './diagnostics-panel';
+import { PhotoLightbox, PhotoThumb } from './photos';
 import { countryOriginSourceLabels, downloadDocument, statusColors, statusLabels } from '@/lib/documents';
 import { calcAiCostFromMap, calcAiCostFromStages, fmt, fmtCost, fmtDateTimeLocale, fmtTokens, modelLabel, stageLabel } from '@/lib/format';
 import { btnDangerOutline, btnOutline, btnPrimary, btnSuccess, btnWarning } from '@/lib/table-styles';
 import { getDocumentUploaderName } from '@/lib/telegram';
 import { INCOTERMS } from '@/lib/types';
-import type { CalculationStatus, CodeCandidate, DocumentResultRow, DocumentStatus, ParsedDataRow, ProductNoteSeverity } from '@/lib/types';
+import type { CalculationStatus, CodeCandidate, DocumentPhotoRow, DocumentResultRow, DocumentStatus, ParsedDataRow, ProductNoteSeverity } from '@/lib/types';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -300,6 +302,14 @@ export default function DocumentDetailPage() {
     (i: number) => setExpandedRow((prev) => (prev === i ? null : i)),
     [],
   );
+  // Фото появляются в БД после парсинга — грузим миниатюры, как только у документа
+  // появились строки (условие переключается polling'ом doc).
+  const photosByRow = useDocumentPhotos(
+    doc?.id ?? null,
+    (doc?.parsedData?.length ?? 0) > 0 || (doc?.resultData?.length ?? 0) > 0,
+  );
+  const [lightboxPhoto, setLightboxPhoto] = useState<DocumentPhotoRow | null>(null);
+  const closePhoto = useCallback(() => setLightboxPhoto(null), []);
   // Lazy-load AI-выжимок: один запрос на весь документ при первом раскрытии любой строки.
   // После этого данные кэшируются в state до анмаунта/смены документа.
   const explanationsState = useDocumentRegulatoryExplanations(
@@ -748,6 +758,7 @@ export default function DocumentDetailPage() {
               <thead>
                 <tr>
                   <th style={th}>#</th>
+                  <th style={{ ...th, width: 50 }}></th>
                   <th style={{ ...th, minWidth: 250 }}>Наименование</th>
                   <th style={{ ...thR, minWidth: 80 }}>Кол-во</th>
                   <th style={{ ...thR, minWidth: 100 }}>Цена</th>
@@ -759,6 +770,12 @@ export default function DocumentDetailPage() {
                 {editableRows.map((row, i) => (
                   <tr key={i}>
                     <td style={td}>{i + 1}</td>
+                    {/* Фото привязаны к позиции строки на момент парсинга: после
+                        удаления/добавления строк привязка смещается — так же, как
+                        сместится и на сервере после сохранения правок. */}
+                    <td style={td}>
+                      <PhotoThumb photo={photosByRow.get(i)} size={40} onOpen={setLightboxPhoto} />
+                    </td>
                     <td style={td}>
                       <input
                         type="text"
@@ -827,6 +844,7 @@ export default function DocumentDetailPage() {
               <thead>
                 <tr>
                   <th style={th}>#</th>
+                  <th style={{ ...th, width: 50 }}></th>
                   <th style={{ ...th, minWidth: 250 }}>Наименование</th>
                   <th style={thR}>Кол-во</th>
                   <th style={thR}>Цена</th>
@@ -837,6 +855,9 @@ export default function DocumentDetailPage() {
                 {parsedRows.map((row, i) => (
                   <tr key={i}>
                     <td style={td}>{i + 1}</td>
+                    <td style={td}>
+                      <PhotoThumb photo={photosByRow.get(i)} size={40} onOpen={setLightboxPhoto} />
+                    </td>
                     <td
                       style={{
                         ...td,
@@ -1064,6 +1085,8 @@ export default function DocumentDetailPage() {
                     canEditCode={isCodeReview || doc.status === 'processed_with_errors'}
                     onSetCode={setRowCode}
                     explanations={explanationsState}
+                    photo={photosByRow.get(i)}
+                    onOpenPhoto={setLightboxPhoto}
                   />
                 ))}
               </tbody>
@@ -1082,6 +1105,10 @@ export default function DocumentDetailPage() {
 
       {(doc.status === 'processed' || doc.status === 'processed_with_errors') && rows.length === 0 && (
         <p style={{ color: 'var(--text-subtle)' }}>Нет данных результата</p>
+      )}
+
+      {lightboxPhoto && (
+        <PhotoLightbox documentId={doc.id} photo={lightboxPhoto} onClose={closePhoto} />
       )}
 
       {history.length >= 2 && (
@@ -1132,6 +1159,8 @@ const ResultRow = memo(function ResultRow({
   canEditCode,
   onSetCode,
   explanations,
+  photo,
+  onOpenPhoto,
 }: {
   row: DocumentResultRow;
   index: number;
@@ -1141,6 +1170,8 @@ const ResultRow = memo(function ResultRow({
   canEditCode: boolean;
   onSetCode: (rowIndex: number, tnVedCode: string) => Promise<void>;
   explanations: import('@/hooks/use-regulatory-explanations').RegulatoryExplanationsState;
+  photo?: DocumentPhotoRow;
+  onOpenPhoto: (photo: DocumentPhotoRow) => void;
 }) {
   const [hovered, setHovered] = useState(false);
   const status = resolveStatus(row);
@@ -1156,7 +1187,7 @@ const ResultRow = memo(function ResultRow({
       >
         <td style={td}>{index + 1}</td>
         <td style={td}>
-          <ImagePlaceholder size={40} />
+          <PhotoThumb photo={photo} size={40} onOpen={onOpenPhoto} />
         </td>
         <td style={tdDesc} title={row.description}>
           {row.description}
@@ -1204,6 +1235,8 @@ const ResultRow = memo(function ResultRow({
           canEditCode={canEditCode}
           onSetCode={onSetCode}
           explanations={explanations}
+          photo={photo}
+          onOpenPhoto={onOpenPhoto}
         />
       )}
     </>
@@ -1217,6 +1250,8 @@ function ResultDetail({
   canEditCode,
   onSetCode,
   explanations,
+  photo,
+  onOpenPhoto,
 }: {
   row: DocumentResultRow;
   rowIndex: number;
@@ -1224,6 +1259,8 @@ function ResultDetail({
   canEditCode: boolean;
   onSetCode: (rowIndex: number, tnVedCode: string) => Promise<void>;
   explanations: import('@/hooks/use-regulatory-explanations').RegulatoryExplanationsState;
+  photo?: DocumentPhotoRow;
+  onOpenPhoto: (photo: DocumentPhotoRow) => void;
 }) {
   const notes = row.notes ?? [];
   const sortedNotes = [...notes].sort(
@@ -1243,7 +1280,7 @@ function ResultDetail({
         >
           {/* Left: image + basic info */}
           <div style={{ flex: '0 0 200px' }}>
-            <ImagePlaceholder size={120} label="Нет фото" />
+            <PhotoThumb photo={photo} size={120} onOpen={onOpenPhoto} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
               <DetailField label="Цена за ед." value={fmtMoney(row.price)} />
               <DetailField label="Количество" value={String(row.quantity)} />
@@ -1534,27 +1571,6 @@ function ChangeCodeSection({
       {localError && (
         <div style={{ marginTop: 8, fontSize: 12, color: 'var(--danger)' }}>{localError}</div>
       )}
-    </div>
-  );
-}
-
-function ImagePlaceholder({ size, label = 'img' }: { size: number; label?: string }) {
-  return (
-    <div
-      style={{
-        width: size,
-        height: size,
-        background: 'var(--bg)',
-        borderRadius: size > 60 ? 6 : 4,
-        border: '1px solid var(--border)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: 'var(--text-subtle)',
-        fontSize: size > 60 ? 13 : 11,
-      }}
-    >
-      {label}
     </div>
   );
 }

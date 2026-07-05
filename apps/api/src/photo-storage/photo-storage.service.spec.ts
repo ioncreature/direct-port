@@ -125,4 +125,88 @@ describe('PhotoStorageService', () => {
     expect(refs[1].productIndex).toBe(1);
     expect(created).toHaveLength(2);
   });
+
+  describe('getRowThumbnails', () => {
+    /** Репо для чтения: 1-й find — meta без bytes, 2-й find — фото по id In(...). */
+    function makeReadRepo(photos: DocumentPhoto[]) {
+      const find = jest.fn().mockImplementation(async (opts: { select?: unknown; where?: { id?: { value: string[] } } }) => {
+        if (opts?.select) return photos.map(({ id, rowIndex }) => ({ id, rowIndex }));
+        const wanted = new Set(opts?.where?.id?.value ?? []);
+        return photos.filter((p) => wanted.has(p.id));
+      });
+      return { find } as unknown as Repository<DocumentPhoto>;
+    }
+
+    async function makeStoredPhoto(
+      id: string,
+      rowIndex: number,
+      hash: string,
+      size = 800,
+    ): Promise<DocumentPhoto> {
+      const bytes = await sharp(await makePng(size, size))
+        .jpeg()
+        .toBuffer();
+      return { id, documentId: 'doc-1', rowIndex, imageHash: hash, bytes } as DocumentPhoto;
+    }
+
+    it('отдаёт миниатюру ≤120px первого фото строки и все photoIds строки', async () => {
+      const photos = [
+        await makeStoredPhoto('p1', 0, 'hash-a'),
+        await makeStoredPhoto('p2', 0, 'hash-b'),
+        await makeStoredPhoto('p3', 2, 'hash-c'),
+      ];
+      const service = new PhotoStorageService(makeReadRepo(photos));
+
+      const thumbs = await service.getRowThumbnails('doc-1');
+
+      expect(thumbs).toHaveLength(2);
+      expect(thumbs[0]).toMatchObject({ rowIndex: 0, photoIds: ['p1', 'p2'] });
+      expect(thumbs[1]).toMatchObject({ rowIndex: 2, photoIds: ['p3'] });
+      expect(thumbs[0].width).toBeLessThanOrEqual(120);
+      expect(thumbs[0].height).toBeLessThanOrEqual(120);
+      expect(thumbs[0].bytes.length).toBeLessThan(photos[0].bytes.length);
+    });
+
+    it('одинаковые изображения (hash) ресайзятся один раз', async () => {
+      const shared = await makeStoredPhoto('p1', 0, 'same-hash');
+      const photos = [shared, { ...shared, id: 'p2', rowIndex: 1 } as DocumentPhoto];
+      const service = new PhotoStorageService(makeReadRepo(photos));
+      const resizeSpy = jest.spyOn(
+        service as unknown as { resizeOne: (...args: unknown[]) => unknown },
+        'resizeOne',
+      );
+
+      const thumbs = await service.getRowThumbnails('doc-1');
+
+      expect(thumbs).toHaveLength(2);
+      expect(resizeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('документ без фото — пустой список без запроса байтов', async () => {
+      const repo = makeReadRepo([]);
+      const service = new PhotoStorageService(repo);
+
+      expect(await service.getRowThumbnails('doc-1')).toEqual([]);
+      expect(repo.find).toHaveBeenCalledTimes(1); // только meta, без выборки BYTEA
+    });
+
+    it('битые байты — строка пропускается, остальные отдаются', async () => {
+      const photos = [
+        {
+          id: 'p1',
+          documentId: 'doc-1',
+          rowIndex: 0,
+          imageHash: 'broken',
+          bytes: Buffer.from('not an image'),
+        } as DocumentPhoto,
+        await makeStoredPhoto('p2', 1, 'hash-ok'),
+      ];
+      const service = new PhotoStorageService(makeReadRepo(photos));
+
+      const thumbs = await service.getRowThumbnails('doc-1');
+
+      expect(thumbs).toHaveLength(1);
+      expect(thumbs[0].rowIndex).toBe(1);
+    });
+  });
 });

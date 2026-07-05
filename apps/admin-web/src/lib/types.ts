@@ -327,6 +327,17 @@ export interface DocumentResultRow {
   candidateCodes?: CodeCandidate[] | null;
 }
 
+/**
+ * Фото строки документа из GET /documents/:id/photos: миниатюра первого фото
+ * (data-URI) + id всех фото строки для полноразмерного просмотра.
+ * rowIndex — индекс строки в parsedData/resultData.
+ */
+export interface DocumentPhotoRow {
+  rowIndex: number;
+  photoIds: string[];
+  thumb: string;
+}
+
 export type SortOrder = 'ASC' | 'DESC';
 
 export interface PaginatedResponse<T> {

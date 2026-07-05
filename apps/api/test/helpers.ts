@@ -42,6 +42,7 @@ import { Company } from '../src/database/entities/company.entity';
 import { ConversationMessage } from '../src/database/entities/conversation-message.entity';
 import { DepositTransaction } from '../src/database/entities/deposit-transaction.entity';
 import { Document } from '../src/database/entities/document.entity';
+import { DocumentPhoto } from '../src/database/entities/document-photo.entity';
 import { DocumentVersion } from '../src/database/entities/document-version.entity';
 import { PipelineStageRun } from '../src/database/entities/pipeline-stage-run.entity';
 import { RefreshToken } from '../src/database/entities/refresh-token.entity';
@@ -216,6 +217,7 @@ export async function createTestApp(): Promise<INestApplication> {
           CalculationLog,
           TelegramUser,
           Document,
+          DocumentPhoto,
           CalculationConfig,
           TksCache,
           PipelineStageRun,
