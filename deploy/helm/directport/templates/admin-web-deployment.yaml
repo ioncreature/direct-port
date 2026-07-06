@@ -35,15 +35,25 @@ spec:
               value: "0.0.0.0"
             - name: PORT
               value: {{ .Values.adminWeb.port | quote }}
+            {{- if .Values.adminWeb.unknownTenantBehavior }}
+            # Строгий режим тенанта: домен, не привязанный к компании → 404 (см. lib/tenant.ts).
+            # Пусто/не задано — админка работает как раньше (неизвестный домен = дефолтная компания).
+            - name: UNKNOWN_TENANT_BEHAVIOR
+              value: {{ .Values.adminWeb.unknownTenantBehavior | quote }}
+            {{- end }}
           livenessProbe:
             httpGet:
-              path: /
+              # В строгом режиме тенанта корень 404-ит неизвестные домены (в т.ч. проба по pod IP),
+              # поэтому пробы уходят на /healthz (вне tenant-гейта). Без строгого режима — как раньше, /.
+              path: {{ if .Values.adminWeb.unknownTenantBehavior }}/healthz{{ else }}/{{ end }}
               port: {{ .Values.adminWeb.port }}
             initialDelaySeconds: 10
             periodSeconds: 10
           readinessProbe:
             httpGet:
-              path: /
+              # В строгом режиме тенанта корень 404-ит неизвестные домены (в т.ч. проба по pod IP),
+              # поэтому пробы уходят на /healthz (вне tenant-гейта). Без строгого режима — как раньше, /.
+              path: {{ if .Values.adminWeb.unknownTenantBehavior }}/healthz{{ else }}/{{ end }}
               port: {{ .Values.adminWeb.port }}
             initialDelaySeconds: 5
             periodSeconds: 5

@@ -5,11 +5,12 @@ import { ErrorCode } from '../common/error-codes';
 const ALLOWED_MIME = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
 
 /**
- * Multer-конфиг для загрузки логотипа компании (≤2 МБ; PNG/JPEG/WebP/SVG). Файл держится в памяти
- * (buffer) — CompanyLogoService ресайзит растровые через sharp и санитайзит SVG. Фильтр — первый
- * барьер по mime/расширению; окончательную валидность формата решает сервис.
+ * Multer-конфиг для загрузки брендинговых ассетов компании — логотипа и favicon (≤2 МБ;
+ * PNG/JPEG/WebP/SVG). Файл держится в памяти (buffer) — CompanyAssetService ресайзит растровые
+ * через sharp и санитайзит SVG. Фильтр — первый барьер по mime/расширению; окончательную
+ * валидность формата решает сервис.
  */
-export const LOGO_UPLOAD: MulterOptions = {
+export const ASSET_UPLOAD: MulterOptions = {
   limits: { fileSize: 2 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const okMime = ALLOWED_MIME.includes(file.mimetype);

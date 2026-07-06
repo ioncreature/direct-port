@@ -1,7 +1,7 @@
 'use client';
 
 import { CompanyBotsPanel } from '@/components/company-bots-panel';
-import { CompanyLogoPanel } from '@/components/company-logo-panel';
+import { CompanyAssetPanel } from '@/components/company-asset-panel';
 import { InfoCard } from '@/components/info-card';
 import { Pager } from '@/components/pager';
 import { SortableTh } from '@/components/sortable-th';
@@ -74,8 +74,25 @@ export default function CompanyDetailPage() {
 
       <SettingsForm company={company} onSave={update} />
 
-      <SectionTitle>Логотип</SectionTitle>
-      <CompanyLogoPanel companyId={company.id} logoHash={company.logoHash} onChange={refetch} />
+      <SectionTitle>Брендинг</SectionTitle>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <CompanyAssetPanel
+          companyId={company.id}
+          asset="logo"
+          title="Логотип компании"
+          hint="PNG, JPEG, WebP или SVG, до 2 МБ. Заменяет марку DirectPort в шапке и на странице входа для этого тенанта."
+          hash={company.logoHash}
+          onChange={refetch}
+        />
+        <CompanyAssetPanel
+          companyId={company.id}
+          asset="favicon"
+          title="Favicon"
+          hint="Иконка вкладки браузера, желательно квадратная. PNG, JPEG, WebP или SVG, до 2 МБ. Заменяет иконку DirectPort в браузере для этого тенанта."
+          hash={company.faviconHash}
+          onChange={refetch}
+        />
+      </div>
 
       <SectionTitle>Telegram-боты</SectionTitle>
       <CompanyBotsPanel companyId={company.id} />

@@ -18,6 +18,9 @@ function makeCompany(partial: Partial<Company> = {}): Company {
     logoBytes: null,
     logoMime: null,
     logoHash: null,
+    faviconBytes: null,
+    faviconMime: null,
+    faviconHash: null,
     domains: [],
     clientBotUsername: null,
     managerBotUsername: null,
@@ -36,7 +39,9 @@ function createService(counts: { users?: number; clients?: number; documents?: n
     findOne: jest.fn().mockResolvedValue(makeCompany()),
     remove: jest.fn().mockResolvedValue(undefined),
   } as unknown as Repository<Company>;
-  const domainsRepo = {} as unknown as Repository<CompanyDomain>;
+  const domainsRepo = {
+    findOne: jest.fn().mockResolvedValue(null),
+  } as unknown as Repository<CompanyDomain>;
   const usersRepo = {
     count: jest.fn().mockResolvedValue(counts.users ?? 0),
   } as unknown as Repository<User>;
@@ -54,7 +59,7 @@ function createService(counts: { users?: number; clients?: number; documents?: n
     telegramUsersRepo,
     documentsRepo,
   );
-  return { service, companiesRepo };
+  return { service, companiesRepo, domainsRepo };
 }
 
 describe('CompaniesService.remove', () => {
@@ -72,6 +77,34 @@ describe('CompaniesService.remove', () => {
     const { service, companiesRepo } = createService(counts);
     await expect(service.remove(COMPANY_ID)).rejects.toBeInstanceOf(ConflictException);
     expect(companiesRepo.remove).not.toHaveBeenCalled();
+  });
+});
+
+describe('CompaniesService.resolveBrandingByDomain', () => {
+  it('привязанный домен → его компания и тема, known=true', async () => {
+    const { service, domainsRepo } = createService();
+    (domainsRepo.findOne as jest.Mock).mockResolvedValue({
+      domain: 'declarant.directport.ru',
+      company: makeCompany({ theme: 'default' }),
+    });
+    const res = await service.resolveBrandingByDomain('declarant.directport.ru');
+    expect(res.known).toBe(true);
+    expect(res.theme).toBe('default');
+  });
+
+  it('неизвестный домен → тема дефолтной компании, known=false', async () => {
+    const { service, companiesRepo } = createService();
+    // domainsRepo.findOne по умолчанию → null (домен не привязан); отдаём брендинг дефолтной.
+    (companiesRepo.findOne as jest.Mock).mockResolvedValue(makeCompany({ theme: 'sky' }));
+    const res = await service.resolveBrandingByDomain('unknown.example.com');
+    expect(res.known).toBe(false);
+    expect(res.theme).toBe('sky');
+  });
+
+  it('пустой домен → known=false (fallback на дефолт)', async () => {
+    const { service } = createService();
+    const res = await service.resolveBrandingByDomain(undefined);
+    expect(res.known).toBe(false);
   });
 });
 

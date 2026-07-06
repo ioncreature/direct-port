@@ -32,6 +32,8 @@ export interface Company {
   theme: CompanyTheme;
   /** sha256 логотипа: признак наличия и cache-busting превью; null — логотипа нет. */
   logoHash: string | null;
+  /** sha256 favicon: признак наличия и cache-busting превью; null — своего favicon нет. */
+  faviconHash: string | null;
   /** Домены тенанта (нормализованные host'ы). */
   domains: string[];
   createdAt: string;

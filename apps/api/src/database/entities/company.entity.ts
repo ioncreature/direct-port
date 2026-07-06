@@ -76,6 +76,21 @@ export class Company {
   @Column({ type: 'varchar', length: 64, name: 'logo_hash', nullable: true })
   logoHash: string | null;
 
+  /**
+   * Favicon тенанта: иконка вкладки браузера admin-web (через <link rel="icon">). Как и логотип —
+   * один на компанию, favicon_bytes select:false (тяжёлые байты не в обычных выборках). favicon_mime —
+   * image/png (растровые нормализуются в PNG) либо image/svg+xml (санитайзованный SVG). favicon_hash —
+   * sha256 (ETag + cache-busting). NULL — своего favicon нет, показывается дефолтный DirectPort.
+   */
+  @Column({ type: 'bytea', name: 'favicon_bytes', nullable: true, select: false })
+  faviconBytes: Buffer | null;
+
+  @Column({ type: 'varchar', length: 32, name: 'favicon_mime', nullable: true })
+  faviconMime: string | null;
+
+  @Column({ type: 'varchar', length: 64, name: 'favicon_hash', nullable: true })
+  faviconHash: string | null;
+
   /** Домены тенанта (0..N). По ним резолвится компания для темизации и гейтинга входа. */
   @OneToMany(() => CompanyDomain, (domain) => domain.company)
   domains: CompanyDomain[];

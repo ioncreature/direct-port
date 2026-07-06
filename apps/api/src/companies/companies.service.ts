@@ -33,6 +33,8 @@ export interface CompanyView {
   theme: CompanyTheme;
   /** sha256 логотипа: признак наличия и cache-busting превью на странице компании; null — нет логотипа. */
   logoHash: string | null;
+  /** sha256 favicon: признак наличия и cache-busting превью; null — своего favicon нет. */
+  faviconHash: string | null;
   domains: string[];
   clientBotUsername: string | null;
   managerBotUsername: string | null;
@@ -150,13 +152,22 @@ export class CompaniesService {
    */
   async resolveBrandingByDomain(
     domain?: string,
-  ): Promise<{ theme: CompanyTheme; logoVersion: string | null }> {
+  ): Promise<{
+    theme: CompanyTheme;
+    logoVersion: string | null;
+    faviconVersion: string | null;
+    known: boolean;
+  }> {
+    const matched = await this.findCompanyByDomain(domain);
     const company =
-      (await this.findCompanyByDomain(domain)) ??
-      (await this.companiesRepo.findOne({ where: { id: DEFAULT_COMPANY_ID } }));
+      matched ?? (await this.companiesRepo.findOne({ where: { id: DEFAULT_COMPANY_ID } }));
     return {
       theme: normalizeCompanyTheme(company?.theme),
       logoVersion: company?.logoHash ?? null,
+      faviconVersion: company?.faviconHash ?? null,
+      // known=false — домен не привязан ни к одной компании (брендинг отдан от дефолтной как fallback).
+      // admin-web в строгом режиме (env UNKNOWN_TENANT_BEHAVIOR=404) по known=false возвращает 404.
+      known: matched != null,
     };
   }
 
@@ -193,6 +204,7 @@ export class CompaniesService {
       slug: company.slug,
       theme: normalizeCompanyTheme(company.theme),
       logoHash: company.logoHash ?? null,
+      faviconHash: company.faviconHash ?? null,
       domains: (company.domains ?? []).map((d) => d.domain).sort(),
       clientBotUsername: company.clientBotUsername,
       managerBotUsername: company.managerBotUsername,

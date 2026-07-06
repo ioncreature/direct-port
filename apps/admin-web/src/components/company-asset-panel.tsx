@@ -6,47 +6,55 @@ import { btnLink, primaryLink } from '@/lib/table-styles';
 import { useEffect, useRef, useState } from 'react';
 
 /**
- * Логотип компании (super_admin): превью, загрузка/замена, снятие. Логотип заменяет марку
- * DirectPort в шапке и на входе admin-web для тенанта. Растровые нормализуются на бэке в PNG,
- * SVG — санитайзится. Превью грузим через api (с JWT) как blob — <img src> к защищённому
- * эндпоинту не пошлёт токен. `logoHash` в зависимостях перезагружает превью после замены/снятия.
+ * Брендинговый ассет компании — логотип или favicon (super_admin): превью, загрузка/замена, снятие.
+ * Логотип заменяет марку DirectPort в шапке/на входе, favicon — иконку вкладки браузера. Растровые
+ * нормализуются на бэке в PNG, SVG — санитайзится. Превью грузим через api (с JWT) как blob —
+ * <img src> к защищённому эндпоинту не пошлёт токен. `hash` в зависимостях перезагружает превью
+ * после замены/снятия.
  */
-export function CompanyLogoPanel({
+export function CompanyAssetPanel({
   companyId,
-  logoHash,
+  asset,
+  title,
+  hint,
+  hash,
   onChange,
 }: {
   companyId: string;
-  logoHash: string | null;
+  asset: 'logo' | 'favicon';
+  title: string;
+  hint: string;
+  hash: string | null;
   onChange: () => Promise<void>;
 }) {
   const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const endpoint = `/companies/${companyId}/assets/${asset}`;
 
   useEffect(() => {
-    if (!logoHash) {
+    if (!hash) {
       setPreview(null);
       return;
     }
-    let url: string | null = null;
+    let objectUrl: string | null = null;
     let cancelled = false;
     api
-      .get(`/companies/${companyId}/logo`, { responseType: 'blob' })
+      .get(endpoint, { responseType: 'blob' })
       .then((res) => {
         if (cancelled) return;
-        url = URL.createObjectURL(res.data as Blob);
-        setPreview(url);
+        objectUrl = URL.createObjectURL(res.data as Blob);
+        setPreview(objectUrl);
       })
       .catch(() => {
         if (!cancelled) setPreview(null);
       });
     return () => {
       cancelled = true;
-      if (url) URL.revokeObjectURL(url);
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [companyId, logoHash]);
+  }, [endpoint, hash]);
 
   async function upload(file: File) {
     setBusy(true);
@@ -54,7 +62,7 @@ export function CompanyLogoPanel({
     try {
       const form = new FormData();
       form.append('file', file);
-      await api.put(`/companies/${companyId}/logo`, form);
+      await api.put(endpoint, form);
       await onChange();
     } catch (err) {
       setError(extractApiError(err));
@@ -65,11 +73,11 @@ export function CompanyLogoPanel({
   }
 
   async function remove() {
-    if (!confirm('Убрать логотип компании?')) return;
+    if (!confirm(`Убрать ${title.toLowerCase()}?`)) return;
     setBusy(true);
     setError('');
     try {
-      await api.delete(`/companies/${companyId}/logo`);
+      await api.delete(endpoint);
       await onChange();
     } catch (err) {
       setError(extractApiError(err));
@@ -80,9 +88,7 @@ export function CompanyLogoPanel({
 
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16, maxWidth: 640 }}>
-      <div style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 12 }}>
-        Логотип компании
-      </div>
+      <div style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 12 }}>{title}</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <div
           style={{
@@ -102,7 +108,7 @@ export function CompanyLogoPanel({
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={preview}
-              alt="Логотип компании"
+              alt={title}
               style={{ maxWidth: '84%', maxHeight: '84%', objectFit: 'contain', display: 'block' }}
             />
           ) : (
@@ -128,9 +134,9 @@ export function CompanyLogoPanel({
               disabled={busy}
               style={primaryLink}
             >
-              {busy ? 'Загрузка...' : logoHash ? 'Заменить' : 'Загрузить'}
+              {busy ? 'Загрузка...' : hash ? 'Заменить' : 'Загрузить'}
             </button>
-            {logoHash && (
+            {hash && (
               <button
                 type="button"
                 onClick={remove}
@@ -143,10 +149,7 @@ export function CompanyLogoPanel({
           </div>
         </div>
       </div>
-      <p style={{ margin: '10px 0 0', fontSize: 12, color: 'var(--text-subtle)' }}>
-        PNG, JPEG, WebP или SVG, до 2 МБ. Заменяет марку DirectPort в шапке и на странице входа для
-        этого тенанта.
-      </p>
+      <p style={{ margin: '10px 0 0', fontSize: 12, color: 'var(--text-subtle)' }}>{hint}</p>
       {error && <p style={{ color: 'var(--danger)', fontSize: 13, marginTop: 8 }}>{error}</p>}
     </div>
   );

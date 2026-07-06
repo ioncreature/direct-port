@@ -33,6 +33,9 @@ adminWeb:
     tag: latest
     pullPolicy: IfNotPresent
   port: 3000
+  # Поведение при неизвестном домене (не привязан ни к одной компании). Пусто — как раньше
+  # (fallback на дефолтную компанию). '404' — админка возвращает 404 на все запросы такого домена.
+  unknownTenantBehavior: ''
   resources:
     requests:
       cpu: 50m

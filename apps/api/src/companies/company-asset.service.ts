@@ -14,12 +14,26 @@ const sharp = require('sharp');
 import { errMsg } from '../common/errors';
 import { Company } from '../database/entities/company.entity';
 
-/** Растровые логотипы ресайзятся под этот потолок (шапка/логин показывают ≤48px — с запасом на retina). */
-const MAX_DIMENSION_PX = 512;
 /** Потолок пикселей входного растра для sharp/libvips — отсекает декомпрессионные бомбы. */
 const MAX_INPUT_PIXELS = 50_000_000;
 /** SVG — это разметка, «пиксельной бомбы» нет; ограничиваем размер файла. */
 const MAX_SVG_BYTES = 512 * 1024;
+
+/** Брендинговые ассеты тенанта, хранящиеся в companies одинаковым образом (bytes/mime/hash). */
+export const ASSET_KINDS = ['logo', 'favicon'] as const;
+export type CompanyAssetKind = (typeof ASSET_KINDS)[number];
+
+/**
+ * Колонки-хранилище и потолок ресайза для каждого ассета. logo показывается ≤48px в шапке/логине
+ * (512px — с запасом на retina); favicon — иконка вкладки 16–64px (128px достаточно).
+ */
+const ASSET_FIELDS: Record<
+  CompanyAssetKind,
+  { bytes: keyof Company; mime: keyof Company; hash: keyof Company; maxDim: number }
+> = {
+  logo: { bytes: 'logoBytes', mime: 'logoMime', hash: 'logoHash', maxDim: 512 },
+  favicon: { bytes: 'faviconBytes', mime: 'faviconMime', hash: 'faviconHash', maxDim: 128 },
+};
 
 interface SvgPurifier {
   sanitize(dirty: string, config: Record<string, unknown>): string;
@@ -38,78 +52,85 @@ function getSvgPurifier(): SvgPurifier {
   return svgPurifier;
 }
 
-export interface UploadedLogoFile {
+export interface UploadedAssetFile {
   buffer: Buffer;
   mimetype: string;
   originalname: string;
 }
 
-export interface LogoBlob {
+export interface AssetBlob {
   bytes: Buffer;
   mime: string;
   hash: string;
 }
 
 /**
- * Логотип тенанта: нормализация загруженного файла (растровые → PNG через sharp; SVG →
- * санитайзинг DOMPurify), хранение в companies и чтение байтов для отдачи. Один логотип на
- * компанию. Управление — только super_admin (CompanyLogoController); публичная отдача по
- * домену — TenantController.
+ * Брендинговые ассеты тенанта (логотип и favicon): нормализация загруженного файла (растровые →
+ * PNG через sharp; SVG → санитайзинг DOMPurify), хранение в companies и чтение байтов для отдачи.
+ * Один ассет каждого вида на компанию. Управление — только super_admin (CompanyAssetController);
+ * публичная отдача по домену — TenantController.
  */
 @Injectable()
-export class CompanyLogoService {
-  private logger = new Logger(CompanyLogoService.name);
+export class CompanyAssetService {
+  private logger = new Logger(CompanyAssetService.name);
 
   constructor(@InjectRepository(Company) private companiesRepo: Repository<Company>) {}
 
-  /** Загрузить/заменить логотип: нормализовать, сохранить, вернуть новый hash (для cache-busting). */
-  async setLogo(companyId: string, file: UploadedLogoFile): Promise<{ logoHash: string }> {
+  /** Загрузить/заменить ассет: нормализовать, сохранить, вернуть новый hash (для cache-busting). */
+  async setAsset(
+    companyId: string,
+    kind: CompanyAssetKind,
+    file: UploadedAssetFile,
+  ): Promise<{ hash: string }> {
     if (!(await this.companiesRepo.existsBy({ id: companyId }))) {
       throw new NotFoundException('Company not found');
     }
-    const blob = await this.normalize(file);
+    const f = ASSET_FIELDS[kind];
+    const blob = await this.normalize(file, f.maxDim);
     await this.companiesRepo.update(
       { id: companyId },
-      { logoBytes: blob.bytes, logoMime: blob.mime, logoHash: blob.hash },
+      { [f.bytes]: blob.bytes, [f.mime]: blob.mime, [f.hash]: blob.hash },
     );
-    this.logger.log(`Set logo for company ${companyId}: ${blob.mime}, ${blob.bytes.length} bytes`);
-    return { logoHash: blob.hash };
+    this.logger.log(`Set ${kind} for company ${companyId}: ${blob.mime}, ${blob.bytes.length} bytes`);
+    return { hash: blob.hash };
   }
 
-  /** Снять логотип компании (вернётся дефолтная марка DirectPort). */
-  async removeLogo(companyId: string): Promise<void> {
+  /** Снять ассет компании (вернётся дефолт DirectPort). */
+  async removeAsset(companyId: string, kind: CompanyAssetKind): Promise<void> {
+    const f = ASSET_FIELDS[kind];
     const res = await this.companiesRepo.update(
       { id: companyId },
-      { logoBytes: null, logoMime: null, logoHash: null },
+      { [f.bytes]: null, [f.mime]: null, [f.hash]: null },
     );
     if (!res.affected) throw new NotFoundException('Company not found');
   }
 
-  /** Байты логотипа (logo_bytes — select:false, читаем явным addSelect). null — логотипа нет. */
-  async getLogo(companyId: string): Promise<LogoBlob | null> {
+  /** Байты ассета (bytes-колонка select:false, читаем явным addSelect). null — ассета нет. */
+  async getAsset(companyId: string, kind: CompanyAssetKind): Promise<AssetBlob | null> {
+    const f = ASSET_FIELDS[kind];
     const row = await this.companiesRepo
       .createQueryBuilder('c')
-      .select('c.logoMime', 'mime')
-      .addSelect('c.logoHash', 'hash')
-      .addSelect('c.logoBytes', 'bytes')
+      .select(`c.${f.mime}`, 'mime')
+      .addSelect(`c.${f.hash}`, 'hash')
+      .addSelect(`c.${f.bytes}`, 'bytes')
       .where('c.id = :id', { id: companyId })
-      .andWhere('c.logoBytes IS NOT NULL')
+      .andWhere(`c.${f.bytes} IS NOT NULL`)
       .getRawOne<{ mime: string; hash: string; bytes: Buffer }>();
     return row ? { bytes: row.bytes, mime: row.mime, hash: row.hash } : null;
   }
 
-  private async normalize(file: UploadedLogoFile): Promise<LogoBlob> {
-    return this.isSvg(file) ? this.normalizeSvg(file.buffer) : this.normalizeRaster(file.buffer);
+  private async normalize(file: UploadedAssetFile, maxDim: number): Promise<AssetBlob> {
+    return this.isSvg(file) ? this.normalizeSvg(file.buffer) : this.normalizeRaster(file.buffer, maxDim);
   }
 
-  private isSvg(file: UploadedLogoFile): boolean {
+  private isSvg(file: UploadedAssetFile): boolean {
     if (file.mimetype === 'image/svg+xml') return true;
     if (/\.svg$/i.test(file.originalname)) return true;
     // Браузер мог прислать octet-stream — контент-сниф: корень <svg в первом килобайте.
     return file.buffer.subarray(0, 1024).toString('utf8').toLowerCase().includes('<svg');
   }
 
-  private normalizeSvg(input: Buffer): LogoBlob {
+  private normalizeSvg(input: Buffer): AssetBlob {
     if (input.length > MAX_SVG_BYTES) {
       throw new BadRequestException('SVG слишком большой (максимум 512 КБ)');
     }
@@ -127,20 +148,15 @@ export class CompanyLogoService {
     return { bytes, mime: 'image/svg+xml', hash: this.hash(bytes) };
   }
 
-  private async normalizeRaster(input: Buffer): Promise<LogoBlob> {
+  private async normalizeRaster(input: Buffer, maxDim: number): Promise<AssetBlob> {
     let bytes: Buffer;
     try {
       bytes = await sharp(input, { limitInputPixels: MAX_INPUT_PIXELS, failOn: 'error' })
-        .resize({
-          width: MAX_DIMENSION_PX,
-          height: MAX_DIMENSION_PX,
-          fit: 'inside',
-          withoutEnlargement: true,
-        })
-        .png() // нормализуем в PNG — сохраняет прозрачность логотипа
+        .resize({ width: maxDim, height: maxDim, fit: 'inside', withoutEnlargement: true })
+        .png() // нормализуем в PNG — сохраняет прозрачность
         .toBuffer();
     } catch (err) {
-      this.logger.warn(`Logo raster processing failed: ${errMsg(err)}`);
+      this.logger.warn(`Asset raster processing failed: ${errMsg(err)}`);
       throw new BadRequestException(
         'Не удалось обработать изображение (поддерживаются PNG, JPEG, WebP, SVG)',
       );
@@ -154,11 +170,11 @@ export class CompanyLogoService {
 }
 
 /**
- * Пишет логотип в HTTP-ответ с безопасными заголовками. Логотип (особенно SVG) — недоверенный
- * контент: nosniff запрещает угадывание типа, строгий CSP + sandbox глушат любой активный контент
- * и подресурсы на случай прямого открытия URL (вне <img>). ETag/Cache-Control задаёт вызывающий.
+ * Пишет ассет в HTTP-ответ с безопасными заголовками. Ассет (особенно SVG) — недоверенный контент:
+ * nosniff запрещает угадывание типа, строгий CSP + sandbox глушат любой активный контент и
+ * подресурсы на случай прямого открытия URL (вне <img>). ETag/Cache-Control задаёт вызывающий.
  */
-export function sendLogoResponse(res: Response, blob: LogoBlob, cacheControl: string): void {
+export function sendAssetResponse(res: Response, blob: AssetBlob, cacheControl: string): void {
   res.setHeader('Content-Type', blob.mime);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");

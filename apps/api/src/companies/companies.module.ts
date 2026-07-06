@@ -7,14 +7,14 @@ import { TelegramUser } from '../database/entities/telegram-user.entity';
 import { User } from '../database/entities/user.entity';
 import { CompaniesController } from './companies.controller';
 import { CompaniesService } from './companies.service';
-import { CompanyLogoController } from './company-logo.controller';
-import { CompanyLogoService } from './company-logo.service';
+import { CompanyAssetController } from './company-asset.controller';
+import { CompanyAssetService } from './company-asset.service';
 import { TenantController } from './tenant.controller';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Company, CompanyDomain, User, TelegramUser, Document])],
-  controllers: [CompaniesController, CompanyLogoController, TenantController],
-  providers: [CompaniesService, CompanyLogoService],
+  controllers: [CompaniesController, CompanyAssetController, TenantController],
+  providers: [CompaniesService, CompanyAssetService],
   exports: [CompaniesService],
 })
 export class CompaniesModule {}

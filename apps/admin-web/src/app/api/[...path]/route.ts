@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server';
 import { createLogger, formatFetchError } from '@/lib/logger';
+import { STRICT_UNKNOWN_TENANT, domainFromHost, isKnownTenant } from '@/lib/tenant';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -24,13 +25,32 @@ async function proxy(req: NextRequest, context: { params: Promise<{ path: string
   const start = performance.now();
 
   const headers = new Headers(req.headers);
-  // Исходный хост запроса — для тенант-гейта логина на бэке (x-tenant-host). Берём из
-  // x-forwarded-host (за реверс-прокси) либо Host; фиксируем до вырезания hop-by-hop host.
-  const tenantHost = (headers.get('x-forwarded-host') ?? headers.get('host') ?? '')
+  // Исходный хост запроса — для тенант-гейта логина на бэке (x-tenant-host). Caddy проставляет
+  // реальный домен тенанта в x-tenant-host (Host он переписывает в admin.* ради роутинга Traefik,
+  // а x-forwarded-host Traefik перетирает) — читаем его первым; фолбэк на x-forwarded-host/Host для
+  // dev/localhost. Фиксируем до вырезания hop-by-hop host.
+  const tenantHost = (
+    headers.get('x-tenant-host') ??
+    headers.get('x-forwarded-host') ??
+    headers.get('host') ??
+    ''
+  )
     .split(',')[0]
     .trim();
   for (const h of HOP_BY_HOP_REQUEST_HEADERS) headers.delete(h);
   if (tenantHost) headers.set('x-tenant-host', tenantHost);
+
+  // Строгий режим (env UNKNOWN_TENANT_BEHAVIOR=404): API-запросы с домена, не привязанного ни к
+  // одной компании, отбиваем 404 до проксирования — чтобы неизвестный домен не работал как дефолт.
+  if (STRICT_UNKNOWN_TENANT) {
+    const domain = domainFromHost(tenantHost);
+    if (domain && !(await isKnownTenant(domain))) {
+      return new Response(JSON.stringify({ error: 'Unknown tenant' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+  }
 
   const init: RequestInit & { duplex?: 'half' } = {
     method,
