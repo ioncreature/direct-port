@@ -1186,6 +1186,37 @@ export default function DocumentDetailPage() {
   );
 }
 
+/** Код ТН ВЭД в таблице результатов: клик копирует его в буфер (строку при этом не разворачивает). */
+function CopyableCode({ code }: { code?: string | null }) {
+  const [copied, setCopied] = useState(false);
+  if (!code) return null;
+  return (
+    <code
+      onClick={(e) => {
+        e.stopPropagation();
+        if (!navigator.clipboard) return;
+        navigator.clipboard.writeText(code).then(
+          () => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1200);
+          },
+          () => {},
+        );
+      }}
+      title={copied ? 'Скопировано' : 'Копировать код'}
+      style={{
+        fontSize: 12,
+        cursor: 'pointer',
+        borderBottom: '1px dashed var(--border-strong)',
+        color: copied ? 'var(--success)' : 'inherit',
+        transition: 'color 0.15s ease',
+      }}
+    >
+      {code}
+    </code>
+  );
+}
+
 const ResultRow = memo(function ResultRow({
   row,
   index,
@@ -1231,7 +1262,7 @@ const ResultRow = memo(function ResultRow({
           {row.description}
         </td>
         <td style={td} title={row.tnVedDescription}>
-          <code style={{ fontSize: 12 }}>{row.tnVedCode}</code>
+          <CopyableCode code={row.tnVedCode} />
         </td>
         <td style={tdR}>{fmtMoney(row.totalPrice)}</td>
         <td style={tdR}>{fmtMoney(row.totalCost)}</td>
