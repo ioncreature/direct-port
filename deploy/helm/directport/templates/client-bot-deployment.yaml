@@ -43,12 +43,11 @@ spec:
               value: {{ .Values.clientBot.port | quote }}
             - name: API_BASE_URL
               value: {{ include "directport.apiUrl" . | quote }}
-            # Токен бота из его собственного секрет-ключа (grammY читает TELEGRAM_BOT_TOKEN)
-            - name: TELEGRAM_BOT_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "directport.secretName" . }}
-                  key: CLIENT_BOT_TELEGRAM_TOKEN
+            # Дефолтная компания (000…001) НЕ поднимает бота из env TELEGRAM_BOT_TOKEN:
+            # боты принадлежат компаниям-тенантам и грузятся из GET /internal/bots. Иначе токен
+            # дублировался бы с токеном компании-владельца → getUpdates 409 Conflict → CrashLoop.
+            # Токен client-бота (CLIENT_BOT_TELEGRAM_TOKEN) остаётся в секрете — его читает api
+            # для верификации подписи Telegram Login Widget дефолтной компании.
           livenessProbe:
             tcpSocket:
               port: {{ .Values.clientBot.port }}
