@@ -4,6 +4,7 @@ import type { CompanyTheme } from './types';
 export const THEME_OPTIONS: { value: CompanyTheme; label: string }[] = [
   { value: 'default', label: 'Базовая' },
   { value: 'sky', label: 'Небо (голубая)' },
+  { value: 'orbit', label: 'Орбита (индиго)' },
 ];
 
 export function themeLabel(theme: string): string {

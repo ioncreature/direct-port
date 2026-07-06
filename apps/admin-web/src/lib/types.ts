@@ -21,7 +21,7 @@ export interface AuthResponse {
 }
 
 /** Темы оформления админки под тенанта — синхронно с бэком (common/tenant/company-theme.ts). */
-export const COMPANY_THEMES = ['default', 'sky'] as const;
+export const COMPANY_THEMES = ['default', 'sky', 'orbit'] as const;
 export type CompanyTheme = (typeof COMPANY_THEMES)[number];
 
 export interface Company {

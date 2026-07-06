@@ -4,7 +4,7 @@
  * истины для валидации DTO и типов; каждая тема должна иметь соответствующий блок CSS-переменных
  * `:root[data-theme="<theme>"]` в apps/admin-web/src/app/globals.css.
  */
-export const COMPANY_THEMES = ['default', 'sky'] as const;
+export const COMPANY_THEMES = ['default', 'sky', 'orbit'] as const;
 
 export type CompanyTheme = (typeof COMPANY_THEMES)[number];
 
