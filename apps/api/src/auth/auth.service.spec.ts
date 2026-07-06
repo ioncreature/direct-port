@@ -1,13 +1,15 @@
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import { createHash } from 'crypto';
 import { AuthService } from './auth.service';
 import { UserRole } from '../database/entities/user.entity';
 
-// Pre-compute all hashes once at module load to avoid repeated ~100ms hashSync in tests
+// Пароль по-прежнему хранится как bcrypt-хеш (login сверяет bcrypt.compare).
 const HASHED_PASSWORD = bcrypt.hashSync('correct-password', 10);
-const HASHED_VALID_REFRESH = bcrypt.hashSync('valid-refresh-token', 10);
-const HASHED_OTHER_TOKEN = bcrypt.hashSync('other-token', 10);
-const HASHED_MY_REFRESH = bcrypt.hashSync('my-refresh-token', 10);
+
+// Refresh-токены хранятся как sha256(token) — так же, как их хеширует сервис.
+const sha256 = (token: string) => createHash('sha256').update(token).digest('hex');
+const SHA_VALID_REFRESH = sha256('valid-refresh-token');
 
 const COMPANY_ID = 'company-uuid-1';
 
@@ -52,7 +54,10 @@ function createService(
   };
 
   const refreshRepo = {
-    find: jest.fn().mockResolvedValue(refreshTokens),
+    // Сервис ищет токен прямым хитом по индексу token_hash — матчим мок по where.tokenHash.
+    findOne: jest.fn().mockImplementation(({ where }) =>
+      Promise.resolve(refreshTokens.find((t) => t.tokenHash === where.tokenHash) ?? null),
+    ),
     save: jest.fn().mockResolvedValue({}),
     delete: jest.fn().mockResolvedValue({}),
   };
@@ -182,7 +187,7 @@ describe('AuthService', () => {
 
   describe('refresh()', () => {
     it('выдаёт новые токены по валидному refresh-токену', async () => {
-      const token = makeRefreshToken(HASHED_VALID_REFRESH);
+      const token = makeRefreshToken(SHA_VALID_REFRESH);
       const { service, refreshRepo } = createService({ refreshTokens: [token] });
 
       const result = await service.refresh('valid-refresh-token');
@@ -192,14 +197,14 @@ describe('AuthService', () => {
     });
 
     it('выбрасывает UnauthorizedException для невалидного refresh-токена', async () => {
-      const token = makeRefreshToken(HASHED_OTHER_TOKEN);
+      const token = makeRefreshToken(sha256('other-token'));
       const { service } = createService({ refreshTokens: [token] });
 
       await expect(service.refresh('wrong-token')).rejects.toThrow(UnauthorizedException);
     });
 
     it('выбрасывает UnauthorizedException если пользователь деактивирован', async () => {
-      const token = makeRefreshToken(HASHED_VALID_REFRESH, {
+      const token = makeRefreshToken(SHA_VALID_REFRESH, {
         user: makeUser({ isActive: false }),
       });
       const { service } = createService({ refreshTokens: [token] });
@@ -215,19 +220,20 @@ describe('AuthService', () => {
   });
 
   describe('logout()', () => {
-    it('удаляет matching refresh-токен из БД', async () => {
-      const token = makeRefreshToken(HASHED_MY_REFRESH);
-      const { service, refreshRepo } = createService({ refreshTokens: [token] });
+    it('удаляет refresh-токен из БД по его хешу', async () => {
+      const { service, refreshRepo } = createService();
 
       await service.logout('my-refresh-token');
-      expect(refreshRepo.delete).toHaveBeenCalledWith('token-1');
+      expect(refreshRepo.delete).toHaveBeenCalledWith({ tokenHash: sha256('my-refresh-token') });
     });
 
-    it('не падает если токен не найден', async () => {
-      const { service, refreshRepo } = createService({ refreshTokens: [] });
+    it('не падает если токена нет (delete по хешу — no-op)', async () => {
+      const { service, refreshRepo } = createService();
 
-      await service.logout('non-existent-token');
-      expect(refreshRepo.delete).not.toHaveBeenCalled();
+      await expect(service.logout('non-existent-token')).resolves.toBeUndefined();
+      expect(refreshRepo.delete).toHaveBeenCalledWith({
+        tokenHash: sha256('non-existent-token'),
+      });
     });
   });
 });

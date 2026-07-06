@@ -81,6 +81,7 @@ import { DropCommissionColumns1780500000000 } from './migrations/1780500000000-D
 import { AddCompanyDomainsAndTheme1780600000000 } from './migrations/1780600000000-AddCompanyDomainsAndTheme';
 import { AddCompanyLogo1780700000000 } from './migrations/1780700000000-AddCompanyLogo';
 import { AddCompanyFavicon1780800000000 } from './migrations/1780800000000-AddCompanyFavicon';
+import { ClearRefreshTokens1780900000000 } from './migrations/1780900000000-ClearRefreshTokens';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -174,6 +175,7 @@ import { SeedService } from './seeds/seed.service';
           AddCompanyDomainsAndTheme1780600000000,
           AddCompanyLogo1780700000000,
           AddCompanyFavicon1780800000000,
+          ClearRefreshTokens1780900000000,
         ],
         migrationsRun: true,
         // Каждая миграция в своей транзакции (по умолчанию TypeORM гонит все в одной).

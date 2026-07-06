@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { MoreThan, Repository } from 'typeorm';
 import { CompaniesService } from '../companies/companies.service';
 import { RefreshToken } from '../database/entities/refresh-token.entity';
@@ -58,18 +58,10 @@ export class AuthService {
   }
 
   async refresh(refreshToken: string) {
-    const tokens = await this.refreshRepo.find({
-      where: { expiresAt: MoreThan(new Date()) },
+    const found = await this.refreshRepo.findOne({
+      where: { tokenHash: this.hashToken(refreshToken), expiresAt: MoreThan(new Date()) },
       relations: ['user'],
     });
-
-    let found: RefreshToken | null = null;
-    for (const token of tokens) {
-      if (await bcrypt.compare(refreshToken, token.tokenHash)) {
-        found = token;
-        break;
-      }
-    }
 
     if (!found || !found.user.isActive) {
       throw new UnauthorizedException('Invalid refresh token');
@@ -80,13 +72,18 @@ export class AuthService {
   }
 
   async logout(refreshToken: string) {
-    const tokens = await this.refreshRepo.find();
-    for (const token of tokens) {
-      if (await bcrypt.compare(refreshToken, token.tokenHash)) {
-        await this.refreshRepo.delete(token.id);
-        return;
-      }
-    }
+    await this.refreshRepo.delete({ tokenHash: this.hashToken(refreshToken) });
+  }
+
+  /**
+   * Refresh-токен — высокоэнтропийный `randomUUID()` (122 бита), поэтому храним детерминированный
+   * sha256-хеш в индексированной колонке token_hash: поиск токена — прямой хит по индексу
+   * (findOne / delete по token_hash), без перебора таблицы с bcrypt.compare на каждой строке.
+   * bcrypt здесь не нужен — он защищает низкоэнтропийные пароли от брута по украденной БД,
+   * а случайный UUID подобрать невозможно и без соли.
+   */
+  private hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
   }
 
   private async generateTokens(user: User) {
@@ -102,7 +99,7 @@ export class AuthService {
     });
 
     const rawRefresh = randomUUID();
-    const tokenHash = await bcrypt.hash(rawRefresh, 10);
+    const tokenHash = this.hashToken(rawRefresh);
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
