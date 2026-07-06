@@ -1,20 +1,12 @@
 'use client';
 
+import { extractApiError } from '@/lib/api-error';
 import api from '@/lib/api';
 import { btnLink, primaryLink } from '@/lib/table-styles';
 import type { CompanyBotsStatus } from '@/lib/types';
-import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useState } from 'react';
 
 type BotKind = 'client' | 'manager';
-
-function extractError(err: unknown): string {
-  if (isAxiosError(err)) {
-    const data = err.response?.data as { message?: string } | undefined;
-    return data?.message ?? err.message;
-  }
-  return err instanceof Error ? err.message : 'Ошибка';
-}
 
 /**
  * Управление ботами компании (super_admin): токен клиентского и менеджерского ботов.
@@ -87,7 +79,7 @@ function BotControl({
       setToken('');
       await onChange();
     } catch (err) {
-      setError(extractError(err));
+      setError(extractApiError(err));
     } finally {
       setBusy(false);
     }
@@ -101,7 +93,7 @@ function BotControl({
       await api.delete(`/companies/${companyId}/bots/${kind}`);
       await onChange();
     } catch (err) {
-      setError(extractError(err));
+      setError(extractApiError(err));
     } finally {
       setBusy(false);
     }

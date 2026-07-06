@@ -31,6 +31,8 @@ export interface CompanyView {
   name: string;
   slug: string | null;
   theme: CompanyTheme;
+  /** sha256 логотипа: признак наличия и cache-busting превью на странице компании; null — нет логотипа. */
+  logoHash: string | null;
   domains: string[];
   clientBotUsername: string | null;
   managerBotUsername: string | null;
@@ -142,14 +144,20 @@ export class CompaniesService {
   }
 
   /**
-   * Резолвит тему тенанта по домену запроса (для admin-web). Неизвестный/невалидный домен →
-   * дефолтная компания (её тема). Никогда не бросает — темизация не должна ронять рендер.
+   * Резолвит брендинг тенанта по домену запроса (для admin-web): тему и версию логотипа
+   * (sha256 — cache-busting в URL картинки; null — логотипа нет). Неизвестный/невалидный домен →
+   * дефолтная компания. Никогда не бросает — темизация не должна ронять рендер.
    */
-  async resolveThemeByDomain(domain?: string): Promise<CompanyTheme> {
+  async resolveBrandingByDomain(
+    domain?: string,
+  ): Promise<{ theme: CompanyTheme; logoVersion: string | null }> {
     const company =
       (await this.findCompanyByDomain(domain)) ??
       (await this.companiesRepo.findOne({ where: { id: DEFAULT_COMPANY_ID } }));
-    return normalizeCompanyTheme(company?.theme);
+    return {
+      theme: normalizeCompanyTheme(company?.theme),
+      logoVersion: company?.logoHash ?? null,
+    };
   }
 
   /**
@@ -184,6 +192,7 @@ export class CompaniesService {
       name: company.name,
       slug: company.slug,
       theme: normalizeCompanyTheme(company.theme),
+      logoHash: company.logoHash ?? null,
       domains: (company.domains ?? []).map((d) => d.domain).sort(),
       clientBotUsername: company.clientBotUsername,
       managerBotUsername: company.managerBotUsername,

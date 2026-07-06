@@ -1,6 +1,6 @@
 'use client';
 
-import { BrandMark, Wordmark } from '@/components/brand';
+import { TenantBrand } from '@/components/brand';
 import { useAuth } from '@/hooks/use-auth';
 import { btnPrimary } from '@/lib/table-styles';
 import { isAxiosError } from 'axios';
@@ -58,11 +58,12 @@ export default function LoginPage() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 20 }}>
-          <BrandMark size={36} />
-          <div>
-            <Wordmark fontSize={18} />
-            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Вход в систему</div>
-          </div>
+          <TenantBrand
+            markSize={36}
+            wordSize={18}
+            logoHeight={44}
+            subtitle={<div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Вход в систему</div>}
+          />
         </div>
 
         <form onSubmit={handleSubmit}>

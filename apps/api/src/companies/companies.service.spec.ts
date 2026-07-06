@@ -15,6 +15,9 @@ function makeCompany(partial: Partial<Company> = {}): Company {
     name: 'Acme',
     slug: null,
     theme: 'default',
+    logoBytes: null,
+    logoMime: null,
+    logoHash: null,
     domains: [],
     clientBotUsername: null,
     managerBotUsername: null,
@@ -78,5 +81,14 @@ describe('CompaniesService.getDetail', () => {
     const detail = await service.getDetail(COMPANY_ID);
     expect(detail.counts).toEqual({ users: 3, clients: 4, documents: 7 });
     expect(detail.id).toBe(COMPANY_ID);
+  });
+
+  it('отдаёт logoHash как признак наличия логотипа', async () => {
+    const { service, companiesRepo } = createService();
+    (companiesRepo.findOne as jest.Mock).mockResolvedValue(
+      makeCompany({ logoHash: 'abc123', logoMime: 'image/png' }),
+    );
+    const detail = await service.getDetail(COMPANY_ID);
+    expect(detail.logoHash).toBe('abc123');
   });
 });

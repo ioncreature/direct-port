@@ -79,6 +79,7 @@ import { AddDocumentIncoterms1780300000000 } from './migrations/1780300000000-Ad
 import { DropSendResultFile1780400000000 } from './migrations/1780400000000-DropSendResultFile';
 import { DropCommissionColumns1780500000000 } from './migrations/1780500000000-DropCommissionColumns';
 import { AddCompanyDomainsAndTheme1780600000000 } from './migrations/1780600000000-AddCompanyDomainsAndTheme';
+import { AddCompanyLogo1780700000000 } from './migrations/1780700000000-AddCompanyLogo';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -170,6 +171,7 @@ import { SeedService } from './seeds/seed.service';
           DropSendResultFile1780400000000,
           DropCommissionColumns1780500000000,
           AddCompanyDomainsAndTheme1780600000000,
+          AddCompanyLogo1780700000000,
         ],
         migrationsRun: true,
         // Каждая миграция в своей транзакции (по умолчанию TypeORM гонит все в одной).

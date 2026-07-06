@@ -30,6 +30,8 @@ export interface Company {
   slug: string | null;
   /** Тема оформления админки под тенанта. */
   theme: CompanyTheme;
+  /** sha256 логотипа: признак наличия и cache-busting превью; null — логотипа нет. */
+  logoHash: string | null;
   /** Домены тенанта (нормализованные host'ы). */
   domains: string[];
   createdAt: string;

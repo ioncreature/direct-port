@@ -210,23 +210,23 @@ describe('Auth (e2e)', () => {
         .expect(200);
     });
 
-    it('GET /api/tenant/theme отдаёт тему тенанта по домену (публичный)', async () => {
+    it('GET /api/tenant/theme отдаёт тему и версию логотипа тенанта по домену (публичный)', async () => {
       const res = await request(app.getHttpServer())
         .get(`/api/tenant/theme?domain=${TENANT_DOMAIN}`)
         .expect(200);
-      expect(res.body).toEqual({ theme: 'sky' });
+      expect(res.body).toEqual({ theme: 'sky', logoVersion: null });
     });
 
     it('GET /api/tenant/theme на неизвестном домене отдаёт дефолтную тему', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/tenant/theme?domain=nope.example.com')
         .expect(200);
-      expect(res.body).toEqual({ theme: 'default' });
+      expect(res.body).toEqual({ theme: 'default', logoVersion: null });
     });
 
     it('GET /api/tenant/theme без домена отдаёт дефолтную тему', async () => {
       const res = await request(app.getHttpServer()).get('/api/tenant/theme').expect(200);
-      expect(res.body).toEqual({ theme: 'default' });
+      expect(res.body).toEqual({ theme: 'default', logoVersion: null });
     });
   });
 });

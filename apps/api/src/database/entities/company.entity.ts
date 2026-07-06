@@ -60,6 +60,22 @@ export class Company {
   @Column({ type: 'varchar', length: 32, default: DEFAULT_COMPANY_THEME })
   theme: string;
 
+  /**
+   * Логотип тенанта: заменяет марку DirectPort в шапке и на входе admin-web. Один логотип на
+   * компанию. logo_bytes — select:false: тяжёлые байты не тянутся в обычные findOne/findAll
+   * (в т.ч. в ответы API), читаются только явным addSelect при отдаче картинки. logo_mime —
+   * image/png (растровые нормализуются в PNG) либо image/svg+xml (санитайзованный SVG). logo_hash —
+   * sha256 финальных байт (ETag + cache-busting в URL). NULL — логотипа нет, показывается марка.
+   */
+  @Column({ type: 'bytea', name: 'logo_bytes', nullable: true, select: false })
+  logoBytes: Buffer | null;
+
+  @Column({ type: 'varchar', length: 32, name: 'logo_mime', nullable: true })
+  logoMime: string | null;
+
+  @Column({ type: 'varchar', length: 64, name: 'logo_hash', nullable: true })
+  logoHash: string | null;
+
   /** Домены тенанта (0..N). По ним резолвится компания для темизации и гейтинга входа. */
   @OneToMany(() => CompanyDomain, (domain) => domain.company)
   domains: CompanyDomain[];

@@ -1,6 +1,6 @@
 'use client';
 
-import { BrandMark, Wordmark } from '@/components/brand';
+import { TenantBrand } from '@/components/brand';
 import { ForbiddenToast } from '@/components/forbidden-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { ADMIN_ROLES, SUPER_ADMIN_ROLES } from '@/lib/roles';
@@ -74,8 +74,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         >
           <MenuIcon />
         </button>
-        <BrandMark size={26} />
-        <Wordmark fontSize={15} />
+        <TenantBrand markSize={26} wordSize={15} logoHeight={28} />
       </header>
 
       {/* Затемнение под открытым drawer'ом (только мобильные) */}
@@ -95,8 +94,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             marginBottom: 26,
           }}
         >
-          <BrandMark size={30} />
-          <Wordmark fontSize={16} />
+          <TenantBrand markSize={30} wordSize={16} logoHeight={32} />
           <button
             className="dp-sidebar-close"
             onClick={() => setMenuOpen(false)}

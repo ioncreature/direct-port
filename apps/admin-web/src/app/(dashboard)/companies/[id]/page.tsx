@@ -1,6 +1,7 @@
 'use client';
 
 import { CompanyBotsPanel } from '@/components/company-bots-panel';
+import { CompanyLogoPanel } from '@/components/company-logo-panel';
 import { InfoCard } from '@/components/info-card';
 import { Pager } from '@/components/pager';
 import { SortableTh } from '@/components/sortable-th';
@@ -8,6 +9,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { useCompany } from '@/hooks/use-company';
 import type { CompanyUpdatePayload } from '@/hooks/use-companies';
 import { useServerPaginatedList } from '@/hooks/use-server-paginated-list';
+import { extractApiError } from '@/lib/api-error';
 import { THEME_OPTIONS } from '@/lib/companies';
 import { fmtDate } from '@/lib/format';
 import { roleLabel } from '@/lib/roles';
@@ -20,7 +22,6 @@ import type {
   TelegramUser,
   User,
 } from '@/lib/types';
-import { isAxiosError } from 'axios';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
@@ -29,20 +30,11 @@ const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collap
 const linkStyle: React.CSSProperties = { color: 'var(--accent)', textDecoration: 'none' };
 const inputStyle: React.CSSProperties = { width: '100%', padding: 8, boxSizing: 'border-box' };
 
-function errMsg(err: unknown): string {
-  if (isAxiosError(err)) {
-    const m = (err.response?.data as { message?: string | string[] } | undefined)?.message;
-    if (Array.isArray(m)) return m.join(', ');
-    return m ?? err.message;
-  }
-  return err instanceof Error ? err.message : 'Ошибка';
-}
-
 export default function CompanyDetailPage() {
   const { user } = useAuth();
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { company, loading, error, update, remove } = useCompany(id);
+  const { company, loading, error, update, remove, refetch } = useCompany(id);
 
   if (user && user.role !== 'super_admin') {
     return <p>Недостаточно прав для просмотра этого раздела.</p>;
@@ -81,6 +73,9 @@ export default function CompanyDetailPage() {
       </div>
 
       <SettingsForm company={company} onSave={update} />
+
+      <SectionTitle>Логотип</SectionTitle>
+      <CompanyLogoPanel companyId={company.id} logoHash={company.logoHash} onChange={refetch} />
 
       <SectionTitle>Telegram-боты</SectionTitle>
       <CompanyBotsPanel companyId={company.id} />
@@ -174,7 +169,7 @@ function SettingsForm({
       await onSave(payload);
       setSaved(true);
     } catch (err) {
-      setError(errMsg(err));
+      setError(extractApiError(err));
     } finally {
       setSaving(false);
     }
@@ -351,7 +346,7 @@ function DangerZone({
     try {
       await onDelete();
     } catch (err) {
-      setError(errMsg(err));
+      setError(extractApiError(err));
       setBusy(false);
     }
   }

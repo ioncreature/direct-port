@@ -1,3 +1,7 @@
+'use client';
+
+import { useBranding } from '@/components/branding-provider';
+
 /** Бренд direct_port — марка и вордмарк, идентичные лендингу (apps/landing).
  *  Марка повторяет apps/landing/src/app/icon.svg, вордмарк — .wm лендинга:
  *  моноширинный direct_port с цветными сегментами.
@@ -44,5 +48,56 @@ export function Wordmark({ fontSize = 17 }: { fontSize?: number }) {
       <span style={{ color: 'var(--orange)' }}>_</span>
       <span style={{ color: 'var(--petrol)' }}>port</span>
     </span>
+  );
+}
+
+/**
+ * Бренд в шапке/на входе: логотип тенанта, если он загружен, иначе дефолтная марка DirectPort
+ * (марка + вордмарк). Логотип самодостаточен — заменяет и марку, и слово direct_port. Значение
+ * приходит из BrandingProvider (резолв по домену в SSR), поэтому корректно и до логина, и без вспышки.
+ */
+export function TenantBrand({
+  markSize = 30,
+  wordSize = 16,
+  logoHeight,
+  subtitle,
+}: {
+  markSize?: number;
+  wordSize?: number;
+  logoHeight?: number;
+  /** Опциональная подпись под брендом (напр. «Вход в систему» на странице логина). */
+  subtitle?: React.ReactNode;
+}) {
+  const { logoUrl } = useBranding();
+  if (logoUrl) {
+    const logo = (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={logoUrl}
+        alt="Логотип"
+        style={{ height: logoHeight ?? markSize + 4, maxWidth: 220, objectFit: 'contain', display: 'block' }}
+      />
+    );
+    return subtitle ? (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {logo}
+        {subtitle}
+      </div>
+    ) : (
+      logo
+    );
+  }
+  return (
+    <>
+      <BrandMark size={markSize} />
+      {subtitle ? (
+        <div>
+          <Wordmark fontSize={wordSize} />
+          {subtitle}
+        </div>
+      ) : (
+        <Wordmark fontSize={wordSize} />
+      )}
+    </>
   );
 }

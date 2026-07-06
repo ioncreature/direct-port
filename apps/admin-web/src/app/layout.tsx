@@ -1,6 +1,7 @@
 import './globals.css';
 import { AuthProvider } from '@/components/auth-provider';
-import { resolveTheme } from '@/lib/tenant';
+import { BrandingProvider } from '@/components/branding-provider';
+import { resolveBranding } from '@/lib/tenant';
 import type { Metadata } from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
 
@@ -22,9 +23,10 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  // Тема тенанта определяется по домену запроса (серверно) и вешается на <html data-theme>,
-  // откуда её подхватывают CSS-переменные globals.css — без вспышки нетемизированного контента.
-  const theme = await resolveTheme();
+  // Брендинг тенанта определяется по домену запроса (серверно): тема вешается на <html data-theme>
+  // (её подхватывают CSS-переменные globals.css), логотип прокидывается в клиентские компоненты
+  // через BrandingProvider — всё в SSR-разметке, без вспышки нетемизированного контента.
+  const { theme, logoUrl } = await resolveBranding();
   return (
     <html
       lang="ru"
@@ -32,7 +34,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       className={`${inter.variable} ${jetbrainsMono.variable}`}
     >
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <BrandingProvider value={{ logoUrl }}>
+          <AuthProvider>{children}</AuthProvider>
+        </BrandingProvider>
       </body>
     </html>
   );
