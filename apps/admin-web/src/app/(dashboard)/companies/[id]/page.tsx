@@ -184,6 +184,12 @@ function SettingsForm({
     setSaved(false);
     try {
       await onSave(payload);
+      // Тема живёт в SSR-атрибуте <html data-theme> и резолвится сервером по домену запроса (+ кэш
+      // 60с в lib/tenant), поэтому сама после сохранения не переприменяется. Ставим её на клиенте
+      // сразу — CSS-переменные globals.css (:root[data-theme=…]) переключают палитру без перезагрузки.
+      if (payload.theme) {
+        document.documentElement.setAttribute('data-theme', payload.theme);
+      }
       setSaved(true);
     } catch (err) {
       setError(extractApiError(err));
