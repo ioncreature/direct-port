@@ -19,6 +19,10 @@ export function TabsNav<T extends string>({
         gap: 4,
         borderBottom: '1px solid var(--border)',
         marginBottom: 20,
+        // На узких экранах вкладки не переносятся и не сжимаются, а
+        // прокручиваются по горизонтали в один ряд (как таб-бар на мобильных).
+        overflowX: 'auto',
+        maxWidth: '100%',
       }}
     >
       {tabs.map((tab) => {
@@ -38,6 +42,8 @@ export function TabsNav<T extends string>({
               fontSize: 14,
               fontWeight: isActive ? 600 : 400,
               color: isActive ? 'var(--accent)' : 'var(--text-muted)',
+              flexShrink: 0,
+              whiteSpace: 'nowrap',
             }}
           >
             {labels[tab]}

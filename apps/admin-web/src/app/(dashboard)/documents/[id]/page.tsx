@@ -962,7 +962,7 @@ export default function DocumentDetailPage() {
                 <select
                   value={countryDraft}
                   onChange={(e) => setCountryDraft(e.target.value)}
-                  style={{ ...recalcControl, minWidth: 260 }}
+                  style={{ ...recalcControl, width: 260, maxWidth: '100%', minWidth: 0 }}
                 >
                   <option value="">— не указана —</option>
                   {countries.map((c) => (
@@ -1007,7 +1007,7 @@ export default function DocumentDetailPage() {
                   aria-label="Условия поставки (Инкотермс)"
                   value={incotermsDraft}
                   onChange={(e) => setIncotermsDraft(e.target.value)}
-                  style={{ ...recalcControl, minWidth: 240 }}
+                  style={{ ...recalcControl, width: 240, maxWidth: '100%', minWidth: 0 }}
                 >
                   <option value="">— не указаны —</option>
                   {INCOTERMS.map((term) => (
@@ -1626,7 +1626,7 @@ function RecalcField({
   children: React.ReactNode;
 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, maxWidth: '100%' }}>
       <span
         style={{
           fontSize: 12,

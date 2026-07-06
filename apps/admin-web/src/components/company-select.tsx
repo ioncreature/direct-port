@@ -35,7 +35,9 @@ export function CompanySelect({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      style={{ padding: 8, boxSizing: 'border-box', ...style }}
+      // maxWidth/minWidth: длинное имя компании не должно раздувать select и
+      // ломать раскладку на узких экранах (как у селектов страны/Инкотермс).
+      style={{ padding: 8, boxSizing: 'border-box', maxWidth: '100%', minWidth: 0, ...style }}
     >
       <option value="">{allLabel}</option>
       {companies.map((c) => (

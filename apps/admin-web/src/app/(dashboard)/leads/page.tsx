@@ -82,11 +82,13 @@ export default function LeadsPage() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          gap: 12,
+          flexWrap: 'wrap',
           marginBottom: 16,
         }}
       >
         <h1>Лиды</h1>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button
             onClick={() => setPanel(panel === 'discover' ? null : 'discover')}
             style={btnPrimary}

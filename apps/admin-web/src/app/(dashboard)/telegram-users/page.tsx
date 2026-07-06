@@ -7,7 +7,7 @@ import { SortableTh } from '@/components/sortable-th';
 import { useAuth } from '@/hooks/use-auth';
 import { useTelegramUsers } from '@/hooks/use-telegram-users';
 import { fmtDate } from '@/lib/format';
-import { btnOutline, tdEmpty, td, th } from '@/lib/table-styles';
+import { tdEmpty, td, th } from '@/lib/table-styles';
 import Link from 'next/link';
 
 const sortableColumns: { field: string; label: string }[] = [
@@ -30,7 +30,6 @@ export default function TelegramUsersPage() {
     setPage,
     toggleSort,
     filterByCompany,
-    refetch,
   } = useTelegramUsers();
 
   return (
@@ -40,16 +39,13 @@ export default function TelegramUsersPage() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          gap: 12,
+          flexWrap: 'wrap',
           marginBottom: 16,
         }}
       >
         <h1>Telegram-пользователи</h1>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {isSuperAdmin && <CompanySelect value={companyId} onChange={filterByCompany} />}
-          <button onClick={refetch} style={btnOutline}>
-            Обновить
-          </button>
-        </div>
+        {isSuperAdmin && <CompanySelect value={companyId} onChange={filterByCompany} />}
       </div>
 
       {loading ? (

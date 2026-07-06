@@ -66,6 +66,8 @@ export default function UsersPage() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          gap: 12,
+          flexWrap: 'wrap',
           marginBottom: 16,
         }}
       >
@@ -82,9 +84,10 @@ export default function UsersPage() {
           marginBottom: 16,
           alignItems: 'center',
           justifyContent: 'space-between',
+          flexWrap: 'wrap',
         }}
       >
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {roles
             .filter((r) => r.value !== 'super_admin' || isSuperAdmin)
             .map((r) => (

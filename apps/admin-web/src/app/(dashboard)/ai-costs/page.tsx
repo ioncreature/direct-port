@@ -56,13 +56,13 @@ export default function AiCostsPage() {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 24 }}>
         <h1 style={{ margin: 0 }}>AI-расходы</h1>
         {isSuperAdmin && (
           <CompanySelect value={companyFilter} onChange={setCompanyFilter} />
         )}
         {stats.availableModels.length > 0 && (
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <button
               onClick={() => setModelFilter('')}
               style={{
@@ -119,7 +119,7 @@ export default function AiCostsPage() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, opacity: loading ? 0.5 : 1, transition: 'opacity 0.15s' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 24, opacity: loading ? 0.5 : 1, transition: 'opacity 0.15s' }}>
         <div>
           <h3 style={{ marginBottom: 12 }}>Расходы по пользователям</h3>
           <div style={{ ...cardSurface, overflow: 'auto' }}>
