@@ -146,13 +146,14 @@ export class CompaniesService {
   }
 
   /**
-   * Резолвит брендинг тенанта по домену запроса (для admin-web): тему и версию логотипа
-   * (sha256 — cache-busting в URL картинки; null — логотипа нет). Неизвестный/невалидный домен →
-   * дефолтная компания. Никогда не бросает — темизация не должна ронять рендер.
+   * Резолвит брендинг тенанта по домену запроса (для admin-web): имя (для <title> вкладки), тему и
+   * версию логотипа (sha256 — cache-busting в URL картинки; null — логотипа нет). Неизвестный/
+   * невалидный домен → дефолтная компания. Никогда не бросает — темизация не должна ронять рендер.
    */
   async resolveBrandingByDomain(
     domain?: string,
   ): Promise<{
+    name: string | null;
     theme: CompanyTheme;
     logoVersion: string | null;
     faviconVersion: string | null;
@@ -162,6 +163,9 @@ export class CompaniesService {
     const company =
       matched ?? (await this.companiesRepo.findOne({ where: { id: DEFAULT_COMPANY_ID } }));
     return {
+      // Имя отдаём только для реального тенанта с привязанным доменом, но не служебную «По умолчанию»
+      // (дефолтная компания = бренд DirectPort, admin-web покажет свой дефолтный <title>).
+      name: matched && matched.id !== DEFAULT_COMPANY_ID ? matched.name : null,
       theme: normalizeCompanyTheme(company?.theme),
       logoVersion: company?.logoHash ?? null,
       faviconVersion: company?.faviconHash ?? null,

@@ -14,6 +14,8 @@ const API_URL = process.env.API_URL || 'http://localhost:3001/api';
 export const STRICT_UNKNOWN_TENANT = process.env.UNKNOWN_TENANT_BEHAVIOR === '404';
 
 export interface TenantBranding {
+  /** Имя компании-тенанта для <title> вкладки; null — показываем бренд DirectPort. */
+  name: string | null;
   theme: CompanyTheme;
   /** URL логотипа тенанта для <img> (через прокси admin-web); null — показываем дефолтную марку. */
   logoUrl: string | null;
@@ -24,6 +26,7 @@ export interface TenantBranding {
 }
 
 interface TenantInfo {
+  name: string | null;
   theme: CompanyTheme;
   logoVersion: string | null;
   faviconVersion: string | null;
@@ -48,6 +51,7 @@ const tenantCache = new Map<string, { info: TenantInfo; exp: number }>();
 // Дефолт при пустом домене / сбое резолва (fail-open): дефолтная тема, без ассетов, known=true —
 // ни темизация, ни строгий гейт не должны ронять админку на блипе API.
 const DEFAULT_TENANT_INFO: TenantInfo = {
+  name: null,
   theme: DEFAULT_THEME,
   logoVersion: null,
   faviconVersion: null,
@@ -71,12 +75,14 @@ async function fetchTenant(domain: string): Promise<TenantInfo> {
     });
     if (!res.ok) return DEFAULT_TENANT_INFO;
     const data = (await res.json()) as {
+      name?: unknown;
       theme?: unknown;
       logoVersion?: unknown;
       faviconVersion?: unknown;
       known?: unknown;
     };
     const info: TenantInfo = {
+      name: typeof data.name === 'string' ? data.name : null,
       theme: normalizeTheme(data.theme),
       logoVersion: typeof data.logoVersion === 'string' ? data.logoVersion : null,
       faviconVersion: typeof data.faviconVersion === 'string' ? data.faviconVersion : null,
@@ -106,6 +112,7 @@ export async function resolveBranding(): Promise<TenantBranding> {
   );
   const t = await fetchTenant(domain);
   return {
+    name: t.name,
     theme: t.theme,
     // Картинки тянем через прокси admin-web (/api → api), компанию бэк резолвит по x-tenant-host.
     // ?v=<hash> — cache-busting: смена ассета даёт новый URL, immutable-кэш не отдаёт старый.

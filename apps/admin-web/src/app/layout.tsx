@@ -19,13 +19,14 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export async function generateMetadata(): Promise<Metadata> {
-  // Favicon тенанта резолвится по домену запроса: свой favicon есть → отдаём его (<link rel="icon">),
-  // иначе дефолтный DirectPort (/icon.svg из public). Иконку задаём ТОЛЬКО через metadata (статический
-  // app/icon.svg убран) — file-convention иконки Next перебивают metadata.icons, что сломало бы тенанта.
-  // resolveBranding кэширует резолв (60с/домен), поэтому RootLayout ниже не бьёт API повторно.
-  const { faviconUrl } = await resolveBranding();
+  // Favicon и имя тенанта резолвятся по домену запроса. Favicon: свой есть → отдаём его
+  // (<link rel="icon">), иначе дефолтный DirectPort (/icon.svg из public). Иконку задаём ТОЛЬКО через
+  // metadata (статический app/icon.svg убран) — file-convention иконки Next перебивают metadata.icons,
+  // что сломало бы тенанта. <title> — имя компании тенанта (null у дефолтной/неизвестного домена →
+  // бренд DirectPort). resolveBranding кэширует резолв (60с/домен), RootLayout ниже не бьёт API повторно.
+  const { faviconUrl, name } = await resolveBranding();
   return {
-    title: 'DirectPort',
+    title: name ?? 'DirectPort',
     description: 'Импорт товаров в Россию',
     icons: { icon: faviconUrl ?? '/icon.svg' },
   };

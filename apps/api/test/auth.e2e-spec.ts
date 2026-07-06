@@ -210,11 +210,12 @@ describe('Auth (e2e)', () => {
         .expect(200);
     });
 
-    it('GET /api/tenant/theme отдаёт тему и версию логотипа тенанта по домену (публичный)', async () => {
+    it('GET /api/tenant/theme отдаёт имя, тему и версию логотипа тенанта по домену (публичный)', async () => {
       const res = await request(app.getHttpServer())
         .get(`/api/tenant/theme?domain=${TENANT_DOMAIN}`)
         .expect(200);
       expect(res.body).toEqual({
+        name: 'Tenant Gate Co',
         theme: 'sky',
         logoVersion: null,
         faviconVersion: null,
@@ -222,11 +223,12 @@ describe('Auth (e2e)', () => {
       });
     });
 
-    it('GET /api/tenant/theme на неизвестном домене отдаёт дефолтную тему', async () => {
+    it('GET /api/tenant/theme на неизвестном домене отдаёт дефолтную тему без имени', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/tenant/theme?domain=nope.example.com')
         .expect(200);
       expect(res.body).toEqual({
+        name: null,
         theme: 'default',
         logoVersion: null,
         faviconVersion: null,
@@ -234,9 +236,10 @@ describe('Auth (e2e)', () => {
       });
     });
 
-    it('GET /api/tenant/theme без домена отдаёт дефолтную тему', async () => {
+    it('GET /api/tenant/theme без домена отдаёт дефолтную тему без имени', async () => {
       const res = await request(app.getHttpServer()).get('/api/tenant/theme').expect(200);
       expect(res.body).toEqual({
+        name: null,
         theme: 'default',
         logoVersion: null,
         faviconVersion: null,

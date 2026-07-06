@@ -1,5 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { Repository } from 'typeorm';
+import { DEFAULT_COMPANY_ID } from '../common/tenant/actor-context';
 import { Company } from '../database/entities/company.entity';
 import { CompanyDomain } from '../database/entities/company-domain.entity';
 import { Document } from '../database/entities/document.entity';
@@ -81,7 +82,7 @@ describe('CompaniesService.remove', () => {
 });
 
 describe('CompaniesService.resolveBrandingByDomain', () => {
-  it('привязанный домен → его компания и тема, known=true', async () => {
+  it('привязанный домен → его компания, имя и тема, known=true', async () => {
     const { service, domainsRepo } = createService();
     (domainsRepo.findOne as jest.Mock).mockResolvedValue({
       domain: 'declarant.directport.ru',
@@ -90,21 +91,35 @@ describe('CompaniesService.resolveBrandingByDomain', () => {
     const res = await service.resolveBrandingByDomain('declarant.directport.ru');
     expect(res.known).toBe(true);
     expect(res.theme).toBe('default');
+    expect(res.name).toBe('Acme');
   });
 
-  it('неизвестный домен → тема дефолтной компании, known=false', async () => {
+  it('неизвестный домен → тема дефолтной компании, known=false, имя не светим', async () => {
     const { service, companiesRepo } = createService();
     // domainsRepo.findOne по умолчанию → null (домен не привязан); отдаём брендинг дефолтной.
     (companiesRepo.findOne as jest.Mock).mockResolvedValue(makeCompany({ theme: 'sky' }));
     const res = await service.resolveBrandingByDomain('unknown.example.com');
     expect(res.known).toBe(false);
     expect(res.theme).toBe('sky');
+    expect(res.name).toBeNull();
+  });
+
+  it('домен привязан к дефолтной компании → имя «По умолчанию» не светим (null)', async () => {
+    const { service, domainsRepo } = createService();
+    (domainsRepo.findOne as jest.Mock).mockResolvedValue({
+      domain: 'app.directport.ru',
+      company: makeCompany({ id: DEFAULT_COMPANY_ID, name: 'По умолчанию' }),
+    });
+    const res = await service.resolveBrandingByDomain('app.directport.ru');
+    expect(res.known).toBe(true);
+    expect(res.name).toBeNull();
   });
 
   it('пустой домен → known=false (fallback на дефолт)', async () => {
     const { service } = createService();
     const res = await service.resolveBrandingByDomain(undefined);
     expect(res.known).toBe(false);
+    expect(res.name).toBeNull();
   });
 });
 

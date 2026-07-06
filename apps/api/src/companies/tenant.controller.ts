@@ -12,10 +12,13 @@ import { CompaniesService } from './companies.service';
 /**
  * Публичный резолв брендинга тенанта по домену — для темизации admin-web ещё до логина. Открыт
  * (`@Public()`): корневой layout admin-web дёргает его на каждый рендер по хосту запроса. Отдаёт
- * тему, версии логотипа и favicon, флаг `known` (домен привязан к какой-то компании?) — но НЕ имя
- * компании/токены/список тенантов (имена не светим). Флаг `known` нужен строгому режиму admin-web
- * (env UNKNOWN_TENANT_BEHAVIOR=404): по known=false админка отдаёт 404 вместо fallback на дефолт.
- * Сами картинки — отдельными эндпоинтами (`GET /tenant/logo`, `/tenant/favicon`).
+ * тему, версии логотипа и favicon, флаг `known` (домен привязан к какой-то компании?) и имя
+ * компании тенанта — для `<title>` вкладки (`name`: только для привязанного домена реального
+ * тенанта, для дефолтной/неизвестного домена null → admin-web показывает бренд DirectPort). Токены
+ * и список тенантов по-прежнему не отдаём — по чужому домену имя не перечислить (вернётся null).
+ * Флаг `known` нужен строгому режиму admin-web (env UNKNOWN_TENANT_BEHAVIOR=404): по known=false
+ * админка отдаёт 404 вместо fallback на дефолт. Сами картинки — отдельными эндпоинтами
+ * (`GET /tenant/logo`, `/tenant/favicon`).
  */
 @Controller('tenant')
 export class TenantController {
@@ -27,6 +30,7 @@ export class TenantController {
   @Public()
   @Get('theme')
   async theme(@Query('domain') domain?: string): Promise<{
+    name: string | null;
     theme: CompanyTheme;
     logoVersion: string | null;
     faviconVersion: string | null;
