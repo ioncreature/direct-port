@@ -2,12 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Api, Bot } from 'grammy';
 
 /**
- * Фиксированный id дефолтной (платформенной) компании — совпадает с DEFAULT_COMPANY_ID в apps/api
- * (создаётся миграцией AddMultiTenancy). Её бот поднимается из env TELEGRAM_BOT_TOKEN.
- */
-export const DEFAULT_COMPANY_ID = '00000000-0000-0000-0000-000000000001';
-
-/**
  * Канал Redis pub/sub, на который api публикует изменения токенов ботов компаний (имя совпадает
  * с BOT_CONFIG_CHANNEL в apps/api). Бот подписан на него для динамического reload. См. docs/COMPANY_BOTS.md.
  */
@@ -27,9 +21,9 @@ export interface RegisteredBot {
 }
 
 /**
- * Реестр менеджерских ботов: один Bot на компанию (плюс дефолтный из env). BotService наполняет
- * реестр и управляет жизненным циклом; NotifyHandler берёт отсюда Api для доставки уведомления
- * через manager-bot нужной компании (по companyId из job). См. docs/COMPANY_BOTS.md.
+ * Реестр менеджерских ботов: один Bot на компанию. BotService наполняет реестр и управляет
+ * жизненным циклом; NotifyHandler берёт отсюда Api для доставки уведомления через manager-bot
+ * нужной компании (по companyId из job). См. docs/COMPANY_BOTS.md.
  */
 @Injectable()
 export class BotRegistry {
@@ -56,16 +50,15 @@ export class BotRegistry {
   }
 
   /**
-   * Api для доставки уведомления по companyId. Если бот компании не заведён (или companyId не
-   * передан) — падаём на дефолтный (env) бот: переходный период, пока у компаний нет своих ботов
-   * и все менеджеры в дефолтной компании. null — нет даже дефолтного бота (токен не настроен).
+   * Api бота компании по companyId для доставки уведомления. null — у компании нет заведённого
+   * бота (companyId не передан или токен не настроен): доставка уходит в failed-job, а не молча
+   * теряется. Fallback на дефолтный env-бот убран вместе с env-подходом (боты — только per-company).
    */
   getApi(companyId: string | undefined): Api | null {
-    if (companyId) {
-      const entry = this.bots.get(companyId);
-      if (entry) return entry.bot.api;
-      this.logger.warn(`No bot for company ${companyId}, falling back to default bot`);
-    }
-    return this.bots.get(DEFAULT_COMPANY_ID)?.bot.api ?? null;
+    if (!companyId) return null;
+    const entry = this.bots.get(companyId);
+    if (entry) return entry.bot.api;
+    this.logger.warn(`No bot for company ${companyId}`);
+    return null;
   }
 }

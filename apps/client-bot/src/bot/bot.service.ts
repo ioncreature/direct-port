@@ -6,7 +6,6 @@ import { ApiClientService } from '../api-client/api-client.service';
 import {
   BotRegistry,
   BOT_CONFIG_CHANNEL,
-  DEFAULT_COMPANY_ID,
   type BotConfigEvent,
   type RegisteredBot,
 } from './bot-registry.service';
@@ -23,10 +22,9 @@ import { ConversationStateService } from './state/conversation-state.service';
 const RECONCILE_INTERVAL_MS = 5 * 60 * 1000;
 
 /**
- * Поднимает клиентские боты: дефолтный из env TELEGRAM_BOT_TOKEN (привязан к дефолтной компании)
- * и по одному боту на каждую компанию с заведённым токеном (GET /internal/bots). Подписан на
- * Redis-канал изменений токенов — поднимает/перезапускает/останавливает боты компаний без
- * передеплоя. Реестр (Api по companyId) использует OutgoingHandler. См. docs/COMPANY_BOTS.md.
+ * Поднимает клиентские боты — по одному на каждую компанию с заведённым токеном (GET /internal/bots).
+ * Подписан на Redis-канал изменений токенов — поднимает/перезапускает/останавливает боты компаний
+ * без передеплоя. Реестр (Api по companyId) использует OutgoingHandler. См. docs/COMPANY_BOTS.md.
  */
 @Injectable()
 export class BotService implements OnModuleInit, OnModuleDestroy {
@@ -56,24 +54,45 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     this.subscribeToConfigEvents();
   }
 
-  /** Дефолтный бот из env + боты компаний из api. Сбой загрузки компаний не валит дефолтный. */
+  /** Боты компаний из api (по одному на компанию с заведённым токеном); дубликаты токена отсеиваем. */
   private async loadBots(): Promise<void> {
-    const envToken = this.config.get<string>('TELEGRAM_BOT_TOKEN');
-    if (envToken) {
-      this.addBot(DEFAULT_COMPANY_ID, envToken);
-    } else {
-      this.logger.warn('TELEGRAM_BOT_TOKEN not set — default company bot will not start');
-    }
+    let companyBots: Array<{ companyId: string; token: string }>;
     try {
-      const companyBots = await this.apiClient.listBots();
-      for (const cb of companyBots) {
-        if (cb.companyId === DEFAULT_COMPANY_ID) continue; // env-токен имеет приоритет
-        this.addBot(cb.companyId, cb.token);
-      }
-      this.logger.log(`Loaded ${this.registry.all().length} client bot(s)`);
+      companyBots = await this.apiClient.listBots();
     } catch (err) {
       this.logger.error(`Failed to load company bots from API: ${(err as Error).message}`);
+      return;
     }
+    for (const cb of this.dedupeByBotId(companyBots)) {
+      this.addBot(cb.companyId, cb.token);
+    }
+    this.logger.log(`Loaded ${this.registry.all().length} client bot(s)`);
+  }
+
+  /**
+   * Один Telegram-бот (bot_id — часть токена до «:») — один инстанс в процессе. Если две компании
+   * получили один и тот же токен, поднять два поллера нельзя: Telegram отдаёт `getUpdates` 409 и
+   * роняет polling. Оставляем компанию с наименьшим id (детерминированно), остальные — в лог с ошибкой.
+   */
+  private dedupeByBotId(
+    bots: Array<{ companyId: string; token: string }>,
+  ): Array<{ companyId: string; token: string }> {
+    const owner = new Map<string, string>();
+    const unique: Array<{ companyId: string; token: string }> = [];
+    for (const b of [...bots].sort((a, z) => a.companyId.localeCompare(z.companyId))) {
+      const botId = b.token.split(':')[0];
+      const existing = owner.get(botId);
+      if (existing) {
+        this.logger.error(
+          `Duplicate bot token (bot ${botId}) across companies ${existing} and ${b.companyId} — ` +
+            `starting only ${existing} to avoid a getUpdates 409 conflict`,
+        );
+        continue;
+      }
+      owner.set(botId, b.companyId);
+      unique.push(b);
+    }
+    return unique;
   }
 
   private addBot(companyId: string, token: string): RegisteredBot {
@@ -81,14 +100,18 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     this.configure(bot, companyId);
     const entry: RegisteredBot = { companyId, bot, token };
     this.registry.register(entry);
-    // Глобальную bot-link публикуем только для дефолтного бота; per-company identity — Фаза 2.
-    if (companyId === DEFAULT_COMPANY_ID) void this.publishIdentity(bot);
     return entry;
   }
 
   private startBot(entry: RegisteredBot): void {
-    // fire-and-forget: bot.start() резолвится только при остановке (long-polling loop).
-    void entry.bot.start();
+    // Изоляция сбоя: bot.start() резолвится только при остановке (long-polling loop). Фатальная
+    // ошибка polling одного бота (getUpdates 409 при дубле токена, отозванный токен) не должна
+    // ронять процесс и остальные боты компаний — ловим её здесь, а не оставляем unhandled rejection.
+    entry.bot.start().catch((err) => {
+      this.logger.error(
+        `Client bot polling for company ${entry.companyId} stopped: ${(err as Error).message}`,
+      );
+    });
     this.logger.log(`Client bot started for company ${entry.companyId}`);
   }
 
@@ -116,8 +139,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     } catch {
       return;
     }
-    // client-bot слушает только клиентские боты; дефолтный поднимается из env, не из админки.
-    if (event.kind !== 'client' || event.companyId === DEFAULT_COMPANY_ID) return;
+    // client-bot слушает только клиентские боты компаний.
+    if (event.kind !== 'client') return;
     try {
       // upsert обрабатывает reconcile: он сравнит токены и поднимет/пересоздаст бот компании.
       if (event.action === 'remove') await this.removeCompanyBot(event.companyId);
@@ -151,11 +174,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(`Reconcile skipped: ${(err as Error).message}`);
       return;
     }
-    const wanted = new Map(
-      bots.filter((b) => b.companyId !== DEFAULT_COMPANY_ID).map((b) => [b.companyId, b.token]),
-    );
+    const wanted = new Map(this.dedupeByBotId(bots).map((b) => [b.companyId, b.token]));
     for (const entry of this.registry.all()) {
-      if (entry.companyId !== DEFAULT_COMPANY_ID && !wanted.has(entry.companyId)) {
+      if (!wanted.has(entry.companyId)) {
         await this.removeCompanyBot(entry.companyId);
       }
     }
@@ -217,18 +238,6 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         err.error instanceof Error ? err.error.stack : undefined,
       );
     });
-  }
-
-  /** Резолвит username через getMe и публикует ссылку в API (для админки). */
-  private async publishIdentity(bot: Bot<BotContext>): Promise<void> {
-    try {
-      const me = await bot.api.getMe();
-      if (!me.username) return;
-      await this.apiClient.publishBotIdentity(me.username);
-      this.logger.log(`Bot identity published: @${me.username}`);
-    } catch (err) {
-      this.logger.warn(`Failed to publish bot identity: ${(err as Error).message}`);
-    }
   }
 
   private async logUpdate(ctx: BotContext, next: NextFunction): Promise<void> {

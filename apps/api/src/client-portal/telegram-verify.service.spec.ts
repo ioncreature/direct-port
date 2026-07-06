@@ -40,7 +40,7 @@ function makeService(company: Partial<Company> | null): TelegramVerifyService {
     decrypt: (enc: string) => (enc === 'ENC' ? COMPANY_TOKEN : enc),
   } as unknown as SecretCipher;
   const config = {
-    get: (key: string, def?: string) => (key === 'TELEGRAM_BOT_TOKEN' ? DEFAULT_TOKEN : def),
+    get: (_key: string, def?: string) => def,
   } as unknown as ConfigService;
   return new TelegramVerifyService(repo, cipher, config);
 }
@@ -52,7 +52,7 @@ function dto(fields: Record<string, string | number>, hash: string, slug?: strin
 describe('TelegramVerifyService', () => {
   const fields = { id: 42, first_name: 'Ann', auth_date: freshAuthDate() };
 
-  describe('verify (дефолтная компания / env-токен)', () => {
+  describe('verify (служебная дефолтная компания без своего бота)', () => {
     const defaultCompany: Partial<Company> = {
       id: DEFAULT_COMPANY_ID,
       name: 'Default',
@@ -60,27 +60,10 @@ describe('TelegramVerifyService', () => {
       clientBotTokenEnc: null,
     };
 
-    it('принимает валидную подпись и возвращает companyId дефолтной компании', async () => {
+    it('отклоняет вход: нет токена для верификации (env-дефолт убран)', async () => {
       const service = makeService(defaultCompany);
       const hash = sign(fields, DEFAULT_TOKEN);
-      await expect(service.verify(dto(fields, hash))).resolves.toEqual({
-        verified: true,
-        companyId: DEFAULT_COMPANY_ID,
-      });
-    });
-
-    it('отклоняет неверную подпись', async () => {
-      const service = makeService(defaultCompany);
-      await expect(service.verify(dto(fields, 'deadbeef'))).rejects.toBeInstanceOf(
-        UnauthorizedException,
-      );
-    });
-
-    it('отклоняет протухший auth_date', async () => {
-      const service = makeService(defaultCompany);
-      const stale = { ...fields, auth_date: freshAuthDate() - 200_000 };
-      const hash = sign(stale, DEFAULT_TOKEN);
-      await expect(service.verify(dto(stale, hash))).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(service.verify(dto(fields, hash))).rejects.toBeInstanceOf(UnauthorizedException);
     });
   });
 
@@ -105,6 +88,15 @@ describe('TelegramVerifyService', () => {
       const service = makeService(company);
       const hash = sign(fields, DEFAULT_TOKEN);
       await expect(service.verify(dto(fields, hash, 'acme'))).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+    });
+
+    it('отклоняет протухший auth_date', async () => {
+      const service = makeService(company);
+      const stale = { ...fields, auth_date: freshAuthDate() - 200_000 };
+      const hash = sign(stale, COMPANY_TOKEN);
+      await expect(service.verify(dto(stale, hash, 'acme'))).rejects.toBeInstanceOf(
         UnauthorizedException,
       );
     });

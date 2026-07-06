@@ -165,9 +165,6 @@ secrets:
   tksTnvedApiKey: ''
   tksGoodsApiKey: ''
   anthropicApiKey: ''
-  # Токены ботов (отдельные боты в @BotFather)
-  clientBotTelegramToken: ''
-  managerBotTelegramToken: ''
   # Username менеджерского бота без @ (для deep-link привязки в админке, читает API)
   managerBotUsername: ''
   # Ключ шифрования токенов Telegram-ботов компаний (AES-256-GCM, см. docs/COMPANY_BOTS.md).

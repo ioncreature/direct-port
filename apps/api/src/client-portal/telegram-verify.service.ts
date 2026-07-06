@@ -30,7 +30,6 @@ export interface CompanyPublicInfo {
 @Injectable()
 export class TelegramVerifyService {
   private logger = new Logger(TelegramVerifyService.name);
-  private readonly defaultBotToken: string;
   private readonly maxAgeSeconds: number;
 
   constructor(
@@ -38,9 +37,6 @@ export class TelegramVerifyService {
     private cipher: SecretCipher,
     config: ConfigService,
   ) {
-    // Токен дефолтного client-bot (env): им верифицируются логины дефолтной компании и компаний
-    // без своего бота — так же, как реестр ботов даёт приоритет env-токену для дефолтной компании.
-    this.defaultBotToken = config.get<string>('TELEGRAM_BOT_TOKEN', '');
     this.maxAgeSeconds = Number(config.get('TELEGRAM_AUTH_MAX_AGE_SECONDS', '86400'));
   }
 
@@ -80,12 +76,13 @@ export class TelegramVerifyService {
     return company;
   }
 
-  /** Токен по правилу реестра: дефолт/без своего токена → env; иначе расшифрованный токен компании. */
-  private resolveToken(company: Company): string {
-    if (company.id === DEFAULT_COMPANY_ID || !company.clientBotTokenEnc) {
-      return this.defaultBotToken;
-    }
-    return this.cipher.decrypt(company.clientBotTokenEnc);
+  /**
+   * Токен client-бота компании для верификации подписи; null — у компании нет своего бота (в т.ч.
+   * служебная дефолтная компания без клиентов) — верифицировать нечем, вход недоступен. Env-дефолт
+   * убран вместе с env-подходом: логин работает только по slug компании с заведённым ботом.
+   */
+  private resolveToken(company: Company): string | null {
+    return company.clientBotTokenEnc ? this.cipher.decrypt(company.clientBotTokenEnc) : null;
   }
 
   /** true — подпись верна и auth_date свежий. */

@@ -43,11 +43,8 @@ spec:
               value: {{ .Values.clientBot.port | quote }}
             - name: API_BASE_URL
               value: {{ include "directport.apiUrl" . | quote }}
-            # Дефолтная компания (000…001) НЕ поднимает бота из env TELEGRAM_BOT_TOKEN:
-            # боты принадлежат компаниям-тенантам и грузятся из GET /internal/bots. Иначе токен
-            # дублировался бы с токеном компании-владельца → getUpdates 409 Conflict → CrashLoop.
-            # Токен client-бота (CLIENT_BOT_TELEGRAM_TOKEN) остаётся в секрете — его читает api
-            # для верификации подписи Telegram Login Widget дефолтной компании.
+            # Боты не задаются через env: токены грузятся per-company из GET /internal/bots
+            # (env-подъём удалён как легаси). См. docs/COMPANY_BOTS.md.
           livenessProbe:
             tcpSocket:
               port: {{ .Values.clientBot.port }}

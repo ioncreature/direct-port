@@ -98,14 +98,9 @@ export class ApiClientService {
     await this.client.post(`/manager/topups/${topUpId}/cancel`, { managerTelegramId });
   }
 
-  /** Публикация username бота для отображения ссылки в админке (при старте). */
-  async publishBotIdentity(username: string): Promise<void> {
-    await this.client.post('/bot-links/identity', { kind: 'manager', username });
-  }
-
   /**
-   * Список менеджерских ботов компаний (с расшифрованными токенами) для реестра. Дефолтный (env)
-   * бот в ответ не входит — его поднимает сам бот из своего токена. См. docs/COMPANY_BOTS.md.
+   * Список менеджерских ботов компаний (с расшифрованными токенами) для реестра — по одному на
+   * компанию с заведённым токеном. См. docs/COMPANY_BOTS.md.
    */
   async listBots(): Promise<Array<{ companyId: string; token: string }>> {
     const { data } = await this.client.get('/internal/bots', { params: { kind: 'manager' } });

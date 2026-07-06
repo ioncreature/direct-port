@@ -49,14 +49,8 @@ spec:
               value: {{ .Values.api.env.JWT_ACCESS_EXPIRATION | quote }}
             - name: MAX_PRODUCT_ROWS_PER_FILE
               value: {{ .Values.api.env.MAX_PRODUCT_ROWS_PER_FILE | quote }}
-            # Токен дефолтного client-bot: api верифицирует им подпись Telegram Login Widget
-            # при входе в кабинет (TelegramVerifyService). Переиспользуем тот же ключ секрета,
-            # что и client-bot — и grammY, и api читают его под именем TELEGRAM_BOT_TOKEN.
-            - name: TELEGRAM_BOT_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "directport.secretName" . }}
-                  key: CLIENT_BOT_TELEGRAM_TOKEN
+            # Логины Telegram Login Widget (TelegramVerifyService) верифицируются токеном client-бота
+            # компании из БД (по slug) — env-токен бота больше не используется. См. docs/COMPANY_BOTS.md.
             - name: TELEGRAM_AUTH_MAX_AGE_SECONDS
               value: {{ .Values.api.env.TELEGRAM_AUTH_MAX_AGE_SECONDS | quote }}
           livenessProbe:
