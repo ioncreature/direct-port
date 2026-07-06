@@ -9,7 +9,8 @@ function createService() {
     }),
     mget: jest.fn(async (...keys: string[]) => keys.map((k) => store.get(k) ?? null)),
   };
-  const service = new BotLinksService(redis as never);
+  // companiesRepo нужен только для getLinksForCompany; тесты дефолтных ссылок его не задействуют.
+  const service = new BotLinksService(redis as never, {} as never);
   return { service, redis, store };
 }
 

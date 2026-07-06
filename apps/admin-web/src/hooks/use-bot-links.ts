@@ -6,7 +6,9 @@ import { useEffect, useState } from 'react';
 export interface BotLink {
   username: string;
   url: string;
-  updatedAt: string;
+  /** true — собственный бот компании; false — общий платформенный (env-дефолт). */
+  own: boolean;
+  updatedAt?: string;
 }
 
 export interface BotLinks {
@@ -14,41 +16,52 @@ export interface BotLinks {
   manager: BotLink | null;
 }
 
-// Модульный кеш: одни ссылки на всю жизнь вкладки. Username бота меняется крайне редко
-// (только при рестарте с другим токеном), а блок «Telegram-боты» рисуется на нескольких
-// страницах — новый GET на каждый mount/навигацию был бы лишним.
+// Кеш по компании: username бота меняется крайне редко, но зависит от выбранной компании
+// (super_admin переключает на дашборде), поэтому ключуем по companyId ('' — общие/платформенные
+// боты). Для admin/customs companyId не передаётся — бэкенд сам скоупит по их компании.
 const EMPTY: BotLinks = { client: null, manager: null };
-let cache: BotLinks | null = null;
-let pending: Promise<BotLinks> | null = null;
+const cache = new Map<string, BotLinks>();
+const pending = new Map<string, Promise<BotLinks>>();
 
-async function loadBotLinks(): Promise<BotLinks> {
-  if (cache) return cache;
-  if (!pending) {
-    pending = api
-      .get<BotLinks>('/bot-links')
+async function loadBotLinks(companyId: string): Promise<BotLinks> {
+  const cached = cache.get(companyId);
+  if (cached) return cached;
+  let p = pending.get(companyId);
+  if (!p) {
+    p = api
+      .get<BotLinks>('/bot-links', companyId ? { params: { companyId } } : undefined)
       .then(({ data }) => {
-        cache = data;
+        cache.set(companyId, data);
         return data;
       })
       .catch(() => {
-        cache = EMPTY;
+        cache.set(companyId, EMPTY);
         return EMPTY;
       })
       .finally(() => {
-        pending = null;
+        pending.delete(companyId);
       });
+    pending.set(companyId, p);
   }
-  return pending;
+  return p;
 }
 
-export function useBotLinks() {
-  const [links, setLinks] = useState<BotLinks | null>(() => cache);
-  const [loading, setLoading] = useState(() => cache === null);
+export function useBotLinks(companyId?: string) {
+  const key = companyId || '';
+  const [links, setLinks] = useState<BotLinks | null>(() => cache.get(key) ?? null);
+  const [loading, setLoading] = useState(() => !cache.has(key));
 
   useEffect(() => {
-    if (cache) return;
+    const k = companyId || '';
+    const cached = cache.get(k);
+    if (cached) {
+      setLinks(cached);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     let cancelled = false;
-    loadBotLinks().then((data) => {
+    loadBotLinks(k).then((data) => {
       if (!cancelled) {
         setLinks(data);
         setLoading(false);
@@ -57,7 +70,7 @@ export function useBotLinks() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [companyId]);
 
   return { links, loading };
 }

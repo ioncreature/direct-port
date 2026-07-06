@@ -1,8 +1,11 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Internal } from '../auth/decorators/internal.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { Actor, resolveCompanyScope } from '../common/tenant/actor-context';
 import { UserRole } from '../database/entities/user.entity';
 import { BotLinksService } from './bot-links.service';
+import { BotLinksQueryDto } from './dto/bot-links-query.dto';
 import { PublishBotIdentityDto } from './dto/publish-bot-identity.dto';
 
 @Controller('bot-links')
@@ -17,10 +20,13 @@ export class BotLinksController {
     return { ok: true };
   }
 
-  /** Ссылки на ботов для админки. */
+  /**
+   * Боты для админки. Собственный бот компании (own:true), иначе общий платформенный (own:false).
+   * Компания резолвится из JWT: admin/customs — своя; super_admin — по `?companyId=` (или общие).
+   */
   @Get()
   @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
-  getLinks() {
-    return this.botLinks.getLinks();
+  getLinks(@CurrentUser() actor: Actor, @Query() query: BotLinksQueryDto) {
+    return this.botLinks.getLinksForCompany(resolveCompanyScope(actor, query.companyId));
   }
 }

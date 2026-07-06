@@ -104,7 +104,14 @@ function BotControl({
       <div style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 8 }}>{label}</div>
       {state.configured ? (
         <div style={{ marginBottom: 10 }}>
-          <span style={{ color: 'var(--accent)', fontWeight: 600 }}>@{state.username}</span>
+          <a
+            href={`https://t.me/${state.username}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'var(--accent)', fontWeight: 600, textDecoration: 'none' }}
+          >
+            @{state.username}
+          </a>
           <button
             onClick={remove}
             disabled={busy}

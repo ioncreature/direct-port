@@ -202,7 +202,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <BotLinksSection />
+        <BotLinksSection companyId={superAdmin ? companyFilter : undefined} />
       </div>
     </div>
   );

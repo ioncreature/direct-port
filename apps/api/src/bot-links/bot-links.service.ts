@@ -1,6 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
 import type Redis from 'ioredis';
+import { Repository } from 'typeorm';
 import { errMsg } from '../common/errors';
+import { Company } from '../database/entities/company.entity';
 import { REDIS_CLIENT } from '../redis/redis.module';
 import { BOT_KINDS, type BotKind } from './dto/publish-bot-identity.dto';
 
@@ -9,7 +12,10 @@ const KEY_PREFIX = 'bot-link:';
 export interface BotLink {
   username: string;
   url: string;
-  updatedAt: string;
+  /** true — компания настроила собственный бот; false — общий платформенный (env-дефолт). */
+  own: boolean;
+  /** Когда общий бот опубликовал identity (только для дефолтных ботов из Redis). */
+  updatedAt?: string;
 }
 
 interface StoredIdentity {
@@ -18,16 +24,22 @@ interface StoredIdentity {
 }
 
 /**
- * Ссылки на Telegram-ботов для админки. client-bot/manager-bot при старте
- * резолвят свой username через getMe и публикуют его сюда (POST /bot-links/identity).
- * Хранилище — Redis (без TTL): username бота стабилен, перезаписывается при каждом
- * старте бота. При сбросе Redis ссылки восстановятся после ближайшего рестарта ботов.
+ * Ссылки на Telegram-ботов для админки. Два источника:
+ *  - собственный бот компании — username из `companies.*_bot_username` (резолвится через getMe
+ *    при вводе токена в модуле Bots) → `own: true`;
+ *  - общий платформенный бот — client-bot/manager-bot при старте публикуют свой username через
+ *    getMe в Redis (POST /bot-links/identity) → `own: false`.
+ * `getLinksForCompany` отдаёт собственный бот компании, а при его отсутствии — общий дефолтный.
+ * Хранилище дефолтов — Redis без TTL: username стабилен, перезаписывается при рестарте бота.
  */
 @Injectable()
 export class BotLinksService {
   private logger = new Logger(BotLinksService.name);
 
-  constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
+  constructor(
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    @InjectRepository(Company) private readonly companiesRepo: Repository<Company>,
+  ) {}
 
   async setIdentity(kind: BotKind, username: string): Promise<void> {
     const payload: StoredIdentity = {
@@ -38,6 +50,28 @@ export class BotLinksService {
     this.logger.log(`Stored ${kind} bot identity: @${username}`);
   }
 
+  /**
+   * Боты для компании: собственный бот (own:true), если у компании задан токен, иначе общий
+   * платформенный (own:false). Без companyId (super_admin без выбранной компании) — только общие.
+   */
+  async getLinksForCompany(companyId?: string): Promise<Record<BotKind, BotLink | null>> {
+    const defaults = await this.getLinks();
+    if (!companyId) return defaults;
+    const company = await this.companiesRepo.findOne({
+      where: { id: companyId },
+      select: { id: true, clientBotUsername: true, managerBotUsername: true },
+    });
+    return {
+      client: this.ownLink(company?.clientBotUsername) ?? defaults.client,
+      manager: this.ownLink(company?.managerBotUsername) ?? defaults.manager,
+    };
+  }
+
+  private ownLink(username: string | null | undefined): BotLink | null {
+    return username ? { username, url: `https://t.me/${username}`, own: true } : null;
+  }
+
+  /** Общие (платформенные) боты из Redis — их публикуют дефолтные client-bot/manager-bot. */
   async getLinks(): Promise<Record<BotKind, BotLink | null>> {
     // Блок «Telegram-боты» — украшение дашборда: при недоступном Redis отдаём
     // пустые ссылки, а не роняем/вешаем весь дашборд.
@@ -62,6 +96,7 @@ export class BotLinksService {
       return {
         username: parsed.username,
         url: `https://t.me/${parsed.username}`,
+        own: false,
         updatedAt: parsed.updatedAt,
       };
     } catch {

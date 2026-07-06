@@ -4,9 +4,19 @@ import { type BotLink, useBotLinks } from '@/hooks/use-bot-links';
 import { cardSurface } from '@/lib/table-styles';
 import type { CSSProperties } from 'react';
 
-/** Блок «Telegram-боты» со ссылками. Сам грузит данные, не блокирует страницу. */
-export function BotLinksSection({ style }: { style?: CSSProperties }) {
-  const { links, loading } = useBotLinks();
+/**
+ * Блок «Telegram-боты»: реальные боты компании. Если у компании есть собственный бот — показывает
+ * его, иначе общий платформенный (с пометкой). companyId задаётся только super_admin (выбор компании
+ * на дашборде); для admin/customs не передаётся — бэкенд скоупит по их компании.
+ */
+export function BotLinksSection({
+  companyId,
+  style,
+}: {
+  companyId?: string;
+  style?: CSSProperties;
+}) {
+  const { links, loading } = useBotLinks(companyId);
   return (
     <div style={style}>
       <h3 style={{ marginBottom: 12 }}>Telegram-боты</h3>
@@ -48,13 +58,30 @@ function BotLinkCard({
           >
             @{link.username}
           </a>
-          <div style={{ fontSize: 13, color: 'var(--text-subtle)', marginTop: 6, wordBreak: 'break-all' }}>
-            {link.url}
-          </div>
+          <OwnBadge own={link.own} />
         </>
       ) : (
         <div style={{ color: 'var(--text-subtle)', fontSize: 14 }}>бот ещё не запускался</div>
       )}
+    </div>
+  );
+}
+
+/** Собственный бот компании или общий платформенный (когда у компании своего нет). */
+function OwnBadge({ own }: { own: boolean }) {
+  return (
+    <div
+      style={{
+        display: 'inline-block',
+        marginTop: 8,
+        padding: '2px 8px',
+        borderRadius: 10,
+        fontSize: 12,
+        color: own ? 'var(--success)' : 'var(--text-muted)',
+        background: 'var(--bg-subtle)',
+      }}
+    >
+      {own ? 'бот компании' : 'общий бот'}
     </div>
   );
 }
