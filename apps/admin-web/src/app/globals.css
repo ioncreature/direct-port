@@ -66,6 +66,14 @@
   --violet-soft: #ece5f3;
   --violet-strong: #5d4680;
 
+  /* Размеры shell'а админки (см. (dashboard)/layout.tsx).
+     Держим числами здесь, чтобы адаптивная раскладка жила в CSS,
+     а не размазывалась между JS-константами и медиа-запросами. */
+  --sidebar-w: 232px;
+  --content-max: 1500px;
+  /* sidebar + правый бордер (1px) + горизонтальные паддинги <main> (32×2) + контент */
+  --shell-max: 1797px;
+
   /* Радиусы */
   --radius-sm: 7px;
   --radius: 10px;
@@ -309,5 +317,153 @@ tbody tr:hover {
   50% {
     transform: scale(1.25);
     opacity: 0;
+  }
+}
+
+/* =========================================================================
+   Раскладка shell'а админки (боковое меню + контент) и адаптив под мобильные.
+   На десктопе — sticky-сайдбар слева, контент справа (как было). На узких
+   экранах сайдбар превращается в выезжающий drawer, сверху появляется топбар
+   с кнопкой-«гамбургером». Механика открытия — класс .is-open от React-стейта;
+   видимость топбара/drawer'а и переключение раскладки — чистый CSS по ширине,
+   поэтому нет ни JS-детекта ширины, ни проблем гидрации.
+   ========================================================================= */
+.dp-shell {
+  display: flex;
+  min-height: 100vh;
+  max-width: var(--shell-max);
+  margin-inline: auto;
+}
+
+.dp-sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  background: var(--sidebar-bg);
+  padding: 20px 14px;
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.dp-main {
+  flex: 1;
+  min-width: 0;
+  padding: 28px 32px 64px;
+}
+.dp-content {
+  max-width: var(--content-max);
+}
+
+/* Мобильный топбар, оверлей и кнопка «закрыть» существуют только на узких
+   экранах — на десктопе их нет в потоке. */
+.dp-topbar {
+  display: none;
+}
+.dp-scrim {
+  display: none;
+}
+.dp-sidebar-close {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  .dp-shell {
+    display: block;
+  }
+
+  /* Липкая шапка: бренд + «гамбургер». Всегда доступна при скролле. */
+  .dp-topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    height: 54px;
+    padding: 0 14px;
+    background: var(--sidebar-bg);
+    border-bottom: 1px solid var(--border);
+  }
+  .dp-burger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: var(--shadow-xs);
+  }
+
+  /* Сайдбар → выезжающий слева drawer. */
+  .dp-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 50;
+    height: 100vh;
+    height: 100dvh;
+    width: 264px;
+    max-width: 82vw;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    box-shadow: var(--shadow-md);
+  }
+  .dp-sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  /* Затемнение контента под открытым drawer'ом. */
+  .dp-scrim.is-open {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgba(11, 37, 54, 0.42);
+    animation: dp-fade-in 0.2s ease;
+  }
+
+  .dp-sidebar-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+  }
+
+  .dp-main {
+    padding: 16px 16px 48px;
+  }
+}
+
+@keyframes dp-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Таблицы-списки на узких экранах: даём горизонтальный скролл вместо того,
+   чтобы ломать раскладку. display:block превращает <table> в скролл-контейнер,
+   а строки/ячейки внутри продолжают раскладываться таблично. Разметку страниц
+   при этом трогать не нужно. */
+@media (max-width: 860px) {
+  .dp-main table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 }

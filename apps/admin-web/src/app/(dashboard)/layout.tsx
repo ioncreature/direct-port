@@ -7,7 +7,7 @@ import { ADMIN_ROLES, SUPER_ADMIN_ROLES } from '@/lib/roles';
 import { btnOutline } from '@/lib/table-styles';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 // roles не задан → пункт виден всем ролям. super_admin проходит везде через bypass на бэке,
 // поэтому добавляем его в каждый ограниченный список явно.
@@ -24,17 +24,13 @@ const navItems: { href: string; label: string; roles?: readonly string[] }[] = [
   { href: '/reference', label: 'Справочник' },
 ];
 
-const SIDEBAR_WIDTH = 232;
-const CONTENT_MAX_WIDTH = 1500;
-// Весь shell (меню + контент) центрируем на широких мониторах, чтобы он не
-// прилипал к левому краю. Макс. ширина = сайдбар + его правый бордер (1px) +
-// горизонтальные паддинги <main> (32×2) + макс. ширина контента.
-const SHELL_MAX_WIDTH = SIDEBAR_WIDTH + 1 + 32 * 2 + CONTENT_MAX_WIDTH;
-
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  // Открытие мобильного drawer'а. На десктопе сайдбар всегда виден (CSS),
+  // этот стейт влияет только на узкие экраны.
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -42,33 +38,54 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [loading, user, router]);
 
+  // Закрываем drawer при переходе на другую страницу.
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
+  // Пока drawer открыт — блокируем скролл фона и закрываем по Esc.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
+
   if (loading || !user) {
     return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Загрузка...</div>;
   }
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        minHeight: '100vh',
-        maxWidth: SHELL_MAX_WIDTH,
-        marginInline: 'auto',
-      }}
-    >
-      <aside
-        style={{
-          width: SIDEBAR_WIDTH,
-          flexShrink: 0,
-          borderRight: '1px solid var(--border)',
-          background: 'var(--sidebar-bg)',
-          padding: '20px 14px',
-          display: 'flex',
-          flexDirection: 'column',
-          position: 'sticky',
-          top: 0,
-          height: '100vh',
-        }}
-      >
+    <div className="dp-shell">
+      {/* Мобильная шапка: видна только на узких экранах (CSS) */}
+      <header className="dp-topbar">
+        <button
+          className="dp-burger"
+          onClick={() => setMenuOpen(true)}
+          aria-label="Открыть меню"
+          aria-expanded={menuOpen}
+        >
+          <MenuIcon />
+        </button>
+        <BrandMark size={26} />
+        <Wordmark fontSize={15} />
+      </header>
+
+      {/* Затемнение под открытым drawer'ом (только мобильные) */}
+      <div
+        className={`dp-scrim${menuOpen ? ' is-open' : ''}`}
+        onClick={() => setMenuOpen(false)}
+        aria-hidden
+      />
+
+      <aside className={`dp-sidebar${menuOpen ? ' is-open' : ''}`}>
         <div
           style={{
             display: 'flex',
@@ -80,6 +97,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         >
           <BrandMark size={30} />
           <Wordmark fontSize={16} />
+          <button
+            className="dp-sidebar-close"
+            onClick={() => setMenuOpen(false)}
+            aria-label="Закрыть меню"
+            style={{ marginLeft: 'auto' }}
+          >
+            <CloseIcon />
+          </button>
         </div>
 
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
@@ -143,13 +168,40 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </button>
         </div>
       </aside>
-      <main style={{ flex: 1, minWidth: 0, padding: '28px 32px', paddingBottom: 64 }}>
+
+      <main className="dp-main">
         {/* Ограничение ширины: на ультрашироких мониторах строки таблиц и сетки
             карточек не должны растягиваться на всю ширину экрана. Сам shell
             (меню + контент) центрируется на корневом контейнере выше. */}
-        <div style={{ maxWidth: CONTENT_MAX_WIDTH }}>{children}</div>
+        <div className="dp-content">{children}</div>
       </main>
       <ForbiddenToast />
     </div>
+  );
+}
+
+function MenuIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden>
+      <path
+        d="M3 5.5h14M3 10h14M3 14.5h14"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden>
+      <path
+        d="M5 5l10 10M15 5L5 15"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }

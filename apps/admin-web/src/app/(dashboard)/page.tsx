@@ -145,7 +145,14 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, ...fade }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+          gap: 24,
+          ...fade,
+        }}
+      >
         <div>
           <h3 style={{ marginBottom: 12 }}>Последние документы</h3>
           <div className="dp-card-hover" style={{ ...cardSurface, padding: '8px 18px' }}>
