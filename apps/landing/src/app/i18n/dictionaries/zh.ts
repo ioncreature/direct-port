@@ -21,8 +21,6 @@ export const zh: Dictionary = {
     how: '如何运作',
     deliver: '交付成果',
     pricing: '价格',
-    why: '为何精准',
-    guarantee: '保证',
   },
 
   header: {

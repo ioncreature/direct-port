@@ -102,8 +102,6 @@ function Header({ dict, locale }: { dict: Dictionary; locale: Locale }) {
             <a href="#how">{dict.nav.how}</a>
             <a href="#deliver">{dict.nav.deliver}</a>
             <a href="#pricing">{dict.nav.pricing}</a>
-            <a href="#why">{dict.nav.why}</a>
-            <a href="#guarantee">{dict.nav.guarantee}</a>
           </nav>
           <LangSwitch dict={dict} locale={locale} />
           <div className="header-cta">

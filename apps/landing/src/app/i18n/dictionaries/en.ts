@@ -21,8 +21,6 @@ export const en: Dictionary = {
     how: 'How it works',
     deliver: 'What you get',
     pricing: 'Pricing',
-    why: 'Why it’s accurate',
-    guarantee: 'Guarantee',
   },
 
   header: {

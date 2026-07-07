@@ -53,8 +53,16 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* clip вместо hidden не даёт iOS Safari «ужимать» страницу под переполнивший
+   элемент; hidden остаётся фолбэком для старых браузеров */
+html {
+  overflow-x: hidden;
+  overflow-x: clip;
+}
+
 body {
   overflow-x: hidden;
+  overflow-x: clip;
   overflow-wrap: break-word;
 }
 
@@ -1127,6 +1135,13 @@ main {
   animation-delay: 0.2s;
 }
 
+@media (max-width: 400px) {
+  /* на самых узких экранах остаётся только знак бренда */
+  .wm {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fade-up,
   .cur {
@@ -1154,6 +1169,12 @@ main {
   .icon-btn {
     width: 40px;
     height: 40px;
+  }
+
+  /* email и телефон дублируются в hero и футере — в узкой шапке
+     оставляем только Telegram, иначе она шире экрана */
+  .header-cta .icon-btn:not(.icon-btn-primary) {
+    display: none;
   }
 
   .hero {

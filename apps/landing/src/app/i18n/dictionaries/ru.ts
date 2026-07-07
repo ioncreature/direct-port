@@ -23,8 +23,6 @@ export const ru = {
     how: 'Как работает',
     deliver: 'Что получаете',
     pricing: 'Цена',
-    why: 'Почему точно',
-    guarantee: 'Гарантия',
   },
 
   header: {
@@ -332,8 +330,6 @@ export type Dictionary = {
     how: string;
     deliver: string;
     pricing: string;
-    why: string;
-    guarantee: string;
   };
   header: { emailLabel: string; telegramLabel: string; phoneLabel: string };
   hero: {
