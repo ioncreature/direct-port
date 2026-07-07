@@ -35,8 +35,9 @@ export const statusColors: Record<DocumentStatus, string> = {
   code_review_required: 'var(--warning)',
 };
 
-export async function downloadDocument(id: string) {
-  const response = await api.get(`/documents/${id}/download`, {
+export async function downloadDocument(id: string, variant: 'full' | 'import-sheet' = 'full') {
+  const path = variant === 'import-sheet' ? 'download-import-sheet' : 'download';
+  const response = await api.get(`/documents/${id}/${path}`, {
     responseType: 'blob',
   });
 

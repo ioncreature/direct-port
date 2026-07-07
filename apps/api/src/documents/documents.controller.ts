@@ -356,7 +356,27 @@ export class DocumentsController {
     await this.sendExcel(id, res);
   }
 
-  private async sendExcel(id: string, res: Response, actor?: Actor) {
+  /**
+   * Плоский файл для импорта товарной части в декларантское ПО (Контур.Декларант,
+   * СТМ-Конвертер, Альта-Заполнитель): один лист, одна строка = позиция, колонка
+   * «№ товара» группирует строки в товары ДТ. См. ExcelExportService.generateImportSheet.
+   */
+  @Get(':id/download-import-sheet')
+  @Roles(UserRole.ADMIN, UserRole.CUSTOMS)
+  async downloadImportSheet(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res() res: Response,
+    @CurrentUser() actor: Actor,
+  ) {
+    await this.sendExcel(id, res, actor, 'import-sheet');
+  }
+
+  private async sendExcel(
+    id: string,
+    res: Response,
+    actor?: Actor,
+    variant: 'full' | 'import-sheet' = 'full',
+  ) {
     const doc = await this.service.findOne(id, actor);
     if (doc.status !== DocumentStatus.PROCESSED) {
       throw new BadRequestException({
@@ -364,10 +384,16 @@ export class DocumentsController {
         message: 'Download is only available for successfully processed documents',
       });
     }
-    const buffer = await this.excelExport.generate(doc);
+    const buffer =
+      variant === 'import-sheet'
+        ? await this.excelExport.generateImportSheet(doc)
+        : await this.excelExport.generate(doc);
 
     const clientName = getDocumentClientName(doc);
-    const outputName = buildOutputFileName(doc.createdAt, clientName);
+    let outputName = buildOutputFileName(doc.createdAt, clientName);
+    if (variant === 'import-sheet') {
+      outputName = outputName.replace(/\.xlsx$/i, '') + '-import.xlsx';
+    }
     res.set(xlsxDownloadHeaders(outputName));
     res.send(buffer);
   }

@@ -393,8 +393,11 @@ export default function DocumentDetailPage() {
   useEffect(() => {
     const server = doc?.parsedData ?? null;
     if (server && lastSyncedParsedData.current !== server) {
+      // Spread сохраняет нередактируемые поля строки (weightGross, countryOfOrigin,
+      // attributes…) — при сохранении ревью они уходят на сервер нетронутыми.
       setEditableRows(
         server.map((r) => ({
+          ...r,
           description: String(r.description ?? ''),
           quantity: Number(r.quantity) || 0,
           price: Number(r.price) || 0,
@@ -595,9 +598,18 @@ export default function DocumentDetailPage() {
             </button>
           )}
           {doc.status === 'processed' && (
-            <button onClick={() => downloadDocument(doc.id)} style={btnPrimary}>
-              Скачать Excel
-            </button>
+            <>
+              <button onClick={() => downloadDocument(doc.id)} style={btnPrimary}>
+                Скачать Excel
+              </button>
+              <button
+                onClick={() => downloadDocument(doc.id, 'import-sheet')}
+                style={btnOutline}
+                title="Плоский файл товарной части для загрузки в Контур.Декларант / СТМ-Конвертер / Альта-Заполнитель"
+              >
+                Файл для декларантского ПО
+              </button>
+            </>
           )}
         </div>
       </div>

@@ -122,12 +122,12 @@ describe('ClientPortal (e2e)', () => {
   });
 
   describe('balance & transactions', () => {
-    it('returns zero balance for a fresh account', async () => {
+    it('fresh account starts with the welcome grant (первые 50 позиций бесплатно)', async () => {
       const res = await request(app.getHttpServer())
         .get(`/api/internal/client/${accountB}/balance`)
         .set(INTERNAL_KEY_HEADER)
         .expect(200);
-      expect(res.body.balance).toBe(0);
+      expect(res.body.balance).toBe(50);
     });
 
     it('reflects a manager top-up and lists it in transactions', async () => {
@@ -141,14 +141,16 @@ describe('ClientPortal (e2e)', () => {
         .get(`/api/internal/client/${accountA}/balance`)
         .set(INTERNAL_KEY_HEADER)
         .expect(200);
-      expect(balance.body.balance).toBe(50);
+      // 50 welcome-grant + 50 пополнение менеджером.
+      expect(balance.body.balance).toBe(100);
 
       const tx = await request(app.getHttpServer())
         .get(`/api/internal/client/${accountA}/transactions`)
         .set(INTERNAL_KEY_HEADER)
         .expect(200);
-      expect(tx.body.total).toBe(1);
-      expect(tx.body.data[0]).toMatchObject({ delta: 50, type: 'topup', balanceAfter: 50 });
+      expect(tx.body.total).toBe(2);
+      expect(tx.body.data[0]).toMatchObject({ delta: 50, type: 'topup', balanceAfter: 100 });
+      expect(tx.body.data[1]).toMatchObject({ delta: 50, type: 'grant', balanceAfter: 50 });
     });
 
     it('does not leak account A transactions to account B', async () => {
@@ -156,7 +158,9 @@ describe('ClientPortal (e2e)', () => {
         .get(`/api/internal/client/${accountB}/transactions`)
         .set(INTERNAL_KEY_HEADER)
         .expect(200);
-      expect(tx.body.total).toBe(0);
+      // Только собственный welcome-grant аккаунта B — пополнение аккаунта A не видно.
+      expect(tx.body.total).toBe(1);
+      expect(tx.body.data[0]).toMatchObject({ type: 'grant', delta: 50 });
     });
   });
 

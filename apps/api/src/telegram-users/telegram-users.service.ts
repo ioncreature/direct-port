@@ -1,7 +1,10 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { ClientBalanceService } from '../balance/client-balance.service';
+import { readNonNegIntEnv } from '../common/env';
 import { ErrorCode } from '../common/error-codes';
+import { errMsg } from '../common/errors';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 import {
   Actor,
@@ -11,6 +14,7 @@ import {
 } from '../common/tenant/actor-context';
 import { BillingAccount } from '../database/entities/billing-account.entity';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
+import { TOP_UP_PACKAGES } from '../top-up/packages';
 import { FindTelegramUsersQueryDto } from './dto/find-telegram-users-query.dto';
 import { RegisterTelegramUserDto } from './dto/register-telegram-user.dto';
 
@@ -20,9 +24,25 @@ function isUniqueViolation(err: unknown): boolean {
   return e?.code === '23505' || e?.driverError?.code === '23505';
 }
 
+/**
+ * Размер приветственного бонуса нового клиента («первые N позиций бесплатно» с лендинга).
+ * Дефолт — пакет `free`; WELCOME_GRANT_POSITIONS в env переопределяет (0 — выключить).
+ */
+function welcomeGrantPositions(): number {
+  return readNonNegIntEnv(
+    'WELCOME_GRANT_POSITIONS',
+    TOP_UP_PACKAGES.find((p) => p.key === 'free')?.positions ?? 0,
+  );
+}
+
 @Injectable()
 export class TelegramUsersService {
-  constructor(@InjectRepository(TelegramUser) private repo: Repository<TelegramUser>) {}
+  private logger = new Logger(TelegramUsersService.name);
+
+  constructor(
+    @InjectRepository(TelegramUser) private repo: Repository<TelegramUser>,
+    private clientBalance: ClientBalanceService,
+  ) {}
 
   async register(dto: RegisterTelegramUserDto): Promise<TelegramUser> {
     const telegramId = String(dto.telegramId);
@@ -51,6 +71,7 @@ export class TelegramUsersService {
     // каждого клиента всегда был владелец баланса. Гонка одновременных первых /start от одного
     // клиента: один INSERT побеждает, второй падает на UNIQUE(company_id, telegram_id), и аккаунт
     // его откатившейся транзакции не остаётся — добираем уже существующего клиента.
+    let created = false;
     try {
       await this.repo.manager.transaction(async (em) => {
         const account = await em.save(em.create(BillingAccount, { balance: 0, companyId }));
@@ -62,11 +83,23 @@ export class TelegramUsersService {
           ...(dto.language ? { language: dto.language } : {}),
         });
       });
+      created = true;
     } catch (err) {
       if (!isUniqueViolation(err)) throw err;
       await this.repo.update({ companyId, telegramId }, mutable);
     }
-    return this.repo.findOneByOrFail({ companyId, telegramId });
+    const user = await this.repo.findOneByOrFail({ companyId, telegramId });
+
+    // Приветственный бонус — только новому клиенту, best-effort (сбой не ломает
+    // регистрацию; grantWelcome идемпотентен и сам no-op'ится на 0 позиций).
+    if (created && user.billingAccountId) {
+      try {
+        await this.clientBalance.grantWelcome(user.billingAccountId, welcomeGrantPositions());
+      } catch (err) {
+        this.logger.warn(`Welcome grant failed for client ${user.id}: ${errMsg(err)}`);
+      }
+    }
+    return user;
   }
 
   /**

@@ -67,7 +67,7 @@ service.getPhotoClassifierModel()    // → 'claude-sonnet-5'
 
 Сервисы (AiParser, Classifier для основного и vision-retry проходов, DutyInterpreter, TnVed) должны вызывать соответствующий геттер перед каждым запросом к Claude и использовать возвращённую строку как `model` в `anthropic.messages.create()`.
 
-⚠️ **Текущее расхождение:** `TnVedService.translateToRussian()` (`tn-ved.service.ts:257`) хардкодит `claude-sonnet-4-6` вместо вызова `getQueryFormulationModel()`. Это надо поправить — иначе изменение поля `queryFormulationModel` в админке не имеет эффекта.
+`TnVedService.translateToRussian()` получает модель через `getQueryFormulationModel()` перед каждым вызовом — изменение поля `queryFormulationModel` в админке действует и на перевод поисковых запросов (историческое расхождение с хардкодом модели устранено).
 
 ## Кэш
 

@@ -14,7 +14,7 @@ import type { Dimension } from '../duty-interpreter/interfaces';
 import type { RegulatoryReport } from '../regulatory/interfaces';
 import { formatRegulatoryReportLong } from '../regulatory/regulatory-format';
 import { OKSMT_BY_CODE } from '../countries/oksmt.data';
-import { buildDtProject, type DtProject } from './dt-project';
+import { buildDtProject, buildRowToGoodMap, type DtProject } from './dt-project';
 import {
   buildShipmentChecklist,
   CONFIDENCE_LABELS,
@@ -301,6 +301,81 @@ export class ExcelExportService {
 
   constructor(private photoStorage: PhotoStorageService) {}
 
+  /**
+   * Плоский файл для импорта товарной части в декларантское ПО. Формат — по официальным
+   * правилам «Загрузка товаров из файла» Контур.Декларанта: один лист (Контур читает
+   * только первый лист файла — поэтому отдельный файл, а не лист основного отчёта),
+   * без объединённых ячеек и итогов, одна строка = товарная позиция, колонка «№ товара»
+   * группирует строки в товары ДТ, страна — цифровым кодом OKSMT (Контур распознаёт
+   * его автоматически). Тот же файл пригоден для универсальных Excel-маппилок других
+   * систем (СТМ-Конвертер, Альта-Заполнитель). Веса — итог по строке (за все единицы).
+   */
+  async generateImportSheet(doc: Document): Promise<ExcelJS.Buffer> {
+    const data = (doc.resultData ?? []) as unknown as ResultRow[];
+    const currency = (doc.currency || 'USD').toUpperCase();
+
+    const dtProject = buildDtProject({
+      rows: data,
+      docCountryOfOrigin: doc.countryOfOrigin,
+      currency,
+      exchangeRates: doc.exchangeRates,
+    });
+    const rowToGood = buildRowToGoodMap(dtProject);
+
+    const hasGross = data.some((r) => {
+      const v = toNumber(r.weightGross);
+      return v != null && v > 0;
+    });
+    const hasSupplementary = data.some((r) => !!r.supplementaryUnit);
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'DirectPort';
+    const sheet = workbook.addWorksheet('Товары');
+    sheet.columns = [
+      { header: '№ товара', key: 'goodNumber', width: 10 },
+      { header: 'Код ТН ВЭД', key: 'tnVedCode', width: 14 },
+      { header: 'Наименование', key: 'description', width: 50 },
+      { header: 'Кол-во', key: 'quantity', width: 10 },
+      { header: 'Вес нетто, кг', key: 'weightNet', width: 14 },
+      ...(hasGross ? [{ header: 'Вес брутто, кг', key: 'weightGross', width: 14 }] : []),
+      { header: `Цена за ед., ${currency}`, key: 'price', width: 16 },
+      { header: `Стоимость, ${currency}`, key: 'totalPrice', width: 16 },
+      { header: 'Валюта', key: 'currency', width: 8 },
+      { header: 'Код страны происхождения', key: 'country', width: 14 },
+      ...(hasSupplementary
+        ? [
+            { header: 'Доп. единица (гр. 41)', key: 'suppUnit', width: 18 },
+            { header: 'Кол-во в доп. единице', key: 'suppQty', width: 18 },
+          ]
+        : []),
+    ];
+
+    const kg = (v: number) => Math.round(v * 1000) / 1000;
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      const quantity = toNumber(row.quantity) ?? 0;
+      const weight = toNumber(row.weight) ?? 0;
+      const gross = toNumber(row.weightGross);
+      sheet.addRow({
+        goodNumber: rowToGood.get(i + 1) ?? null,
+        tnVedCode: row.tnVedCode || null,
+        description: row.description,
+        quantity,
+        weightNet: kg(weight * quantity),
+        ...(hasGross ? { weightGross: gross != null ? kg(gross * quantity) : null } : {}),
+        price: toNumber(row.price),
+        totalPrice: toNumber(row.totalPrice),
+        currency,
+        country: row.countryOfOrigin ?? doc.countryOfOrigin ?? null,
+        ...(hasSupplementary
+          ? { suppUnit: row.supplementaryUnit ?? null, suppQty: row.supplementaryQuantity ?? null }
+          : {}),
+      });
+    }
+
+    return workbook.xlsx.writeBuffer();
+  }
+
   async generate(doc: Document): Promise<ExcelJS.Buffer> {
     const data = (doc.resultData ?? doc.parsedData ?? []) as unknown as ResultRow[];
     const hasResults = data.length > 0 && 'tnVedCode' in data[0];
@@ -338,10 +413,7 @@ export class ExcelExportService {
       currency,
       exchangeRates: doc.exchangeRates,
     });
-    const rowToGood = new Map<number, number>();
-    for (const good of dtProject.goods) {
-      for (const rowNumber of good.rowNumbers) rowToGood.set(rowNumber, good.goodNumber);
-    }
+    const rowToGood = buildRowToGoodMap(dtProject);
     const hasDtNumbers = dtProject.goods.length > 0;
     // Колонка страны — только когда в строках есть собственная страна происхождения
     // (сборные инвойсы); для обычных документов страна одна на документ.

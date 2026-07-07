@@ -257,6 +257,15 @@ function buildGoodWarnings(rows: DtRowInput[], good: DtGood): string[] {
   return warnings;
 }
 
+/** Карта «номер строки (1-based) → номер товара ДТ» для построчных выгрузок. */
+export function buildRowToGoodMap(dtProject: DtProject): Map<number, number> {
+  const rowToGood = new Map<number, number>();
+  for (const good of dtProject.goods) {
+    for (const rowNumber of good.rowNumbers) rowToGood.set(rowNumber, good.goodNumber);
+  }
+  return rowToGood;
+}
+
 export function buildDtProject(opts: {
   rows: DtRowInput[];
   /** Страна происхождения документа (OKSMT) — для строк без собственной страны. */

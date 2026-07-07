@@ -1,11 +1,22 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import type Redis from 'ioredis';
 import { Repository } from 'typeorm';
 import {
   ClientBalanceService,
   DepositTransactionView,
 } from '../balance/client-balance.service';
+import { readNonNegIntEnv } from '../common/env';
 import { ErrorCode } from '../common/error-codes';
+import { errMsg } from '../common/errors';
+import { REDIS_CLIENT } from '../redis/redis.module';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 import { buildOutputFileName, getDocumentClientName } from '../common/output-filename';
 import { Document, DocumentStatus, documentStatusLabels } from '../database/entities/document.entity';
@@ -53,15 +64,57 @@ export interface ClientDocumentDetail extends ClientDocumentListItem {
  * жёсткий скоуп: документы резолвятся через telegram_users.billing_account_id, и
  * чужой ресурс недоступен (404). Баланс/журнал ключуются аккаунтом напрямую.
  */
+/**
+ * Rate-limit self-service загрузок: fixed window на аккаунт. Anti-abuse: AI-парсер
+ * тратит токены ДО гейта по балансу (rowCount известен только после парсинга), поэтому
+ * без лимита можно бесплатно жечь токены загрузками. Лимит в час настраивается через
+ * CABINET_UPLOAD_HOURLY_LIMIT (0 — выключить).
+ */
+const UPLOAD_RATE_KEY_PREFIX = 'cabinet-upload-rate:';
+const UPLOAD_RATE_WINDOW_SECONDS = 3600;
+const uploadHourlyLimit = () => readNonNegIntEnv('CABINET_UPLOAD_HOURLY_LIMIT', 10);
+
 @Injectable()
 export class ClientPortalService {
+  private logger = new Logger(ClientPortalService.name);
+
   constructor(
     @InjectRepository(Document) private docRepo: Repository<Document>,
     private telegramUsers: TelegramUsersService,
     private documents: DocumentsService,
     private balance: ClientBalanceService,
     private excelExport: ExcelExportService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
+
+  /**
+   * Fixed-window лимит загрузок на аккаунт. Недоступный Redis лимит не обеспечивает —
+   * загрузка пропускается (кабинет важнее анти-абьюза), сбой логируется.
+   */
+  private async assertUploadRateLimit(accountId: string): Promise<void> {
+    const limit = uploadHourlyLimit();
+    if (limit === 0) return;
+    let count: number;
+    try {
+      const key = `${UPLOAD_RATE_KEY_PREFIX}${accountId}`;
+      count = await this.redis.incr(key);
+      if (count === 1) {
+        await this.redis.expire(key, UPLOAD_RATE_WINDOW_SECONDS);
+      }
+    } catch (err) {
+      this.logger.warn(`Upload rate-limit check skipped (Redis): ${errMsg(err)}`);
+      return;
+    }
+    if (count > limit) {
+      throw new HttpException(
+        {
+          code: ErrorCode.UPLOAD_RATE_LIMITED,
+          message: `Upload limit reached (${limit} files per hour). Try again later.`,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
 
   /** Upsert клиента по паре (companyId, telegramId) → identity для JWT (заводит BillingAccount, если новый). */
   async resolve(dto: ResolveClientDto): Promise<ResolvedClient> {
@@ -150,6 +203,7 @@ export class ClientPortalService {
     file: Express.Multer.File,
   ): Promise<ClientDocumentListItem> {
     await this.telegramUsers.resolveAccountMember(telegramUserId, accountId);
+    await this.assertUploadRateLimit(accountId);
     const doc = await this.documents.createFromFile(
       file.buffer,
       file.originalname,

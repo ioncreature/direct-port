@@ -141,6 +141,13 @@ tenant-leak. Должен фильтровать по `companyId` клиента
 
 ## Открытые вопросы / долг
 
-- Тенант-скоуп `BillingAccount.companyId` при claim (отмечен как долг в коде entity).
-- Контур discovery-агента лидов параметризовать компанией при втором провайдере
-  (см. комментарий к `DEFAULT_COMPANY_ID`).
+Оба пункта, висевшие здесь, закрыты:
+
+- ~~Тенант-скоуп `BillingAccount.companyId`~~ — колонка NOT NULL (миграция
+  `BillingAccountCompanyNotNull`), проставляется при создании аккаунта и не дрейфует
+  (клиент уникален парой `(company_id, telegram_id)`, claim ограничен guard'ом той же
+  компании); биллинг-агрегаты дашборда скоупятся по ней напрямую, без обхода через
+  `telegram_users`.
+- ~~Параметризация discovery-агента лидов~~ — агентские эндпоинты
+  (`agent/discover|digest|searches|report`) принимают `companyId` параметром задания
+  (без него — дефолтная компания), журнал `lead_searches` хранит `company_id`.
