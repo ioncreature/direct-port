@@ -74,6 +74,16 @@ export interface RecordDocumentVersionInput {
 }
 
 /**
+ * Кап размера request/response в ai_call (символы сериализованного JSON). Payload'ы
+ * пишутся на каждый вызов Claude, документ не удаляется никогда — без капа таблица
+ * растёт полными промптами (для classify_vision — с base64-фото) и становится
+ * доминирующим потребителем диска. Vision-изображения вырезаются всегда
+ * (stripImageBlocks), остальное усечётся до preview при превышении капа —
+ * в диагностике админки такой payload виден с маркером __truncated.
+ */
+const MAX_AI_CALL_PAYLOAD_CHARS = 200_000;
+
+/**
  * Аудит прохождения документа через pipeline. Запись в БД fire-and-forget:
  * ошибка аудита НЕ должна ломать обработку документа, поэтому все методы
  * поглощают исключения и только логируют.
@@ -229,8 +239,8 @@ export class PipelineAuditService {
           purpose: input.purpose,
           model: modelFamily(input.model),
           attempt: input.attempt ?? 1,
-          request: input.request,
-          response: input.response ?? null,
+          request: this.sanitizePayload(this.stripImageBlocks(input.request)),
+          response: input.response != null ? this.sanitizePayload(input.response) : null,
           error: input.error ? this.serializeError(input.error) : null,
           inputTokens: input.tokens?.input ?? 0,
           outputTokens: input.tokens?.output ?? 0,
@@ -283,6 +293,51 @@ export class PipelineAuditService {
       }
     }
     return null;
+  }
+
+  /**
+   * Заменяет base64-данные vision-блоков (`{type:'image', source:{data}}`) на короткий
+   * маркер с размером. Изображения — самая тяжёлая часть classify_vision-запросов
+   * (сотни КБ на строку), при этом само фото и так хранится в document_photo —
+   * дублировать его в аудите незачем. Работает по копии, исходный запрос не мутирует.
+   */
+  private stripImageBlocks(value: unknown): unknown {
+    const walk = (node: unknown): unknown => {
+      if (Array.isArray(node)) return node.map(walk);
+      if (!node || typeof node !== 'object') return node;
+      const obj = node as Record<string, unknown>;
+      const source = obj.source as Record<string, unknown> | undefined;
+      if (obj.type === 'image' && source && typeof source.data === 'string') {
+        return {
+          ...obj,
+          source: { ...source, data: `[изображение опущено, ${source.data.length} байт base64]` },
+        };
+      }
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(obj)) out[k] = walk(v);
+      return out;
+    };
+    try {
+      return walk(value);
+    } catch {
+      return value;
+    }
+  }
+
+  /** Кап размера payload: сверх MAX_AI_CALL_PAYLOAD_CHARS хранится только preview с маркером. */
+  private sanitizePayload(value: unknown): unknown {
+    try {
+      const serialized = JSON.stringify(value);
+      if (serialized == null || serialized.length <= MAX_AI_CALL_PAYLOAD_CHARS) return value;
+      return {
+        __truncated: true,
+        originalChars: serialized.length,
+        preview: serialized.slice(0, MAX_AI_CALL_PAYLOAD_CHARS),
+      };
+    } catch {
+      // Несериализуемый payload упадёт и при записи jsonb — отдадим маркер вместо строки.
+      return { __truncated: true, error: 'payload is not JSON-serializable' };
+    }
   }
 
   private serializeResponse(response: Anthropic.Message): unknown {

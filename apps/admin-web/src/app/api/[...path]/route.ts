@@ -9,7 +9,10 @@ const API_URL = process.env.API_URL || 'http://localhost:3001/api';
 
 const logger = createLogger().child({ component: 'proxy' });
 
-const HOP_BY_HOP_REQUEST_HEADERS = ['host', 'connection', 'content-length'];
+// x-internal-key — привилегированный service-to-service заголовок API (обходит JWT):
+// аутентифицирующий прокси обязан вычищать его из внешнего трафика, иначе знание
+// секрета позволяло бы дёргать @Internal-эндпоинты прямо из интернета.
+const HOP_BY_HOP_REQUEST_HEADERS = ['host', 'connection', 'content-length', 'x-internal-key'];
 const HOP_BY_HOP_RESPONSE_HEADERS = [
   'content-encoding',
   'content-length',

@@ -10,7 +10,10 @@ const BFF_URL = process.env.CLIENT_BFF_URL || 'http://localhost:3005';
 
 const logger = createLogger().child({ component: 'proxy' });
 
-const HOP_BY_HOP_REQUEST_HEADERS = ['host', 'connection', 'content-length'];
+// x-internal-key — привилегированный service-to-service заголовок API: вычищаем из
+// внешнего трафика, чтобы прокси не давал дороги к @Internal-эндпоинтам (BFF сам
+// подставляет свой ключ при походах в api).
+const HOP_BY_HOP_REQUEST_HEADERS = ['host', 'connection', 'content-length', 'x-internal-key'];
 const HOP_BY_HOP_RESPONSE_HEADERS = [
   'content-encoding',
   'content-length',

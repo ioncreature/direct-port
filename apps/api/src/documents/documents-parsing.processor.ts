@@ -11,6 +11,7 @@ import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { PipelineAuditService } from '../pipeline-audit/pipeline-audit.service';
 import { PipelineNotifierService } from './pipeline-notifier.service';
 import { PhotoStorageService } from '../photo-storage/photo-storage.service';
+import { startDocumentHeartbeat } from './status-heartbeat';
 
 @Processor('document-parsing')
 export class DocumentsParsingProcessor extends WorkerHost {
@@ -59,14 +60,23 @@ export class DocumentsParsingProcessor extends WorkerHost {
       this.logger.warn(`Document ${documentId} has no file buffer`);
       doc.status = DocumentStatus.FAILED;
       doc.errorMessage = 'File buffer is missing';
-      await this.repo.save(doc);
-      await this.pipelineNotifier.notify(doc);
+      const res = await this.repo.update(
+        { id: documentId, status: DocumentStatus.PARSING },
+        { status: DocumentStatus.FAILED, errorMessage: doc.errorMessage },
+      );
+      if (res.affected) await this.pipelineNotifier.notify(doc);
       return;
     }
 
     this.logger.log(`Document ${documentId}: file="${doc.originalFileName}", buffer=${doc.fileBuffer.length} bytes`);
 
     const attempt = (job.attemptsMade ?? 0) + 1;
+    const stopHeartbeat = startDocumentHeartbeat(
+      this.repo,
+      documentId,
+      DocumentStatus.PARSING,
+      this.logger,
+    );
     const stageRunId = await this.audit.startStageRun({
       documentId,
       stage: 'parse',
@@ -144,15 +154,52 @@ export class DocumentsParsingProcessor extends WorkerHost {
         columnMapping,
       });
 
-      if (feasibility === 'rejected') {
-        doc.status = DocumentStatus.REJECTED;
+      // Финальный переход — условный UPDATE ... WHERE status='parsing': прежний
+      // безусловный save был TOCTOU — stalled-дубль job'а, отставший от победителя,
+      // перезаписывал parsedData/статус документа, уже ушедшего в processing (или
+      // откатывал более поздний статус), и ставил второй processing-job (двойной
+      // прогон, двойное уведомление). Проигравший дубль выходит молча, ничего не
+      // записав и не поставив job.
+      const parsePatch = {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM QueryDeepPartialEntity rejects Record[] for jsonb column
+        parsedData: doc.parsedData as any,
+        currency: doc.currency,
+        columnMapping: doc.columnMapping,
+        rowCount: doc.rowCount,
+        tokenUsage: doc.tokenUsage,
+        fileBuffer: null,
+        countryOfOrigin: doc.countryOfOrigin,
+        countryOriginSource: doc.countryOriginSource,
+        countryDetectionReason: doc.countryDetectionReason,
+      };
+      doc.status =
+        feasibility === 'rejected'
+          ? DocumentStatus.REJECTED
+          : feasibility === 'ok'
+            ? DocumentStatus.PENDING
+            : DocumentStatus.REQUIRES_REVIEW;
+      if (feasibility !== 'ok') {
         doc.rejectionReasons = rejectionReasons.length > 0 ? rejectionReasons : null;
-        await this.repo.save(doc);
+      }
+      const finalized = await this.repo.update(
+        { id: documentId, status: DocumentStatus.PARSING },
+        {
+          ...parsePatch,
+          status: doc.status,
+          ...(feasibility !== 'ok' ? { rejectionReasons: doc.rejectionReasons } : {}),
+        },
+      );
+      if (!finalized.affected) {
+        this.logger.warn(
+          `Document ${documentId} left "parsing" concurrently — discarding this parse run`,
+        );
+        return;
+      }
+
+      if (feasibility === 'rejected') {
         await this.pipelineNotifier.notify(doc);
         this.logger.log(`Document ${documentId} rejected: ${rejectionReasons.join('; ')}`);
       } else if (feasibility === 'ok') {
-        doc.status = DocumentStatus.PENDING;
-        await this.repo.save(doc);
         await this.processingQueue.add('process-document', { documentId });
         // Промежуточный «классифицируем…» был self_service-пингом в tg-bot; менеджер
         // получает уведомление только на терминальных статусах — здесь не уведомляем.
@@ -161,9 +208,6 @@ export class DocumentsParsingProcessor extends WorkerHost {
         );
       } else {
         // feasibility === 'review'
-        doc.status = DocumentStatus.REQUIRES_REVIEW;
-        doc.rejectionReasons = rejectionReasons.length > 0 ? rejectionReasons : null;
-        await this.repo.save(doc);
         // managed: клиента не трогаем, но менеджеру нужно знать про необходимость ревью.
         // Для self_service — no-op внутри notify.
         await this.pipelineNotifier.notify(doc);
@@ -188,17 +232,23 @@ export class DocumentsParsingProcessor extends WorkerHost {
       // Точечный update вместо save: fileBuffer сохраняем — это единственный источник
       // для повторного парсинга через POST /:id/reprocess (раньше транзиентная ошибка
       // Claude навсегда уничтожала исходный файл клиента), и не гоняем мегабайты
-      // буфера в UPDATE.
-      await this.repo.update(documentId, {
-        status: doc.status,
-        errorMessage: doc.errorMessage,
-      });
+      // буфера в UPDATE. WHERE по статусу — не затираем документ, уже ушедший дальше
+      // силами параллельного дубля job'а.
+      const failed = await this.repo.update(
+        { id: documentId, status: DocumentStatus.PARSING },
+        {
+          status: doc.status,
+          errorMessage: doc.errorMessage,
+        },
+      );
       const errorCode = classifyPipelineError(err, ErrorCode.PARSING_FAILED);
-      await this.pipelineNotifier.notify(doc);
+      if (failed.affected) await this.pipelineNotifier.notify(doc);
       this.logger.error(
         `Document ${documentId} parsing failed [${errorCode}]: ${doc.errorMessage}`,
         err instanceof Error ? err.stack : err,
       );
+    } finally {
+      stopHeartbeat();
     }
   }
 }

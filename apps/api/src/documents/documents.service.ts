@@ -478,6 +478,9 @@ export class DocumentsService {
       doc.errorMessage = operatorComment ?? null;
       if (reasons.length > 0) doc.rejectionReasons = reasons;
       const saved = await this.repo.save(doc);
+      // Оператор закрыл документ — возвращаем всё удержанное/списанное: результата
+      // у клиента нет (resultData к этому моменту отсутствует или сброшен reprocess'ом).
+      await this.clientBalance.releaseReservation(saved, 0);
       await this.pipelineNotifier.notify(saved);
       return saved;
     }
@@ -485,6 +488,9 @@ export class DocumentsService {
     doc.status = DocumentStatus.REJECTED;
     doc.rejectionReasons = reasons;
     const saved = await this.repo.save(doc);
+    // Отклонённый документ не оплачивается (Excel недоступен) — полный возврат
+    // резерва, удержанного гейтом при прогоне, который завёл документ в CODE_REVIEW.
+    await this.clientBalance.releaseReservation(saved, 0);
     await this.pipelineNotifier.notify(saved);
     return saved;
   }

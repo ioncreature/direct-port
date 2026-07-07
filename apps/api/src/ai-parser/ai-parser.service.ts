@@ -21,6 +21,9 @@ import { PipelineAuditService, type AuditContext } from '../pipeline-audit/pipel
 import { SpreadsheetData, SpreadsheetReaderService } from './spreadsheet-reader.service';
 import type { ProductPhotoInput } from '../photo-storage/photo-storage.service';
 
+/** ВАЖНО: при добавлении поля сюда — добавь его и в ParsedDataRowDto
+ *  (documents/dto/review-document.dto.ts), иначе whitelist-валидация молча
+ *  вырежет его из parsedData при первом же сохранении ручного ревью. */
 export interface ParsedProduct {
   description: string;
   descriptionOriginal?: string;

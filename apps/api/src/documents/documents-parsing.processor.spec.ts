@@ -162,6 +162,18 @@ describe('DocumentsParsingProcessor.process', () => {
       });
     });
 
+    it('финализация проиграна (документ ушёл из PARSING конкурентно) → без job и уведомлений', async () => {
+      const doc = makeDoc();
+      const { processor, repo, processingQueue, managerNotify } = createProcessor({ doc });
+      repo.update.mockResolvedValue({ affected: 0 });
+
+      await processor.process(fakeJob('doc-1'));
+
+      expect(processingQueue.add).not.toHaveBeenCalled();
+      expect(managerNotify.notifyDocumentEvent).not.toHaveBeenCalled();
+      expect(repo.save).not.toHaveBeenCalled();
+    });
+
     it('feasibility=review → status=REQUIRES_REVIEW, rejectionReasons, processing НЕ вызывается', async () => {
       const doc = makeDoc();
       const { processor, processingQueue } = createProcessor({
@@ -259,11 +271,15 @@ describe('DocumentsParsingProcessor.process', () => {
       expect(doc.fileBuffer).not.toBeNull();
       expect(doc.status).toBe(DocumentStatus.FAILED);
       expect(doc.errorMessage).toBe('AI timeout');
-      // FAILED пишется точечным update (не save), чтобы не гонять буфер и не затирать его.
-      expect(repo.update).toHaveBeenCalledWith('doc-1', {
-        status: DocumentStatus.FAILED,
-        errorMessage: 'AI timeout',
-      });
+      // FAILED пишется точечным условным update (не save): буфер не гоняем, WHERE по
+      // статусу не затирает документ, уже ушедший дальше параллельным дублем job'а.
+      expect(repo.update).toHaveBeenCalledWith(
+        { id: 'doc-1', status: DocumentStatus.PARSING },
+        {
+          status: DocumentStatus.FAILED,
+          errorMessage: 'AI timeout',
+        },
+      );
       expect(repo.save).not.toHaveBeenCalled();
     });
   });

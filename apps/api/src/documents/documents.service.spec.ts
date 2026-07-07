@@ -118,6 +118,7 @@ function createService(
 
   const clientBalance = {
     settle: jest.fn().mockResolvedValue(undefined),
+    releaseReservation: jest.fn().mockResolvedValue(undefined),
     checkProcessingAllowed: jest.fn().mockResolvedValue({ allowed: true, need: 0, available: 0 }),
   };
 

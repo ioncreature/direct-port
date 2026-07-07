@@ -77,41 +77,91 @@ describe('ClientBalanceService.getBalance', () => {
   });
 });
 
-describe('ClientBalanceService.checkProcessingAllowed', () => {
-  it('документ без клиента → разрешено, аккаунт не резолвится', async () => {
-    const { service, tgUserRepo } = makeService();
-    const gate = await service.checkProcessingAllowed(makeDoc({ telegramUserId: null }));
+describe('ClientBalanceService.reserveProcessing', () => {
+  it('документ без клиента → разрешено, транзакция не открывается', async () => {
+    const { service, tgUserRepo, accountRepo } = makeService();
+    const gate = await service.reserveProcessing(makeDoc({ telegramUserId: null }));
     expect(gate.allowed).toBe(true);
     expect(gate.need).toBe(0);
     expect(tgUserRepo.findOne).not.toHaveBeenCalled();
+    expect(accountRepo.manager.transaction).not.toHaveBeenCalled();
   });
 
-  it('баланса хватает → allowed=true, need=rowCount', async () => {
-    const { service } = makeService({ balance: 20 });
-    const gate = await service.checkProcessingAllowed(makeDoc({ rowCount: 20 }));
-    expect(gate).toEqual({ allowed: true, need: 20, available: 20 });
-  });
+  it('баланса хватает → удерживает need под локом: charge в ledger + balanceChargedAmount', async () => {
+    const { service, em } = makeService({ balance: 20, docChargedInTx: 0 });
+    const doc = makeDoc({ rowCount: 20 });
+    const gate = await service.reserveProcessing(doc);
 
-  it('баланса не хватает → allowed=false', async () => {
-    const { service } = makeService({ balance: 5 });
-    const gate = await service.checkProcessingAllowed(makeDoc({ rowCount: 20 }));
-    expect(gate).toEqual({ allowed: false, need: 20, available: 5 });
-  });
-
-  it('учитывает уже списанное: need = rowCount − balanceChargedAmount', async () => {
-    const { service } = makeService({ balance: 1 });
-    const gate = await service.checkProcessingAllowed(
-      makeDoc({ rowCount: 20, balanceChargedAmount: 18 }),
+    expect(gate).toEqual({ allowed: true, need: 20, available: 0, previousCharged: 0 });
+    expect(em.update).toHaveBeenCalledWith(BillingAccount, { id: 'acc-1' }, { balance: 0 });
+    expect(em.update).toHaveBeenCalledWith(
+      Document,
+      { id: 'doc-1' },
+      { balanceChargedAmount: 20 },
     );
-    expect(gate).toEqual({ allowed: false, need: 2, available: 1 });
+    expect(em.insert).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ delta: -20, type: 'charge', documentId: 'doc-1' }),
+    );
+    expect(doc.balanceChargedAmount).toBe(20);
   });
 
-  it('всё уже списано (need=0) → allowed даже при нулевом балансе', async () => {
-    const { service } = makeService({ balance: 0 });
-    const gate = await service.checkProcessingAllowed(
-      makeDoc({ rowCount: 20, balanceChargedAmount: 20 }),
+  it('баланса не хватает → allowed=false, ничего не списано', async () => {
+    const { service, em } = makeService({ balance: 5, docChargedInTx: 0 });
+    const gate = await service.reserveProcessing(makeDoc({ rowCount: 20 }));
+    expect(gate).toEqual({ allowed: false, need: 20, available: 5, previousCharged: 0 });
+    expect(em.update).not.toHaveBeenCalled();
+    expect(em.insert).not.toHaveBeenCalled();
+  });
+
+  it('сверяет уже списанное ПОД ЛОКОМ (из БД, не из doc): need = rowCount − charged', async () => {
+    const { service, em } = makeService({ balance: 1, docChargedInTx: 18 });
+    // In-memory значение отстало (0) — источник истины docRow из транзакции (18).
+    const gate = await service.reserveProcessing(
+      makeDoc({ rowCount: 20, balanceChargedAmount: 0 }),
     );
-    expect(gate).toEqual({ allowed: true, need: 0, available: 0 });
+    expect(gate).toEqual({ allowed: false, need: 2, available: 1, previousCharged: 18 });
+    expect(em.insert).not.toHaveBeenCalled();
+  });
+
+  it('всё уже удержано (need=0) → allowed без записи даже при нулевом балансе', async () => {
+    const { service, em } = makeService({ balance: 0, docChargedInTx: 20 });
+    const gate = await service.reserveProcessing(makeDoc({ rowCount: 20 }));
+    expect(gate).toEqual({ allowed: true, need: 0, available: 0, previousCharged: 20 });
+    expect(em.update).not.toHaveBeenCalled();
+    expect(em.insert).not.toHaveBeenCalled();
+  });
+});
+
+describe('ClientBalanceService.releaseReservation', () => {
+  it('возвращает удержанное до previousCharged (adjustment в ledger)', async () => {
+    const { service, em } = makeService({ balance: 0, docChargedInTx: 20 });
+    const doc = makeDoc({ balanceChargedAmount: 20 });
+    await service.releaseReservation(doc, 2);
+
+    expect(em.update).toHaveBeenCalledWith(BillingAccount, { id: 'acc-1' }, { balance: 18 });
+    expect(em.update).toHaveBeenCalledWith(
+      Document,
+      { id: 'doc-1' },
+      { balanceChargedAmount: 2 },
+    );
+    expect(em.insert).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ delta: 18, type: 'adjustment' }),
+    );
+    expect(doc.balanceChargedAmount).toBe(2);
+  });
+
+  it('нечего возвращать (charged == target) → без записи', async () => {
+    const { service, em } = makeService({ balance: 0, docChargedInTx: 2 });
+    await service.releaseReservation(makeDoc({ balanceChargedAmount: 2 }), 2);
+    expect(em.insert).not.toHaveBeenCalled();
+  });
+
+  it('сбой транзакции не пробрасывается (best-effort)', async () => {
+    const { service, accountRepo } = makeService();
+    accountRepo.manager.transaction.mockRejectedValueOnce(new Error('db down') as never);
+    await expect(service.releaseReservation(makeDoc(), 0)).resolves.toBeUndefined();
   });
 });
 

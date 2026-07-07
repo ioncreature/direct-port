@@ -3,7 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import { ErrorCode } from '../common/error-codes';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
-import { isIncompleteCalculationStatus } from '../common/product-notes';
+import {
+  INCOMPLETE_CALCULATION_STATUSES,
+  isIncompleteCalculationStatus,
+} from '../common/product-notes';
 import { BillingAccount } from '../database/entities/billing-account.entity';
 import {
   DepositTransaction,
@@ -19,6 +22,8 @@ export interface ProcessingBalanceGate {
   need: number;
   /** Текущий баланс клиента в позициях. */
   available: number;
+  /** Сколько было списано за документ ДО этого прогона — цель releaseReservation при сбое. */
+  previousCharged: number;
 }
 
 /** Запись истории операций для отображения в админке (без чувствительных полей User). */
@@ -67,16 +72,81 @@ export class ClientBalanceService {
   }
 
   /**
-   * Проверка перед запуском обработки: хватает ли баланса на ещё не списанные позиции.
-   * Документы без привязанного клиента (загрузки из админки) баланс не трогают.
+   * Атомарный гейт+резерв перед запуском обработки: под локом аккаунта сверяет баланс
+   * с ещё не списанными позициями и сразу удерживает их (charge). Раньше гейт был
+   * незалоченным чтением, оторванным от списания в конце пайплайна, — два документа
+   * одного клиента, запущенные параллельно, оба проходили по полному балансу, и два
+   * settle уводили баланс в минус (клиент получал больше позиций, чем оплатил).
+   *
+   * По завершении прогона settle доводит удержанное до фактического числа успешных
+   * позиций (разница возвращается); при сбое прогона releaseReservation откатывает
+   * к previousCharged. Документы без привязанного клиента (загрузки из админки)
+   * баланс не трогают.
    */
-  async checkProcessingAllowed(doc: Document): Promise<ProcessingBalanceGate> {
-    if (!doc.telegramUserId) return { allowed: true, need: 0, available: 0 };
+  async reserveProcessing(doc: Document): Promise<ProcessingBalanceGate> {
+    const noop: ProcessingBalanceGate = {
+      allowed: true,
+      need: 0,
+      available: 0,
+      previousCharged: doc.balanceChargedAmount ?? 0,
+    };
+    if (!doc.telegramUserId) return noop;
     const positions = doc.rowCount || doc.parsedData?.length || 0;
-    const need = Math.max(0, positions - (doc.balanceChargedAmount ?? 0));
     const accountId = await this.resolveAccountId(doc.telegramUserId);
-    const available = accountId ? await this.getBalance(accountId) : 0;
-    return { allowed: need === 0 || available >= need, need, available };
+    if (!accountId) return noop;
+
+    return this.accountRepo.manager.transaction(async (em) => {
+      const account = await em.findOne(BillingAccount, {
+        where: { id: accountId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!account) return noop;
+      // Свежее число уже списанного под локом — reprocess/recalculate не должны
+      // резервировать повторно то, что уже удержано прошлым прогоном.
+      const docRow = await em.findOne(Document, {
+        where: { id: doc.id },
+        select: ['id', 'balanceChargedAmount'],
+      });
+      const previousCharged = docRow?.balanceChargedAmount ?? 0;
+      const need = Math.max(0, positions - previousCharged);
+      if (need === 0) {
+        return { allowed: true, need: 0, available: account.balance, previousCharged };
+      }
+      if (account.balance < need) {
+        return { allowed: false, need, available: account.balance, previousCharged };
+      }
+      await this.writeDelta(em, account, -need, {
+        type: 'charge',
+        documentId: doc.id,
+        createdByUserId: null,
+        comment: `Списание за обработку «${doc.originalFileName}» (${positions} поз.)`,
+      });
+      await em.update(Document, { id: doc.id }, { balanceChargedAmount: positions });
+      doc.balanceChargedAmount = positions;
+      return { allowed: true, need, available: account.balance - need, previousCharged };
+    });
+  }
+
+  /**
+   * Откат резерва при неуспешном завершении прогона: доводит списанное до
+   * targetCharged (обычно previousCharged из reserveProcessing — состояние до
+   * прогона; 0 при reject — отклонённый документ не оплачивается). Никогда не
+   * бросает — как settle, откат best-effort: расхождение доберёт следующий
+   * reprocess (reserveProcessing сверяет удержанное под локом).
+   */
+  async releaseReservation(doc: Document, targetCharged: number): Promise<void> {
+    if (!doc.telegramUserId) return;
+    try {
+      const accountId = await this.resolveAccountId(doc.telegramUserId);
+      if (!accountId) return;
+      await this.reconcileCharge(accountId, doc.id, doc.originalFileName, targetCharged, 'release');
+      doc.balanceChargedAmount = targetCharged;
+    } catch (err) {
+      this.logger.error(
+        `Failed to release reservation for document ${doc.id} (target ${targetCharged})`,
+        err instanceof Error ? err.stack : err,
+      );
+    }
   }
 
   /**
@@ -116,12 +186,15 @@ export class ClientBalanceService {
     }
   }
 
-  /** Атомарная сверка списанного с числом успешных позиций под локом на аккаунте. */
+  /** Атомарная сверка списанного с целевым числом позиций под локом на аккаунте.
+   *  reason управляет только текстом ledger-комментария: 'settle' — доведение до
+   *  успешных позиций, 'release' — откат резерва после неуспешного прогона. */
   private async reconcileCharge(
     billingAccountId: string,
     documentId: string,
     fileName: string,
     successfulCount: number,
+    reason: 'settle' | 'release' = 'settle',
   ): Promise<void> {
     await this.accountRepo.manager.transaction(async (em) => {
       const account = await em.findOne(BillingAccount, {
@@ -146,10 +219,62 @@ export class ClientBalanceService {
         comment:
           chargeDelta > 0
             ? `Списание за обработку «${fileName}» (${successfulCount} поз.)`
-            : `Возврат по пересчёту «${fileName}» (${alreadyCharged} → ${successfulCount} поз.)`,
+            : reason === 'release'
+              ? `Возврат резерва «${fileName}» (${alreadyCharged} → ${successfulCount} поз.)`
+              : `Возврат по пересчёту «${fileName}» (${alreadyCharged} → ${successfulCount} поз.)`,
       });
       await em.update(Document, { id: documentId }, { balanceChargedAmount: successfulCount });
     });
+  }
+
+  /**
+   * Фоновая сверка списаний: находит оплачиваемые документы клиентов, у которых
+   * списано не столько, сколько успешных позиций, и доводит разницу повторным settle.
+   * Закрывает «тихие» расхождения best-effort-операций (settle/releaseReservation
+   * никогда не бросают — транзиентный сбой БД на них раньше означал бесплатную
+   * обработку или невозвращённый резерв навсегда).
+   *
+   * SQL — только префильтр кандидатов (список неполных статусов разделён с TS через
+   * INCOMPLETE_CALCULATION_STATUSES); истину устанавливает settle, который считает
+   * успешные позиции той же TS-логикой и сверяет под локом. Окно по updated_at
+   * ограничивает скан свежими документами. Конкурентные вызовы с нескольких реплик
+   * безопасны: reconcileCharge идемпотентен по абсолютному целевому значению.
+   */
+  async reconcileSettledDocuments(windowDays = 7): Promise<number> {
+    const docRepo = this.accountRepo.manager.getRepository(Document);
+    const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60_000);
+    const candidates: Array<{ id: string }> = await docRepo.query(
+      `SELECT d.id
+       FROM documents d
+       WHERE d.status IN ($1, $2)
+         AND d.telegram_user_id IS NOT NULL
+         AND d.updated_at > $3
+         AND d.balance_charged_amount <> (
+           SELECT COUNT(*)
+           FROM jsonb_array_elements(COALESCE(d.result_data, '[]'::jsonb)) r
+           WHERE NOT (r->>'calculationStatus' = ANY($4))
+         )`,
+      [
+        DocumentStatus.PROCESSED,
+        DocumentStatus.PROCESSED_WITH_ERRORS,
+        cutoff,
+        [...INCOMPLETE_CALCULATION_STATUSES],
+      ],
+    );
+    let fixed = 0;
+    for (const { id } of candidates) {
+      const doc = await docRepo.findOne({ where: { id } });
+      if (!doc) continue;
+      const before = doc.balanceChargedAmount;
+      await this.settle(doc);
+      if (doc.balanceChargedAmount !== before) {
+        fixed += 1;
+        this.logger.warn(
+          `Reconciled deposit charge for document ${id}: ${before} → ${doc.balanceChargedAmount} positions`,
+        );
+      }
+    }
+    return fixed;
   }
 
   /**
@@ -211,6 +336,37 @@ export class ClientBalanceService {
         comment: opts.comment?.trim() || null,
       });
       return { balance: newBalance };
+    });
+  }
+
+  /**
+   * Приветственный бонус нового клиента (онбординг: «первые N позиций бесплатно» с
+   * лендинга). Идемпотентно: под локом аккаунта проверяется, что grant-транзакций у
+   * аккаунта ещё нет — повторный вызов (retry регистрации, гонка) бонус не задваивает.
+   * type='grant' сознательно не входит в «пополнения» дашборда (не выручка).
+   */
+  async grantWelcome(billingAccountId: string, positions: number): Promise<{ granted: boolean }> {
+    if (!Number.isInteger(positions) || positions <= 0) return { granted: false };
+    return this.accountRepo.manager.transaction(async (em) => {
+      const account = await em.findOne(BillingAccount, {
+        where: { id: billingAccountId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!account) {
+        throw new NotFoundException('Billing account not found');
+      }
+      const existing = await em.findOne(DepositTransaction, {
+        where: { billingAccountId, type: 'grant' },
+        select: ['id'],
+      });
+      if (existing) return { granted: false };
+      await this.writeDelta(em, account, positions, {
+        type: 'grant',
+        documentId: null,
+        createdByUserId: null,
+        comment: `Приветственный бонус (${positions} бесплатных позиций)`,
+      });
+      return { granted: true };
     });
   }
 
