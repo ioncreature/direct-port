@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -10,12 +11,14 @@ import {
   Query,
   Res,
 } from '@nestjs/common';
+import { isUUID } from 'class-validator';
 import { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Internal } from '../auth/decorators/internal.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Actor, DEFAULT_COMPANY_ID, resolveCompanyScope } from '../common/tenant/actor-context';
 import { UserRole } from '../database/entities/user.entity';
+import { AgentDiscoverLeadsDto } from './dto/agent-discover-leads.dto';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { DiscoverLeadsDto } from './dto/discover-leads.dto';
 import { FindLeadsQueryDto } from './dto/find-leads-query.dto';
@@ -24,6 +27,16 @@ import { LinkClientDto } from './dto/link-client.dto';
 import { ReportLeadsDto } from './dto/report-leads.dto';
 import { UpdateLeadDto } from './dto/update-lead.dto';
 import { LeadsService } from './leads.service';
+
+// Query-параметр companyId агентских эндпоинтов: DTO-валидация на raw @Query() не
+// применяется, поэтому проверяем руками — мусор упал бы 500-кой на uuid-касте в PG.
+// isUUID('loose') — та же семантика, что @IsUUID('loose') в DTO (пропускает
+// неверсионный DEFAULT_COMPANY_ID '…-001').
+function parseAgentCompanyId(raw?: string): string {
+  if (!raw) return DEFAULT_COMPANY_ID;
+  if (!isUUID(raw, 'loose')) throw new BadRequestException('companyId must be a UUID');
+  return raw;
+}
 
 // Лиды — глобальный инструмент роста, доступен только super_admin. admin/customs
 // получают 403 (как и раздел «Компании»). @Internal-маршруты агента (по X-Internal-Key)
@@ -52,38 +65,46 @@ export class LeadsController {
   }
 
   // --- Контур автономного агента (routine), доступ по X-Internal-Key ---
+  // Компания задаётся параметром задания (не actor'ом); не передана → дефолтная.
 
-  /** История поисков — агент решает, что искать дальше, не повторяясь. */
+  /** История поисков — агент решает, что искать дальше, не повторяясь (в рамках компании). */
   @Get('agent/searches')
   @Internal()
-  agentSearches(@Query('limit') limit?: string) {
-    return this.service.getSearchHistory(Math.min(Number(limit) || 30, 100));
+  agentSearches(@Query('limit') limit?: string, @Query('companyId') companyId?: string) {
+    return this.service.getSearchHistory(
+      Math.min(Number(limit) || 30, 100),
+      parseAgentCompanyId(companyId),
+    );
   }
 
   /** Запуск web-поиска агентом. */
   @Post('agent/discover')
   @Internal()
-  agentDiscover(@Body() dto: DiscoverLeadsDto) {
-    return this.service.discover(dto, DEFAULT_COMPANY_ID);
+  agentDiscover(@Body() dto: AgentDiscoverLeadsDto) {
+    return this.service.discover(dto, dto.companyId ?? DEFAULT_COMPANY_ID);
   }
 
   /** Дайджест свежих горячих лидов за период (часы); порог score настраивается агентом. */
   @Get('agent/digest')
   @Internal()
-  agentDigest(@Query('hours') hours?: string, @Query('minScore') minScore?: string) {
+  agentDigest(
+    @Query('hours') hours?: string,
+    @Query('minScore') minScore?: string,
+    @Query('companyId') companyId?: string,
+  ) {
     const parsedScore = Number(minScore);
     return this.service.getDigest(
       Math.min(Number(hours) || 24, 168),
       Number.isFinite(parsedScore) ? Math.min(Math.max(parsedScore, 0), 1) : undefined,
-      DEFAULT_COMPANY_ID,
+      parseAgentCompanyId(companyId),
     );
   }
 
-  /** Доставить готовый отчёт менеджерам в Telegram. */
+  /** Доставить готовый отчёт менеджерам компании в Telegram. */
   @Post('agent/report')
   @Internal()
   agentReport(@Body() dto: ReportLeadsDto) {
-    return this.service.reportToManagers(dto.text);
+    return this.service.reportToManagers(dto.text, dto.companyId ?? DEFAULT_COMPANY_ID);
   }
 
   @Get('export')

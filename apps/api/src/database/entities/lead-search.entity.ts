@@ -17,9 +17,16 @@ export type LeadSearchStatus = 'running' | 'completed' | 'failed';
  */
 @Entity('lead_searches')
 @Index('idx_lead_searches_created_at', ['createdAt'])
+@Index('idx_lead_searches_company', ['companyId'])
 export class LeadSearch {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  /** Компания, для которой шёл поиск. NULL — общий пул (интерактивный discovery
+   *  super_admin без выбранной компании). Существующие записи забэкафиллены дефолтной
+   *  компанией — до параметризации агент искал только для неё. */
+  @Column({ type: 'uuid', name: 'company_id', nullable: true })
+  companyId: string | null;
 
   @Column({ type: 'varchar', length: 200 })
   query: string;

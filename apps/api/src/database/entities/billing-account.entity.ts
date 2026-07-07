@@ -22,11 +22,11 @@ export class BillingAccount {
   @Column({ type: 'int', default: 0 })
   balance: number;
 
-  /** Компания-владелец (тенант) — задел под 1:N. Сейчас тенант-скоуп идёт через
-   *  TelegramUser.companyId; при claim это поле пока НЕ обновляется (доработать вместе
-   *  с тенант-скоупом баланса). Для существующих клиентов заполнено бэкафиллом миграции. */
-  @Column({ type: 'uuid', name: 'company_id', nullable: true })
-  companyId: string | null;
+  /** Компания-владелец (тенант) — источник правды для тенант-скоупа биллинга.
+   *  Проставляется при создании аккаунта и не дрейфует: клиент уникален парой
+   *  (company_id, telegram_id), claim менеджером ограничен той же компанией. */
+  @Column({ type: 'uuid', name: 'company_id' })
+  companyId: string;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

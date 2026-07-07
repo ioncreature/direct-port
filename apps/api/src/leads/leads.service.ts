@@ -203,6 +203,7 @@ export class LeadsService {
         city: dto.city ?? null,
         maxResults,
         status: 'running',
+        companyId,
       }),
     );
     await this.discoveryQueue.add('discover-leads', {
@@ -215,9 +216,15 @@ export class LeadsService {
     return { searchId: search.id };
   }
 
-  /** История discovery-заданий (последние N), новые сверху. */
-  getSearchHistory(limit = 20): Promise<LeadSearch[]> {
-    return this.searchRepo.find({ order: { createdAt: 'DESC' }, take: limit });
+  /** История discovery-заданий (последние N), новые сверху. Без companyId — вся история
+   *  (интерактивный просмотр super_admin); с companyId — только поиски этой компании
+   *  (агент не должен «не повторяться» по чужим запросам). */
+  getSearchHistory(limit = 20, companyId?: string): Promise<LeadSearch[]> {
+    return this.searchRepo.find({
+      ...(companyId ? { where: { companyId } } : {}),
+      order: { createdAt: 'DESC' },
+      take: limit,
+    });
   }
 
   /** Дайджест свежих горячих лидов за период — для отчёта автономного агента. */
@@ -234,9 +241,9 @@ export class LeadsService {
     });
   }
 
-  /** Передать текстовый отчёт агента менеджерам в Telegram (через manager-bot). */
-  reportToManagers(text: string): Promise<{ delivered: boolean }> {
-    return this.managerNotify.notifyLeadsReport(text);
+  /** Передать текстовый отчёт агента менеджерам компании в Telegram (через manager-bot). */
+  reportToManagers(text: string, companyId?: string): Promise<{ delivered: boolean }> {
+    return this.managerNotify.notifyLeadsReport(text, companyId);
   }
 
   /** Воркер: завершить задание поиска с результатами. */

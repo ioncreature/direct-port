@@ -166,11 +166,20 @@ describe('LeadsService.exportCsv', () => {
 });
 
 describe('LeadsService.reportToManagers', () => {
-  it('делегирует доставку отчёта менеджерам', async () => {
+  it('делегирует доставку отчёта менеджерам (без companyId — дефолт резолвит notify)', async () => {
     const { service, managerNotify } = createService();
     const res = await service.reportToManagers('Найдено 5 горячих лидов');
-    expect(managerNotify.notifyLeadsReport).toHaveBeenCalledWith('Найдено 5 горячих лидов');
+    expect(managerNotify.notifyLeadsReport).toHaveBeenCalledWith(
+      'Найдено 5 горячих лидов',
+      undefined,
+    );
     expect(res).toEqual({ delivered: true });
+  });
+
+  it('передаёт companyId задания в доставку', async () => {
+    const { service, managerNotify } = createService();
+    await service.reportToManagers('Отчёт', 'company-2');
+    expect(managerNotify.notifyLeadsReport).toHaveBeenCalledWith('Отчёт', 'company-2');
   });
 });
 
