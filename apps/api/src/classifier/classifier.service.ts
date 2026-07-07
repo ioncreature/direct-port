@@ -60,6 +60,14 @@ export interface ProductRow {
   attributes?: ProductAttributes;
 }
 
+/**
+ * Происхождение кода ТН ВЭД строки: ai — классификатор (дефолт), catalog — каталог
+ * подтверждённых кодов клиента (ClientCodeCatalogService), manual — оператор
+ * (ManualCodeService.setRowCode). Сохраняется в resultData (buildResultRow) —
+ * опора для метрик качества классификации на дашборде.
+ */
+export type CodeSource = 'ai' | 'catalog' | 'manual';
+
 export interface ClassifiedProduct extends ProductRow {
   tnVedCode: string;
   tnVedDescription: string;
@@ -91,6 +99,8 @@ export interface ClassifiedProduct extends ProductRow {
    */
   candidateCodes?: CodeCandidate[];
   missingDataCategories?: MissingDataCategory[];
+  /** Отсутствует → 'ai' (нормализуется при сериализации в resultData). */
+  codeSource?: CodeSource;
 }
 
 // re-export — определения переехали в ./classification-assembler, но внешние

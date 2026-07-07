@@ -29,6 +29,18 @@ export interface DashboardStats {
   granularity: 'day' | 'month';
   documents: { total: number; byStatus: Partial<Record<DocumentStatus, number>> };
   positions: { total: number; successful: number; customsPaymentsRub: number };
+  /**
+   * Качество классификации за период (по строкам resultData): точные коды vs требующие
+   * проверки (verificationStatus), хиты каталога клиента и ручные коды (codeSource),
+   * средняя уверенность классификатора по строкам с кодом.
+   */
+  quality: {
+    exact: number;
+    review: number;
+    fromCatalog: number;
+    manualCodes: number;
+    avgMatchConfidence: number | null;
+  };
   clients: { total: number; new: number; active: number };
   billing: {
     totalBalance: number;
@@ -71,7 +83,7 @@ export class DashboardService {
     since.setDate(since.getDate() - days + 1);
     since.setHours(0, 0, 0, 0);
 
-    const [documents, positions, clients, billing, users, ai, series, recentDocuments] =
+    const [documents, positionsAndQuality, clients, billing, users, ai, series, recentDocuments] =
       await Promise.all([
         this.documentCounts(since, companyId),
         this.positionStats(since, companyId),
@@ -89,7 +101,8 @@ export class DashboardService {
       period,
       granularity,
       documents,
-      positions,
+      positions: positionsAndQuality.positions,
+      quality: positionsAndQuality.quality,
       clients,
       billing,
       users,
@@ -109,9 +122,10 @@ export class DashboardService {
   /**
    * Позиции документов, дошедших до расчёта за период: всего строк resultData,
    * из них успешно посчитанных (calculationStatus вне INCOMPLETE_CALCULATION_STATUSES —
-   * по тому же правилу списывает депозит ClientBalanceService) и сумма начисленных
-   * таможенных платежей (пошлина + НДС + акциз) в рублях. Один LATERAL-проход по
-   * массиву позиций — все три агрегата из одного разворачивания JSONB.
+   * по тому же правилу списывает депозит ClientBalanceService), сумма начисленных
+   * таможенных платежей (пошлина + НДС + акциз) в рублях, плюс метрики качества
+   * классификации (verificationStatus/codeSource/matchConfidence строк). Один
+   * LATERAL-проход по массиву позиций — все агрегаты из одного разворачивания JSONB.
    */
   private async positionStats(since: Date, companyId?: string) {
     // ::text — параметры приходят как text[], прямого оператора enum = text у Postgres нет.
@@ -121,9 +135,17 @@ export class DashboardService {
       params.push(companyId);
       where += ` AND doc.company_id = $${params.length}`;
     }
-    const [row]: Array<{ total: string; successful: string; paymentsRub: string | number }> =
-      await this.repo.manager.query(
-        `SELECT
+    const [row]: Array<{
+      total: string;
+      successful: string;
+      paymentsRub: string | number;
+      exactRows: string;
+      reviewRows: string;
+      catalogRows: string;
+      manualRows: string;
+      avgConfidence: string | number | null;
+    }> = await this.repo.manager.query(
+      `SELECT
            COUNT(*) AS "total",
            COUNT(*) FILTER (
              WHERE NOT (COALESCE(r.value->>'calculationStatus', 'ok') = ANY($3))
@@ -132,16 +154,32 @@ export class DashboardService {
              COALESCE((r.value->>'dutyAmountRub')::numeric, 0)
              + COALESCE((r.value->>'vatAmountRub')::numeric, 0)
              + COALESCE((r.value->>'exciseAmountRub')::numeric, 0)
-           ), 0)::float8 AS "paymentsRub"
+           ), 0)::float8 AS "paymentsRub",
+           COUNT(*) FILTER (WHERE r.value->>'verificationStatus' = 'exact') AS "exactRows",
+           COUNT(*) FILTER (WHERE r.value->>'verificationStatus' = 'review') AS "reviewRows",
+           COUNT(*) FILTER (WHERE r.value->>'codeSource' = 'catalog') AS "catalogRows",
+           COUNT(*) FILTER (WHERE r.value->>'codeSource' = 'manual') AS "manualRows",
+           (AVG((r.value->>'matchConfidence')::float8)
+             FILTER (WHERE (r.value->>'matched')::boolean))::float8 AS "avgConfidence"
          FROM documents doc
          CROSS JOIN LATERAL jsonb_array_elements(doc.result_data) r
          WHERE ${where}`,
-        params,
-      );
+      params,
+    );
     return {
-      total: Number(row?.total) || 0,
-      successful: Number(row?.successful) || 0,
-      customsPaymentsRub: Number(row?.paymentsRub) || 0,
+      positions: {
+        total: Number(row?.total) || 0,
+        successful: Number(row?.successful) || 0,
+        customsPaymentsRub: Number(row?.paymentsRub) || 0,
+      },
+      quality: {
+        exact: Number(row?.exactRows) || 0,
+        review: Number(row?.reviewRows) || 0,
+        fromCatalog: Number(row?.catalogRows) || 0,
+        manualCodes: Number(row?.manualRows) || 0,
+        avgMatchConfidence:
+          row?.avgConfidence == null ? null : Math.round(Number(row.avgConfidence) * 100) / 100,
+      },
     };
   }
 
@@ -178,37 +216,37 @@ export class DashboardService {
   }
 
   /**
-   * Баланс — в «позициях» (кредиты клиентов). Тенант-скоуп через telegram_users
-   * (billing_accounts.company_id при claim не обновляется — см. entity), EXISTS
-   * вместо JOIN, чтобы будущая связь 1:N сотрудников не задваивала суммы.
-   * Потоки за период: пополнения = topup (реальные деньги; grant — не выручка),
-   * списания = charge минус возвраты пересчёта (adjustment с document_id);
+   * Баланс — в «позициях» (кредиты клиентов). Тенант-скоуп по billing_accounts.company_id
+   * (источник правды: проставляется при создании аккаунта, NOT NULL после миграции
+   * BillingAccountCompanyNotNull); EXISTS по 1:1-связи не задвоит суммы и при будущих
+   * 1:N сотрудниках. Потоки за период: пополнения = topup (реальные деньги; grant — не
+   * выручка), списания = charge минус возвраты пересчёта (adjustment с document_id);
    * ручные корректировки без документа в потоки не входят.
    */
   private async billingStats(since: Date, companyId?: string) {
-    const tuExists = (accountRef: string, param: number) =>
-      `EXISTS (SELECT 1 FROM telegram_users tu
-        WHERE tu.billing_account_id = ${accountRef} AND tu.company_id = $${param})`;
+    const baExists = (accountRef: string, param: number) =>
+      `EXISTS (SELECT 1 FROM billing_accounts sba
+        WHERE sba.id = ${accountRef} AND sba.company_id = $${param})`;
 
     const balanceParams: unknown[] = [];
     let balanceWhere = '';
     if (companyId) {
       balanceParams.push(companyId);
-      balanceWhere = ` WHERE ${tuExists('ba.id', balanceParams.length)}`;
+      balanceWhere = ` WHERE ba.company_id = $${balanceParams.length}`;
     }
 
     const flowParams: unknown[] = [since];
     let flowWhere = `dt.created_at >= $1`;
     if (companyId) {
       flowParams.push(companyId);
-      flowWhere += ` AND ${tuExists('dt.billing_account_id', flowParams.length)}`;
+      flowWhere += ` AND ${baExists('dt.billing_account_id', flowParams.length)}`;
     }
 
     const pendingParams: unknown[] = [];
     let pendingWhere = `t.status = 'pending'`;
     if (companyId) {
       pendingParams.push(companyId);
-      pendingWhere += ` AND ${tuExists('t.billing_account_id', pendingParams.length)}`;
+      pendingWhere += ` AND ${baExists('t.billing_account_id', pendingParams.length)}`;
     }
 
     const [[balance], [flows], [pending]] = await Promise.all([

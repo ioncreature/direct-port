@@ -57,6 +57,7 @@ export function buildResultRow(opts: {
     totalCost: item.totalCost,
     verificationStatus: item.verificationStatus,
     calculationStatus: item.calculationStatus,
+    codeSource: item.codeSource ?? 'ai',
     matchConfidence: item.matchConfidence,
     verified: item.verified,
     verificationComment: item.verificationComment,

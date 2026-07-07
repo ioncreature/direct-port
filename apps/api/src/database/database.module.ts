@@ -10,6 +10,7 @@ import { CalculationLog } from './entities/calculation-log.entity';
 import { Company } from './entities/company.entity';
 import { CompanyDomain } from './entities/company-domain.entity';
 import { ConversationMessage } from './entities/conversation-message.entity';
+import { ClientProductCode } from './entities/client-product-code.entity';
 import { DepositTransaction } from './entities/deposit-transaction.entity';
 import { Document } from './entities/document.entity';
 import { DocumentPhoto } from './entities/document-photo.entity';
@@ -82,6 +83,10 @@ import { AddCompanyDomainsAndTheme1780600000000 } from './migrations/17806000000
 import { AddCompanyLogo1780700000000 } from './migrations/1780700000000-AddCompanyLogo';
 import { AddCompanyFavicon1780800000000 } from './migrations/1780800000000-AddCompanyFavicon';
 import { ClearRefreshTokens1780900000000 } from './migrations/1780900000000-ClearRefreshTokens';
+import { BillingAccountCompanyNotNull1781000000000 } from './migrations/1781000000000-BillingAccountCompanyNotNull';
+import { AddLeadSearchCompany1781100000000 } from './migrations/1781100000000-AddLeadSearchCompany';
+import { AddClientProductCodes1781200000000 } from './migrations/1781200000000-AddClientProductCodes';
+import { AddPerformanceIndexes1781300000000 } from './migrations/1781300000000-AddPerformanceIndexes';
 import { SeedService } from './seeds/seed.service';
 
 @Module({
@@ -116,6 +121,7 @@ import { SeedService } from './seeds/seed.service';
           LeadSearch,
           DepositTransaction,
           TopUpRequest,
+          ClientProductCode,
         ],
         synchronize: false,
         migrations: [
@@ -176,6 +182,10 @@ import { SeedService } from './seeds/seed.service';
           AddCompanyLogo1780700000000,
           AddCompanyFavicon1780800000000,
           ClearRefreshTokens1780900000000,
+          BillingAccountCompanyNotNull1781000000000,
+          AddLeadSearchCompany1781100000000,
+          AddClientProductCodes1781200000000,
+          AddPerformanceIndexes1781300000000,
         ],
         migrationsRun: true,
         // Каждая миграция в своей транзакции (по умолчанию TypeORM гонит все в одной).

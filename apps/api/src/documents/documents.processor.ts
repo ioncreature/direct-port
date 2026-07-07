@@ -7,7 +7,12 @@ import { CalculationConfigService } from '../calculation-config/calculation-conf
 import { CalculationLogsService } from '../calculation-logs/calculation-logs.service';
 import { ClientBalanceService } from '../balance/client-balance.service';
 import { CalculatorService, type CalculatedProduct, type CalculatorInput } from '../calculator/calculator.service';
-import { ClassifierService, type ProductRow } from '../classifier/classifier.service';
+import {
+  ClassifierService,
+  type ClassifiedProduct,
+  type ProductRow,
+} from '../classifier/classifier.service';
+import { ClientCodeCatalogService } from './client-code-catalog.service';
 import { rowNeedsCodeReview } from '../common/confidence';
 import { ErrorCode } from '../common/error-codes';
 import { classifyPipelineError, errMsg } from '../common/errors';
@@ -37,6 +42,7 @@ import type { Dimension } from '../duty-interpreter/interfaces';
 import { PipelineAuditService } from '../pipeline-audit/pipeline-audit.service';
 import { RegulatoryRequirementsService } from '../regulatory/regulatory-requirements.service';
 import { PipelineNotifierService } from './pipeline-notifier.service';
+import { startDocumentHeartbeat } from './status-heartbeat';
 
 @Processor('document-processing')
 export class DocumentsProcessor extends WorkerHost {
@@ -54,20 +60,27 @@ export class DocumentsProcessor extends WorkerHost {
     private regulatoryService: RegulatoryRequirementsService,
     private pipelineNotifier: PipelineNotifierService,
     private clientBalance: ClientBalanceService,
+    private catalog: ClientCodeCatalogService,
   ) {
     super();
   }
 
   /**
-   * Блокировка обработки при нехватке депозита клиента. Число позиций известно только
-   * после парсинга, поэтому гейт стоит здесь, на входе воркера: при нехватке документ
-   * уходит в FAILED с понятным сообщением (менеджер пополняет баланс и жмёт «Переобработать»).
-   * Документы без привязанного клиента (загрузки из админки) пропускаются. Возвращает
-   * true, если обработку нужно прервать.
+   * Гейт депозита клиента. Число позиций известно только после парсинга, поэтому
+   * гейт стоит здесь, на входе воркера. reserveProcessing атомарно (под локом
+   * аккаунта) сверяет баланс и сразу удерживает нужные позиции — параллельная
+   * обработка второго документа того же клиента больше не проходит по уже
+   * потраченному балансу. При нехватке документ уходит в FAILED с понятным
+   * сообщением (менеджер пополняет баланс и жмёт «Переобработать»). Документы
+   * без привязанного клиента (загрузки из админки) пропускаются.
+   * Возвращает blocked=true, если обработку нужно прервать; previousCharged —
+   * цель отката резерва при сбое прогона.
    */
-  private async blockIfInsufficientBalance(doc: Document): Promise<boolean> {
-    const gate = await this.clientBalance.checkProcessingAllowed(doc);
-    if (gate.allowed) return false;
+  private async reserveBalanceOrBlock(
+    doc: Document,
+  ): Promise<{ blocked: boolean; previousCharged: number }> {
+    const gate = await this.clientBalance.reserveProcessing(doc);
+    if (gate.allowed) return { blocked: false, previousCharged: gate.previousCharged };
     doc.status = DocumentStatus.FAILED;
     doc.errorMessage =
       `Недостаточно баланса клиента: нужно ${gate.need}, на балансе ${gate.available}. ` +
@@ -77,7 +90,7 @@ export class DocumentsProcessor extends WorkerHost {
     this.logger.warn(
       `Document ${doc.id} blocked: insufficient balance (need ${gate.need}, have ${gate.available})`,
     );
-    return true;
+    return { blocked: true, previousCharged: gate.previousCharged };
   }
 
   async process(job: Job<{ documentId: string }>): Promise<void> {
@@ -97,25 +110,36 @@ export class DocumentsProcessor extends WorkerHost {
       return;
     }
 
-    // Guard от повторной доставки job (stalled-повтор после крэша/деплоя, двойной
-    // клик reprocess): воркер не идемпотентен (CalculationLog, уведомление, Excel
-    // клиенту), поэтому повтор для уже завершённого документа выходим молча.
-    // Прерванный посреди прогона документ (PROCESSING) подбирает watchdog → FAILED →
-    // оператор перезапускает reprocess'ом.
-    if (doc.status !== DocumentStatus.PENDING) {
+    // Атомарный захват PENDING → PROCESSING: воркер не идемпотентен (CalculationLog,
+    // уведомление, Excel клиенту), а прежний read-then-check guard был TOCTOU —
+    // stalled-дубль job'а или вторая реплика успевали прочитать PENDING до чужого
+    // save и прогоняли документ дважды. UPDATE WHERE status выигрывает ровно один
+    // воркер; проигравший (включая повтор для уже завершённого документа) выходит
+    // молча. Прерванный посреди прогона документ (PROCESSING) подбирает watchdog →
+    // FAILED → оператор перезапускает reprocess'ом.
+    const captured = await this.repo.update(
+      { id: documentId, status: DocumentStatus.PENDING },
+      { status: DocumentStatus.PROCESSING },
+    );
+    if (!captured.affected) {
       this.logger.warn(
-        `Document ${documentId} is "${doc.status}", not "pending" — skipping duplicate processing job`,
+        `Document ${documentId} is not "pending" (currently "${doc.status}") — skipping duplicate processing job`,
       );
       return;
     }
-
-    if (await this.blockIfInsufficientBalance(doc)) return;
-
     doc.status = DocumentStatus.PROCESSING;
-    await this.repo.save(doc);
+
+    const reservation = await this.reserveBalanceOrBlock(doc);
+    if (reservation.blocked) return;
 
     const attempt = (job.attemptsMade ?? 0) + 1;
     let currentStageRunId: string | null = null;
+    const stopHeartbeat = startDocumentHeartbeat(
+      this.repo,
+      documentId,
+      DocumentStatus.PROCESSING,
+      this.logger,
+    );
 
     try {
       const rows: ProductRow[] = (doc.parsedData ?? []).map((row) => {
@@ -167,25 +191,44 @@ export class DocumentsProcessor extends WorkerHost {
 
       const language = doc.language ?? doc.telegramUser?.language;
 
+      // Каталог подтверждённых кодов клиента: хиты минуют AI-классификацию и TKS-поиск
+      // (коды не «прыгают» между поставками, токены не тратятся). Best-effort — сбой
+      // каталога отправляет все строки обычным путём.
+      const fromCatalog = await this.catalog.classifyFromCatalog(doc, rows);
+      const catalogHits = fromCatalog.filter(Boolean).length;
+      const toClassify = rows.filter((_, i) => !fromCatalog[i]);
+
       currentStageRunId = await this.audit.startStageRun({
         documentId,
         stage: 'classify',
         attempt,
-        metadata: { rows: rows.length, language: language ?? null, confidenceThreshold },
+        metadata: {
+          rows: rows.length,
+          catalogHits,
+          language: language ?? null,
+          confidenceThreshold,
+        },
       });
       const t0 = Date.now();
-      const classifyResult = await this.classifier.classify(
-        rows,
-        language,
-        confidenceThreshold,
-        { documentId, stageRunId: currentStageRunId },
+      const classifyResult =
+        toClassify.length > 0
+          ? await this.classifier.classify(toClassify, language, confidenceThreshold, {
+              documentId,
+              stageRunId: currentStageRunId,
+            })
+          : { products: [], tokenUsage: {}, audit: { searchQueries: [], tksCandidates: [], selections: [] }, usedFallback: false };
+      let aiIndex = 0;
+      const classified: ClassifiedProduct[] = rows.map(
+        (_, i) => fromCatalog[i] ?? classifyResult.products[aiIndex++],
       );
-      const classified = classifyResult.products;
       doc.tokenUsage = addStageUsage(doc.tokenUsage ?? {}, 'classifier', classifyResult.tokenUsage);
-      this.logger.log(`Document ${documentId}: classification done in ${Date.now() - t0}ms`);
+      this.logger.log(
+        `Document ${documentId}: classification done in ${Date.now() - t0}ms (catalog hits: ${catalogHits}/${rows.length})`,
+      );
       void this.audit.completeStageRun(currentStageRunId, {
         output: {
           products: classified,
+          catalogHits,
           searchQueries: classifyResult.audit.searchQueries,
           tksCandidates: classifyResult.audit.tksCandidates,
           selections: classifyResult.audit.selections,
@@ -330,11 +373,27 @@ export class DocumentsProcessor extends WorkerHost {
           'Курсы валют ЦБ РФ недоступны — суммы в RUB не рассчитаны. ' +
           'Выполните «Пересчитать», когда курсы снова появятся.';
         await this.repo.save(doc);
+        // Прогон не доставил результат — возвращаем резерв к состоянию до прогона.
+        await this.clientBalance.releaseReservation(doc, reservation.previousCharged);
         await this.pipelineNotifier.notify(doc);
         return;
       }
 
-      await this.applyFinalStatusAndNotify(doc, issues, { lowConfidenceAction });
+      await this.applyFinalStatusAndNotify(doc, issues, {
+        lowConfidenceAction,
+        previousCharged: reservation.previousCharged,
+      });
+
+      // Пополняем каталог кодов клиента уверенными строками успешного прогона —
+      // повторная поставка того же ассортимента минует AI. Best-effort, не ждём.
+      // (doc.status широковещательно: applyFinalStatusAndNotify мутирует его, TS этого не видит.)
+      const finalStatus = doc.status as DocumentStatus;
+      if (
+        finalStatus === DocumentStatus.PROCESSED ||
+        finalStatus === DocumentStatus.PROCESSED_WITH_ERRORS
+      ) {
+        void this.catalog.recordFromResult(doc);
+      }
 
       this.calculationLogs
         .create({
@@ -368,12 +427,16 @@ export class DocumentsProcessor extends WorkerHost {
       doc.status = DocumentStatus.FAILED;
       doc.errorMessage = errMsg(err) || 'Unknown error';
       await this.repo.save(doc);
+      // Прогон не доставил результат — возвращаем резерв к состоянию до прогона.
+      await this.clientBalance.releaseReservation(doc, reservation.previousCharged);
       const errorCode = classifyPipelineError(err, ErrorCode.PROCESSING_FAILED);
       await this.pipelineNotifier.notify(doc);
       this.logger.error(
         `Document ${documentId} processing failed [${errorCode}]: ${doc.errorMessage}`,
         err instanceof Error ? err.stack : err,
       );
+    } finally {
+      stopHeartbeat();
     }
   }
 
@@ -398,20 +461,30 @@ export class DocumentsProcessor extends WorkerHost {
       return;
     }
 
-    // Guard от повторной доставки job — симметрично process(): service ставит PENDING
-    // перед постановкой recalculate-job, повтор для уже завершённого документа
-    // (включая stalled-повтор после save финального статуса) выходит молча.
-    if (doc.status !== DocumentStatus.PENDING) {
+    // Атомарный захват PENDING → PROCESSING — симметрично process(): service ставит
+    // PENDING перед постановкой recalculate-job, stalled-дубль или вторая реплика
+    // проигрывают UPDATE WHERE и выходят молча.
+    const captured = await this.repo.update(
+      { id: documentId, status: DocumentStatus.PENDING },
+      { status: DocumentStatus.PROCESSING },
+    );
+    if (!captured.affected) {
       this.logger.warn(
-        `Document ${documentId} is "${doc.status}", not "pending" — skipping duplicate recalculate job`,
+        `Document ${documentId} is not "pending" (currently "${doc.status}") — skipping duplicate recalculate job`,
       );
       return;
     }
-
-    if (await this.blockIfInsufficientBalance(doc)) return;
-
     doc.status = DocumentStatus.PROCESSING;
-    await this.repo.save(doc);
+
+    const reservation = await this.reserveBalanceOrBlock(doc);
+    if (reservation.blocked) return;
+
+    const stopHeartbeat = startDocumentHeartbeat(
+      this.repo,
+      documentId,
+      DocumentStatus.PROCESSING,
+      this.logger,
+    );
 
     const stageRunId = await this.audit.startStageRun({
       documentId,
@@ -529,7 +602,10 @@ export class DocumentsProcessor extends WorkerHost {
         partial: summary.usedFallback,
       });
 
-      await this.applyFinalStatusAndNotify(doc, issues, { lowConfidenceAction });
+      await this.applyFinalStatusAndNotify(doc, issues, {
+        lowConfidenceAction,
+        previousCharged: reservation.previousCharged,
+      });
 
       this.calculationLogs
         .create({
@@ -559,10 +635,14 @@ export class DocumentsProcessor extends WorkerHost {
       doc.status = DocumentStatus.FAILED;
       doc.errorMessage = errMsg(err) || 'Recalculation error';
       await this.repo.save(doc);
+      // Прогон не доставил результат — возвращаем резерв к состоянию до прогона.
+      await this.clientBalance.releaseReservation(doc, reservation.previousCharged);
       this.logger.error(
         `Document ${documentId} recalculation failed: ${doc.errorMessage}`,
         err instanceof Error ? err.stack : err,
       );
+    } finally {
+      stopHeartbeat();
     }
   }
 
@@ -738,6 +818,11 @@ export class DocumentsProcessor extends WorkerHost {
    * есть строки на ревью → CODE_REVIEW_REQUIRED (или REJECTED при lowConfidenceAction='reject'),
    * иначе PROCESSED / PROCESSED_WITH_ERRORS. Сбрасывает rejectionReasons, когда причин
    * больше нет (раньше устаревшие причины оставались висеть в БД).
+   *
+   * Судьба удержанного на гейте резерва: PROCESSED* → settle доводит до успешных
+   * позиций; REJECTED → полный возврат (отклонённый документ не оплачивается, Excel
+   * недоступен); CODE_REVIEW_REQUIRED → резерв держится до решения оператора
+   * (approve → settle доведёт, reject → вернёт).
    */
   private async applyFinalStatusAndNotify(
     doc: Document,
@@ -747,6 +832,7 @@ export class DocumentsProcessor extends WorkerHost {
     },
     opts: {
       lowConfidenceAction: string;
+      previousCharged: number;
     },
   ): Promise<void> {
     if (issues.reasons.length > 0) {
@@ -756,6 +842,9 @@ export class DocumentsProcessor extends WorkerHost {
           ? DocumentStatus.REJECTED
           : DocumentStatus.CODE_REVIEW_REQUIRED;
       await this.repo.save(doc);
+      if (doc.status === DocumentStatus.REJECTED) {
+        await this.clientBalance.releaseReservation(doc, 0);
+      }
       await this.pipelineNotifier.notify(doc);
       return;
     }

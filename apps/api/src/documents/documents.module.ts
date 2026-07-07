@@ -10,10 +10,12 @@ import { ClassifierModule } from '../classifier/classifier.module';
 import { CountriesModule } from '../countries/countries.module';
 import { CurrencyModule } from '../currency/currency.module';
 import { AiUsageLog } from '../database/entities/ai-usage-log.entity';
+import { ClientProductCode } from '../database/entities/client-product-code.entity';
 import { Document } from '../database/entities/document.entity';
 import { TelegramUser } from '../database/entities/telegram-user.entity';
 import { DiagnosticsModule } from '../diagnostics/diagnostics.module';
 import { DutyInterpreterModule } from '../duty-interpreter/duty-interpreter.module';
+import { ClientCodeCatalogService } from './client-code-catalog.service';
 import { DocumentsParsingProcessor } from './documents-parsing.processor';
 import { DocumentsController } from './documents.controller';
 import { DocumentsProcessor } from './documents.processor';
@@ -29,7 +31,7 @@ import { ManagerNotifyModule } from '../conversations/manager-notify.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Document, TelegramUser, AiUsageLog]),
+    TypeOrmModule.forFeature([Document, TelegramUser, AiUsageLog, ClientProductCode]),
     BullModule.registerQueue({ name: 'document-parsing' }),
     BullModule.registerQueue({ name: 'document-processing' }),
     // Доставка готового расчёта/уведомления клиенту кабинета (потребляет client-bot).
@@ -57,6 +59,7 @@ import { ManagerNotifyModule } from '../conversations/manager-notify.module';
     DocumentsParsingProcessor,
     ExcelExportService,
     ManualCodeService,
+    ClientCodeCatalogService,
     PipelineNotifierService,
     StuckDocumentsWatchdog,
   ],

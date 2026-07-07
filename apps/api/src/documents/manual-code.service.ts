@@ -32,6 +32,7 @@ import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { DutyInterpreterService } from '../duty-interpreter/duty-interpreter.service';
 import type { Dimension } from '../duty-interpreter/interfaces';
 import { RegulatoryRequirementsService } from '../regulatory/regulatory-requirements.service';
+import { ClientCodeCatalogService } from './client-code-catalog.service';
 import { PipelineNotifierService } from './pipeline-notifier.service';
 import { buildResultRow } from './result-row.helper';
 
@@ -98,6 +99,7 @@ export class ManualCodeService {
     private regulatoryService: RegulatoryRequirementsService,
     private pipelineNotifier: PipelineNotifierService,
     private clientBalance: ClientBalanceService,
+    private catalog: ClientCodeCatalogService,
   ) {}
 
   async setRowCode(
@@ -193,6 +195,17 @@ export class ManualCodeService {
     // позиции (идемпотентно: settle сверяет с уже списанным и не задваивает).
     await this.clientBalance.settle(saved);
     await this.pipelineNotifier.notify(saved);
+
+    // Ручной выбор оператора — самый доверенный источник каталога кодов клиента:
+    // следующая поставка этого товара возьмёт код отсюда без AI. Best-effort.
+    void this.catalog.recordManualCode(
+      doc,
+      {
+        description: String(oldRow.description ?? ''),
+        attributes: normalizeProductAttributes(oldRow.attributes) ?? undefined,
+      },
+      tnved.CODE,
+    );
 
     this.calculationLogs
       .create({
@@ -545,6 +558,7 @@ export class ManualCodeService {
       verified: true,
       suggestedCode: null,
       verificationComment: 'Код выбран оператором вручную',
+      codeSource: 'manual',
       notes: [
         {
           stage: 'classify',

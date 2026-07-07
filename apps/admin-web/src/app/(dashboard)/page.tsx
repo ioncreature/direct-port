@@ -46,6 +46,7 @@ export default function DashboardPage() {
   const failedDocs = byStatus.failed ?? 0;
   const aiCost = stats.ai ? calcAiCostFromMap(stats.ai.models) : null;
   const leadCost = stats.ai?.leads ? calcAiCostFromMap(stats.ai.leads) : null;
+  const quality = stats.quality;
   const suffix = periodSuffix[period];
   const fade: React.CSSProperties = { opacity: loading ? 0.5 : 1, transition: 'opacity 0.15s' };
 
@@ -114,6 +115,41 @@ export default function DashboardPage() {
         <div style={{ marginBottom: 32, ...fade }}>
           <SeriesChart data={stats.series} granularity={stats.granularity} />
         </div>
+      )}
+
+      {quality != null && quality.exact + quality.review > 0 && (
+        <>
+          <SectionTitle>Качество классификации {suffix}</SectionTitle>
+          <div style={{ ...cardsGrid, ...fade }}>
+            <StatCard
+              label="Точные коды"
+              value={`${Math.round((quality.exact / (quality.exact + quality.review)) * 100)}%`}
+              color="var(--success)"
+              sub={`${fmtInt(quality.exact)} из ${fmtInt(quality.exact + quality.review)} строк`}
+            />
+            <StatCard
+              label="Требуют проверки"
+              value={fmtInt(quality.review)}
+              color={quality.review > 0 ? 'var(--warning-strong)' : undefined}
+              sub={joinDot([
+                <>строк с неуверенным кодом</>,
+                quality.manualCodes > 0 && <>вручную: {fmtInt(quality.manualCodes)}</>,
+              ])}
+            />
+            <StatCard
+              label="Из каталога клиента"
+              value={fmtInt(quality.fromCatalog)}
+              sub="строк без AI — код подтверждён ранее"
+            />
+            {quality.avgMatchConfidence != null && (
+              <StatCard
+                label="Средняя уверенность"
+                value={quality.avgMatchConfidence.toFixed(2)}
+                sub="по строкам с кодом ТН ВЭД"
+              />
+            )}
+          </div>
+        </>
       )}
 
       <SectionTitle>Клиенты и баланс</SectionTitle>

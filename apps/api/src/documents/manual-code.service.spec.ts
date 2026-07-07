@@ -163,6 +163,10 @@ function createService(opts: CreateOpts = {}) {
     settle: jest.fn().mockResolvedValue(undefined),
   };
 
+  const catalog = {
+    recordManualCode: jest.fn().mockResolvedValue(undefined),
+  };
+
   const service = new ManualCodeService(
     repo as never,
     tksApi as never,
@@ -175,6 +179,7 @@ function createService(opts: CreateOpts = {}) {
     regulatoryService as never,
     pipelineNotifier as never,
     clientBalance as never,
+    catalog as never,
   );
 
   return {
@@ -182,6 +187,7 @@ function createService(opts: CreateOpts = {}) {
     repo,
     pipelineNotifier,
     clientBalance,
+    catalog,
     tksApi,
     classifier,
     dutyInterpreter,

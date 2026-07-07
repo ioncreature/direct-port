@@ -25,6 +25,10 @@ const translations: Record<string, Record<string, string>> = {
     en: 'AI duty rate interpretation was not received (Claude returned an empty response or there was an error). The calculation uses simplified TKS rules.',
     zh: 'AI 关税税率解释未收到（Claude 返回空响应或发生错误），计算使用简化的 TKS 规则。',
   },
+  'catalog-code': {
+    en: 'The TN VED code was taken from your catalog of previously confirmed codes for this product.',
+    zh: '商品编码取自您此前已确认编码的商品目录。',
+  },
 };
 
 /**

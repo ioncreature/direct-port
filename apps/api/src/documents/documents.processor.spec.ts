@@ -146,7 +146,7 @@ interface Opts {
   rate?: number;
   rateError?: Error;
   calcLogError?: Error;
-  balanceGate?: { allowed: boolean; need: number; available: number };
+  balanceGate?: { allowed: boolean; need: number; available: number; previousCharged?: number };
 }
 
 function createProcessor(opts: Opts = {}) {
@@ -155,6 +155,10 @@ function createProcessor(opts: Opts = {}) {
   const repo = {
     findOne: jest.fn().mockResolvedValue(doc),
     save: jest.fn().mockImplementation((d: Document) => Promise.resolve(d)),
+    // Атомарный захват PENDING → PROCESSING: по умолчанию воркер «выигрывает».
+    update: jest.fn().mockResolvedValue({ affected: 1 }),
+    // Heartbeat живого прогона (updated_at) — в юнит-тестах не тикает.
+    query: jest.fn().mockResolvedValue(undefined),
   };
 
   const classified = opts.classifyResult?.products ?? [makeClassified()];
@@ -267,10 +271,25 @@ function createProcessor(opts: Opts = {}) {
   );
 
   const clientBalance = {
-    checkProcessingAllowed: jest
+    reserveProcessing: jest
       .fn()
-      .mockResolvedValue(opts.balanceGate ?? { allowed: true, need: 0, available: 0 }),
+      .mockResolvedValue(
+        opts.balanceGate
+          ? { previousCharged: 0, ...opts.balanceGate }
+          : { allowed: true, need: 0, available: 0, previousCharged: 0 },
+      ),
+    releaseReservation: jest.fn().mockResolvedValue(undefined),
     settle: jest.fn().mockResolvedValue(undefined),
+  };
+
+  // Каталог кодов клиента: по умолчанию без хитов — все строки идут в классификатор.
+  const catalog = {
+    classifyFromCatalog: jest
+      .fn()
+      .mockImplementation((_doc: unknown, rows: unknown[]) =>
+        Promise.resolve(rows.map(() => null)),
+      ),
+    recordFromResult: jest.fn().mockResolvedValue(undefined),
   };
 
   const processor = new DocumentsProcessor(
@@ -285,6 +304,7 @@ function createProcessor(opts: Opts = {}) {
     regulatoryService as any,
     pipelineNotifier as any,
     clientBalance as any,
+    catalog as any,
   );
 
   return {
@@ -293,6 +313,7 @@ function createProcessor(opts: Opts = {}) {
     repo,
     managerNotify,
     clientBalance,
+    catalog,
     classifier,
     dutyInterpreter,
     calculator,
@@ -334,7 +355,7 @@ describe('DocumentsProcessor.process', () => {
       expect(repo.save).toHaveBeenCalled();
     });
 
-    it('устанавливает status=PROCESSING до обработки, потом PROCESSED', async () => {
+    it('атомарно захватывает PENDING → PROCESSING (UPDATE WHERE), потом PROCESSED', async () => {
       const doc = makeDoc();
       const statuses: DocumentStatus[] = [];
       const { processor, repo } = createProcessor({ doc });
@@ -345,8 +366,23 @@ describe('DocumentsProcessor.process', () => {
 
       await processor.process(fakeJob('doc-1'));
 
-      expect(statuses[0]).toBe(DocumentStatus.PROCESSING);
+      expect(repo.update).toHaveBeenCalledWith(
+        { id: 'doc-1', status: DocumentStatus.PENDING },
+        { status: DocumentStatus.PROCESSING },
+      );
       expect(statuses[statuses.length - 1]).toBe(DocumentStatus.PROCESSED);
+    });
+
+    it('захват проигран (affected=0, stalled-дубль/вторая реплика) → выходит, ничего не делая', async () => {
+      const doc = makeDoc();
+      const { processor, repo, classifier, clientBalance } = createProcessor({ doc });
+      repo.update.mockResolvedValueOnce({ affected: 0 });
+
+      await processor.process(fakeJob('doc-1'));
+
+      expect(classifier.classify).not.toHaveBeenCalled();
+      expect(clientBalance.reserveProcessing).not.toHaveBeenCalled();
+      expect(repo.save).not.toHaveBeenCalled();
     });
 
     it('строка с calculationStatus=error → PROCESSED_WITH_ERRORS', async () => {
@@ -727,8 +763,53 @@ describe('DocumentsProcessor.process', () => {
       await processor.process(fakeJob('doc-1'));
 
       expect(doc.status).toBe(DocumentStatus.PROCESSED);
-      expect(clientBalance.checkProcessingAllowed).toHaveBeenCalled();
+      expect(clientBalance.reserveProcessing).toHaveBeenCalled();
       expect(clientBalance.settle).toHaveBeenCalledWith(doc);
+    });
+
+    it('сбой прогона → releaseReservation откатывает резерв к previousCharged', async () => {
+      const doc = makeDoc({ telegramUserId: 'tg-1', telegramUser: { telegramId: '123' } as any });
+      const { processor, clientBalance } = createProcessor({
+        doc,
+        balanceGate: { allowed: true, need: 3, available: 10, previousCharged: 2 },
+        classifyError: new Error('boom'),
+      });
+
+      await processor.process(fakeJob('doc-1'));
+
+      expect(doc.status).toBe(DocumentStatus.FAILED);
+      expect(clientBalance.releaseReservation).toHaveBeenCalledWith(doc, 2);
+      expect(clientBalance.settle).not.toHaveBeenCalled();
+    });
+
+    it('REJECTED по low confidence → полный возврат резерва (target 0)', async () => {
+      const doc = makeDoc({ telegramUserId: 'tg-1', telegramUser: { telegramId: '123' } as any });
+      const { processor, clientBalance } = createProcessor({
+        doc,
+        summary: makeSummary([makeCalculated({ matched: false, tnVedCode: '', matchConfidence: 0 })]),
+        config: { lowConfidenceAction: 'reject' },
+      });
+
+      await processor.process(fakeJob('doc-1'));
+
+      expect(doc.status).toBe(DocumentStatus.REJECTED);
+      expect(clientBalance.releaseReservation).toHaveBeenCalledWith(doc, 0);
+      expect(clientBalance.settle).not.toHaveBeenCalled();
+    });
+
+    it('CODE_REVIEW_REQUIRED → резерв держится (ни settle, ни release)', async () => {
+      const doc = makeDoc({ telegramUserId: 'tg-1', telegramUser: { telegramId: '123' } as any });
+      const { processor, clientBalance } = createProcessor({
+        doc,
+        summary: makeSummary([makeCalculated({ matchConfidence: 0.5 })]),
+        config: { lowConfidenceAction: 'review' },
+      });
+
+      await processor.process(fakeJob('doc-1'));
+
+      expect(doc.status).toBe(DocumentStatus.CODE_REVIEW_REQUIRED);
+      expect(clientBalance.releaseReservation).not.toHaveBeenCalled();
+      expect(clientBalance.settle).not.toHaveBeenCalled();
     });
   });
 
@@ -1147,5 +1228,75 @@ describe('DocumentsProcessor partial_ok flag', () => {
     expect(doc.countryOriginSource).toBe('default');
     const partialFlags = audit.completeStageRun.mock.calls.map(([, input]) => input?.partial ?? false);
     expect(partialFlags[2]).toBe(false); // calculate
+  });
+});
+
+describe('DocumentsProcessor — каталог кодов клиента', () => {
+  it('хит каталога по всем строкам минует классификатор, interpret получает продукт каталога', async () => {
+    const doc = makeDoc({ telegramUserId: 'client-1', companyId: 'company-1' } as never);
+    const { processor, classifier, dutyInterpreter, catalog, audit } = createProcessor({ doc });
+    catalog.classifyFromCatalog.mockImplementation((_d: unknown, rows: unknown[]) =>
+      Promise.resolve(rows.map(() => makeClassified({ tnVedCode: '8509101000', codeSource: 'catalog' }))),
+    );
+
+    await processor.process(fakeJob('doc-1'));
+
+    expect(classifier.classify).not.toHaveBeenCalled();
+    const interpreted = dutyInterpreter.interpret.mock.calls[0][0];
+    expect(interpreted[0]).toMatchObject({ tnVedCode: '8509101000', codeSource: 'catalog' });
+    const classifyStage = audit.startStageRun.mock.calls.find(([input]) => input.stage === 'classify');
+    expect(classifyStage?.[0]?.metadata?.catalogHits).toBe(1);
+  });
+
+  it('частичный хит: в классификатор уходят только промахи, порядок строк сохраняется', async () => {
+    const doc = makeDoc({
+      telegramUserId: 'client-1',
+      companyId: 'company-1',
+      parsedData: [
+        { description: 'Товар A', quantity: 1, price: 10, weight: 1 },
+        { description: 'Товар B', quantity: 2, price: 20, weight: 2 },
+      ],
+      rowCount: 2,
+    } as never);
+    const { processor, classifier, dutyInterpreter, catalog } = createProcessor({
+      doc,
+      classifyResult: {
+        products: [makeClassified({ description: 'Товар B', tnVedCode: '6109100010' })],
+        tokenUsage: {},
+      },
+      summary: makeSummary([makeCalculated(), makeCalculated()]),
+    });
+    catalog.classifyFromCatalog.mockImplementation((_d: unknown, rows: Array<{ description: string }>) =>
+      Promise.resolve(
+        rows.map((r) =>
+          r.description === 'Товар A'
+            ? makeClassified({ description: 'Товар A', tnVedCode: '8509101000', codeSource: 'catalog' })
+            : null,
+        ),
+      ),
+    );
+
+    await processor.process(fakeJob('doc-1'));
+
+    const sentToClassifier = classifier.classify.mock.calls[0][0];
+    expect(sentToClassifier).toHaveLength(1);
+    expect(sentToClassifier[0].description).toBe('Товар B');
+    const interpreted = dutyInterpreter.interpret.mock.calls[0][0];
+    expect(interpreted.map((p: { tnVedCode: string }) => p.tnVedCode)).toEqual([
+      '8509101000',
+      '6109100010',
+    ]);
+  });
+
+  it('успешный прогон пополняет каталог, упавший — нет', async () => {
+    const okDoc = makeDoc({ telegramUserId: 'client-1', companyId: 'company-1' } as never);
+    const ok = createProcessor({ doc: okDoc });
+    await ok.processor.process(fakeJob('doc-1'));
+    expect(ok.catalog.recordFromResult).toHaveBeenCalledWith(okDoc);
+
+    const failDoc = makeDoc({ telegramUserId: 'client-1', companyId: 'company-1' } as never);
+    const failed = createProcessor({ doc: failDoc, rateError: new Error('CBR down') });
+    await failed.processor.process(fakeJob('doc-1'));
+    expect(failed.catalog.recordFromResult).not.toHaveBeenCalled();
   });
 });

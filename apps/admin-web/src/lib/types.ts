@@ -281,11 +281,19 @@ export type DocumentStatus =
   | 'requires_review'
   | 'code_review_required';
 
+/**
+ * Строка parsedData. В UI редактируются только description/quantity/price/weight,
+ * но при сохранении ревью на сервер уходит строка ЦЕЛИКОМ: остальные поля
+ * (weightGross, countryOfOrigin, attributes, dimensions…) извлечены AI-парсером
+ * и должны пережить ручную правку нетронутыми — иначе фрахт/страновые ставки
+ * считаются неверно. Index signature покрывает passthrough-поля.
+ */
 export interface ParsedDataRow {
   description: string;
   quantity: number;
   price: number;
   weight: number;
+  [key: string]: unknown;
 }
 
 export type ProductNoteStage = 'parse' | 'classify' | 'verify' | 'interpret' | 'calculate';
@@ -666,6 +674,14 @@ export interface DashboardStats {
   granularity: 'day' | 'month';
   documents: { total: number; byStatus: Partial<Record<DocumentStatus, number>> };
   positions: { total: number; successful: number; customsPaymentsRub: number };
+  /** Качество классификации за период: точные коды vs проверка, каталог клиента, ручные. */
+  quality: {
+    exact: number;
+    review: number;
+    fromCatalog: number;
+    manualCodes: number;
+    avgMatchConfidence: number | null;
+  };
   clients: { total: number; new: number; active: number };
   billing: {
     totalBalance: number;
