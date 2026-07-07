@@ -58,6 +58,7 @@ export default async function LandingPage({
         <Hero dict={dict} />
         <PainPoints dict={dict} />
         <HowItWorks dict={dict} />
+        <Deliverables dict={dict} />
         <Pricing dict={dict} />
         <WhyAccurate dict={dict} />
         <WhatIsCalculated dict={dict} />
@@ -99,6 +100,7 @@ function Header({ dict, locale }: { dict: Dictionary; locale: Locale }) {
         <div className="header-right">
           <nav className="nav-links" aria-label={dict.nav.ariaLabel}>
             <a href="#how">{dict.nav.how}</a>
+            <a href="#deliver">{dict.nav.deliver}</a>
             <a href="#pricing">{dict.nav.pricing}</a>
             <a href="#why">{dict.nav.why}</a>
             <a href="#guarantee">{dict.nav.guarantee}</a>
@@ -164,6 +166,9 @@ function Hero({ dict }: { dict: Dictionary }) {
               {dict.hero.ctaTelegram}
             </a>
           </div>
+          <p className="hero-free-note">
+            <IconCheck /> {dict.hero.ctaNote}
+          </p>
           <p className="hero-cta-alt">
             {dict.hero.ctaAltPrefix} <a href={CONTACT_EMAIL_HREF}>{CONTACT_EMAIL}</a>
             <span aria-hidden="true"> · </span>
@@ -274,9 +279,45 @@ function HowItWorks({ dict }: { dict: Dictionary }) {
   );
 }
 
+function Deliverables({ dict }: { dict: Dictionary }) {
+  const icons = [
+    <IconColumns key="col" />,
+    <IconLayers key="l" />,
+    <IconBook key="bk" />,
+    <IconDownload key="d" />,
+  ];
+  return (
+    <section className="section section-alt" id="deliver">
+      <div className="container">
+        <div className="section-head">
+          <span className="label">{dict.deliver.label}</span>
+          <h2>{dict.deliver.heading}</h2>
+          <p>{dict.deliver.intro}</p>
+        </div>
+        <div className="grid grid-2">
+          {dict.deliver.items.map((it, i) => (
+            <div key={it.title} className={`card fade-up delay-${(i % 2) + 1}`}>
+              <div className="deliver-card-top">
+                <span className="icon-wrap">{icons[i]}</span>
+                <span className="sheet-tag">{it.tag}</span>
+              </div>
+              <h3>{it.title}</h3>
+              <p>{it.text}</p>
+            </div>
+          ))}
+        </div>
+        <div className="deliver-note fade-up">
+          <IconRefresh />
+          <span>{dict.deliver.catalogNote}</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Pricing({ dict }: { dict: Dictionary }) {
   return (
-    <section className="section section-alt" id="pricing">
+    <section className="section" id="pricing">
       <div className="container">
         <div className="section-head">
           <span className="label">{dict.pricing.label}</span>
@@ -306,6 +347,10 @@ function Pricing({ dict }: { dict: Dictionary }) {
               ))}
             </ul>
             <p className="price-note">{dict.pricing.note}</p>
+            <a href="#guarantee" className="price-guarantee">
+              <IconShield />
+              <span>{dict.pricing.guaranteeLine}</span>
+            </a>
             <ul className="price-includes">
               {dict.pricing.includes.map((it) => (
                 <li key={it}>
@@ -332,7 +377,7 @@ function WhyAccurate({ dict }: { dict: Dictionary }) {
     <IconShield key="sh" />,
   ];
   return (
-    <section className="section" id="why">
+    <section className="section section-alt" id="why">
       <div className="container">
         <div className="section-head">
           <span className="label">{dict.why.label}</span>
@@ -365,7 +410,7 @@ function WhatIsCalculated({ dict }: { dict: Dictionary }) {
     <IconTruck key="tk" />,
   ];
   return (
-    <section className="section section-alt" id="calc">
+    <section className="section" id="calc">
       <div className="container">
         <div className="section-head">
           <span className="label">{dict.calc.label}</span>
@@ -389,7 +434,7 @@ function WhatIsCalculated({ dict }: { dict: Dictionary }) {
 function Guarantee({ dict }: { dict: Dictionary }) {
   const icons = [<IconShield key="sh" />, <IconBook key="bk" />, <IconRefresh key="rf" />];
   return (
-    <section className="section" id="guarantee">
+    <section className="section section-alt" id="guarantee">
       <div className="container">
         <div className="section-head">
           <span className="label">{dict.guarantee.label}</span>
@@ -412,7 +457,7 @@ function Guarantee({ dict }: { dict: Dictionary }) {
 
 function Faq({ dict }: { dict: Dictionary }) {
   return (
-    <section className="section section-alt" id="faq">
+    <section className="section" id="faq">
       <div className="container">
         <div className="section-head">
           <span className="label">{dict.faq.label}</span>

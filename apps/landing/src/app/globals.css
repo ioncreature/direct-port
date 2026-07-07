@@ -442,6 +442,25 @@ main {
   gap: 12px;
 }
 
+.hero-free-note {
+  margin: 14px 0 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: var(--orange-tint);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.hero-free-note svg {
+  flex: none;
+  color: var(--orange);
+}
+
 .hero-cta-alt {
   margin: 16px 0 0;
   font-family: var(--mono);
@@ -713,7 +732,8 @@ main {
   color: var(--red);
 }
 
-.pain-resolve {
+.pain-resolve,
+.deliver-note {
   margin-top: 34px;
   display: flex;
   align-items: center;
@@ -727,9 +747,30 @@ main {
   box-shadow: var(--shadow-md);
 }
 
-.pain-resolve svg {
+.pain-resolve svg,
+.deliver-note svg {
   flex: none;
   color: var(--orange);
+}
+
+/* ===== Deliverables ===== */
+.deliver-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sheet-tag {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--petrol);
+  background: var(--petrol-tint);
+  border: 1px solid var(--petrol-soft);
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
 }
 
 /* ===== Pricing ===== */
@@ -822,6 +863,31 @@ main {
   font-size: 13px;
   color: var(--muted);
   text-align: center;
+}
+
+.price-guarantee {
+  margin: 18px auto 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 8px;
+  max-width: 520px;
+  font-size: 13.5px;
+  color: var(--text-soft);
+  text-align: center;
+  transition: color 0.15s ease;
+}
+
+.price-guarantee svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--green);
+}
+
+.price-guarantee:hover {
+  color: var(--petrol);
 }
 
 .price-footnote {

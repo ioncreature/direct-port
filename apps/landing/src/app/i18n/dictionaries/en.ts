@@ -4,12 +4,12 @@ export const en: Dictionary = {
   meta: {
     title: 'DirectPort — customs costs for an entire container in 10 minutes',
     description:
-      'Customs duties, VAT, and excise across your whole price list in 10 minutes — up to 500 line items in a single file. Built for logistics companies and importers. $1 per line item, HS code classification from the official FTS tariff database.',
+      'Customs duties, VAT, and excise across your whole price list in 10 minutes — up to 500 line items in a single file. Built for logistics companies and importers. $1 per line item, first 50 free. HS codes from the official FTS tariff database, plus a draft declaration and a shipment document checklist.',
     ogDescription:
-      'Customs cost calculation for a full container in 10 minutes. Up to 500 line items per file, $1 per line item, HS code classification from the official FTS tariff database.',
+      'Customs cost calculation for a full container in 10 minutes. Up to 500 line items per file, $1 per line item (first 50 free), HS codes from the official FTS tariff database.',
     ogSubtitle:
-      'Send us your price list — get a ready-to-use Excel with duties, VAT, excise, and logistics for every line item.',
-    ogPills: ['Claude AI', 'FTS tariff database', 'CBR exchange rates', 'ru · zh · en'],
+      'Send us your price list — get an Excel with duties, VAT, excise, a draft declaration, and a document checklist for every line item.',
+    ogPills: ['$1 per line item', 'FTS tariff database', 'CBR exchange rates', 'ru · zh · en'],
   },
 
   langSwitch: {
@@ -19,6 +19,7 @@ export const en: Dictionary = {
   nav: {
     ariaLabel: 'Main navigation',
     how: 'How it works',
+    deliver: 'What you get',
     pricing: 'Pricing',
     why: 'Why it’s accurate',
     guarantee: 'Guarantee',
@@ -35,7 +36,8 @@ export const en: Dictionary = {
     headlinePrimary: 'A whole container in 10 minutes,',
     headlineAccent: 'not a week',
     lede: 'A broker handles one line item in an hour or two, but a container with dozens of different goods drags on for weeks. We calculate duties, VAT, excise, and logistics across your entire price list in 10 minutes — whether it’s 10 line items or 500. Take on the consolidated cargo others won’t touch, and give your client an exact quote the same day.',
-    ctaTelegram: 'Message a manager on Telegram',
+    ctaTelegram: 'Send your price list on Telegram',
+    ctaNote: 'Your first 50 line items are free',
     ctaAltPrefix: 'or',
     trust: [
       '10 minutes for the whole price list',
@@ -107,6 +109,37 @@ export const en: Dictionary = {
     ],
   },
 
+  deliver: {
+    label: 'What you get',
+    heading: 'Not just an estimate — a head start on the declaration',
+    intro:
+      'The result is a single Excel workbook with three sheets, plus an export file for declaration software. From landed-cost estimate to filing — without retyping the data.',
+    items: [
+      {
+        tag: 'Sheet 1',
+        title: '“Result” — a calculation for every row',
+        text: 'HS code, rates, duty, VAT, excise, and the total for each line item — in the contract currency and in rubles. Borderline codes are color-flagged, and product photos from your file sit next to the rows.',
+      },
+      {
+        tag: 'Sheet 2',
+        title: '“Draft declaration” — the groundwork',
+        text: 'Line items are grouped into declaration goods: boxes 31–47, customs value, unit value per kg, and the customs processing fee. Your declarant doesn’t start from scratch.',
+      },
+      {
+        tag: 'Sheet 3',
+        title: '“Shipment documents” — a checklist',
+        text: 'Which documents to collect and when: before ordering, at shipping, at filing. With box 44 codes and the legal basis for each item.',
+      },
+      {
+        tag: '+ file',
+        title: 'Export for declaration software',
+        text: 'The goods section as a separate file that Kontur.Declarant, Alta, and STM import directly — no retyping rows by hand.',
+      },
+    ],
+    catalogNote:
+      'Shipping the same goods again and again? Confirmed codes are saved to your catalog: repeat shipments reuse them automatically — faster, and with no drift between calculations.',
+  },
+
   pricing: {
     label: 'Pricing',
     priceMain: '$1',
@@ -121,14 +154,18 @@ export const en: Dictionary = {
       { count: '5,000', price: '$4,000', sub: '$0.80 per line item', discount: '−20%', free: false },
     ],
     note: 'Top up your balance through a manager — we only charge for line items we successfully process',
+    guaranteeLine:
+      'If we get a code or rate wrong, we recalculate for free and give you 50% off your next 100 line items',
     includes: [
-      'HS code from the FTS tariff database with AI verification',
+      'HS code matched and checked against the FTS tariff database',
       'Duty, VAT, and excise for every line item',
       'Currency conversion at the CBR exchange rate',
       'Freight to the border included in the customs value',
       'Logistics based on your own delivery formula',
       'Regulatory requirements: certification, labeling, recycling fee',
-      'A ready Excel — in the original currency and in rubles',
+      '“Draft declaration” sheet: boxes 31–47 for your declarant',
+      '“Shipment documents” checklist with box 44 codes',
+      'Export for declaration software: Kontur.Declarant, Alta, STM',
     ],
     footnote: '* Prices are in US dollars. Payment in rubles at the CBR exchange rate on the day of payment.',
   },
@@ -137,7 +174,7 @@ export const en: Dictionary = {
     label: 'Why you can trust the numbers',
     heading: 'The service works through your price list as meticulously as a seasoned broker',
     intro:
-      'For the code and rates to be right, you first have to read the file correctly and understand what the product actually is. AI handles that — and it flags borderline line items for review instead of guessing.',
+      'For the code and rates to be right, you first have to read the file correctly and understand what the product actually is. The service goes through the same steps a broker would, and flags borderline line items for manual review.',
     items: [
       {
         title: 'Table structure and currency',
@@ -153,11 +190,11 @@ export const en: Dictionary = {
       },
       {
         title: 'HS code',
-        text: 'A lookup in the FTS tariff database plus AI verification in a single request. Borderline codes are flagged yellow, “check.”',
+        text: 'The code is matched in the FTS tariff database and checked against the product description. Borderline codes are flagged yellow, “check.”',
       },
       {
         title: 'Recognition from photos',
-        text: 'If product photos are embedded in the xlsx and a code is in doubt, a vision model looks at the product and confirms or corrects the code.',
+        text: 'If product photos are embedded in the xlsx and a code is in doubt, the service checks the code against the photo and confirms or corrects it.',
       },
       {
         title: 'Regulatory requirements',
@@ -174,7 +211,7 @@ export const en: Dictionary = {
     items: [
       {
         title: 'Combined rates',
-        text: 'For example, max(15% of value, 1.4 EUR per pair). AI interprets the text from the tariff database and applies the correct formula.',
+        text: 'For example, max(15% of value, 1.4 EUR per pair). The service parses the wording from the tariff database and applies the correct formula.',
       },
       {
         title: 'Excise',
@@ -186,7 +223,7 @@ export const en: Dictionary = {
       },
       {
         title: 'Conditional rules',
-        text: 'Rates that change depending on the country of origin or on whether the goods are excisable are recognized and applied automatically by AI.',
+        text: 'Rates that change depending on the country of origin or on whether the goods are excisable are recognized and applied automatically.',
       },
       {
         title: 'Any currency',
@@ -219,7 +256,7 @@ export const en: Dictionary = {
       },
       {
         title: 'Rates come from the FTS tariff database',
-        text: 'Every code and rate is taken from the official FTS tariff database, not from the AI’s “memory.” The same source customs itself works from.',
+        text: 'Every code and rate is taken from the official FTS tariff database — the same source customs itself works from.',
       },
       {
         title: 'If we’re wrong, we recalculate on us',
@@ -238,7 +275,7 @@ export const en: Dictionary = {
       },
       {
         q: 'How much can I trust the HS codes?',
-        a: 'Codes are matched against the official FTS tariff database and pass AI verification. Unambiguous ones are marked green, borderline ones yellow, “check,” and reviewed by hand — we never guess. If a code or rate does turn out to be wrong, we’ll recalculate for free.',
+        a: 'Codes are matched against the official FTS tariff database and pass AI verification. Unambiguous ones are marked green, borderline ones yellow, “check,” and reviewed by hand. If a code or rate does turn out to be wrong, we’ll recalculate for free.',
       },
       {
         q: 'What about the confidentiality of my price list?',
@@ -258,15 +295,23 @@ export const en: Dictionary = {
       },
       {
         q: 'In what format should I send the price list?',
-        a: 'Excel or CSV in any language (often Chinese) and any currency. AI finds the right columns in any order on its own, translates the product names, and detects the currency — no need to reformat the file by hand.',
+        a: 'Excel or CSV in any language (often Chinese) and any currency. The service finds the right columns in any order on its own, translates the product names, and detects the currency — no need to reformat the file by hand.',
+      },
+      {
+        q: 'We ship the same goods over and over — does every calculation start from scratch?',
+        a: 'No. Confirmed codes are saved to your catalog: on the next calculation, line items with the same description and article number get the verified code right away. Repeat shipments are calculated faster, and codes stay consistent between calculations.',
+      },
+      {
+        q: 'Can I load the result into declaration software?',
+        a: 'Yes. The calculation comes with a separate export of the goods section: Kontur.Declarant imports it directly via “Load goods from file,” and it also works with Alta and STM tools. Rows are already grouped into declaration goods.',
       },
     ],
   },
 
   finalCta: {
     heading: 'We’ll cost out your container in 10 minutes',
-    text: 'Message a manager on Telegram, send your price list — and get a finished calculation for every line item. $1 per line item, no subscriptions.',
-    ctaTelegram: 'Message a manager on Telegram',
+    text: 'Message us on Telegram and send your price list — we’ll calculate your first 50 line items for free. After that, $1 per line item, no subscriptions.',
+    ctaTelegram: 'Send your price list on Telegram',
     ctaEmail: 'Email us',
   },
 };
