@@ -15,7 +15,7 @@ import {
 } from '../balance/client-balance.service';
 import { readNonNegIntEnv } from '../common/env';
 import { ErrorCode } from '../common/error-codes';
-import { errMsg } from '../common/errors';
+import { fixedWindowHit } from '../common/rate-limit';
 import { REDIS_CLIENT } from '../redis/redis.module';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 import { buildOutputFileName, getDocumentClientName } from '../common/output-filename';
@@ -94,15 +94,13 @@ export class ClientPortalService {
   private async assertUploadRateLimit(accountId: string): Promise<void> {
     const limit = uploadHourlyLimit();
     if (limit === 0) return;
-    let count: number;
-    try {
-      const key = `${UPLOAD_RATE_KEY_PREFIX}${accountId}`;
-      count = await this.redis.incr(key);
-      if (count === 1) {
-        await this.redis.expire(key, UPLOAD_RATE_WINDOW_SECONDS);
-      }
-    } catch (err) {
-      this.logger.warn(`Upload rate-limit check skipped (Redis): ${errMsg(err)}`);
+    const count = await fixedWindowHit(
+      this.redis,
+      `${UPLOAD_RATE_KEY_PREFIX}${accountId}`,
+      UPLOAD_RATE_WINDOW_SECONDS,
+    );
+    if (count === null) {
+      this.logger.warn('Upload rate-limit check skipped (Redis unavailable)');
       return;
     }
     if (count > limit) {

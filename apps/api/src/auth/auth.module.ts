@@ -8,6 +8,7 @@ import { RefreshToken } from '../database/entities/refresh-token.entity';
 import { User } from '../database/entities/user.entity';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { AuthThrottleGuard } from './guards/auth-throttle.guard';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
@@ -23,7 +24,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, AuthThrottleGuard],
   exports: [AuthService],
 })
 export class AuthModule {}

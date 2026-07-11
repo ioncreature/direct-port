@@ -72,7 +72,8 @@ export function TopUpSection() {
   }, []);
 
   return (
-    <section className="section">
+    // id — якорь для CTA «Пополнить баланс» со страницы неудавшегося документа.
+    <section className="section" id="top-up">
       <div className="section-head">
         <h2 className="section-title">Пополнить баланс</h2>
       </div>

@@ -23,6 +23,9 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      # BullMQ-воркеры живут в процессе api: при SIGTERM worker.close() ждёт активный job
+      # (обработка документа — до ~15 мин). Дефолтные 30с k8s обрывали job SIGKILL'ом.
+      terminationGracePeriodSeconds: {{ .Values.api.terminationGracePeriodSeconds | default 900 }}
       initContainers:
         - name: wait-for-postgres
           image: busybox:1.36
@@ -37,6 +40,12 @@ spec:
           ports:
             - containerPort: {{ .Values.api.port }}
               protocol: TCP
+          # Пауза перед SIGTERM: под успевает выйти из endpoints балансировщика,
+          # прежде чем API перестанет принимать запросы.
+          lifecycle:
+            preStop:
+              exec:
+                command: ['sh', '-c', 'sleep 5']
           envFrom:
             - secretRef:
                 name: {{ include "directport.secretName" . }}
@@ -60,8 +69,10 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 10
           readinessProbe:
+            # Readiness проверяет Postgres+Redis (в отличие от liveness /api) — под с мёртвой
+            # зависимостью выводится из endpoints, а не продолжает отдавать 500.
             httpGet:
-              path: /api
+              path: /api/health/ready
               port: {{ .Values.api.port }}
             initialDelaySeconds: 5
             periodSeconds: 5

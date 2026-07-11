@@ -67,11 +67,33 @@ export function statusTone(status: string): 'ok' | 'warn' | 'error' | 'neutral' 
   }
 }
 
-/** Документ ещё обрабатывается — кабинет поллит статус, пока такие есть. */
-const IN_PROGRESS_STATUSES = new Set(['parsing', 'pending', 'processing', 'intake']);
+/** Документ активно обрабатывается pipeline'ом — кабинет часто поллит статус, пока такие есть. */
+const IN_PROGRESS_STATUSES = new Set(['parsing', 'pending', 'processing']);
 
 export function isInProgress(status: string): boolean {
   return IN_PROGRESS_STATUSES.has(status);
+}
+
+/**
+ * Документ ждёт действий менеджера (запуск managed-расчёта, ручная проверка данных или кодов).
+ * Статус меняется решением человека, а не сам по себе — кабинет поллит такие документы редко,
+ * только чтобы подхватить переход без ручного обновления страницы.
+ */
+const AWAITING_MANAGER_STATUSES = new Set(['intake', 'requires_review', 'code_review_required']);
+
+export function isAwaitingManager(status: string): boolean {
+  return AWAITING_MANAGER_STATUSES.has(status);
+}
+
+/** Пояснение под бейджем статуса — что происходит и почему от клиента не требуется действий. */
+const STATUS_HINTS: Record<string, string> = {
+  intake: 'Файл у менеджера — он запустит расчёт и свяжется с вами.',
+  requires_review: 'Менеджер проверяет распознанные данные — расчёт продолжится автоматически.',
+  code_review_required: 'Менеджер уточняет коды ТН ВЭД — расчёт продолжится автоматически.',
+};
+
+export function statusHint(status: string): string | null {
+  return STATUS_HINTS[status] ?? null;
 }
 
 /** Метка построчного статуса расчёта (calculationStatus в resultData). */

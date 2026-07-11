@@ -1,9 +1,11 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'crypto';
 import type Redis from 'ioredis';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ErrorCode } from '../common/error-codes';
+import { Actor, assertSameCompany } from '../common/tenant/actor-context';
 import { Company } from '../database/entities/company.entity';
 import { User } from '../database/entities/user.entity';
 import { REDIS_CLIENT } from '../redis/redis.module';
@@ -26,10 +28,18 @@ export class ManagerLinkService {
     @InjectRepository(Company) private readonly companiesRepo: Repository<Company>,
   ) {}
 
-  async createToken(userId: string): Promise<{ token: string; deepLink: string }> {
+  async createToken(userId: string, actor: Actor): Promise<{ token: string; deepLink: string }> {
+    // Тенант-гейт: цель токена должна быть в компании актора (super_admin — из любой).
+    // Иначе админ компании A выпускал бы deep-link на менеджера компании B и после его
+    // открытия в Telegram привязывал бы свой аккаунт к чужому менеджеру (404 при несовпадении).
+    const user = await this.usersRepo.findOne({ where: { id: userId }, select: ['id', 'companyId'] });
+    if (!user) {
+      throw new NotFoundException({ code: ErrorCode.UNKNOWN_ROW, message: 'User not found' });
+    }
+    assertSameCompany(actor, user.companyId);
     const token = randomBytes(24).toString('hex'); // 48 hex — влезает в Telegram start-параметр
     await this.redis.set(`${KEY_PREFIX}${token}`, userId, 'EX', TOKEN_TTL_SECONDS);
-    const botUsername = await this.resolveManagerBotUsername(userId);
+    const botUsername = await this.resolveManagerBotUsername(user.companyId);
     const deepLink = botUsername ? `https://t.me/${botUsername}?start=${token}` : `?start=${token}`;
     return { token, deepLink };
   }
@@ -38,11 +48,10 @@ export class ManagerLinkService {
    * Username менеджерского бота для deep-link: бот компании менеджера (per-company), иначе
    * дефолтный из env MANAGER_BOT_USERNAME. См. docs/COMPANY_BOTS.md.
    */
-  private async resolveManagerBotUsername(userId: string): Promise<string> {
-    const user = await this.usersRepo.findOne({ where: { id: userId }, select: ['companyId'] });
-    if (user?.companyId) {
+  private async resolveManagerBotUsername(companyId: string | null): Promise<string> {
+    if (companyId) {
       const company = await this.companiesRepo.findOne({
-        where: { id: user.companyId },
+        where: { id: companyId },
         select: ['managerBotUsername'],
       });
       if (company?.managerBotUsername) return company.managerBotUsername;

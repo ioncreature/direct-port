@@ -82,9 +82,11 @@ export class DocumentsProcessor extends WorkerHost {
     const gate = await this.clientBalance.reserveProcessing(doc);
     if (gate.allowed) return { blocked: false, previousCharged: gate.previousCharged };
     doc.status = DocumentStatus.FAILED;
+    // Сообщение видит и оператор в админке, и клиент в кабинете — держим его
+    // нейтральным (без «в админке»): у клиента свой флоу пополнения, у оператора — свой.
     doc.errorMessage =
-      `Недостаточно баланса клиента: нужно ${gate.need}, на балансе ${gate.available}. ` +
-      `Пополните депозит клиента в админке и запустите обработку снова.`;
+      `Недостаточно позиций на балансе для расчёта: нужно ${gate.need}, доступно ${gate.available}. ` +
+      `Пополните баланс и запустите обработку снова.`;
     await this.repo.save(doc);
     await this.pipelineNotifier.notify(doc);
     this.logger.warn(

@@ -1,8 +1,9 @@
 import { InjectQueue } from '@nestjs/bullmq';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
 import { FindOptionsWhere, IsNull, Not, Repository } from 'typeorm';
+import { ErrorCode } from '../common/error-codes';
 import { DEFAULT_COMPANY_ID } from '../common/tenant/actor-context';
 import { Document, DocumentStatus } from '../database/entities/document.entity';
 import { User } from '../database/entities/user.entity';
@@ -115,10 +116,19 @@ export class ManagerNotifyService {
       client.companyId,
     );
     if (managerTelegramIds.length === 0) {
+      // Некому доставить событие клиента (в компании ещё нет ни одного привязанного
+      // менеджера). Раньше метод тихо выходил — intake отвечал клиенту «✅ принято»,
+      // хотя файл/сообщение никто не увидит (клиент не попадает в /clients до claim,
+      // а claim инициируется этим же broadcast). Бросаем — intake отдаёт 5xx, client-bot
+      // честно просит повторить позже. Pipeline-уведомления (notifyDocumentEvent) и
+      // топап-пинг обёрнуты вызывающими в try/catch — для них это лишь warn-лог.
       this.logger.warn(
         `No linked managers to notify (event=${event}, client=${client.id})`,
       );
-      return;
+      throw new ServiceUnavailableException({
+        code: ErrorCode.NO_MANAGERS_AVAILABLE,
+        message: 'No linked managers available to receive the message',
+      });
     }
     const payload: ManagerNotification = {
       event,

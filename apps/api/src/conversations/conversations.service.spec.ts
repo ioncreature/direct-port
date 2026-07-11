@@ -1,5 +1,11 @@
-import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { DocumentStatus } from '../database/entities/document.entity';
+import { UserRole } from '../database/entities/user.entity';
 import { ConversationsService } from './conversations.service';
 
 interface Opts {
@@ -11,7 +17,7 @@ interface Opts {
     companyId?: string | null;
   } | null;
   manager?: { id: string; isActive: boolean; managerTelegramId: string; companyId?: string | null } | null;
-  userById?: { id: string; managerTelegramId: string | null } | null;
+  userById?: { id: string; managerTelegramId: string | null; companyId?: string | null } | null;
   document?: {
     id: string;
     status: DocumentStatus;
@@ -201,7 +207,11 @@ describe('ConversationsService', () => {
       const { service, usersRepo, clientsRepo } = createService({
         userById: { id: 'user-1', managerTelegramId: '999' },
       });
-      await service.unlinkManager('user-1');
+      await service.unlinkManager('user-1', {
+        id: 'super',
+        role: UserRole.SUPER_ADMIN,
+        companyId: null,
+      });
       expect(usersRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'user-1', managerTelegramId: null }),
       );
@@ -209,6 +219,17 @@ describe('ConversationsService', () => {
         { assignedManagerId: 'user-1' },
         { assignedManagerId: null },
       );
+    });
+
+    it('отвязка менеджера чужой компании отбивается 404 (тенант-гейт)', async () => {
+      const { service, usersRepo, clientsRepo } = createService({
+        userById: { id: 'user-1', managerTelegramId: '999', companyId: 'comp-B' },
+      });
+      await expect(
+        service.unlinkManager('user-1', { id: 'admin', role: UserRole.ADMIN, companyId: 'comp-A' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(usersRepo.save).not.toHaveBeenCalled();
+      expect(clientsRepo.update).not.toHaveBeenCalled();
     });
   });
 

@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager, In, IsNull, MoreThan, Not, Repository } from 'typeorm';
 import { ErrorCode } from '../common/error-codes';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 import {
@@ -275,6 +275,46 @@ export class ClientBalanceService {
       }
     }
     return fixed;
+  }
+
+  /**
+   * Возврат «осиротевших» резервов: терминальный FAILED/REJECTED документ, за которым
+   * остались удержаны позиции (balance_charged_amount > 0). Штатно резерв откатывает
+   * releaseReservation в catch-ветке процессора, но если под убит посреди прогона
+   * (SIGKILL при деплое) или транзиентный сбой БД съел откат, документ уходит в FAILED
+   * (через StuckDocumentsWatchdog, который баланс не трогает) с удержанными позициями —
+   * тихая потеря кредитов клиента без следа, кроме error-лога. FAILED/REJECTED не дают
+   * клиенту скачиваемого результата (download только для PROCESSED), поэтому целевое
+   * списание — 0, как в reject и финальном catch процессора. Идемпотентно: releaseReservation
+   * сверяет удержанное под локом, повторный проход/несколько реплик безопасны.
+   */
+  async reconcileAbandonedReservations(windowDays = 7): Promise<number> {
+    const docRepo = this.accountRepo.manager.getRepository(Document);
+    const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60_000);
+    // Фильтр целиком выразим query-builder'ом (в отличие от reconcileSettledDocuments, которому
+    // нужен raw SQL ради jsonb-COUNT). select — только поля, нужные releaseReservation: тяжёлые
+    // jsonb (parsedData/resultData) в фоновый свип не тянем.
+    const candidates = await docRepo.find({
+      where: {
+        status: In([DocumentStatus.FAILED, DocumentStatus.REJECTED]),
+        telegramUserId: Not(IsNull()),
+        balanceChargedAmount: MoreThan(0),
+        updatedAt: MoreThan(cutoff),
+      },
+      select: ['id', 'status', 'telegramUserId', 'originalFileName', 'balanceChargedAmount'],
+    });
+    let refunded = 0;
+    for (const doc of candidates) {
+      const before = doc.balanceChargedAmount;
+      await this.releaseReservation(doc, 0);
+      if (doc.balanceChargedAmount !== before) {
+        refunded += 1;
+        this.logger.warn(
+          `Refunded abandoned reservation for ${doc.status} document ${doc.id}: ${before} → 0 positions`,
+        );
+      }
+    }
+    return refunded;
   }
 
   /**

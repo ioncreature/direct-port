@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { BalanceModule } from '../balance/balance.module';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { ManagerNotifyModule } from '../conversations/manager-notify.module';
+import { BillingAccount } from '../database/entities/billing-account.entity';
 import { TopUpRequest } from '../database/entities/top-up-request.entity';
 import { TelegramUsersModule } from '../telegram-users/telegram-users.module';
 import { ManagerTopUpController } from './manager-top-up.controller';
@@ -16,7 +17,7 @@ import { TopUpService } from './top-up.service';
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([TopUpRequest]),
+    TypeOrmModule.forFeature([TopUpRequest, BillingAccount]),
     BalanceModule,
     ManagerNotifyModule,
     ConversationsModule,

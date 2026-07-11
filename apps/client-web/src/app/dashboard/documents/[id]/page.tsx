@@ -11,7 +11,9 @@ import {
   fmtDateTime,
   fmtInt,
   fmtRub,
+  isAwaitingManager,
   isInProgress,
+  statusHint,
   statusTone,
 } from '@/lib/format';
 import type { CalculatedRow, ClientDocumentDetail } from '@/lib/types';
@@ -50,11 +52,19 @@ export default function DocumentDetailPage() {
     };
   }, [id, router]);
 
-  // Пока документ в работе — мягко поллим, чтобы построчный результат появился сам.
-  // Зависим от булева inProgress, а не от всего doc: setDoc на каждый тик не пересоздаёт таймер.
-  const inProgress = doc ? isInProgress(doc.status) : false;
+  // Пока документ в работе — поллим каждые 5с, чтобы построчный результат появился сам.
+  // Ожидание менеджера (intake/review) меняется решением человека — поллим редко (30с),
+  // только чтобы подхватить результат проверки без ручного F5.
+  // Зависим от вычисленного интервала, а не от всего doc: setDoc на каждый тик не пересоздаёт таймер.
+  const pollInterval = !doc
+    ? null
+    : isInProgress(doc.status)
+      ? 5000
+      : isAwaitingManager(doc.status)
+        ? 30000
+        : null;
   useEffect(() => {
-    if (!inProgress) return;
+    if (pollInterval === null) return;
     const timer = setInterval(async () => {
       try {
         const res = await api.get<ClientDocumentDetail>(`/client/documents/${id}`);
@@ -62,9 +72,9 @@ export default function DocumentDetailPage() {
       } catch {
         /* временная ошибка поллинга не критична — следующий тик повторит */
       }
-    }, 5000);
+    }, pollInterval);
     return () => clearInterval(timer);
-  }, [inProgress, id]);
+  }, [pollInterval, id]);
 
   const profile = getStoredProfile();
   const displayName = profile?.name || profile?.username || 'Клиент';
@@ -108,6 +118,9 @@ export default function DocumentDetailPage() {
                 <h2 className="section-title">{doc.originalFileName}</h2>
                 <span className={`badge badge-${statusTone(doc.status)}`}>{doc.statusLabel}</span>
               </div>
+              {statusHint(doc.status) && (
+                <p className="section-hint">{statusHint(doc.status)}</p>
+              )}
               <div className="detail-meta">
                 <div>
                   <span className="meta-label">Позиций</span>
@@ -135,6 +148,16 @@ export default function DocumentDetailPage() {
                 <p className="error-text" style={{ padding: '0 20px' }}>
                   {doc.errorMessage}
                 </p>
+              )}
+              {doc.status === 'failed' && (
+                <div style={{ padding: '0 20px 18px' }}>
+                  <p className="section-hint" style={{ padding: '0 0 10px' }}>
+                    Не хватило позиций на балансе? Пополните баланс и загрузите файл заново.
+                  </p>
+                  <Link className="btn btn-primary" href="/dashboard#top-up">
+                    Пополнить баланс
+                  </Link>
+                </div>
               )}
               {doc.rejectionReasons && doc.rejectionReasons.length > 0 && (
                 <ul className="notes-list" style={{ padding: '0 20px 12px' }}>

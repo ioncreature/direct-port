@@ -12,7 +12,7 @@ help =
 
 uploading = ⏳ Uploading the file…
 file-accepted = ✅ File "{ $fileName }" received. A manager will prepare the calculation and contact you.
-file-too-large = The file is too large. Maximum size is 40 MB.
+file-too-large = The file is too large. Telegram accepts up to 20 MB. A larger file can be uploaded via your cabinet.
 unsupported-format = Only .xlsx and .csv files are supported.
 upload-error = Could not accept the file. Please try again a little later.
 relay-error = Could not pass your message to the manager. Please try again a little later.
@@ -25,4 +25,4 @@ language-set = ✅ Language switched to English.
 
 error-FILE_REQUIRED = No file attached. Attach an .xlsx or .csv file.
 error-UNSUPPORTED_FORMAT = Only .xlsx and .csv files are supported.
-error-FILE_TOO_BIG = The file is too large (max 40 MB).
+error-FILE_TOO_BIG = The file is too large (max 20 MB). A larger file can be uploaded via your cabinet.

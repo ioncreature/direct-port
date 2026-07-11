@@ -12,7 +12,7 @@ help =
 
 uploading = ⏳ 正在上传文件…
 file-accepted = ✅ 已收到文件“{ $fileName }”。经理将准备计算并与您联系。
-file-too-large = 文件太大。最大为 40 MB。
+file-too-large = 文件太大。Telegram 最大支持 20 MB。更大的文件可通过个人中心上传。
 unsupported-format = 仅支持 .xlsx 和 .csv 文件。
 upload-error = 无法接收文件。请稍后再试。
 relay-error = 无法将您的消息转交给经理。请稍后再试。
@@ -25,4 +25,4 @@ language-set = ✅ 语言已切换为中文。
 
 error-FILE_REQUIRED = 未附加文件。请附加 .xlsx 或 .csv 文件。
 error-UNSUPPORTED_FORMAT = 仅支持 .xlsx 和 .csv 文件。
-error-FILE_TOO_BIG = 文件太大（最大 40 MB）。
+error-FILE_TOO_BIG = 文件太大（最大 20 MB）。更大的文件可通过个人中心上传。

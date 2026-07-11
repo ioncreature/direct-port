@@ -147,6 +147,49 @@ describe('SpreadsheetReaderService', () => {
     });
   });
 
+  describe('Защита от zip-бомбы', () => {
+    // Собираем минимальный ZIP: local-заглушка (для ZIP-сигнатуры) + одна запись
+    // центрального каталога с ЗАЯВЛЕННЫМ распакованным размером + EOCD. Данные не
+    // распаковываются — проверка читает только каталог.
+    function makeZip(uncompressedSize: number, entries = 1): Buffer {
+      const name = Buffer.from('a');
+      const cd = Buffer.alloc(46 + name.length);
+      cd.writeUInt32LE(0x02014b50, 0);
+      cd.writeUInt32LE(0, 20); // compressed size
+      cd.writeUInt32LE(uncompressedSize >>> 0, 24); // uncompressed size
+      cd.writeUInt16LE(name.length, 28);
+      name.copy(cd, 46);
+      const local = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0]); // PK\x03\x04 + пэддинг
+      const eocd = Buffer.alloc(22);
+      eocd.writeUInt32LE(0x06054b50, 0);
+      eocd.writeUInt16LE(entries, 8);
+      eocd.writeUInt16LE(entries, 10);
+      eocd.writeUInt32LE(cd.length, 12);
+      eocd.writeUInt32LE(local.length, 16); // смещение начала центрального каталога
+      return Buffer.concat([local, cd, eocd]);
+    }
+
+    it('заявленный распакованный размер сверх бюджета → отклоняется', async () => {
+      const bomb = makeZip(300 * 1024 * 1024); // 300 МБ > 200 МБ бюджета
+      await expect(service.read(bomb, 'bomb.xlsx')).rejects.toThrow();
+    });
+
+    it('слишком много записей в архиве → отклоняется', async () => {
+      const many = makeZip(1, 10_001);
+      await expect(service.read(many, 'many.xlsx')).rejects.toThrow();
+    });
+
+    it('легитимный xlsx с умеренным содержимым проходит проверку', async () => {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Sheet1');
+      sheet.addRow(['Name', 'Price']);
+      sheet.addRow(['Widget', 100]);
+      const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+      // Не бросает на bomb-проверке (дальше — штатный парсинг).
+      await expect(service.read(buffer, 'ok.xlsx')).resolves.toBeDefined();
+    });
+  });
+
   describe('Определение формата по расширению', () => {
     it('.csv → CSV-парсер', async () => {
       const csv = 'a,b\n1,2';

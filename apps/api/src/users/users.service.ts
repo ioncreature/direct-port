@@ -13,6 +13,7 @@ import { Actor, assertSameCompany, resolveCompanyScope } from '../common/tenant/
 import { ConversationMessage } from '../database/entities/conversation-message.entity';
 import { DepositTransaction } from '../database/entities/deposit-transaction.entity';
 import { Document } from '../database/entities/document.entity';
+import { RefreshToken } from '../database/entities/refresh-token.entity';
 import { TopUpRequest } from '../database/entities/top-up-request.entity';
 import { User, UserRole } from '../database/entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -86,11 +87,19 @@ export class UsersService {
       this.applyCompanyChange(user, dto.companyId, actor);
     }
     if (dto.isActive !== undefined) user.isActive = dto.isActive;
+    let passwordChanged = false;
     if (dto.password) {
       user.passwordHash = await bcrypt.hash(dto.password, 10);
+      passwordChanged = true;
     }
 
     const saved = await this.usersRepo.save(user);
+    // Смена пароля должна завершать активные сессии: refresh-токены хранятся в БД (access
+    // живёт максимум 15 мин и не отзывается). Иначе сброс пароля скомпрометированного
+    // аккаунта не инвалидировал бы уже выданные refresh-токены — они жили бы до 7 дней.
+    if (passwordChanged) {
+      await this.usersRepo.manager.delete(RefreshToken, { userId: id });
+    }
     return this.sanitize(saved);
   }
 

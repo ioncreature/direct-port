@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { FindOperator } from 'typeorm';
 import { DEFAULT_COMPANY_ID } from '../common/tenant/actor-context';
 import { DocumentStatus } from '../database/entities/document.entity';
@@ -130,9 +131,13 @@ describe('ManagerNotifyService.notifyDocumentEvent', () => {
     expect(queue.add).not.toHaveBeenCalled();
   });
 
-  it('does not enqueue when there are no linked managers', async () => {
+  it('throws when there are no linked managers (delivery must not silently succeed)', async () => {
     const { service, queue } = createService({ allManagers: [] });
-    await service.notifyDocumentEvent(makeDoc(DocumentStatus.PROCESSED, null));
+    // Раньше метод тихо выходил — intake отвечал клиенту «принято», хотя доставить событие
+    // было некому. Теперь бросает: intake отдаёт 5xx, pipeline-путь обёрнут в try/catch вызывающим.
+    await expect(
+      service.notifyDocumentEvent(makeDoc(DocumentStatus.PROCESSED, null)),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
     expect(queue.add).not.toHaveBeenCalled();
   });
 });

@@ -739,7 +739,7 @@ describe('DocumentsProcessor.process', () => {
       await processor.process(fakeJob('doc-1'));
 
       expect(doc.status).toBe(DocumentStatus.FAILED);
-      expect(doc.errorMessage).toContain('Недостаточно баланса');
+      expect(doc.errorMessage).toContain('Недостаточно позиций на балансе');
       expect(classifier.classify).not.toHaveBeenCalled();
       expect(clientBalance.settle).not.toHaveBeenCalled();
       // managed-документ → менеджер получает уведомление об ошибке

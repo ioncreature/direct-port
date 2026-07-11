@@ -282,3 +282,55 @@ describe('ClientBalanceService.adjust', () => {
     );
   });
 });
+
+describe('ClientBalanceService.reconcileAbandonedReservations', () => {
+  function setup(candidates: Document[], chargedInTx = 5) {
+    const em = {
+      findOne: jest.fn((entity: unknown) => {
+        if (entity === BillingAccount) return Promise.resolve({ id: 'acc-1', balance: 0 });
+        if (entity === Document)
+          return Promise.resolve({ id: 'doc-f', balanceChargedAmount: chargedInTx });
+        return Promise.resolve(null);
+      }),
+      update: jest.fn().mockResolvedValue(undefined),
+      insert: jest.fn().mockResolvedValue(undefined),
+    };
+    const docRepo = { find: jest.fn().mockResolvedValue(candidates) };
+    const accountRepo = {
+      findOne: jest.fn(),
+      manager: {
+        transaction: jest.fn((cb: (em: unknown) => unknown) => cb(em)),
+        getRepository: jest.fn(() => docRepo),
+      },
+    };
+    const tgUserRepo = {
+      findOne: jest.fn().mockResolvedValue({ id: 'tg-1', billingAccountId: 'acc-1' }),
+    };
+    const service = new ClientBalanceService(
+      accountRepo as never,
+      { findAndCount: jest.fn() } as never,
+      tgUserRepo as never,
+    );
+    return { service, em, docRepo };
+  }
+
+  it('возвращает удержанные позиции для брошенного FAILED (release до 0)', async () => {
+    const { service, em } = setup([
+      makeDoc({ id: 'doc-f', status: DocumentStatus.FAILED, balanceChargedAmount: 5 }),
+    ]);
+    const refunded = await service.reconcileAbandonedReservations();
+    expect(refunded).toBe(1);
+    // alreadyCharged=5, target=0 → возврат +5 на баланс, balanceChargedAmount → 0
+    expect(em.insert).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ delta: 5, type: 'adjustment' }),
+    );
+    expect(em.update).toHaveBeenCalledWith(Document, { id: 'doc-f' }, { balanceChargedAmount: 0 });
+  });
+
+  it('нет кандидатов → 0, транзакция возврата не открывается', async () => {
+    const { service, em } = setup([]);
+    expect(await service.reconcileAbandonedReservations()).toBe(0);
+    expect(em.insert).not.toHaveBeenCalled();
+  });
+});

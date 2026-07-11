@@ -57,9 +57,10 @@ describe('FileUploadHandler.handle', () => {
     }
   });
 
-  it('слишком большой .xlsx → file-too-large, без загрузки', async () => {
+  it('слишком большой .xlsx (>20 МБ — лимит скачивания Telegram) → file-too-large, без загрузки', async () => {
     const { handler, apiClient } = createHandler();
-    const ctx = ctxWith({ file_name: 'big.xlsx', file_id: 'fid', file_size: 50 * 1024 * 1024 });
+    // 25 МБ проходил старый лимит 40 МБ, но падал бы на ctx.getFile() — теперь отсекается сразу.
+    const ctx = ctxWith({ file_name: 'big.xlsx', file_id: 'fid', file_size: 25 * 1024 * 1024 });
     await handler.handle(ctx as never);
     expect(apiClient.intakeDocument).not.toHaveBeenCalled();
     expect(ctx.reply).toHaveBeenCalledWith('file-too-large');

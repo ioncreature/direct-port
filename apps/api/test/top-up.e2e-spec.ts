@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { DataSource } from 'typeorm';
+import { DEFAULT_COMPANY_ID } from '../src/common/tenant/actor-context';
 import { DepositTransaction } from '../src/database/entities/deposit-transaction.entity';
 import { User, UserRole } from '../src/database/entities/user.entity';
 import { closeTestApp, createTestApp, INTERNAL_KEY_HEADER } from './helpers';
@@ -45,6 +46,9 @@ describe('TopUp (e2e)', () => {
         email: 'topup-manager@directport.ru',
         passwordHash: await bcrypt.hash('x', 1),
         role: UserRole.CUSTOMS,
+        // Менеджер той же (дефолтной) компании, что и клиентские аккаунты — иначе тенант-гейт
+        // confirm/cancel отобьёт заявку 404-м (не-super_admin обязан иметь компанию).
+        companyId: DEFAULT_COMPANY_ID,
         isActive: true,
         managerTelegramId: String(MANAGER_TG),
       }),

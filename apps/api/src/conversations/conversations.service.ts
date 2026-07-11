@@ -11,6 +11,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 import { ErrorCode } from '../common/error-codes';
+import { Actor, assertSameCompany } from '../common/tenant/actor-context';
 import {
   type ConversationAttachmentType,
   ConversationMessage,
@@ -317,11 +318,13 @@ export class ConversationsService {
     return { userId: user.id };
   }
 
-  async unlinkManager(userId: string): Promise<void> {
+  async unlinkManager(userId: string, actor: Actor): Promise<void> {
     const user = await this.usersRepo.findOne({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException({ code: ErrorCode.UNKNOWN_ROW, message: 'User not found' });
     }
+    // Тенант-гейт: отвязать можно только менеджера своей компании (super_admin — любого).
+    assertSameCompany(actor, user.companyId);
     user.managerTelegramId = null;
     await this.usersRepo.save(user);
     await this.releaseManagerClients(userId);

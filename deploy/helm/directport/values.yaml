@@ -9,6 +9,11 @@ api:
     tag: latest
     pullPolicy: IfNotPresent
   port: 3001
+  # Грейс на остановку пода (сек). В процессе api живут BullMQ-воркеры
+  # (document-parsing/document-processing): enableShutdownHooks → worker.close()
+  # ждёт активный job, а обработка документа идёт до ~15 мин. С дефолтными 30с
+  # rollout убивал job SIGKILL'ом → документ висел в PROCESSING до watchdog.
+  terminationGracePeriodSeconds: 900
   resources:
     requests:
       cpu: 100m

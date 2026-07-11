@@ -323,6 +323,16 @@ td.strong {
   font-weight: 600;
 }
 
+/* Пояснение под бейджем статуса (ожидание менеджера и т. п.). */
+.status-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  max-width: 280px;
+  white-space: normal;
+}
+
 /* ===== Badge ===== */
 .badge {
   display: inline-block;
@@ -500,4 +510,33 @@ td.strong {
   font-family: inherit;
   white-space: pre-wrap;
   color: var(--text);
+}
+
+/* ===== Mobile ===== */
+@media (max-width: 640px) {
+  .main {
+    padding: 20px 14px 48px;
+  }
+
+  .header-inner {
+    padding: 12px 14px;
+  }
+
+  .card-value {
+    font-size: 24px;
+  }
+
+  /* Длинное имя файла + бейдж статуса на узком экране переносятся, а не выталкивают друг друга. */
+  .section-head {
+    flex-wrap: wrap;
+  }
+
+  .detail-meta {
+    gap: 14px 24px;
+    padding: 16px;
+  }
+
+  .login-card {
+    padding: 28px 20px;
+  }
 }

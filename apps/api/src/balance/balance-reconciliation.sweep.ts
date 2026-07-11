@@ -38,6 +38,12 @@ export class BalanceReconciliationSweep implements OnModuleInit, OnModuleDestroy
       if (fixed > 0) {
         this.logger.warn(`Balance reconciliation sweep fixed ${fixed} document charge(s)`);
       }
+      // Возврат удержанных позиций по терминальным FAILED/REJECTED, чей резерв не откатился
+      // штатно (крэш пода посреди прогона, транзиентный сбой БД на releaseReservation).
+      const refunded = await this.clientBalance.reconcileAbandonedReservations();
+      if (refunded > 0) {
+        this.logger.warn(`Balance reconciliation sweep refunded ${refunded} abandoned reservation(s)`);
+      }
     } catch (err) {
       this.logger.error('Balance reconciliation sweep failed', err);
     }

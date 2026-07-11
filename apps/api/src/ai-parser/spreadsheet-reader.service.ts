@@ -8,6 +8,17 @@ import { errMsg } from '../common/errors';
  *  десятками тысяч встроенных изображений (downstream кап — 200). */
 const MAX_EXTRACTED_IMAGES = 300;
 
+/**
+ * Потолок суммарного РАСПАКОВАННОГО размера архива и числа записей — защита от
+ * zip-бомбы: xlsx.load() полностью разворачивает архив в память ДО применения maxRows,
+ * поэтому 40-МБ загрузка из легко сжимаемого XML могла раздуться в гигабайты и уронить
+ * воркер по OOM. Легитимный xlsx (даже с сотнями картинок) укладывается в этот бюджет
+ * с большим запасом; файл, который распаковывается за него, всё равно не обработать
+ * безопасно на поде с ограниченной памятью.
+ */
+const MAX_TOTAL_UNCOMPRESSED_BYTES = 200 * 1024 * 1024;
+const MAX_ZIP_ENTRIES = 10_000;
+
 export interface SpreadsheetImage {
   /** 0-indexed excel row, к которой xlsx-anchor привязал картинку. */
   rowIndex: number;
@@ -76,6 +87,61 @@ function assertZipMagic(buffer: Buffer): void {
 }
 
 /**
+ * Пре-проверка на zip-бомбу ДО xlsx.load: по «центральному каталогу» ZIP суммируем
+ * заявленные распакованные размеры записей и отсекаем архив, который развернётся за
+ * бюджет памяти. Читаем только каталог (хвост файла) — сами данные не распаковываем.
+ *
+ * Каталог находим через End Of Central Directory (EOCD, сигнатура PK\x05\x06) в
+ * последних ~64 КБ. ZIP64-записи прячут реальный размер в extra-поле, а в 32-битном
+ * поле держат сентинел 0xFFFFFFFF (~4 ГБ) — он сам по себе превышает бюджет, поэтому
+ * трактуется как «слишком большой» (fail-closed). Остаточный риск: архив может ЗАНИЗИТЬ
+ * заявленный размер и всё же развернуться больше — полностью это закрывается только
+ * потоковой распаковкой со счётчиком, которую ExcelJS не отдаёт; эта проверка ловит
+ * все практичные бомбы (вложенные zip, ZIP64-сокрытие, тысячи записей).
+ */
+function assertZipNotBomb(buffer: Buffer): void {
+  const reject = (message: string): never => {
+    throw new BadRequestException({ code: ErrorCode.FILE_TOO_BIG, message });
+  };
+  const EOCD_SIG = 0x06054b50;
+  const CENTRAL_SIG = 0x02014b50;
+  // EOCD лежит в последних 22 + comment(≤65535) байтах. Сканируем назад.
+  const minStart = Math.max(0, buffer.length - (22 + 0xffff));
+  let eocd = -1;
+  for (let i = buffer.length - 22; i >= minStart; i--) {
+    if (buffer.readUInt32LE(i) === EOCD_SIG) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) {
+    // Валидный zip обязан иметь EOCD; его отсутствие — повреждённый/поддельный архив.
+    throw new BadRequestException({
+      code: ErrorCode.FILE_CORRUPTED,
+      message: 'Файл не является корректным .xlsx (не найден каталог ZIP)',
+    });
+  }
+  const entries = buffer.readUInt16LE(eocd + 10);
+  if (entries > MAX_ZIP_ENTRIES) {
+    reject(`Слишком много записей в архиве (${entries}) — файл отклонён из соображений безопасности`);
+  }
+  let ptr = buffer.readUInt32LE(eocd + 16); // смещение начала центрального каталога
+  let totalUncompressed = 0;
+  for (let i = 0; i < entries; i++) {
+    if (ptr + 46 > buffer.length || buffer.readUInt32LE(ptr) !== CENTRAL_SIG) break;
+    const uncompressed = buffer.readUInt32LE(ptr + 24);
+    totalUncompressed += uncompressed;
+    if (totalUncompressed > MAX_TOTAL_UNCOMPRESSED_BYTES) {
+      reject('Файл слишком велик в распакованном виде — отклонён из соображений безопасности');
+    }
+    const nameLen = buffer.readUInt16LE(ptr + 28);
+    const extraLen = buffer.readUInt16LE(ptr + 30);
+    const commentLen = buffer.readUInt16LE(ptr + 32);
+    ptr += 46 + nameLen + extraLen + commentLen;
+  }
+}
+
+/**
  * csv должен быть текстом. NUL-байты в первых килобайтах — верный признак
  * бинарного файла, переименованного в .csv (иначе csv-парсер прочитал бы весь
  * блоб как utf-8).
@@ -100,6 +166,7 @@ export class SpreadsheetReaderService {
       return this.readCsv(buffer, maxRows);
     }
     assertZipMagic(buffer);
+    assertZipNotBomb(buffer);
     return this.readXlsx(buffer, maxRows);
   }
 

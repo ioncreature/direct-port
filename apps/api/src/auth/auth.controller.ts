@@ -1,6 +1,15 @@
-import { Body, Controller, Headers, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { Public } from './decorators/public.decorator';
+import { AuthThrottleGuard } from './guards/auth-throttle.guard';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 
@@ -9,6 +18,7 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Public()
+  @UseGuards(AuthThrottleGuard)
   @Post('login')
   @HttpCode(HttpStatus.OK)
   // x-tenant-host — исходный хост запроса, проставляется прокси admin-web (доверенный источник
@@ -18,6 +28,7 @@ export class AuthController {
   }
 
   @Public()
+  @UseGuards(AuthThrottleGuard)
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   refresh(@Body() dto: RefreshDto) {

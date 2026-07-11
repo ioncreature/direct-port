@@ -10,7 +10,9 @@ import {
   fmtDateTime,
   fmtDelta,
   fmtInt,
+  isAwaitingManager,
   isInProgress,
+  statusHint,
   statusTone,
   TRANSACTION_LABELS,
 } from '@/lib/format';
@@ -21,6 +23,20 @@ import type {
   Paginated,
 } from '@/lib/types';
 
+/** Человекочитаемая причина неудачной загрузки файла по HTTP-статусу ответа BFF. */
+function uploadErrorMessage(status: number | undefined): string {
+  if (status === 413) {
+    return 'Файл слишком большой — лимит 40 МБ. Разбейте таблицу на несколько файлов.';
+  }
+  if (status === 429) {
+    return 'Слишком много загрузок за последний час. Попробуйте позже.';
+  }
+  if (status === 400) {
+    return 'Поддерживаются только файлы .xlsx и .csv (до 40 МБ).';
+  }
+  return 'Не удалось загрузить файл. Попробуйте ещё раз.';
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [me, setMe] = useState<ClientMe | null>(null);
@@ -29,6 +45,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -61,16 +78,20 @@ export default function DashboardPage() {
     void load(true);
   }, [router, load]);
 
-  // Пока есть документы в работе (parsing/pending/processing), поллим статус — клиент
+  // Пока есть документы в работе (parsing/pending/processing), поллим статус каждые 5с — клиент
   // видит переход в PROCESSED и появление кнопки скачивания без перезагрузки страницы.
-  // Зависим от булева флага, а не от массива documents: таймер не пересоздаётся на каждый
-  // ответ поллинга (load() меняет ссылку documents), только при смене «есть/нет в работе».
+  // Документы, ожидающие менеджера (intake/review), меняются решением человека — их поллим
+  // редко (30с), только чтобы подхватить результат проверки без ручного F5.
+  // Зависим от вычисленного интервала, а не от массива documents: таймер не пересоздаётся на
+  // каждый ответ поллинга (load() меняет ссылку documents), только при смене режима.
   const hasInProgress = documents.some((d) => isInProgress(d.status));
+  const hasAwaitingManager = documents.some((d) => isAwaitingManager(d.status));
+  const pollInterval = hasInProgress ? 5000 : hasAwaitingManager ? 30000 : null;
   useEffect(() => {
-    if (!hasInProgress) return;
-    const timer = setInterval(() => void load(), 5000);
+    if (pollInterval === null) return;
+    const timer = setInterval(() => void load(), pollInterval);
     return () => clearInterval(timer);
-  }, [hasInProgress, load]);
+  }, [pollInterval, load]);
 
   const handleFile = useCallback(
     async (file: File) => {
@@ -83,13 +104,7 @@ export default function DashboardPage() {
         await load();
       } catch (err) {
         const status = (err as { response?: { status?: number } })?.response?.status;
-        setUploadError(
-          status === 400
-            ? 'Поддерживаются только файлы .xlsx и .csv (до 40 МБ).'
-            : status === 429
-              ? 'Достигнут лимит загрузок за час. Попробуйте позже.'
-              : 'Не удалось загрузить файл. Попробуйте ещё раз.',
-        );
+        setUploadError(uploadErrorMessage(status));
       } finally {
         setUploading(false);
       }
@@ -99,6 +114,7 @@ export default function DashboardPage() {
 
   const download = useCallback(async (doc: ClientDocument) => {
     setDownloading(doc.id);
+    setDownloadError(null);
     try {
       const res = await api.get(`/client/documents/${doc.id}/download`, {
         responseType: 'blob',
@@ -112,8 +128,13 @@ export default function DashboardPage() {
       a.download = fileName;
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      alert('Не удалось скачать файл. Доступно только для обработанных документов.');
+    } catch (err) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      setDownloadError(
+        status === 400 || status === 409
+          ? 'Документ ещё не обработан — скачивание станет доступно после завершения расчёта.'
+          : 'Не удалось скачать файл. Попробуйте ещё раз.',
+      );
     } finally {
       setDownloading(null);
     }
@@ -198,6 +219,11 @@ export default function DashboardPage() {
                   {uploadError}
                 </p>
               )}
+              {downloadError && (
+                <p className="error-text" style={{ padding: '0 20px' }}>
+                  {downloadError}
+                </p>
+              )}
               {documents.length === 0 ? (
                 <div className="empty">Пока нет документов.</div>
               ) : (
@@ -224,6 +250,9 @@ export default function DashboardPage() {
                             <span className={`badge badge-${statusTone(doc.status)}`}>
                               {doc.statusLabel}
                             </span>
+                            {statusHint(doc.status) && (
+                              <div className="status-hint">{statusHint(doc.status)}</div>
+                            )}
                           </td>
                           <td className="num">{fmtInt(doc.rowCount)}</td>
                           <td>{fmtDateTime(doc.createdAt)}</td>

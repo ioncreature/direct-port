@@ -143,7 +143,7 @@ export const en: Dictionary = {
     priceMain: '$1',
     priceUnit: ' per line item.',
     intro:
-      'No subscriptions, no monthly fees. Pay only for the line items you process — you see the total before you start, and the more you run, the lower the per-item price.',
+      'No subscriptions, no monthly fees. Pay only for the line items you process — the rate and your balance are visible upfront, and the more you run, the lower the per-item price.',
     unit: 'line items',
     tiers: [
       { count: 'First 50', price: 'Free', sub: 'check the quality before you pay', discount: '', free: true },
@@ -289,7 +289,7 @@ export const en: Dictionary = {
       },
       {
         q: 'How and what do I pay for?',
-        a: 'You top up your balance through a manager — $1 per line item. We only charge for rows we successfully process; borderline and unrecognized items aren’t billed. No subscriptions, no monthly fees, and you see the total before you start.',
+        a: 'You top up your balance through a manager — $1 per line item. We only charge for rows we successfully process; borderline and unrecognized items aren’t billed. No subscriptions, no monthly fees: the rate is known upfront, and you’re never charged for more line items than your file has rows.',
       },
       {
         q: 'In what format should I send the price list?',

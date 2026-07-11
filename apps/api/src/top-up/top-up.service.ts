@@ -4,7 +4,10 @@ import { Repository } from 'typeorm';
 import { ClientBalanceService } from '../balance/client-balance.service';
 import { ErrorCode } from '../common/error-codes';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
+import { assertSameCompany } from '../common/tenant/actor-context';
+import { BillingAccount } from '../database/entities/billing-account.entity';
 import { TopUpRequest, TopUpStatus } from '../database/entities/top-up-request.entity';
+import { User } from '../database/entities/user.entity';
 import { ConversationsService } from '../conversations/conversations.service';
 import { ManagerNotifyService } from '../conversations/manager-notify.service';
 import { TelegramUsersService } from '../telegram-users/telegram-users.service';
@@ -35,6 +38,7 @@ export class TopUpService {
 
   constructor(
     @InjectRepository(TopUpRequest) private repo: Repository<TopUpRequest>,
+    @InjectRepository(BillingAccount) private accountRepo: Repository<BillingAccount>,
     private telegramUsers: TelegramUsersService,
     private balance: ClientBalanceService,
     private managerNotify: ManagerNotifyService,
@@ -102,15 +106,31 @@ export class TopUpService {
   /** Менеджер подтверждает оплату → зачисление кредитов (идемпотентно). */
   async confirmByManager(requestId: string, managerTelegramId: string): Promise<TopUpRequestView> {
     const manager = await this.conversations.resolveManagerOrThrow(managerTelegramId);
+    await this.assertManagerServesRequest(manager, await this.findRequest(requestId));
     const request = await this.balance.confirmTopUp(requestId, manager.id);
     return this.toView(request);
   }
 
   /** Менеджер отклоняет неоплаченную заявку. Подтверждённую отклонить нельзя. */
   async cancelByManager(requestId: string, managerTelegramId: string): Promise<TopUpRequestView> {
-    await this.conversations.resolveManagerOrThrow(managerTelegramId);
+    const manager = await this.conversations.resolveManagerOrThrow(managerTelegramId);
     const request = await this.findRequest(requestId);
+    await this.assertManagerServesRequest(manager, request);
     return this.toView(await this.cancel(request));
+  }
+
+  /**
+   * Тенант-гейт менеджерских операций над заявкой: заявка должна принадлежать компании
+   * менеджера (super_admin — любой). Без него менеджер, узнавший UUID чужой заявки,
+   * мог бы подтвердить (зачислить кредиты чужому клиенту) или отклонить её. Несовпадение —
+   * 404, чтобы не раскрывать существование чужой заявки.
+   */
+  private async assertManagerServesRequest(manager: User, request: TopUpRequest): Promise<void> {
+    const account = await this.accountRepo.findOne({
+      where: { id: request.billingAccountId },
+      select: ['id', 'companyId'],
+    });
+    assertSameCompany(manager, account?.companyId ?? null);
   }
 
   private async cancel(request: TopUpRequest): Promise<TopUpRequest> {

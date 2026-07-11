@@ -5,7 +5,9 @@ import { formatUser } from '../format-user';
 import { type BotContext, tErrorCode } from '../i18n';
 import { ConversationStateService } from '../state/conversation-state.service';
 
-const MAX_FILE_SIZE = 40 * 1024 * 1024;
+// Telegram Bot API отдаёт ботам скачивание файла (getFile) только до 20 МБ — больший файл
+// прошёл бы проверку, но упал на getFile с невнятной ошибкой. Файлы крупнее — через кабинет.
+const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
 @Injectable()
 export class FileUploadHandler {
