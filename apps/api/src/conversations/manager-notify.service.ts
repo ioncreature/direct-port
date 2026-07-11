@@ -106,30 +106,26 @@ export class ManagerNotifyService {
     return { delivered: true };
   }
 
+  /**
+   * Проверка «есть кому доставить» ДО побочных эффектов вызывающего: intake сначала
+   * убеждается, что событие клиента доставимо, и только потом создаёт документ / пишет
+   * сообщение в переписку. Иначе 503 «нет менеджеров» от enqueue ПОСЛЕ createFromFile
+   * означал бы «попробуйте позже» на уже созданный документ — каждый повтор клиента
+   * плодил бы дубликат INTAKE (и дубликаты ConversationMessage для текстов).
+   * Остаточный риск дубликатов остаётся: сбой queue.add уже после side effects
+   * (Redis-блип) даёт тот же повтор; полное решение — идемпотентность intake по
+   * fileId / telegramMessageId — сознательно отложено.
+   */
+  async assertDeliverable(client: ConversationClient): Promise<void> {
+    await this.resolveManagersOrThrow(client, 'deliverability precheck');
+  }
+
   private async enqueue(
     event: ManagerEventType,
     client: ConversationClient,
     extra: Partial<ManagerNotification>,
   ): Promise<void> {
-    const managerTelegramIds = await this.resolveManagers(
-      client.assignedManagerId,
-      client.companyId,
-    );
-    if (managerTelegramIds.length === 0) {
-      // Некому доставить событие клиента (в компании ещё нет ни одного привязанного
-      // менеджера). Раньше метод тихо выходил — intake отвечал клиенту «✅ принято»,
-      // хотя файл/сообщение никто не увидит (клиент не попадает в /clients до claim,
-      // а claim инициируется этим же broadcast). Бросаем — intake отдаёт 5xx, client-bot
-      // честно просит повторить позже. Pipeline-уведомления (notifyDocumentEvent) и
-      // топап-пинг обёрнуты вызывающими в try/catch — для них это лишь warn-лог.
-      this.logger.warn(
-        `No linked managers to notify (event=${event}, client=${client.id})`,
-      );
-      throw new ServiceUnavailableException({
-        code: ErrorCode.NO_MANAGERS_AVAILABLE,
-        message: 'No linked managers available to receive the message',
-      });
-    }
+    const managerTelegramIds = await this.resolveManagersOrThrow(client, event);
     const payload: ManagerNotification = {
       event,
       companyId: client.companyId,
@@ -144,6 +140,31 @@ export class ManagerNotifyService {
     // клиенту об ошибке (вместо «принято» при потерянном уведомлении). Вызовы из
     // pipeline-воркеров изолированы на их стороне (notify — best-effort).
     await this.queue.add('manager-notify', payload, DELIVERY_JOB_OPTS);
+  }
+
+  /**
+   * Адресаты события клиента или 503, если в компании нет ни одного привязанного менеджера.
+   * Раньше уведомление тихо дропалось — intake отвечал клиенту «✅ принято», хотя
+   * файл/сообщение никто не увидит (клиент не попадает в /clients до claim, а claim
+   * инициируется этим же broadcast). Pipeline-уведомления (notifyDocumentEvent) и
+   * топап-пинг обёрнуты вызывающими в try/catch — для них это лишь warn-лог.
+   */
+  private async resolveManagersOrThrow(
+    client: ConversationClient,
+    event: string,
+  ): Promise<string[]> {
+    const managerTelegramIds = await this.resolveManagers(
+      client.assignedManagerId,
+      client.companyId,
+    );
+    if (managerTelegramIds.length === 0) {
+      this.logger.warn(`No linked managers to notify (event=${event}, client=${client.id})`);
+      throw new ServiceUnavailableException({
+        code: ErrorCode.NO_MANAGERS_AVAILABLE,
+        message: 'No linked managers available to receive the message',
+      });
+    }
+    return managerTelegramIds;
   }
 
   /**

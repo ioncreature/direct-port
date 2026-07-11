@@ -47,6 +47,8 @@ export class IntakeController {
     // Валидация клиента ДО создания документа: раньше несуществующий telegramUserId
     // оставлял осиротевший INTAKE-документ (создан, но 404 на резолве клиента).
     const client = await this.conversations.resolveClientOrThrow(dto.telegramUserId);
+    // Доставимость — тоже ДО создания документа (почему — см. assertDeliverable).
+    await this.managerNotify.assertDeliverable(client);
     const doc = await this.documents.createFromFile(
       file.buffer,
       file.originalname,
@@ -78,6 +80,8 @@ export class IntakeController {
   @Internal()
   async intakeMessage(@Body() dto: IntakeMessageDto) {
     const client = await this.conversations.resolveClientOrThrow(dto.telegramUserId);
+    // Доставимость — до записи в переписку (почему — см. assertDeliverable).
+    await this.managerNotify.assertDeliverable(client);
     await this.conversations.appendClientMessage({
       clientId: client.id,
       companyId: client.companyId,

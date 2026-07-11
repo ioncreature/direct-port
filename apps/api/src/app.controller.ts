@@ -4,6 +4,7 @@ import {
   HttpException,
   HttpStatus,
   Inject,
+  Logger,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type Redis from 'ioredis';
@@ -13,6 +14,8 @@ import { REDIS_CLIENT } from './redis/redis.module';
 
 @Controller()
 export class AppController {
+  private logger = new Logger(AppController.name);
+
   constructor(
     @InjectDataSource() private dataSource: DataSource,
     @Inject(REDIS_CLIENT) private redis: Redis,
@@ -30,9 +33,15 @@ export class AppController {
   }
 
   /**
-   * Readiness: под готов принимать трафик только при живых Postgres и Redis. При недоступности
-   * зависимости k8s выводит под из endpoints (шеддинг нагрузки), НЕ убивая его. Раньше проба
-   * висела на статической заглушке — под с мёртвой БД/Redis оставался Ready и отдавал 500.
+   * Readiness: под готов принимать трафик только при живом Postgres. При недоступности БД
+   * k8s выводит под из endpoints (шеддинг нагрузки), НЕ убивая его. Раньше проба висела на
+   * статической заглушке — под с мёртвой БД оставался Ready и отдавал 500.
+   *
+   * Redis проверяется, но readiness НЕ гейтит: весь остальной код относится к нему fail-open
+   * (rate-limit пропускает, кэши и bot-links восстанавливаются), а вывод из endpoints ВСЕХ
+   * реплик разом (Redis один на всех) превращал бы минутный блип в полный отказ API — включая
+   * логин и работу с документами, которым Redis не нужен. Недоступность видна в payload пробы
+   * (status=degraded) и warn-логе для алертинга; реально деградируют только очереди BullMQ.
    */
   @Public()
   @Get('health/ready')
@@ -41,13 +50,16 @@ export class AppController {
       this.check(() => this.dataSource.query('SELECT 1')),
       this.check(() => this.redis.ping()),
     ]);
-    if (!db || !redis) {
+    if (!db) {
       throw new HttpException(
         { status: 'unavailable', db, redis },
         HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
-    return { status: 'ok', db, redis };
+    if (!redis) {
+      this.logger.warn('Readiness: Redis unavailable — serving degraded (queues affected)');
+    }
+    return { status: redis ? 'ok' : 'degraded', db, redis };
   }
 
   private async check(probe: () => Promise<unknown>): Promise<boolean> {

@@ -142,6 +142,25 @@ describe('ManagerNotifyService.notifyDocumentEvent', () => {
   });
 });
 
+describe('ManagerNotifyService.assertDeliverable', () => {
+  // Precheck читает только маршрутные поля (без formatClientName/enqueue).
+  const client = { id: 'cli-1', assignedManagerId: null, companyId: 'co-1' } as never;
+
+  it('молчит, когда есть привязанные менеджеры', async () => {
+    const { service, queue } = createService({ allManagers: [{ managerTelegramId: '111' }] });
+    await expect(service.assertDeliverable(client)).resolves.toBeUndefined();
+    // Только проверка адресатов — ничего не ставит в очередь.
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('бросает 503 без единого менеджера — intake вызывает ДО создания документа', async () => {
+    const { service } = createService({ allManagers: [] });
+    await expect(service.assertDeliverable(client)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+  });
+});
+
 describe('ManagerNotifyService.notifyLeadsReport', () => {
   it('broadcasts the report text to all linked managers', async () => {
     const { service, queue } = createService({

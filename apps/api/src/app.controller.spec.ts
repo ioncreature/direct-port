@@ -31,8 +31,12 @@ describe('AppController', () => {
     await expect(controller.readiness()).rejects.toBeInstanceOf(HttpException);
   });
 
-  it('readiness → 503 при недоступном Redis', async () => {
+  it('readiness → degraded-ok при недоступном Redis (не гейтит)', async () => {
     const { controller } = make(true, false);
-    await expect(controller.readiness()).rejects.toBeInstanceOf(HttpException);
+    await expect(controller.readiness()).resolves.toEqual({
+      status: 'degraded',
+      db: true,
+      redis: false,
+    });
   });
 });
