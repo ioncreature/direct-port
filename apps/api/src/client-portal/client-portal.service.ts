@@ -1,11 +1,4 @@
-import {
-  HttpException,
-  HttpStatus,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type Redis from 'ioredis';
 import { Repository } from 'typeorm';
@@ -15,7 +8,7 @@ import {
 } from '../balance/client-balance.service';
 import { readNonNegIntEnv } from '../common/env';
 import { ErrorCode } from '../common/error-codes';
-import { fixedWindowHit } from '../common/rate-limit';
+import { assertFixedWindowLimit } from '../common/rate-limit';
 import { REDIS_CLIENT } from '../redis/redis.module';
 import { paginate, PaginatedResponse } from '../common/interfaces/paginated';
 import { buildOutputFileName, getDocumentClientName } from '../common/output-filename';
@@ -93,25 +86,13 @@ export class ClientPortalService {
    */
   private async assertUploadRateLimit(accountId: string): Promise<void> {
     const limit = uploadHourlyLimit();
-    if (limit === 0) return;
-    const count = await fixedWindowHit(
-      this.redis,
-      `${UPLOAD_RATE_KEY_PREFIX}${accountId}`,
-      UPLOAD_RATE_WINDOW_SECONDS,
-    );
-    if (count === null) {
-      this.logger.warn('Upload rate-limit check skipped (Redis unavailable)');
-      return;
-    }
-    if (count > limit) {
-      throw new HttpException(
-        {
-          code: ErrorCode.UPLOAD_RATE_LIMITED,
-          message: `Upload limit reached (${limit} files per hour). Try again later.`,
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
+    await assertFixedWindowLimit(this.redis, this.logger, {
+      key: `${UPLOAD_RATE_KEY_PREFIX}${accountId}`,
+      windowSeconds: UPLOAD_RATE_WINDOW_SECONDS,
+      limit,
+      errorCode: ErrorCode.UPLOAD_RATE_LIMITED,
+      message: `Upload limit reached (${limit} files per hour). Try again later.`,
+    });
   }
 
   /** Upsert клиента по паре (companyId, telegramId) → identity для JWT (заводит BillingAccount, если новый). */

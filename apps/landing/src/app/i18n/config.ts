@@ -23,11 +23,20 @@ export function localePath(locale: Locale): string {
   return locale === defaultLocale ? '/' : `/${locale}`;
 }
 
-/** hreflang-alternates для metadata.alternates.languages. */
-export function hreflangAlternates(): Record<string, string> {
-  const languages: Record<string, string> = { 'x-default': localePath(defaultLocale) };
+/**
+ * Путь до внутренней страницы с учётом локали: ('ru','calculator') → `/calculator`,
+ * ('en','calculator') → `/en/calculator`. Без subPath — корень локали.
+ */
+export function pagePath(locale: Locale, subPath?: string): string {
+  if (!subPath) return localePath(locale);
+  return locale === defaultLocale ? `/${subPath}` : `/${locale}/${subPath}`;
+}
+
+/** hreflang-alternates для metadata.alternates.languages (для страницы subPath, если задан). */
+export function hreflangAlternates(subPath?: string): Record<string, string> {
+  const languages: Record<string, string> = { 'x-default': pagePath(defaultLocale, subPath) };
   for (const locale of locales) {
-    languages[localeMeta[locale].htmlLang] = localePath(locale);
+    languages[localeMeta[locale].htmlLang] = pagePath(locale, subPath);
   }
   return languages;
 }

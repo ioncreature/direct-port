@@ -164,7 +164,12 @@ export class TnVedService {
     @Optional() @Inject(Anthropic) private anthropic: Anthropic | null,
   ) {}
 
-  async searchTks(query: string): Promise<TnVedSearchResponse> {
+  /**
+   * maxEnrich — обогащать ставками только первые N результатов текстового поиска
+   * (каждое обогащение — getTnvedCode). Для потребителей, которым нужен топ-код,
+   * а не вся выдача; остальные коды доступны в rawTks.search без ставок.
+   */
+  async searchTks(query: string, maxEnrich?: number): Promise<TnVedSearchResponse> {
     const trimmed = query.trim();
     if (!trimmed) {
       return { mode: 'text_search', query: '', results: [], totalFound: 0 };
@@ -177,11 +182,11 @@ export class TnVedService {
         this.logger.warn(
           `Code lookup failed for "${trimmed}", falling back to text search: ${errMsg(err)}`,
         );
-        return this.searchByText(trimmed);
+        return this.searchByText(trimmed, maxEnrich);
       }
     }
 
-    return this.searchByText(trimmed);
+    return this.searchByText(trimmed, maxEnrich);
   }
 
   /**
@@ -229,7 +234,7 @@ export class TnVedService {
     return cleaned.padEnd(10, '0');
   }
 
-  private async searchByText(query: string): Promise<TnVedSearchResponse> {
+  private async searchByText(query: string, maxEnrich?: number): Promise<TnVedSearchResponse> {
     const translatedQuery = await this.translateToRussian(query);
     const searchResult = await this.tksApi.searchGoodsGrouped(translatedQuery);
 
@@ -247,7 +252,9 @@ export class TnVedService {
       };
     }
 
-    const results = await this.enrichWithRates(searchResult.data, rawCodes);
+    const toEnrich =
+      maxEnrich != null ? searchResult.data.slice(0, maxEnrich) : searchResult.data;
+    const results = await this.enrichWithRates(toEnrich, rawCodes);
 
     return {
       mode: 'text_search',

@@ -21,6 +21,7 @@ export const en: Dictionary = {
     how: 'How it works',
     deliver: 'What you get',
     pricing: 'Pricing',
+    calc: 'Calculator',
   },
 
   header: {
@@ -36,7 +37,6 @@ export const en: Dictionary = {
     lede: 'A broker handles one line item in an hour or two, but a container with dozens of different goods drags on for weeks. We calculate duties, VAT, excise, and logistics across your entire price list in 10 minutes — whether it’s 10 line items or 500. Take on the consolidated cargo others won’t touch, and give your client an exact quote the same day.',
     ctaTelegram: 'Send your price list on Telegram',
     ctaNote: 'Your first 50 line items are free',
-    ctaAltPrefix: 'or',
     trust: [
       '10 minutes for the whole price list',
       '$1 per line item',
@@ -56,6 +56,67 @@ export const en: Dictionary = {
       totalLabel: 'total',
       totalDesc: '4 line items · 10 min',
       totalSum: '866,850 ₽',
+    },
+  },
+
+  miniCalc: {
+    label: 'Mini calculator',
+    page: {
+      metaTitle: 'Online customs duty calculator: TN VED code, duty, VAT — DirectPort',
+      metaDescription:
+        'Free customs payments estimate for one product: TN VED code from the FCS tariff database, duty, VAT and excise in rubles at the CBR exchange rate. Online, no sign-up.',
+      heading: 'Customs payments calculator',
+      intro:
+        'Enter a product and its value — get the TN VED code, rates and an estimate of customs payments in rubles. Free, no sign-up.',
+      points: [
+        'Codes and rates come from the official FCS tariff database',
+        'Conversion at the current CBR exchange rate',
+        'Combined rates: both percentage and euros per kilogram or pair',
+      ],
+    },
+    teaser: {
+      heading: 'Estimate duties for one product right now',
+      text: 'A free mini calculator: enter a product and its value — get the TN VED code, rates and an estimate of customs payments in rubles at the CBR exchange rate.',
+      cta: 'Open the calculator',
+      note: 'Free, no sign-up',
+    },
+    form: {
+      queryLabel: 'Product or TN VED code',
+      queryPlaceholder: 'e.g.: running shoes — or 6403 99',
+      priceLabel: 'Shipment value',
+      weightLabel: 'Net weight, kg',
+      quantityLabel: 'Quantity, pcs',
+      optionalHint: 'weight and quantity are needed for per-kg and per-unit/per-pair rates',
+      submit: 'Calculate',
+      calculating: 'Calculating…',
+    },
+    result: {
+      codeLabel: 'TN VED code',
+      searchedAs: 'searched as',
+      goodsLabel: 'Goods value',
+      dutyLabel: 'Duty',
+      exciseLabel: 'Excise',
+      vatLabel: 'VAT',
+      paymentsLabel: 'Customs payments',
+      totalLabel: 'Total incl. goods',
+      exchangeRateLabel: 'CBR exchange rate',
+      estimateBadge: 'preliminary estimate',
+      alternativesLabel: 'Not your product? Try the neighbouring codes:',
+    },
+    errors: {
+      byCode: {
+        CALC_NOTHING_FOUND: 'Nothing found — refine the product description or enter a TN VED code.',
+        CALC_RATE_LIMITED:
+          'Request limit reached for today. Unlimited calculation is available in Telegram.',
+      },
+      generic: 'Calculation failed — please try again a bit later.',
+    },
+    disclaimer:
+      'Preliminary estimate based on the FCS tariff database and CBR exchange rate — country of origin, freight and special rates are not applied. Not an offer.',
+    cta: {
+      text: 'A whole container is calculated the same way — up to 500 line items in 10 minutes.',
+      highlight: 'First 50 line items are free.',
+      button: 'Calculate the full price list in Telegram',
     },
   },
 

@@ -10,6 +10,7 @@ import {
 import { createHash } from 'crypto';
 import type { Request } from 'express';
 import type Redis from 'ioredis';
+import { clientIp } from '../../common/client-ip';
 import { readNonNegIntEnv } from '../../common/env';
 import { ErrorCode } from '../../common/error-codes';
 import { fixedWindowHit } from '../../common/rate-limit';
@@ -67,24 +68,6 @@ export class AuthThrottleGuard implements CanActivate {
     }
     return true;
   }
-}
-
-/**
- * IP клиента из доверенных источников. cf-connecting-ip ставит Cloudflare — первый хоп
- * цепочки (Cloudflare → Caddy → nginx → ingress → admin-web → api); для трафика через CF
- * подделать его нельзя. X-Forwarded-For намеренно НЕ читаем: хопы только аппендят справа,
- * поэтому первый элемент — это заголовок из запроса самого клиента; ротацией фейковых IP
- * в нём атакующий обнулял бы лимит, а подстановкой IP жертвы — выбивал бы её в 429.
- * Остаточные риски принимаем осознанно: при прямом доступе к origin (мимо CF)
- * cf-connecting-ip — клиентский заголовок, а без Cloudflare (dev/локалка) req.ip — это
- * прямой пир, т.е. общий бакет на всех за прокси. Оба случая безопасны по направлению
- * отказа для легитимных пользователей и компенсируются идентификаторным измерением
- * (credentialId), которое от IP не зависит вовсе.
- */
-function clientIp(req: Request): string {
-  const cf = req.headers['cf-connecting-ip'];
-  const value = Array.isArray(cf) ? cf[0] : cf;
-  return value?.trim() || req.ip || 'unknown';
 }
 
 /**

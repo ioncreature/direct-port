@@ -22,6 +22,7 @@ import { DocumentsModule } from './documents/documents.module';
 import { LeadsModule } from './leads/leads.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { PipelineAuditModule } from './pipeline-audit/pipeline-audit.module';
+import { PublicCalculatorModule } from './public-calculator/public-calculator.module';
 import { TelegramUsersModule } from './telegram-users/telegram-users.module';
 import { TnVedModule } from './tn-ved/tn-ved.module';
 import { TopUpModule } from './top-up/top-up.module';
@@ -67,6 +68,7 @@ import { UsersModule } from './users/users.module';
     LeadsModule,
     TopUpModule,
     ClientPortalModule,
+    PublicCalculatorModule,
     MetricsModule,
   ],
   controllers: [AppController],

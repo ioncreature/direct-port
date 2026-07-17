@@ -18,6 +18,7 @@ const CACHE_TTL = 3600_000; // 1 hour
 export class CurrencyService {
   private logger = new Logger(CurrencyService.name);
   private cache: { rates: Map<string, number>; date: string; fetchedAt: number } | null = null;
+  private inFlight: Promise<Map<string, number>> | null = null;
 
   /** Returns exchange rate: 1 unit of `from` currency = X RUB */
   async getRate(from: string): Promise<number> {
@@ -95,8 +96,13 @@ export class CurrencyService {
     // fetch бросают исключение до проверки response.ok, повреждённый JSON — на парсинге.
     // Курсы ЦБ меняются раз в день, так что протухший на часы кэш лучше, чем уронить
     // документ после уже оплаченных AI-этапов.
+    // Single-flight: buildCurrencyToDocRates конкурентно зовёт getRate для ~10 валют —
+    // без дедупликации холодный кэш давал бы залп одинаковых HTTP-запросов к ЦБ.
     try {
-      return await this.fetchRates();
+      this.inFlight ??= this.fetchRates().finally(() => {
+        this.inFlight = null;
+      });
+      return await this.inFlight;
     } catch (err) {
       if (this.cache) {
         this.logger.warn(

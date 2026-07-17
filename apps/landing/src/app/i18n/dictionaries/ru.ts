@@ -23,6 +23,7 @@ export const ru = {
     how: 'Как работает',
     deliver: 'Что получаете',
     pricing: 'Цена',
+    calc: 'Калькулятор',
   },
 
   header: {
@@ -38,7 +39,6 @@ export const ru = {
     lede: 'Оформление одной позиции у брокера — час-полтора, а контейнер на десятки видов товара растягивается на недели. Мы считаем пошлины, НДС, акцизы и логистику по всему прайсу за 10 минут — хоть 10 позиций, хоть 500. Берите сборные грузы, за которые другие не берутся, и отвечайте клиенту точной сметой в тот же день.',
     ctaTelegram: 'Прислать прайс в Telegram',
     ctaNote: 'Первые 50 позиций — бесплатно',
-    ctaAltPrefix: 'или',
     trust: [
       '10 минут на весь прайс',
       '$1 за позицию',
@@ -58,6 +58,68 @@ export const ru = {
       totalLabel: 'итого',
       totalDesc: '4 позиции · 10 мин',
       totalSum: '866 850 ₽',
+    },
+  },
+
+  miniCalc: {
+    label: 'Мини-калькулятор',
+    page: {
+      metaTitle: 'Калькулятор таможенных платежей онлайн: код ТН ВЭД, пошлина, НДС — DirectPort',
+      metaDescription:
+        'Бесплатный расчёт таможенных платежей по одному товару: код ТН ВЭД по справочнику ФТС, пошлина, НДС и акциз в рублях по курсу ЦБ РФ. Онлайн, без регистрации.',
+      heading: 'Калькулятор таможенных платежей',
+      intro:
+        'Введите товар и стоимость — получите код ТН ВЭД, ставки и оценку таможенных платежей в рублях. Бесплатно и без регистрации.',
+      points: [
+        'Коды и ставки — из официального справочника ФТС',
+        'Конвертация по актуальному курсу ЦБ РФ',
+        'Комбинированные ставки: и процент, и евро за килограмм или пару',
+      ],
+    },
+    teaser: {
+      heading: 'Прикиньте платежи по одному товару прямо сейчас',
+      text: 'Бесплатный мини-калькулятор: введите товар и стоимость — получите код ТН ВЭД, ставки и оценку таможенных платежей в рублях по курсу ЦБ РФ.',
+      cta: 'Открыть калькулятор',
+      note: 'Бесплатно и без регистрации',
+    },
+    form: {
+      queryLabel: 'Товар или код ТН ВЭД',
+      queryPlaceholder: 'например: кроссовки беговые — или 6403 99',
+      priceLabel: 'Стоимость партии',
+      weightLabel: 'Вес нетто, кг',
+      quantityLabel: 'Количество, шт',
+      optionalHint: 'вес и количество нужны для ставок за килограмм и за штуку/пару',
+      submit: 'Рассчитать',
+      calculating: 'Считаем…',
+    },
+    result: {
+      codeLabel: 'Код ТН ВЭД',
+      searchedAs: 'искали как',
+      goodsLabel: 'Стоимость товара',
+      dutyLabel: 'Пошлина',
+      exciseLabel: 'Акциз',
+      vatLabel: 'НДС',
+      paymentsLabel: 'Таможенные платежи',
+      totalLabel: 'Итого с товаром',
+      exchangeRateLabel: 'Курс ЦБ РФ',
+      estimateBadge: 'предварительная оценка',
+      alternativesLabel: 'Не тот товар? Посмотрите соседние коды:',
+    },
+    errors: {
+      // Ключи byCode — коды ошибок API (common/error-codes.ts).
+      byCode: {
+        CALC_NOTHING_FOUND: 'Ничего не найдено — уточните описание товара или введите код ТН ВЭД.',
+        CALC_RATE_LIMITED:
+          'Лимит запросов на сегодня исчерпан. Полный расчёт без ограничений — в Telegram.',
+      },
+      generic: 'Не получилось посчитать — попробуйте ещё раз чуть позже.',
+    },
+    disclaimer:
+      'Предварительная оценка по справочнику ФТС и курсу ЦБ РФ — без учёта страны происхождения, фрахта и особых ставок. Не является офертой.',
+    cta: {
+      text: 'Весь контейнер считается так же — до 500 позиций за 10 минут.',
+      highlight: 'Первые 50 позиций — бесплатно.',
+      button: 'Посчитать весь прайс в Telegram',
     },
   },
 
@@ -330,6 +392,7 @@ export type Dictionary = {
     how: string;
     deliver: string;
     pricing: string;
+    calc: string;
   };
   header: { emailLabel: string; telegramLabel: string; phoneLabel: string };
   hero: {
@@ -339,7 +402,6 @@ export type Dictionary = {
     lede: string;
     ctaTelegram: string;
     ctaNote: string;
-    ctaAltPrefix: string;
     trust: readonly string[];
     terminal: {
       fileName: string;
@@ -349,6 +411,56 @@ export type Dictionary = {
       totalLabel: string;
       totalDesc: string;
       totalSum: string;
+    };
+  };
+  miniCalc: {
+    label: string;
+    page: {
+      metaTitle: string;
+      metaDescription: string;
+      heading: string;
+      intro: string;
+      points: readonly string[];
+    };
+    teaser: {
+      heading: string;
+      text: string;
+      cta: string;
+      note: string;
+    };
+    form: {
+      queryLabel: string;
+      queryPlaceholder: string;
+      priceLabel: string;
+      weightLabel: string;
+      quantityLabel: string;
+      optionalHint: string;
+      submit: string;
+      calculating: string;
+    };
+    result: {
+      codeLabel: string;
+      searchedAs: string;
+      goodsLabel: string;
+      dutyLabel: string;
+      exciseLabel: string;
+      vatLabel: string;
+      paymentsLabel: string;
+      totalLabel: string;
+      exchangeRateLabel: string;
+      estimateBadge: string;
+      alternativesLabel: string;
+    };
+    errors: {
+      /** Тексты по кодам ошибок API; отсутствующий код → generic. */
+      byCode: Readonly<Record<string, string>>;
+      generic: string;
+    };
+    disclaimer: string;
+    cta: {
+      text: string;
+      highlight: string;
+      button: string;
     };
   };
   pain: {

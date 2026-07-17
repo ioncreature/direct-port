@@ -21,6 +21,7 @@ export const zh: Dictionary = {
     how: '如何运作',
     deliver: '交付成果',
     pricing: '价格',
+    calc: '计算器',
   },
 
   header: {
@@ -36,7 +37,6 @@ export const zh: Dictionary = {
     lede: '在报关行手工处理一条货物要一个多小时，而一个装了几十种商品的集装箱往往要拖上好几周。我们能在 10 分钟内算完整份报价单的关税、增值税、消费税和物流费用——哪怕 10 条，哪怕 500 条。接下别人不敢接的拼箱货，当天就用一份精准报价回复客户。',
     ctaTelegram: '在 Telegram 发送报价单',
     ctaNote: '前 50 条免费',
-    ctaAltPrefix: '或',
     trust: [
       '10 分钟算完整份报价单',
       '每条 $1',
@@ -56,6 +56,65 @@ export const zh: Dictionary = {
       totalLabel: '合计',
       totalDesc: '4 条 · 10 分钟',
       totalSum: '866,850 ₽',
+    },
+  },
+
+  miniCalc: {
+    label: '迷你计算器',
+    page: {
+      metaTitle: '在线关税计算器：TN VED 编码、关税、增值税 — DirectPort',
+      metaDescription:
+        '免费估算单个商品的海关税费：来自俄联邦海关署税则库的 TN VED 编码，按俄央行汇率以卢布计的关税、增值税和消费税。在线使用，无需注册。',
+      heading: '海关税费计算器',
+      intro: '输入商品和货值，即可获得 TN VED 编码、税率以及以卢布计的关税估算。免费，无需注册。',
+      points: [
+        '编码和税率来自俄联邦海关署官方税则库',
+        '按俄央行最新汇率换算',
+        '支持复合税率：百分比与每公斤/每双欧元并存',
+      ],
+    },
+    teaser: {
+      heading: '立即估算单个商品的关税',
+      text: '免费迷你计算器：输入商品和货值，即可获得 TN VED 编码、税率以及按俄央行汇率以卢布计的关税估算。',
+      cta: '打开计算器',
+      note: '免费，无需注册',
+    },
+    form: {
+      queryLabel: '商品或 TN VED 编码',
+      queryPlaceholder: '例如：跑步鞋 — 或 6403 99',
+      priceLabel: '货值',
+      weightLabel: '净重（公斤）',
+      quantityLabel: '数量（件）',
+      optionalHint: '按公斤、按件/双计征的税率需要填写重量和数量',
+      submit: '计算',
+      calculating: '计算中…',
+    },
+    result: {
+      codeLabel: 'TN VED 编码',
+      searchedAs: '检索词',
+      goodsLabel: '货值',
+      dutyLabel: '关税',
+      exciseLabel: '消费税',
+      vatLabel: '增值税',
+      paymentsLabel: '海关税费合计',
+      totalLabel: '含货值总计',
+      exchangeRateLabel: '俄央行汇率',
+      estimateBadge: '初步估算',
+      alternativesLabel: '不是您的商品？看看相邻编码：',
+    },
+    errors: {
+      byCode: {
+        CALC_NOTHING_FOUND: '未找到结果 — 请细化商品描述或输入 TN VED 编码。',
+        CALC_RATE_LIMITED: '今日请求次数已用完。前往 Telegram 可不限次数完整计算。',
+      },
+      generic: '计算失败 — 请稍后再试。',
+    },
+    disclaimer:
+      '基于俄联邦海关署税则库和俄央行汇率的初步估算 — 未考虑原产国、运费及特殊税率。不构成要约。',
+    cta: {
+      text: '整柜同样可算 — 500 个品项以内 10 分钟出结果。',
+      highlight: '前 50 个品项免费。',
+      button: '在 Telegram 计算整份价格表',
     },
   },
 
