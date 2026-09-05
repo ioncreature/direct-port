@@ -35,7 +35,7 @@ class AiConfig {
 Маппинг tier → конкретный model ID — в `apps/api/src/ai-config/ai-config.service.ts`:
 
 ```typescript
-opus   → claude-opus-4-8
+opus   → claude-opus-5
 sonnet → claude-sonnet-5
 haiku  → claude-haiku-4-5-20251001
 ```

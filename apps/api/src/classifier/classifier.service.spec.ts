@@ -937,8 +937,8 @@ describe('ClassifierService', () => {
         },
       };
       const aiConfig = {
-        getClassifierModel: jest.fn().mockResolvedValue('claude-opus-4-8'),
-        getQueryFormulationModel: jest.fn().mockResolvedValue('claude-opus-4-8'),
+        getClassifierModel: jest.fn().mockResolvedValue('claude-opus-5'),
+        getQueryFormulationModel: jest.fn().mockResolvedValue('claude-opus-5'),
       };
       const audit = {
         trackAiCall: jest.fn().mockImplementation(async (_p: any, fn: any) => fn()),
@@ -1018,8 +1018,8 @@ describe('ClassifierService', () => {
         },
       };
       const aiConfig = {
-        getClassifierModel: jest.fn().mockResolvedValue('claude-opus-4-8'),
-        getQueryFormulationModel: jest.fn().mockResolvedValue('claude-opus-4-8'),
+        getClassifierModel: jest.fn().mockResolvedValue('claude-opus-5'),
+        getQueryFormulationModel: jest.fn().mockResolvedValue('claude-opus-5'),
       };
       const audit = {
         trackAiCall: jest.fn().mockImplementation(async (_p: any, fn: any) => fn()),
@@ -1083,8 +1083,8 @@ describe('ClassifierService', () => {
         },
       };
       const aiConfig = {
-        getClassifierModel: jest.fn().mockResolvedValue('claude-opus-4-8'),
-        getQueryFormulationModel: jest.fn().mockResolvedValue('claude-opus-4-8'),
+        getClassifierModel: jest.fn().mockResolvedValue('claude-opus-5'),
+        getQueryFormulationModel: jest.fn().mockResolvedValue('claude-opus-5'),
       };
       const audit = {
         trackAiCall: jest.fn().mockImplementation(async (_p: any, fn: any) => fn()),

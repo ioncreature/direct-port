@@ -344,7 +344,7 @@ export class DutyInterpreterService {
     const langKey = language ?? 'ru';
     const interpreterModel = await this.aiConfig.getInterpreterModel();
     // model в кэше хранится как семейство (sonnet/opus/haiku) — см. миграцию
-    // NormalizeModelFamilies. Конкретный version ID (например `claude-opus-4-8`) не
+    // NormalizeModelFamilies. Конкретный version ID (например `claude-opus-5`) не
     // должен инвалидировать кэш при минорных апдейтах: интерпретация ставок ТН ВЭД
     // от точечной версии семейства практически не зависит.
     const cacheModelKey = modelFamily(interpreterModel);

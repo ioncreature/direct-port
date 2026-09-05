@@ -24,7 +24,7 @@ type TokenUsageMap = Record<string, {
 }>;
 ```
 
-Ключи внешнего объекта — стадия pipeline (`parse`, `classify`, `interpret`). Ключи внутреннего — семейство модели Claude (`haiku` / `sonnet` / `opus`), полученное через `modelFamily()`. Конкретный version ID (например `claude-opus-4-8`) для аналитики стоимости и UX-фильтра не нужен — версии меняются по нескольку раз в год, раздувают список и ломают сводку при апгрейде. Точная версия для вызова Anthropic SDK живёт в `AiConfigService.MODEL_IDS`.
+Ключи внешнего объекта — стадия pipeline (`parse`, `classify`, `interpret`). Ключи внутреннего — семейство модели Claude (`haiku` / `sonnet` / `opus`), полученное через `modelFamily()`. Конкретный version ID (например `claude-opus-5`) для аналитики стоимости и UX-фильтра не нужен — версии меняются по нескольку раз в год, раздувают список и ломают сводку при апгрейде. Точная версия для вызова Anthropic SDK живёт в `AiConfigService.MODEL_IDS`.
 
 Сюда пишутся вызовы, которые относятся к конкретному документу: AiParser, Classifier (основной проход + vision-retry — оба идут в стадию `classify`), DutyInterpreter. Запись делает воркер документа после успешного завершения этапа.
 
