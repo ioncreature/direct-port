@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-// Русский обслуживается на корне без префикса (`/`, `/calculator`). Внутренний
+// Русский обслуживается на корне без префикса (`/`, `/calculator`, `/compare`). Внутренний
 // rewrite на `/ru...` — адрес в браузере не меняется (никакого редиректа). Пути
 // `/en...` и `/zh...` проходят как есть (middleware на них не срабатывает — см.
 // matcher: только корень и внутренние страницы без локального префикса).
@@ -11,5 +11,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/', '/calculator'],
+  matcher: ['/', '/calculator', '/compare'],
 };

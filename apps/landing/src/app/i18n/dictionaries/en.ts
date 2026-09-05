@@ -22,6 +22,7 @@ export const en: Dictionary = {
     deliver: 'What you get',
     pricing: 'Pricing',
     calc: 'Calculator',
+    compare: 'Comparison',
   },
 
   header: {
@@ -143,6 +144,31 @@ export const en: Dictionary = {
       'DirectPort lifts that ceiling: the number of line items no longer runs into person-hours — the whole price list is calculated in 10 minutes, whether it holds 10 rows or 500.',
   },
 
+  audience: {
+    label: 'Who this is for',
+    heading: 'When the range is wide and the deadline was yesterday',
+    intro:
+      'The task is the same for everyone: find out what importing the whole range will cost, without collecting codes one by one. Only the reason you need the numbers changes.',
+    items: [
+      {
+        title: 'Marketplace sellers',
+        text: 'Moving from grey shipping to fully declared imports: marketplaces ask for a customs declaration, and you cannot file one without HS codes. Get codes, payments, and the document list for your entire catalogue at once — including national labelling requirements.',
+      },
+      {
+        title: 'Freight forwarders and door-to-door services',
+        text: 'Your client wants a quote today. Cost out their whole price list in 10 minutes and answer with numbers while competitors are still picking codes by hand. Take on the mixed consignments you used to turn down.',
+      },
+      {
+        title: 'Importers and foreign trade teams',
+        text: 'Landed cost before you ship: duties, VAT, excise, recycling fees, and regulatory requirements across the full range — before the money leaves for the supplier.',
+      },
+      {
+        title: 'Brokers and declarants',
+        text: 'The goods section arrives ready: a draft declaration with boxes 31–47 and an export file for Kontur.Declarant, Alta, and CTM. Not a replacement for your work — it removes the grind from multi-line shipments.',
+      },
+    ],
+  },
+
   how: {
     label: 'How it works',
     heading: 'From a Telegram message to a finished calculation',
@@ -199,6 +225,75 @@ export const en: Dictionary = {
       'Shipping the same goods again and again? Confirmed codes are saved to your catalog: repeat shipments reuse them automatically — faster, and with no drift between calculations.',
   },
 
+  report: {
+    label: 'Sample report',
+    heading: 'This is what you get — from a real shipment',
+    intro:
+      'Below are fragments of an actual calculation: a mixed consignment of bathroom fittings from China, 13 price-list rows, 5 declaration goods items. The figures are real, flagged uncertain lines included.',
+    sheets: [
+      {
+        tag: 'Sheet 1',
+        title: 'Results',
+        note: 'Every price-list row → code, rates, and total. Uncertain codes are flagged.',
+        columns: ['Product', 'Qty', 'HS code', 'Duty', 'Total, ₽', 'Status'],
+        rows: [
+          ['Shower rail holder, S-HT02A', '3,000', '3926909709', '6.5%', '596,168', 'ok'],
+          ['Shower rail soap dish, S12-', '300', '3924900009', '6.5%', '27,051', 'ok'],
+          ['Hygienic shower head, GD-500', '34,200', '3922900000', '6.5%', '1,127,154', 'ok'],
+          ['Flexible tap hose, GB', '3,360', '7326909807', '7.5%', '3,040,761', 'warn'],
+          ['Car headrest hanger, YJ-03', '480', '8302500000', '12%', '177,655', 'warn'],
+        ],
+      },
+      {
+        tag: 'Sheet 2',
+        title: 'Draft declaration',
+        note: 'Rows grouped into declaration goods items, in customs box terms.',
+        columns: [
+          '#',
+          'Code (box 33)',
+          'Net (box 38)',
+          'Customs value (box 45), ₽',
+          'Duty (box 47), ₽',
+          'VAT (box 47), ₽',
+          'Unit value, $/kg',
+        ],
+        rows: [
+          ['1', '3926909709', '180.24', '550,605', '35,789', '129,007', '39.03'],
+          ['2', '3924900009', '7.20', '20,819', '1,353', '4,878', '36.95'],
+          ['3', '3922900000', '700.96', '1,736,792', '112,891', '406,931', '31.66'],
+          ['4', '7326909807', '495.94', '2,980,976', '223,573', '705,000', '76.80'],
+          ['5', '8302500000', '42,679.98', '465,893', '55,908', '114,796', '0.14'],
+        ],
+      },
+      {
+        tag: 'Sheet 3',
+        title: 'Shipment documents',
+        note: 'What to collect and when — with box 44 document codes.',
+        columns: ['Document', 'Box 44', 'Status', 'When to obtain'],
+        rows: [
+          ['Foreign trade contract with specifications', '03011', 'Required', 'Before ordering'],
+          ['State registration certificate (SGR)', '01206/01411', 'Required', 'Before ordering'],
+          ['Declaration of conformity TR EAEU 043/2017', '01402', 'Required', 'Before shipping'],
+          ['National product labelling', '—', 'Required', 'Before shipping'],
+          ['Export declaration from country of departure', '—', 'Likely required', 'Before shipping'],
+          ['Recycling fee calculation', '10064', 'Check', 'At filing'],
+        ],
+      },
+    ],
+    statusLabels: { ok: 'Exact', warn: 'Check' },
+    totals: {
+      label: 'Shipment totals',
+      items: [
+        { name: 'Customs value', value: '5,755,086 ₽' },
+        { name: 'Customs processing fee', value: '49,240 ₽' },
+        { name: 'Customs value declaration', value: 'required' },
+      ],
+    },
+    footer:
+      'The full file has 24 columns on the results sheet, a 44-row document checklist with legal grounds for each item, and a separate goods export file for declaration software.',
+    cta: 'Cost out your price list',
+  },
+
   pricing: {
     label: 'Pricing',
     priceMain: '$1',
@@ -227,6 +322,28 @@ export const en: Dictionary = {
       'Export for declaration software: Kontur.Declarant, Alta, STM',
     ],
     footnote: '* Prices are in US dollars. Payment in rubles at the CBR exchange rate on the day of payment.',
+  },
+
+  compare: {
+    label: 'Comparison',
+    heading: 'How this differs from a calculator and from a broker',
+    intro:
+      'Existing tools each cover part of the job: a calculator computes payments for a code you already know; AI services suggest a code for one product; declaration software fills in the form. None of them takes the whole price list.',
+    columns: ['Mini calculators', 'AI code lookup', 'Declaration software', 'DirectPort'],
+    rows: [
+      { label: 'Line items at once', values: ['1', '1', 'entered by hand', 'up to 500 from a file'] },
+      { label: 'Finds the HS code', values: ['no', 'yes', 'no', 'yes, with verification'] },
+      {
+        label: 'Regulatory documents',
+        values: ['no', 'partly', 'reference only', 'checklist by stage'],
+      },
+      {
+        label: 'Draft declaration and software export',
+        values: ['no', 'no', 'you fill it in', 'included'],
+      },
+    ],
+    cta: 'Detailed comparison',
+    note: 'Based on public websites and price lists as of 5 September 2026.',
   },
 
   why: {
@@ -260,6 +377,33 @@ export const en: Dictionary = {
         text: 'EAEU technical regulations (TR CU/EAEU) certification, licenses, Chestny ZNAK labeling, the recycling fee, and country-specific bans — summarized for each line item.',
       },
     ],
+  },
+
+  limits: {
+    label: 'Scope and limits',
+    heading: 'Where we are enough, and where you need a declarant',
+    intro:
+      'HS classification is not always clear-cut, and it is fairer to say up front where the calculation settles the question and where the decision stays with a human.',
+    enough: {
+      title: 'We are enough',
+      items: [
+        'Estimating landed cost and deal margin before shipping',
+        'Getting codes and rates across the whole range at once, not product by product',
+        'Understanding which certificates and permits you need, and when to start them',
+        'Preparing the goods section for declaration software without retyping',
+      ],
+    },
+    human: {
+      title: 'You need a declarant or broker',
+      items: [
+        'Filing the declaration at customs — that is the customs representative’s job',
+        'Multi-function products, sets, and components where one detail changes the code',
+        'Obtaining a binding tariff ruling when the code is critical to the deal',
+        'The final call on a code before filing — that responsibility sits with the declarant',
+      ],
+    },
+    note:
+      'We do not hide uncertain lines: in the file they are flagged amber with the classification confidence and the reason for doubt, so you can see exactly which rows to re-check before filing.',
   },
 
   calc: {
@@ -365,6 +509,106 @@ export const en: Dictionary = {
         a: 'Yes. The calculation comes with a separate export of the goods section: Kontur.Declarant imports it directly via “Load goods from file,” and it also works with Alta and STM tools. Rows are already grouped into declaration goods.',
       },
     ],
+  },
+
+  comparePage: {
+    metaTitle: 'Comparison of customs calculation and HS code lookup services — DirectPort',
+    metaDescription:
+      'How DirectPort compares with online customs calculators, AI HS code lookup services, declarant software (Alta-GTD, Kontur.Declarant, CTM), and customs broker services: capabilities, time for 500 line items, and pricing.',
+    heading: 'Compared with other ways to cost out an import',
+    intro:
+      'We looked at four ways to get HS codes and customs payments for a shipment — what each does well, where it runs out, and what it costs. Data comes from public sources; where pricing is not published, we say so.',
+    tableCaption: 'Compared on one task: costing out payments across a full product range',
+    criterionLabel: 'Criterion',
+    columns: [
+      'Mini calculators',
+      'AI code lookup',
+      'Declaration software',
+      'Customs broker',
+      'DirectPort',
+    ],
+    rows: [
+      {
+        label: 'Line items at once',
+        values: ['1', '1', 'entered by hand', 'no limit', 'up to 500 from a file'],
+      },
+      {
+        label: 'Finds the HS code',
+        values: ['no, you enter it', 'yes', 'no, you enter it', 'yes, manually', 'yes, with verification'],
+      },
+      { label: 'Duty, VAT, excise', values: ['yes', 'yes', 'yes', 'yes', 'yes'] },
+      {
+        label: 'Freight and Incoterms in customs value',
+        values: ['no', 'no', 'manually', 'yes', 'yes'],
+      },
+      {
+        label: 'Regulatory documents',
+        values: ['no', 'partly', 'reference only', 'yes', 'checklist by stage with box 44 codes'],
+      },
+      {
+        label: 'Draft declaration',
+        values: ['no', 'no', 'you fill it in', 'yes', 'draft of boxes 31–47'],
+      },
+      { label: 'Export to declaration software', values: ['no', 'no', '—', '—', 'separate file'] },
+      {
+        label: 'Time for 500 line items',
+        values: ['not applicable', 'not applicable', 'days', 'days to weeks', 'about 10 minutes'],
+      },
+      {
+        label: 'Price',
+        values: [
+          'free, or from 3 ₽ per query',
+          '3 codes free, then on request',
+          '29,000 to 195,000 ₽ per year',
+          'from 100 ₽ per line item plus from 5,000 ₽ per declaration',
+          '$1 per line item, first 50 free',
+        ],
+      },
+    ],
+    sections: [
+      {
+        title: 'Customs payment mini calculators',
+        who: 'TKS, Taksa Online by Alta-Soft, and calculators on logistics company websites.',
+        good: 'A quick estimate of payments when the HS code is already known. Free or nearly free: Alta gives 10 free queries a month, then charges 3 ₽ per query.',
+        limit: 'You supply the code — the calculator neither finds nor checks it. One product at a time, with no regulatory requirements or shipment documents.',
+        us: 'We have that calculator too, and ours is free. The difference starts when there is more than one product and the code is not known in advance.',
+      },
+      {
+        title: 'AI HS code lookup services',
+        who: 'INSAL, WBCON, TerminalZM and similar — usually free services run by logistics companies.',
+        good: 'They return an indicative code from a product description in about a minute, often with reasoning and basic rates. A good way to sanity-check a single product.',
+        limit: 'One product at a time, entered through a form. The result is positioned as a preliminary reference; paid tariffs are usually not published, so you leave a request and wait for a sales call.',
+        us: 'We take the whole file: up to 500 line items in one run, with a draft declaration, a document checklist, and an export for declaration software. Our price is published and there is no one to wait for.',
+      },
+      {
+        title: 'Declarant software',
+        who: 'Alta-GTD, Kontur.Declarant, CTM VED-Declarant.',
+        good: 'The professional declarant’s core tool: filling and filing declarations, checks against customs databases, electronic declaration. Indispensable at the filing stage.',
+        limit: 'A human enters the HS code — there is no automatic classification. The goods section of a multi-line shipment is typed in by hand. A workstation costs from 29,000 ₽ per licence up to 195,000 ₽ a year.',
+        us: 'We do not compete with them, we prepare data for them: the goods section is exported as a separate file that Kontur.Declarant imports directly, and that Alta and CTM converters accept once a mapping is configured.',
+      },
+      {
+        title: 'Customs broker',
+        who: 'Customs representatives and brokerage companies.',
+        good: 'They take on liability and file the declaration. For complex and disputed cases this is the only right path.',
+        limit: 'Classification is manual: for typical price lists that is from 100 ₽ per line item, plus from 5,000 ₽ for the declaration and a surcharge for each additional goods item. A multi-line shipment stretches into days and weeks.',
+        us: 'We do not replace a broker and we do not file declarations. We remove the manual part: the calculation for the whole price list arrives ready, and the broker only checks the flagged lines and files.',
+      },
+    ],
+    disclaimerTitle: 'How to read this comparison',
+    disclaimer:
+      'The data comes from public sources — vendor websites and price lists — as of 5 September 2026; prices and capabilities may have changed since. The comparison covers one task: calculating customs payments and finding codes across a full shipment range. In their own domains — filing declarations, freight forwarding, representing you at customs — the tools and companies listed here remain the specialists, and we do not replace them.',
+    sourcesTitle: 'Sources',
+    sources: [
+      { name: 'Alta-Soft — price list for software and online services', url: 'https://www.alta.ru/price/' },
+      { name: 'Alta-Soft — Taksa Online', url: 'https://www.alta.ru/taksa-online/' },
+      { name: 'INSAL — AI HS code lookup', url: 'https://insal.ru/tn-ved/' },
+      { name: 'GTK Service — customs broker price list', url: 'https://www.gtk-s.ru/price.html' },
+      { name: 'Kontur.Declarant', url: 'https://kontur.ru/declarant' },
+    ],
+    ctaHeading: 'Check it on your own price list',
+    ctaText:
+      'The first 50 line items are free — comparing is easier on your own products than on someone else’s table.',
   },
 
   finalCta: {

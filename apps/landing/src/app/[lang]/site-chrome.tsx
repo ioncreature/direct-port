@@ -125,6 +125,7 @@ export function Footer({
         </div>
         <LangSwitch dict={dict} locale={locale} subPath={subPath} />
         <div className="footer-links">
+          <a href={pagePath(locale, 'compare')}>{dict.nav.compare}</a>
           <a href={CONTACT_PHONE_HREF}>{CONTACT_PHONE}</a>
           <a href={CONTACT_EMAIL_HREF}>{CONTACT_EMAIL}</a>
           <a href={TELEGRAM_BOT_URL} target="_blank" rel="noopener noreferrer">

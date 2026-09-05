@@ -1,14 +1,7 @@
 import type { Metadata } from 'next';
 import { TELEGRAM_BOT_URL } from '../../_brand';
 import { getDictionary, type Dictionary } from '../../i18n/dictionaries';
-import {
-  defaultLocale,
-  hreflangAlternates,
-  isLocale,
-  localeMeta,
-  pagePath,
-  type Locale,
-} from '../../i18n/config';
+import { defaultLocale, isLocale, pageMetadata, type Locale } from '../../i18n/config';
 import { MiniCalculator } from '../mini-calculator';
 import { Footer, Header, IconCheck } from '../site-chrome';
 
@@ -21,24 +14,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { lang } = await params;
   if (!isLocale(lang)) return {};
-  const dict = getDictionary(lang);
-  const page = dict.miniCalc.page;
-  const url = pagePath(lang, SUB_PATH);
-  return {
-    title: page.metaTitle,
-    description: page.metaDescription,
-    alternates: {
-      canonical: url,
-      languages: hreflangAlternates(SUB_PATH),
-    },
-    openGraph: {
-      title: page.metaTitle,
-      description: page.metaDescription,
-      type: 'website',
-      url,
-      locale: localeMeta[lang].ogLocale,
-    },
-  };
+  return pageMetadata(lang, SUB_PATH, getDictionary(lang).miniCalc.page);
 }
 
 export default async function CalculatorPage({

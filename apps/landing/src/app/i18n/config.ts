@@ -1,3 +1,5 @@
+import type { Metadata } from 'next';
+
 export const locales = ['ru', 'en', 'zh'] as const;
 
 export type Locale = (typeof locales)[number];
@@ -39,4 +41,32 @@ export function hreflangAlternates(subPath?: string): Record<string, string> {
     languages[localeMeta[locale].htmlLang] = pagePath(locale, subPath);
   }
   return languages;
+}
+
+/**
+ * SEO-обвязка внутренней страницы локали: canonical + hreflang + OpenGraph.
+ * Одна точка на все страницы — иначе canonical/hreflang легко забыть в копии,
+ * и деградирует ровно то, ради чего страница делается.
+ */
+export function pageMetadata(
+  locale: Locale,
+  subPath: string,
+  page: { metaTitle: string; metaDescription: string },
+): Metadata {
+  const url = pagePath(locale, subPath);
+  return {
+    title: page.metaTitle,
+    description: page.metaDescription,
+    alternates: {
+      canonical: url,
+      languages: hreflangAlternates(subPath),
+    },
+    openGraph: {
+      title: page.metaTitle,
+      description: page.metaDescription,
+      type: 'website',
+      url,
+      locale: localeMeta[locale].ogLocale,
+    },
+  };
 }

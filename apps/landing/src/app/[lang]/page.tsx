@@ -10,6 +10,7 @@ import {
 import { getDictionary, type Dictionary } from '../i18n/dictionaries';
 import { defaultLocale, isLocale, pagePath, type Locale } from '../i18n/config';
 import { Footer, Header, IconCheck, IconMail, IconPhone, IconTelegram } from './site-chrome';
+import { CompareTable } from './compare-table';
 
 export default async function LandingPage({
   params,
@@ -52,10 +53,14 @@ export default async function LandingPage({
         <Hero dict={dict} />
         <CalcTeaser dict={dict} locale={locale} />
         <PainPoints dict={dict} />
+        <Audience dict={dict} />
         <HowItWorks dict={dict} />
         <Deliverables dict={dict} />
+        <ReportExample dict={dict} />
         <Pricing dict={dict} />
+        <CompareTeaser dict={dict} locale={locale} />
         <WhyAccurate dict={dict} />
+        <Limits dict={dict} />
         <WhatIsCalculated dict={dict} />
         <Guarantee dict={dict} />
         <Faq dict={dict} />
@@ -206,7 +211,7 @@ function HowItWorks({ dict }: { dict: Dictionary }) {
     <IconDownload key="d" />,
   ];
   return (
-    <section className="section" id="how">
+    <section className="section section-alt" id="how">
       <div className="container">
         <div className="section-head">
           <span className="label">{dict.how.label}</span>
@@ -238,7 +243,7 @@ function Deliverables({ dict }: { dict: Dictionary }) {
     <IconDownload key="d" />,
   ];
   return (
-    <section className="section section-alt" id="deliver">
+    <section className="section" id="deliver">
       <div className="container">
         <div className="section-head">
           <span className="label">{dict.deliver.label}</span>
@@ -328,7 +333,7 @@ function WhyAccurate({ dict }: { dict: Dictionary }) {
     <IconShield key="sh" />,
   ];
   return (
-    <section className="section section-alt" id="why">
+    <section className="section" id="why">
       <div className="container">
         <div className="section-head">
           <span className="label">{dict.why.label}</span>
@@ -457,6 +462,203 @@ function FinalCta({ dict }: { dict: Dictionary }) {
         </div>
       </div>
     </section>
+  );
+}
+
+function Audience({ dict }: { dict: Dictionary }) {
+  const icons = [
+    <IconBadge key="bd" />,
+    <IconTruck key="tr" />,
+    <IconShip key="sh" />,
+    <IconBook key="bk" />,
+  ];
+  return (
+    <section className="section" id="audience">
+      <div className="container">
+        <div className="section-head">
+          <span className="label">{dict.audience.label}</span>
+          <h2>{dict.audience.heading}</h2>
+          <p>{dict.audience.intro}</p>
+        </div>
+        <div className="grid grid-2">
+          {dict.audience.items.map((it, i) => (
+            <div key={it.title} className={`card fade-up delay-${(i % 2) + 1}`}>
+              <span className="icon-wrap">{icons[i]}</span>
+              <h3>{it.title}</h3>
+              <p>{it.text}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const NUMERIC_CELL = /^[\d\s.,%–—-]+$/;
+
+/**
+ * Числовые колонки прижимаем вправо — как в самом Excel. Тип определяет колонка
+ * целиком (по первой строке), иначе одна нетипичная ячейка рвёт выравнивание.
+ */
+function numericColumns(sheet: Dictionary['report']['sheets'][number]): boolean[] {
+  return sheet.columns.map((_, i) => NUMERIC_CELL.test(sheet.rows[0]?.[i] ?? ''));
+}
+
+function ReportExample({ dict }: { dict: Dictionary }) {
+  const report = dict.report;
+  return (
+    <section className="section section-alt" id="report">
+      <div className="container">
+        <div className="section-head">
+          <span className="label">{report.label}</span>
+          <h2>{report.heading}</h2>
+          <p>{report.intro}</p>
+        </div>
+        <div className="report-sheets">
+          {report.sheets.map((sheet) => {
+            const numeric = numericColumns(sheet);
+            return (
+            <article key={sheet.title} className="report-sheet fade-up">
+              <header className="report-sheet-head">
+                <div className="report-sheet-title">
+                  <span className="sheet-tag">{sheet.tag}</span>
+                  <h3>{sheet.title}</h3>
+                </div>
+                <p>{sheet.note}</p>
+              </header>
+              <div className="table-scroll">
+                <table className="report-table">
+                  <thead>
+                    <tr>
+                      {sheet.columns.map((col) => (
+                        <th key={col}>{col}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sheet.rows.map((row) => (
+                      <tr key={row.join('|')}>
+                        {row.map((cell, ci) => (
+                          <td
+                            key={sheet.columns[ci]}
+                            className={numeric[ci] ? 'report-num' : undefined}
+                          >
+                            {cell === 'ok' || cell === 'warn' ? (
+                              <span className={`report-badge report-badge-${cell}`}>
+                                {report.statusLabels[cell]}
+                              </span>
+                            ) : (
+                              cell
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+            );
+          })}
+        </div>
+        <div className="report-totals fade-up">
+          <span className="report-totals-label">{report.totals.label}</span>
+          <ul>
+            {report.totals.items.map((it) => (
+              <li key={it.name}>
+                <span className="report-totals-name">{it.name}</span>
+                <span className="report-totals-value">{it.value}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="report-footer">{report.footer}</p>
+        <div className="report-cta">
+          <a href={TELEGRAM_BOT_URL} className="btn btn-primary" rel="noopener noreferrer">
+            <IconTelegram />
+            {report.cta}
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CompareTeaser({ dict, locale }: { dict: Dictionary; locale: Locale }) {
+  const compare = dict.compare;
+  return (
+    <section className="section section-alt" id="compare">
+      <div className="container">
+        <div className="section-head">
+          <span className="label">{compare.label}</span>
+          <h2>{compare.heading}</h2>
+          <p>{compare.intro}</p>
+        </div>
+        <div className="compare-card fade-up">
+          <CompareTable data={compare} />
+          <div className="compare-foot">
+            <a href={pagePath(locale, 'compare')} className="btn btn-secondary">
+              {compare.cta}
+              <IconArrowRight />
+            </a>
+            <span className="compare-note">{compare.note}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Limits({ dict }: { dict: Dictionary }) {
+  const limits = dict.limits;
+  return (
+    <section className="section section-alt" id="limits">
+      <div className="container">
+        <div className="section-head">
+          <span className="label">{limits.label}</span>
+          <h2>{limits.heading}</h2>
+          <p>{limits.intro}</p>
+        </div>
+        <div className="grid grid-2">
+          {(
+            [
+              ['enough', limits.enough, <IconCheck key="check" />],
+              ['human', limits.human, <IconPerson key="person" />],
+            ] as const
+          ).map(([kind, block, icon], i) => (
+            <div key={kind} className={`card limits-card limits-${kind} fade-up delay-${i + 1}`}>
+              <h3>{block.title}</h3>
+              <ul className="limits-list">
+                {block.items.map((it) => (
+                  <li key={it}>
+                    {icon}
+                    <span>{it}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+        <p className="limits-note">{limits.note}</p>
+      </div>
+    </section>
+  );
+}
+
+function IconArrowRight() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 12h14M13 6l6 6-6 6" />
+    </svg>
+  );
+}
+
+function IconPerson() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </svg>
   );
 }
 
